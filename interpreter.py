@@ -12,7 +12,8 @@ concatenate_expression_at_eol = ""
 do_concatenate_expression_at_eol = ""
 equals_if_expression_value = ""
 do_evaluate_if_statement_at_eol = ""
-do_skip_to_end_statement = "" 
+do_skip_to_end_or_else_statement = "" 
+do_execute_else_branch = ""
 expression_value = ""
 
 var_name = ""
@@ -22,10 +23,12 @@ while True:
     c = stdin.buffer.read(1).decode()
     if not c:
         break
-    if do_skip_to_end_statement == "true":
+    if do_skip_to_end_or_else_statement == "true":
         if c == "\n":
             if token == "end":
-                do_skip_to_end_statement = ""
+                do_skip_to_end_or_else_statement = ""
+            if token == "else":
+                do_skip_to_end_or_else_statement = ""
             token = ""
         else:
             token = token + c
@@ -85,8 +88,10 @@ while True:
             if expression_value == equals_if_expression_value:
                 pass
             else:
-                do_skip_to_end_statement = "true"
+                do_skip_to_end_or_else_statement = "true"
             do_evaluate_if_statement_at_eol = ""
+        if token == "else":
+            do_skip_to_end_or_else_statement = "true"
         token = ""
     else:
         token += c

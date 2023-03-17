@@ -2,95 +2,50 @@ from sys import stdin
 
 token = ""
 last_token = ""
-last_string = ""
-last_identifier = ""
-last_function = ""
-last_expression_type = ""
-last_expression_lhs = ""
-execute_operator_at_line_end = ""
-inside_string = ""
-inside_if = ""
-skip_to_end_or_else_token = ""
+last_token_is_string = ""
+is_string = "" 
+execute_function_at_rparen = ""
+do_execute_function_at_rparen = ""
+expression_value = ""
 
-var1_name = ""
-var1_value = ""
+var_name = ""
+var_value = ""
 
 while True:
     c = stdin.buffer.read(1).decode()
     if not c:
         break
-    if skip_to_end_or_else_token == "true":
-        if c == "\n":
-            if token == "else":
-                skip_to_end_or_else_token = ""
-            if token == "end":
-                skip_to_end_or_else_token = ""
-            token = ""
-        else:
-            token = token + c
-    elif inside_string == "true":
+    if is_string == "true":
         if c == '"':
-            last_string = token
-            inside_string = ""
+            last_token = token
+            last_token_is_string = "true"
             token = ""
+            is_string = ""
         else:
-            token = token + c
-    elif c == "(":
-        if token == "print":
-            last_function = token
-        else:
-            last_identifier = token
-        token = ""
-    elif c == ")":
-        if last_function == "print":
-            last_function = ""
-            if last_string:
-                print(last_string)
-                last_string = ""
-            elif last_token == var1_name:
-                print(var1_value)
+            token += c
     elif c == '"':
-        inside_string = "true"
-    elif c == "=":
-        if inside_if:
-            if token == "=":
-                token = ""
-                last_expression_type = "=="
-                if last_string:
-                    last_expression_lhs = last_string
-                    last_string = ""
-                elif last_identifier == var1_name:
-                    last_expression_lhs = var1_value
-                    last_identifier = ""
-                last_expression_lhs
-            else:
-                token = token + c
-        else:
-            execute_operator_at_line_end = token
-            token = ""
+        is_string = "true"
     elif c == " ":
-        if token == "if":
-            inside_if = "true"
-        elif token == "then":
-            inside_if = ""
-            if last_expression_type == "==":
-                if last_string:
-                    if last_string == last_expression_lhs:
-                        pass
-                    else:
-                        skip_to_end_or_else_token = "true"
-                    last_string = ""
-        else:
-            last_identifier = token
+        if token == "print":
+            execute_function_at_rparen = token
+            do_execute_function_at_rparen = "true"
+        elif last_token_is_string == "true":
+            expression_value = last_token
+        elif last_token == var_name:
+            expression_value = var_value
+        last_token = token
+        last_token_is_string = ""
         token = ""
+    elif c == "(":
+        pass
+    elif c == ")":
+        if do_execute_function_at_rparen == "true":
+            if execute_function_at_rparen == "print":
+               print(expression_value) 
+            execute_function_at_rparen = ""
+            do_execute_function_at_rparen = ""
+            expression_value = ""
     elif c == "\n":
-        if execute_operator_at_line_end == "=":
-            var1_name = last_identifier
-            var1_value = last_string
-            last_identifier = ""
-            last_string = ""
-        elif token == "else":
-            skip_to_end_or_else_token = "true"
-            token = ""
+        pass
     else:
-        token = token + c
+        token += c

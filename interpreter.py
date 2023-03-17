@@ -4,6 +4,8 @@ token = ""
 last_token = ""
 last_token_is_string = ""
 is_string = "" 
+assign_to_variable_at_eol = ""
+do_assign_to_variable_at_eol = ""
 execute_function_at_rparen = ""
 do_execute_function_at_rparen = ""
 expression_value = ""
@@ -19,6 +21,7 @@ while True:
         if c == '"':
             last_token = token
             last_token_is_string = "true"
+            expression_value = token
             token = ""
             is_string = ""
         else:
@@ -26,12 +29,15 @@ while True:
     elif c == '"':
         is_string = "true"
     elif c == " ":
-        if token == "print":
+        if token == "":
+            pass
+        elif token == "print":
             execute_function_at_rparen = token
             do_execute_function_at_rparen = "true"
-        elif last_token_is_string == "true":
-            expression_value = last_token
-        elif last_token == var_name:
+        elif token == "=":
+            assign_to_variable_at_eol = last_token
+            do_assign_to_variable_at_eol = "true"
+        elif token == var_name:
             expression_value = var_value
         last_token = token
         last_token_is_string = ""
@@ -41,11 +47,16 @@ while True:
     elif c == ")":
         if do_execute_function_at_rparen == "true":
             if execute_function_at_rparen == "print":
-               print(expression_value) 
+                print(expression_value) 
             execute_function_at_rparen = ""
             do_execute_function_at_rparen = ""
             expression_value = ""
     elif c == "\n":
-        pass
+        if do_assign_to_variable_at_eol == "true":
+            var_name = assign_to_variable_at_eol
+            var_value = expression_value
+            expression_value = ""
+            do_assign_to_variable_at_eol = ""
+            assign_to_variable_at_eol = ""
     else:
         token += c

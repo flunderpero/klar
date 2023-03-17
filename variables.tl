@@ -1,3 +1,7 @@
-word = "Hello there"
+word = "Hello"
 
-print(word)
+print ( word )
+
+word = "again"
+
+print ( word )

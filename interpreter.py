@@ -10,7 +10,7 @@ last_expression_lhs = ""
 execute_operator_at_line_end = ""
 inside_string = ""
 inside_if = ""
-skip_to_end_token = ""
+skip_to_end_or_else_token = ""
 
 var1_name = ""
 var1_value = ""
@@ -19,10 +19,12 @@ while True:
     c = stdin.buffer.read(1).decode()
     if not c:
         break
-    if skip_to_end_token == "true":
+    if skip_to_end_or_else_token == "true":
         if c == "\n":
+            if token == "else":
+                skip_to_end_or_else_token = ""
             if token == "end":
-                skip_to_end_token = ""
+                skip_to_end_or_else_token = ""
             token = ""
         else:
             token = token + c
@@ -76,7 +78,7 @@ while True:
                     if last_string == last_expression_lhs:
                         pass
                     else:
-                        skip_to_end_token = "true"
+                        skip_to_end_or_else_token = "true"
                     last_string = ""
         else:
             last_identifier = token
@@ -87,5 +89,8 @@ while True:
             var1_value = last_string
             last_identifier = ""
             last_string = ""
+        elif token == "else":
+            skip_to_end_or_else_token = "true"
+            token = ""
     else:
         token = token + c

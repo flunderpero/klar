@@ -8,6 +8,8 @@ assign_to_variable_at_eol = ""
 do_assign_to_variable_at_eol = ""
 execute_function_at_rparen = ""
 do_execute_function_at_rparen = ""
+concatenate_expression_at_eol = ""
+do_concatenate_expression_at_eol = ""
 expression_value = ""
 
 var_name = ""
@@ -31,6 +33,9 @@ while True:
     elif c == " ":
         if token == "":
             pass
+        elif token == "+":
+            do_concatenate_expression_at_eol = "true"
+            concatenate_expression_at_eol = expression_value
         elif token == "print":
             execute_function_at_rparen = token
             do_execute_function_at_rparen = "true"
@@ -52,6 +57,10 @@ while True:
             do_execute_function_at_rparen = ""
             expression_value = ""
     elif c == "\n":
+        if do_concatenate_expression_at_eol == "true":
+            expression_value = concatenate_expression_at_eol + expression_value 
+            do_concatenate_expression_at_eol = ""
+            concatenate_expression_at_eol = ""
         if do_assign_to_variable_at_eol == "true":
             var_name = assign_to_variable_at_eol
             var_value = expression_value

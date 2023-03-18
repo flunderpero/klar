@@ -13,6 +13,9 @@ do_concatenate_expression_at_eol = ""
 equals_if_expression_value = ""
 do_evaluate_if_statement_at_eol = ""
 do_skip_to_end_or_else_statement = "" 
+skip_if_level_1 = ""
+skip_if_level_2 = ""
+skip_if_level_3 = ""
 do_execute_else_branch = ""
 expression_value = ""
 
@@ -25,13 +28,38 @@ while True:
         break
     if do_skip_to_end_or_else_statement == "true":
         if c == "\n":
+            if token == "if":
+                if skip_if_level_1 == "true":
+                    if skip_if_level_2 == "true":
+                        skip_if_level_3 = "true"
+                    else: 
+                        skip_if_level_2 = "true"
+                else:
+                    skip_if_level_1 = "true"
             if token == "end":
-                do_skip_to_end_or_else_statement = ""
+                if skip_if_level_3 == "true":
+                    skip_if_level_3 = ""
+                elif skip_if_level_2 == "true":
+                    skip_if_level_2 = ""
+                elif skip_if_level_1 == "true":
+                    skip_if_level_1 = ""
+                else:
+                    do_skip_to_end_or_else_statement = ""
             if token == "else":
-                do_skip_to_end_or_else_statement = ""
+                if skip_if_level_3 == "true":
+                    skip_if_level_3 = ""
+                elif skip_if_level_2 == "true":
+                    skip_if_level_2 = ""
+                elif skip_if_level_1 == "true":
+                    skip_if_level_1 = ""
+                else:
+                    do_skip_to_end_or_else_statement = ""
             token = ""
         else:
-            token = token + c
+            if c == " ":
+                pass
+            else:
+                token = token + c
     elif is_string == "true":
         if c == '"':
             last_token = token

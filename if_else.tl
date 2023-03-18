@@ -1,13 +1,13 @@
 word = "Hello"
 
 if word == "Hello" then
-    print ( "Matched" )
+    print("OK: Matched")
 else
-    print ( "Matched but else-branch is run???" )
+    print("ERR: Matched but else-branch is run???")
 end
 
 if word == "world" then
-    print ( "No match but if-branch is run???" )
+    print("ERR: No match but if-branch is run???")
 else
-    print ( "No match" )
+    print("OK: No match")
 end

@@ -1,13 +1,13 @@
 word = "Hello"
 
 if word == "Hello" then
-    print ( "Matches if true" )
+    print("OK: Matches if true")
 end
 
 if word == "words" then
-    print ( "Matches if false???" )
+    print("ERR: Matches if false???")
 end
 
 if word == "Hello" then
-    print ( "Matches if true again" )
+    print("OK: Matches if true again")
 end

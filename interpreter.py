@@ -86,6 +86,17 @@ while True:
             if do_record_loop == "start_at_eol":
                 do_record_loop = "true"
                 record_loop = ""
+        if c == "\n":
+            if do_execute_function_at_rparen == "true":
+                if execute_function_at_rparen == "print":
+                    print(expression_value) 
+                    expression_value = ""
+                if execute_function_at_rparen == "read":
+                    expression_value = stdin.buffer.read(1).decode()
+                if execute_function_at_rparen == "sizeof":
+                    expression_value = str(len(expression_value))
+                execute_function_at_rparen = ""
+                do_execute_function_at_rparen = ""
         last_token = token
         last_token_is_string = ""
         token = ""
@@ -141,16 +152,9 @@ while True:
     elif c == " ":
         do_evaluate_token = "true"
     elif c == "(":
-        pass
+        do_evaluate_token = "true"
     elif c == ")":
-        if do_execute_function_at_rparen == "true":
-            if execute_function_at_rparen == "print":
-                print(expression_value) 
-                expression_value = ""
-            if execute_function_at_rparen == "read":
-                expression_value = stdin.buffer.read(1).decode()
-            execute_function_at_rparen = ""
-            do_execute_function_at_rparen = ""
+        do_evaluate_token = "true"
     elif c == "\n":
         do_evaluate_token = "true"
     else:

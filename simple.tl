@@ -1,3 +1,1 @@
-print ( "Hello" )
-
-print ( "again" )
+print("Hello")

@@ -2,6 +2,6 @@ word = "H"
 
 word = word + "ello"
 
-print ( word )
+print(word)
 
-print ( word + "again" )
+print(word + "again")

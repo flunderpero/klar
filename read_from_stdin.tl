@@ -1,7 +1,7 @@
 loop do
-    byte = read ()
+    byte = read()
     if byte == "" then
         break
     end
-    print ( byte )
+    print(byte)
 end

@@ -3,11 +3,11 @@ var = ""
 loop do
 
     if var == "...." then
-        print ( "break" )
+        print("break")
         break
     end
     
     var = var + "."
-    print ( var )
+    print(var )
 
 end

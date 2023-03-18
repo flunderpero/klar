@@ -1,3 +1,3 @@
 word = "Hello\nagain"
 
-print ( word )
+print(word)

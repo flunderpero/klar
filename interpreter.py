@@ -120,6 +120,8 @@ while True:
                 token = token + c
     elif is_string == "true":
         if c == string_delimiter:
+            if last_c == "\\":
+                token = token + last_c
             last_token = token
             last_token_is_string = "true"
             expression_value = token

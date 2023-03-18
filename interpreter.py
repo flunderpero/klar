@@ -18,14 +18,31 @@ skip_if_level_2 = ""
 skip_if_level_3 = ""
 do_execute_else_branch = ""
 expression_value = ""
+do_record_loop = ""
+record_loop = ""
+playing_loop = ""
 
 var_name = ""
 var_value = ""
 
-while True:
+def read():
+    global playing_loop
     c = stdin.buffer.read(1).decode()
-    if not c:
+    if c == "":
+        if playing_loop:
+            c = playing_loop[0]
+            playing_loop = playing_loop[1:]
+        elif record_loop:
+            playing_loop = record_loop[1:]
+            c = record_loop[0]
+    return c
+
+while True:
+    c = read()
+    if c == "":
         break
+    if do_record_loop == "true":
+        record_loop = record_loop + c
     if do_skip_to_end_or_else_statement == "true":
         if c == "\n":
             if token == "if":
@@ -74,6 +91,8 @@ while True:
     elif c == " ":
         if token == "":
             pass
+        elif token == "loop":
+            do_record_loop = "start_at_eol" 
         elif token == "if":
             do_evaluate_if_statement_at_eol = "true"
         elif token == "+":
@@ -120,6 +139,11 @@ while True:
             do_evaluate_if_statement_at_eol = ""
         if token == "else":
             do_skip_to_end_or_else_statement = "true"
+        if token == "break":
+            break
+        if do_record_loop == "start_at_eol":
+            do_record_loop = "true"
+            record_loop = ""
         token = ""
     else:
         token += c

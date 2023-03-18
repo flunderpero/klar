@@ -38,7 +38,7 @@ loop do
             out_string_constants = out_string_constants + '00"\n'
             reg_id = reg_id + "1"
             function_call_arg_reg = reg_id
-            out_main = '%".' 
+            out_main = out_main + '%".' 
             out_main = out_main + reg_id
             out_main = out_main + '" = bitcast ['
             out_main = out_main + size
@@ -58,6 +58,10 @@ loop do
             token = ""
             c = ""
         end
+        if c == "\n" then
+            token = ""
+            c = ""
+        end
         if c == ")" then
             if function_call == "print" then
                 reg_id = reg_id + "1"
@@ -65,8 +69,12 @@ loop do
                 out_main = out_main + reg_id
                 out_main = out_main + '" = call i32 (i8*, ...) @"printf"(i8* %".'
                 out_main = out_main + function_call_arg_reg
-                out_main = out_main + '")'
+                out_main = out_main + '")\n'
             end
+            function_call = ""
+            function_call_arg_reg = ""
+            token = ""
+            c = ""
         end
         if c == '"' then
             parsing_string = "true"

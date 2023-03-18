@@ -1,7 +1,7 @@
 let word = "H"
 
 word = word + "ello"
-
 print(word)
 
-print(word + "again")
+word = word + " again"
+print(word)

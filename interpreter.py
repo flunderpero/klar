@@ -22,8 +22,7 @@ do_record_loop = ""
 record_loop = ""
 playing_loop = ""
 
-var_name = ""
-var_value = ""
+variables = {}
 
 def read():
     global playing_loop
@@ -106,8 +105,8 @@ while True:
             do_assign_to_variable_at_eol = "true"
         elif token == "==":
             equals_if_expression_value = expression_value
-        elif token == var_name:
-            expression_value = var_value
+        elif token in variables:
+            expression_value = variables[token]
         last_token = token
         last_token_is_string = ""
         token = ""
@@ -126,8 +125,7 @@ while True:
             do_concatenate_expression_at_eol = ""
             concatenate_expression_at_eol = ""
         if do_assign_to_variable_at_eol == "true":
-            var_name = assign_to_variable_at_eol
-            var_value = expression_value
+            variables[assign_to_variable_at_eol] = expression_value
             expression_value = ""
             do_assign_to_variable_at_eol = ""
             assign_to_variable_at_eol = ""

@@ -50,12 +50,6 @@ while True:
         elif token == "+":
             do_concatenate_expression_at_eol = "true"
             concatenate_expression_at_eol = expression_value
-        elif token == "print":
-            execute_function_at_rparen = token
-            do_execute_function_at_rparen = "true"
-        elif token == "read":
-            execute_function_at_rparen = token
-            do_execute_function_at_rparen = "true"
         elif token == "=":
             assign_to_variable_at_eol = last_token
             do_assign_to_variable_at_eol = "true"
@@ -86,7 +80,10 @@ while True:
             if do_record_loop == "start_at_eol":
                 do_record_loop = "true"
                 record_loop = ""
-        if c == "\n":
+        if c == "(":
+            execute_function_at_rparen = token
+            do_execute_function_at_rparen = "true"
+        if c == ")":
             if do_execute_function_at_rparen == "true":
                 if execute_function_at_rparen == "print":
                     print(expression_value) 

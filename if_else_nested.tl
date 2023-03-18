@@ -1,4 +1,4 @@
-word = "Hello"
+let word = "Hello"
 
 if word == "Hello" then
     print("OK: Level 1")

@@ -1,4 +1,4 @@
-var = ""
+let var = ""
 
 loop do
 

@@ -1,5 +1,5 @@
-word = "Hello"
-another_word = "again"
+let word = "Hello"
+let another_word = " there"
 
 print(word)
 

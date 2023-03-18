@@ -1,4 +1,4 @@
-word = "H"
+let word = "H"
 
 word = word + "ello"
 

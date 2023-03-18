@@ -1,4 +1,4 @@
-from sys import stdin
+from sys import argv, stdin
 
 token = ""
 last_token = ""
@@ -24,9 +24,11 @@ playing_loop = ""
 
 variables = {}
 
+buffer = open(argv[1])
+
 def read():
     global playing_loop
-    c = stdin.buffer.read(1).decode()
+    c = buffer.read(1)
     if c == "":
         if playing_loop:
             c = playing_loop[0]
@@ -100,6 +102,9 @@ while True:
         elif token == "print":
             execute_function_at_rparen = token
             do_execute_function_at_rparen = "true"
+        elif token == "read":
+            execute_function_at_rparen = token
+            do_execute_function_at_rparen = "true"
         elif token == "=":
             assign_to_variable_at_eol = last_token
             do_assign_to_variable_at_eol = "true"
@@ -116,9 +121,11 @@ while True:
         if do_execute_function_at_rparen == "true":
             if execute_function_at_rparen == "print":
                 print(expression_value) 
+                expression_value = ""
+            if execute_function_at_rparen == "read":
+                expression_value = stdin.buffer.read(1).decode()
             execute_function_at_rparen = ""
             do_execute_function_at_rparen = ""
-            expression_value = ""
     elif c == "\n":
         if do_concatenate_expression_at_eol == "true":
             expression_value = concatenate_expression_at_eol + expression_value 

@@ -21,6 +21,8 @@ expression_value = ""
 do_record_loop = ""
 record_loop = ""
 playing_loop = ""
+c = ""
+last_c = ""
 
 variables = {}
 
@@ -86,9 +88,21 @@ while True:
             token = ""
             is_string = ""
         else:
-            token += c
+            if last_c == "\\":
+                if c == "n":
+                    c = chr(10)
+                else:
+                    token = token + last_c
+                token = token + c
+            else:
+                if c == "\\":
+                    pass
+                else:
+                    token = token + c
+            last_c = c
     elif c == '"':
         is_string = "true"
+        last_c = ""
     elif c == " ":
         if token == "":
             pass

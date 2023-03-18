@@ -4,6 +4,7 @@ token = ""
 last_token = ""
 last_token_is_string = ""
 is_string = "" 
+string_delimiter = ""
 assign_to_variable_at_eol = ""
 do_assign_to_variable_at_eol = ""
 execute_function_at_rparen = ""
@@ -81,7 +82,7 @@ while True:
             else:
                 token = token + c
     elif is_string == "true":
-        if c == '"':
+        if c == string_delimiter:
             last_token = token
             last_token_is_string = "true"
             expression_value = token
@@ -102,6 +103,11 @@ while True:
             last_c = c
     elif c == '"':
         is_string = "true"
+        string_delimiter = c
+        last_c = ""
+    elif c == "'":
+        is_string = "true"
+        string_delimiter = c
         last_c = ""
     elif c == " ":
         if token == "":

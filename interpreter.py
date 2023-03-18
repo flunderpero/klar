@@ -13,10 +13,7 @@ concatenate_expression_at_eol = ""
 do_concatenate_expression_at_eol = ""
 equals_if_expression_value = ""
 do_evaluate_if_statement_at_eol = ""
-do_skip_to_end_or_else_statement = "" 
-skip_if_level_1 = ""
-skip_if_level_2 = ""
-skip_if_level_3 = ""
+skip_if_level = 0
 do_execute_else_branch = ""
 expression_value = ""
 do_record_loop = ""
@@ -47,38 +44,19 @@ while True:
         break
     if do_record_loop == "true":
         record_loop = record_loop + c
-    if do_skip_to_end_or_else_statement == "true":
+    if skip_if_level > 0:
         if c == "\n":
-            if token == "if":
-                if skip_if_level_1 == "true":
-                    if skip_if_level_2 == "true":
-                        skip_if_level_3 = "true"
-                    else: 
-                        skip_if_level_2 = "true"
-                else:
-                    skip_if_level_1 = "true"
             if token == "end":
-                if skip_if_level_3 == "true":
-                    skip_if_level_3 = ""
-                elif skip_if_level_2 == "true":
-                    skip_if_level_2 = ""
-                elif skip_if_level_1 == "true":
-                    skip_if_level_1 = ""
-                else:
-                    do_skip_to_end_or_else_statement = ""
+                skip_if_level = skip_if_level - 1
             if token == "else":
-                if skip_if_level_3 == "true":
-                    skip_if_level_3 = ""
-                elif skip_if_level_2 == "true":
-                    skip_if_level_2 = ""
-                elif skip_if_level_1 == "true":
-                    skip_if_level_1 = ""
-                else:
-                    do_skip_to_end_or_else_statement = ""
+                if skip_if_level == 1:
+                    skip_if_level = 0
             token = ""
         else:
             if c == " ":
-                pass
+                if token == "if":
+                    skip_if_level = skip_if_level + 1
+                token = ""
             else:
                 token = token + c
     elif is_string == "true":
@@ -160,10 +138,10 @@ while True:
             if expression_value == equals_if_expression_value:
                 pass
             else:
-                do_skip_to_end_or_else_statement = "true"
+                skip_if_level = 1
             do_evaluate_if_statement_at_eol = ""
         if token == "else":
-            do_skip_to_end_or_else_statement = "true"
+            skip_if_level = 1
         if token == "break":
             break
         if do_record_loop == "start_at_eol":

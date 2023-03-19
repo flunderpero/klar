@@ -14,7 +14,7 @@ let string_contstants_id = ""
 let reg_id = ""
 let out_string_constants = ""
 let out_alloc_local_variable = ""
-let out_main = ""
+let out = ""
 
 
 loop do
@@ -27,7 +27,7 @@ loop do
         print("{")
         print("entry:")
         print(out_alloc_local_variable)
-        print(out_main)
+        print(out)
         print("ret void")
         print("}")
         print(out_string_constants)
@@ -47,13 +47,13 @@ loop do
             out_string_constants = out_string_constants + token
             out_string_constants = out_string_constants + '00"\n'
             last_expression_reg = string_contstants_id
-            out_main = out_main + '%".' 
-            out_main = out_main + string_contstants_id
-            out_main = out_main + '" = bitcast ['
-            out_main = out_main + size
-            out_main = out_main + ' x i8]* @"'
-            out_main = out_main + string_contstants_id
-            out_main = out_main + '" to i8*\n'
+            out = out + '%".' 
+            out = out + string_contstants_id
+            out = out + '" = bitcast ['
+            out = out + size
+            out = out + ' x i8]* @"'
+            out = out + string_contstants_id
+            out = out + '" to i8*\n'
             token = ""
         else
             token = token + c
@@ -90,34 +90,34 @@ loop do
                 out_alloc_local_variable = out_alloc_local_variable + "%._"
                 out_alloc_local_variable = out_alloc_local_variable + assign_to_variable_at_eol
                 out_alloc_local_variable = out_alloc_local_variable + " = alloca [1024 x i8]\n"
-                out_main = out_main + '%".' 
-                out_main = out_main + assign_to_variable_at_eol
-                out_main = out_main + '" = bitcast [1024 x i8]* %"._'
-                out_main = out_main + assign_to_variable_at_eol
-                out_main = out_main + '" to i8*\n'
+                out = out + '%".' 
+                out = out + assign_to_variable_at_eol
+                out = out + '" = bitcast [1024 x i8]* %"._'
+                out = out + assign_to_variable_at_eol
+                out = out + '" to i8*\n'
             end
             if do_assign_to_variable_at_eol == "true" then
                 reg_id = reg_id + "1"
-                out_main = out_main + '%".'
-                out_main = out_main + reg_id
-                out_main = out_main + '" = call i8* (i8*, i8*) @"strcpy"(i8* %".'
-                out_main = out_main + assign_to_variable_at_eol
-                out_main = out_main + '", i8* %".'
+                out = out + '%".'
+                out = out + reg_id
+                out = out + '" = call i8* (i8*, i8*) @"strcpy"(i8* %".'
+                out = out + assign_to_variable_at_eol
+                out = out + '", i8* %".'
                 if do_concat_at_eol == "true" then
-                    out_main = out_main + concat_at_eol_reg
+                    out = out + concat_at_eol_reg
                 else
-                    out_main = out_main + last_expression_reg
+                    out = out + last_expression_reg
                 end
-                out_main = out_main + '")\n'
+                out = out + '")\n'
                 if do_concat_at_eol == "true" then
                     reg_id = reg_id + "1"
-                    out_main = out_main + '%".'
-                    out_main = out_main + reg_id
-                    out_main = out_main + '" = call i8* (i8*, i8*) @"strcat"(i8* %".'
-                    out_main = out_main + assign_to_variable_at_eol
-                    out_main = out_main + '", i8* %".'
-                    out_main = out_main + last_expression_reg
-                    out_main = out_main + '")\n'
+                    out = out + '%".'
+                    out = out + reg_id
+                    out = out + '" = call i8* (i8*, i8*) @"strcat"(i8* %".'
+                    out = out + assign_to_variable_at_eol
+                    out = out + '", i8* %".'
+                    out = out + last_expression_reg
+                    out = out + '")\n'
                 end
             end
             do_assign_to_variable_at_eol = ""
@@ -135,11 +135,11 @@ loop do
             end
             if function_call == "print" then
                 reg_id = reg_id + "1"
-                out_main = out_main + '%".'
-                out_main = out_main + reg_id
-                out_main = out_main + '" = call i32 (i8*, ...) @"printf"(i8* %".'
-                out_main = out_main + arg_reg
-                out_main = out_main + '")\n'
+                out = out + '%".'
+                out = out + reg_id
+                out = out + '" = call i32 (i8*, ...) @"printf"(i8* %".'
+                out = out + arg_reg
+                out = out + '")\n'
             end
             function_call = ""
             last_expression_reg = ""

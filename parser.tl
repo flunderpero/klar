@@ -69,11 +69,13 @@ loop do
             do_assign_to_variable_at_eol = "true"
             c = ""
             last_token = ""
+            last_expression = ""
         end
         if c == "+" then
             concat_at_eol_reg = last_expression_reg
             do_concat_at_eol = "true"
             last_expression_reg = ""
+            c = ""
         end
         if c == " " then
             if token == "let" then
@@ -86,6 +88,9 @@ loop do
             c = ""
         end
         if c == "\n" then
+            if last_expression_reg == "" then
+                last_expression_reg = token
+            end
             if do_create_to_variable_at_eol == "true" then
                 out_alloc_local_variable = out_alloc_local_variable + "%._"
                 out_alloc_local_variable = out_alloc_local_variable + assign_to_variable_at_eol

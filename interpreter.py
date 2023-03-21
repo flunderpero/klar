@@ -22,6 +22,7 @@ record_loop = ""
 playing_loop = ""
 c = ""
 last_c = ""
+do_skip_to_eol = ""
 
 variables = {}
 
@@ -43,6 +44,8 @@ while True:
     if do_evaluate_token == "true":
         if token == "":
             pass
+        elif token == "--":
+            do_skip_to_eol = "true"
         elif token == "loop":
             do_record_loop = "start_at_eol" 
         elif token == "if":
@@ -101,6 +104,10 @@ while True:
     c = read()
     if c == "":
         break
+    if do_skip_to_eol == "true":
+        if c == "\n":
+            do_skip_to_eol = ""
+        c = ""
     if do_record_loop == "true":
         record_loop = record_loop + c
     if skip_if_level > 0:

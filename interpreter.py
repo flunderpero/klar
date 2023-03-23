@@ -1,3 +1,11 @@
+"""
+    A super naive interpreter of our language that restricts itself
+    to a small subset of Python language features used. 
+    
+    This is the blueprint to how `compiler.tl` is implemented.
+
+    This interpreter is superceeded 
+"""
 from sys import argv, stdin
 
 token = ""

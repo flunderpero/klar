@@ -4,7 +4,8 @@
     
     This is the blueprint to how `compiler.tl` is implemented.
 
-    This interpreter is superceeded 
+    This interpreter is superseded by `tokenized_interpreter.py`
+    because it became way too slow. :-)
 """
 from sys import argv, stdin
 

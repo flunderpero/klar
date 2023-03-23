@@ -1,6 +1,9 @@
+let byte = ""
+
 loop do
-    let byte = read()
+    byte = read()
     if byte == "" then
+        print("break")
         break
     end
     print(byte)

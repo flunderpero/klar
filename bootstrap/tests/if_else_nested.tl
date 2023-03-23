@@ -10,9 +10,13 @@ if word == "Hello" then
     else
         print("OK: Level 2")
         if "Hello" == "Hello" then
-            print("OK: Level 3")
+            print("OK: Level 3.1")
         else
-            print("ERR: Level 3")
+            print("ERR: Level 3.1")
+        end
+        if "Hello" == "empty if body" then
+        else
+            print("OK: Level 3.2")
         end
     end
 else

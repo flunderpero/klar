@@ -1,8 +1,9 @@
--- Bootstrap stage 2
+-- Bootstrap stage 3
 --
--- This implementation is enhances stage1 by adding:
+-- This implementation is enhances stage 2 by adding:
 -- 
--- - `in` operator to find strings in strings
+-- - integers (positive only)
+-- - addition and subtraction
 --
 -- Things will get better in the next stages. :^)
 
@@ -22,14 +23,23 @@ let last_expression_type = ""
 let function_call = ""
 let parsing_string = ""
 let parsing_string_delimiter = ""
+let parsing_int = ""
+let c_is_int = ""
 let size = ""
 let do_create_to_variable_at_eol = ""
 let add_at_eol_reg = ""
 let do_add_at_eol = ""
+let sub_at_eol_reg = ""
+let do_sub_at_eol = ""
 let parsing_if = ""
 let evaluate_equals_at_eol_reg = ""
 let do_evaluate_if_at_eol = ""
 let evaluate_in_at_eol_reg = ""
+-- We use this as a container to store the names of all
+-- integer variable names so we can distinguish between
+-- string and integer variables.
+let int_var_names = ""
+let int_var_lookup = ""
 
 -- Implementing nested if / else blocks is kinda hard 
 -- without a numeric type. 
@@ -50,8 +60,8 @@ let if_level_6_had_else = ""
 let if_level_7_had_else = ""
 let if_level_8_had_else = ""
 let if_level_helper = ""
-let sizeof_sprintf_format_str = "%ld"
 let do_skip_to_eol = ""
+let sizeof_sprintf_format_str = "%ld"
 
 -- We have to construct unique identifiers to generate
 -- valid LLVM IR code. Again, without a numeric type
@@ -62,6 +72,7 @@ let do_skip_to_eol = ""
 let id_prefix_1 = "a"
 let id_prefix_2 = "i"
 let id = ""
+let int_id = ""
 let string_contstants_id = ""
 let if_branch_label = ""
 let out = ""
@@ -79,6 +90,7 @@ print("declare i64 @strlen(i8*)\n")
 print("declare i32 @sprintf(i8*, i8*, ...)\n")
 print("declare i32 @read(i32, i8*, i32)\n")
 print("declare i32 @memset(i8*, i32, i32)\n")
+print('@int_to_string_sprintf_format = internal constant [3 x i8] c"%d\\00"')
 print("define i8 @main()\n")
 print("{\n")
 print("entry:\n")
@@ -87,6 +99,7 @@ print("%.read_buf = bitcast [2 x i8]* %.read_buf_alloc to i8*\n")
 print("%.read_buf_clear = call i32 @memset(i8* %.read_buf, i32 0, i32 2)\n")
 print("%.sprintf_buf_alloc = alloca [100 x i8]\n")
 print("%.sprintf_buf = bitcast [100 x i8]* %.sprintf_buf_alloc to i8*\n")
+print("%.int_to_string_sprintf_format = getelementptr [3 x i8], [3 x i8]* @int_to_string_sprintf_format, i32 0, i32 0")
 
 -- The main loop.
 -- We read from stdin one byte at a time and generate the 
@@ -109,6 +122,82 @@ loop
             c = ""
         end
     end
+
+    -- Number parsing.
+    if c == "0" then
+        c_is_int = "true"
+    end
+    if c == "1" then
+        c_is_int = "true"
+    end
+    if c == "2" then
+        c_is_int = "true"
+    end
+    if c == "3" then
+        c_is_int = "true"
+    end
+    if c == "4" then
+        c_is_int = "true"
+    end
+    if c == "5" then
+        c_is_int = "true"
+    end
+    if c == "6" then
+        c_is_int = "true"
+    end
+    if c == "7" then
+        c_is_int = "true"
+    end
+    if c == "8" then
+        c_is_int = "true"
+    end
+    if c == "9" then
+        c_is_int = "true"
+    end
+    if parsing_string == "true" then
+    else
+        if c_is_int == "true" then
+            if token == "" then
+                parsing_int = "true"
+            end
+        end
+    end
+    if parsing_int == "true" then
+        -- Detect whether we are done parsing.
+        if c == " " then
+            parsing_int = ""
+        end
+        if c == "\n" then
+            parsing_int = ""
+        end
+        if c == ")" then
+            parsing_int = ""
+        end
+        if parsing_int == "" then
+            -- We are done parsing, convert to an int.
+            -- Generate that unique id.
+            int_id = int_id + "x"
+            parsing_int = ""
+            out = "%."
+            out = out + int_id
+            out = out + " = alloca i32, align 4\n"
+            out = out + "store i32 "
+            out = out + token
+            out = out + ", i32* %."
+            out = out + int_id
+            print(out)
+            out = "; PARSED num: "
+            out = out + token
+            print(out)
+            last_expression_reg = int_id
+            last_expression_type = "int"
+            token = ""
+        else
+            token = token + c
+            c = ""
+        end
+    end
+    c_is_int = ""
 
     -- String parsing.
     if parsing_string == "true" then
@@ -237,6 +326,28 @@ loop
             last_expression_reg = ""
             c = ""
         end
+        if c == "." then
+            -- We simply ignore dots and expect `to_string()` to follow.
+            c = ""
+            if token == "" then
+            else
+                -- This is a variable.
+                out = "; READ var at dot: "
+                out = out + token
+                print(out)
+                last_expression_reg = token
+                last_token = token
+                int_var_lookup = ":"
+                int_var_lookup = int_var_lookup + token
+                int_var_lookup = int_var_lookup + ":"
+                if int_var_lookup in int_var_names then
+                    last_expression_type = "int"
+                else
+                    last_expression_type = "string"
+                end
+                token = ""
+            end
+        end
         if c == " " then
             if token == "then" then
                 token = ""
@@ -245,8 +356,15 @@ loop
                 evaluate_in_at_eol_reg = last_expression_reg
                 do_evaluate_if_at_eol = "true"
             end
+            if token == "-" then
+                sub_at_eol_reg = last_expression_reg
+                do_sub_at_eol = "true"
+                last_expression_reg = ""
+                c = ""
+            end
             if token == "--" then
                 do_skip_to_eol = "true"
+                token = ""
             end
             if token == "let" then
                 do_create_to_variable_at_eol = "true"
@@ -254,10 +372,12 @@ loop
             end
             if token == "if" then
                 parsing_if = "true" 
+                token = ""
             end
             if token == "==" then
                 evaluate_equals_at_eol_reg = last_expression_reg
                 do_evaluate_if_at_eol = "true"
+                token = ""
             end
             if token == "loop" then
                 -- In LLVM IR each block of code must end with a
@@ -267,8 +387,20 @@ loop
             end
             if token == "" then
             else
+                -- This is a variable.
+                out = "; READ var at space: "
+                out = out + token
+                print(out)
                 last_expression_reg = token
                 last_token = token
+                int_var_lookup = ":"
+                int_var_lookup = int_var_lookup + token
+                int_var_lookup = int_var_lookup + ":"
+                if int_var_lookup in int_var_names then
+                    last_expression_type = "int"
+                else
+                    last_expression_type = "string"
+                end
             end
             token = ""
             c = ""
@@ -312,7 +444,22 @@ loop
                 print("br label %end")
             end
             if last_expression_reg == "" then
-                last_expression_reg = token
+                if token == "" then
+                else
+                    -- This is a variable.
+                    out = "; READ var at eol"
+                    out = out + token
+                    print(out)
+                    last_expression_reg = token
+                    int_var_lookup = ":"
+                    int_var_lookup = int_var_lookup + token
+                    int_var_lookup = int_var_lookup + ":"
+                    if int_var_lookup in int_var_names then
+                        last_expression_type = "int"
+                    else
+                        last_expression_type = "string"
+                    end
+                end
             end
             -- We have to generate the correct labels and therefor must
             -- know the depth of if / else nesting.
@@ -520,65 +667,116 @@ loop
                 print(out)
             end
             if do_create_to_variable_at_eol == "true" then
-                -- Our main goal for now is to be able to compile this compiler
-                -- with itself. We don't care about memory usage at this point.
-                -- We don't care about buffer overruns as well at this stage.
-                -- Let's make the variables big enough for now.
-                -- Nobody would ever want to store more than 500 bytes in 
-                -- a variable anyway.
-                var_size = "500"
-                if assign_to_variable_at_eol == "out_string_constants" then
-                    -- Oops, found that one variable that wants to be bigger
-                    -- than 500 bytes. :-)
-                    var_size = "75000"
-                end
-                if assign_to_variable_at_eol == "out" then
-                    -- ... and another one.
-                    var_size = "3000"
-                end
-                out = "%._"
-                out = out + assign_to_variable_at_eol
-                out = out + " = alloca ["
-                out = out + var_size
-                out = out + " x i8]\n"
-                out = out + "%." 
-                out = out + assign_to_variable_at_eol
-                out = out + " = bitcast ["
-                out = out + var_size
-                out = out + " x i8]* %._"
-                out = out + assign_to_variable_at_eol
-                out = out + " to i8*\n"
-                out = out + "%." 
-                out = out + assign_to_variable_at_eol
-                out = out + "_clear = call i32 @memset(i8* %."
-                out = out + assign_to_variable_at_eol
-                out = out + ", i32 0, i32 "
-                out = out + var_size
-                out = out + ")"
-                print(out)
-            end
-            if do_assign_to_variable_at_eol == "true" then
-                out = "%.strcpy"
-                out = out + id
-                out = out + " = call i8* (i8*, i8*) @strcpy(i8* %."
-                out = out + assign_to_variable_at_eol
-                out = out + ", i8* %."
-                if do_add_at_eol == "true" then
-                    out = out + add_at_eol_reg
-                else
-                    out = out + last_expression_reg
-                end
-                out = out + ")"
-                print(out)
-                if do_add_at_eol == "true" then
-                    out = "%.strcat"
-                    out = out + id
-                    out = out + " = call i8* (i8*, i8*) @strcat(i8* %."
+                if last_expression_type == "int" then
+                    out = "%."
                     out = out + assign_to_variable_at_eol
-                    out = out + ", i8* %."
-                    out = out + last_expression_reg
+                    out = out + " = alloca i32, align 4"
+                    int_var_names = int_var_names + ":"
+                    int_var_names = int_var_names + assign_to_variable_at_eol
+                    int_var_names = int_var_names + ":"
+                    print(out)
+                else
+                    -- Our main goal for now is to be able to compile this compiler
+                    -- with itself. We don't care about memory usage at this point.
+                    -- We don't care about buffer overruns as well at this stage.
+                    -- Let's make the variables big enough for now.
+                    -- Nobody would ever want to store more than 500 bytes in 
+                    -- a variable anyway.
+                    var_size = "500"
+                    if assign_to_variable_at_eol == "out_string_constants" then
+                        -- Oops, found that one variable that wants to be bigger
+                        -- than 500 bytes. :-)
+                        var_size = "75000"
+                    end
+                    if assign_to_variable_at_eol == "out" then
+                        -- ... and another one.
+                        var_size = "3000"
+                    end
+                    out = "%._"
+                    out = out + assign_to_variable_at_eol
+                    out = out + " = alloca ["
+                    out = out + var_size
+                    out = out + " x i8]\n"
+                    out = out + "%." 
+                    out = out + assign_to_variable_at_eol
+                    out = out + " = bitcast ["
+                    out = out + var_size
+                    out = out + " x i8]* %._"
+                    out = out + assign_to_variable_at_eol
+                    out = out + " to i8*\n"
+                    out = out + "%." 
+                    out = out + assign_to_variable_at_eol
+                    out = out + "_clear = call i32 @memset(i8* %."
+                    out = out + assign_to_variable_at_eol
+                    out = out + ", i32 0, i32 "
+                    out = out + var_size
                     out = out + ")"
                     print(out)
+                end
+            end
+            if do_assign_to_variable_at_eol == "true" then
+                if last_expression_type == "int" then
+                    out = "%.assignint"
+                    out = out + id
+                    out = out + " = load i32, i32* %."
+                    out = out + last_expression_reg
+                    out = out + ", align 4\n"
+                    if do_add_at_eol == "true" then
+                        out = out + "%.addload"
+                        out = out + id
+                        out = out + " = load i32, i32* %."
+                        out = out + add_at_eol_reg
+                        out = out + "\n%.add"
+                        out = out + id
+                        out = out + " = add i32 %.assignint"
+                        out = out + id
+                        out = out + ", %.addload"
+                        out = out + id
+                        out = out + "\nstore i32 %.add"
+                    else
+                        if do_sub_at_eol == "true" then
+                            out = out + "%.subload"
+                            out = out + id
+                            out = out + " = load i32, i32* %."
+                            out = out + sub_at_eol_reg
+                            out = out + "\n%.sub"
+                            out = out + id
+                            out = out + " = sub i32 %.subload"
+                            out = out + id
+                            out = out + ", %.assignint"
+                            out = out + id
+                            out = out + "\nstore i32 %.sub"
+                        else
+                            out = out + "store i32 %.assignint"
+                        end
+                    end
+                    out = out + id
+                    out = out + ", i32* %."
+                    out = out + assign_to_variable_at_eol
+                    print(out)
+                else
+                    out = "%.strcpy"
+                    out = out + id
+                    out = out + " = call i8* (i8*, i8*) @strcpy(i8* %."
+                    out = out + assign_to_variable_at_eol
+                    out = out + ", i8* %."
+                    if do_add_at_eol == "true" then
+                        out = out + add_at_eol_reg
+                    else
+                        out = out + last_expression_reg
+                    end
+                    out = out + ")"
+                    print(out)
+                    if do_add_at_eol == "true" then
+                        out = "%.strcat"
+                        out = out + id
+                        out = out + " = call i8* (i8*, i8*) @strcat(i8* %."
+                        out = out + assign_to_variable_at_eol
+                        out = out + ", i8* %."
+                        out = out + last_expression_reg
+                        out = out + ")"
+                        print(out)
+                    end
                 end
             end
             if do_evaluate_if_at_eol == "true" then
@@ -665,29 +863,58 @@ loop
                     print(out)
                 else
                     -- `==`
-                    out = "%.strcmp"
-                    out = out + id
-                    out = out + " = call i32 (i8*, i8*) @strcmp(i8* %."
-                    out = out + evaluate_equals_at_eol_reg
-                    out = out + ", i8* %."
-                    out = out + last_expression_reg
-                    out = out + ")\n"
-                    out = out + "%.strcmp2"
-                    out = out + id
-                    out = out + " = icmp eq i32 %.strcmp"
-                    out = out + id
-                    out = out + " , 0\n"
-                    out = out + "br i1 %.strcmp2" 
-                    out = out + id
-                    out = out + ", label %if" 
-                    out = out + if_branch_label
-                    out = out + ", label %else" 
-                    out = out + if_branch_label
-                    out = out + "\n"
-                    out = out + "if"
-                    out = out + if_branch_label
-                    out = out + ":"
-                    print(out)
+                    if last_expression_type == "int" then
+                        out = "%.eqintleft"
+                        out = out + id
+                        out = out + " = load i32, i32* %."
+                        out = out + last_expression_reg
+                        out = out + ", align 4\n"
+                        out = out + "%.eqintright"
+                        out = out + id
+                        out = out + " = load i32, i32* %."
+                        out = out + evaluate_equals_at_eol_reg
+                        out = out + "\n%.eqint"
+                        out = out + id
+                        out = out + " = icmp eq i32 %.eqintleft"
+                        out = out + id
+                        out = out + ", %.eqintright"
+                        out = out + id
+                        out = out + "\nbr i1 %.eqint" 
+                        out = out + id
+                        out = out + ", label %if" 
+                        out = out + if_branch_label
+                        out = out + ", label %else" 
+                        out = out + if_branch_label
+                        out = out + "\n"
+                        out = out + "if"
+                        out = out + if_branch_label
+                        out = out + ":"
+                        print(out)
+                    else
+                        out = "%.strcmp"
+                        out = out + id
+                        out = out + " = call i32 (i8*, i8*) @strcmp(i8* %."
+                        out = out + evaluate_equals_at_eol_reg
+                        out = out + ", i8* %."
+                        out = out + last_expression_reg
+                        out = out + ")\n"
+                        out = out + "%.strcmp2"
+                        out = out + id
+                        out = out + " = icmp eq i32 %.strcmp"
+                        out = out + id
+                        out = out + ", 0\n"
+                        out = out + "br i1 %.strcmp2" 
+                        out = out + id
+                        out = out + ", label %if" 
+                        out = out + if_branch_label
+                        out = out + ", label %else" 
+                        out = out + if_branch_label
+                        out = out + "\n"
+                        out = out + "if"
+                        out = out + if_branch_label
+                        out = out + ":"
+                        print(out)
+                    end
                 end
             end
             parsing_if = ""
@@ -701,11 +928,41 @@ loop
             c = ""
         end
         if c == ")" then
+            out = "; FUNCTION call at rparen: "
+            out = out + function_call
+            print(out)
             if token == "" then
             else
+                -- This is a variable.
+                out = "; READ var at rparen: "
+                out = out + token
+                print(out)
                 last_expression_reg = token
+                int_var_lookup = ":"
+                int_var_lookup = int_var_lookup + token
+                int_var_lookup = int_var_lookup + ":"
+                if int_var_lookup in int_var_names then
+                    last_expression_type = "int"
+                else
+                    last_expression_type = "string"
+                end
             end
             if function_call == "print" then
+                if last_expression_type == "int" then
+                    -- This is an integer - convert it to string first.
+                    out = "%.putsiload"
+                    out = out + id
+                    out = out + " = load i32, i32* %."
+                    out = out + last_expression_reg
+                    out = out + "\n%.putsi"
+                    out = out + id
+                    out = out + " = call i32 (i8*, i8*, ...) @sprintf(i8* %.sprintf_buf"
+                    out = out + ", i8* %.int_to_string_sprintf_format, i32 %.putsiload"
+                    out = out + id
+                    out = out + ")"
+                    print(out)
+                    last_expression_reg = "sprintf_buf"
+                end
                 out = "%.puts"
                 out = out + id
                 out = out + " = call i32 (i8*) @puts(i8* %."
@@ -713,6 +970,21 @@ loop
                 out = out + ")"
                 print(out)
                 last_expression_reg = ""
+            end
+            if function_call == "to_string" then
+                out = "%.tostrload"
+                out = out + id
+                out = out + " = load i32, i32* %."
+                out = out + last_expression_reg
+                out = out + "\n%.tostr"
+                out = out + id
+                out = out + " = call i32 (i8*, i8*, ...) @sprintf(i8* %.sprintf_buf"
+                out = out + ", i8* %.int_to_string_sprintf_format, i32 %.tostrload"
+                out = out + id
+                out = out + ")"
+                print(out)
+                last_expression_reg = "sprintf_buf"
+                last_expression_type = "str"
             end
             if function_call == "sizeof" then
                 out = "%.strlen"
@@ -723,11 +995,12 @@ loop
                 out = out + "%.strlen3"
                 out = out + id
                 out = out + " = call i32 (i8*, i8*, ...) @sprintf(i8* %.sprintf_buf"
-                out = out + ", i8* %.sizeof_sprintf_format_str, i64 %.strlen"
+                out = out + ", i8* %.int_to_string_sprintf_format, i64 %.strlen"
                 out = out + id
                 out = out + ")"
                 print(out)
                 last_expression_reg = "sprintf_buf"
+                last_expression_type = "str"
             end
             if function_call == "read" then
                 -- Read from stdin. Evaluate to "" if we are at the end of input.

@@ -1,0 +1,7 @@
+Addition
+42
+Subtraction
+40
+OK: to_string() == 40
+40
+OK: no variable name clash

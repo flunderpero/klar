@@ -4,7 +4,7 @@ set -e
 mkdir -p build
 rm -rf build/*.out
 
-for test_file in ../tests/*.tl; do
+for test_file in ../tests/stage0/*.tl; do
     test=$(basename "$test_file")
     actual="${test%.tl}.out"
     echo "$test"

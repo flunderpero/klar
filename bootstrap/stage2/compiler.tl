@@ -1,21 +1,8 @@
--- Bootstrap stage 1
+-- Bootstrap stage 2
 --
--- This is the first stage that is selfhosted. 
--- It emits LLVM IR code that can then be fed to `llc` 
--- to compile and `clang`to link.
---
--- The implementation follows `interpreter.py` from stage 0.
+-- This implementation is enhances stage1 by adding:
 -- 
--- Because we want to become selfhosted as soon as possible
--- we forced ourselves to a very small subset of any real
--- programming language. After stage0 we only support:
---
--- - variables of type string
--- - concatenation of two strings
--- - equals conditions
--- - if / else
--- - an unconditional loop with break
--- - builtin functions print(), sizeof(), and read()
+-- - `in` operator to find strings in strings
 --
 -- Things will get better in the next stages. :^)
 
@@ -31,16 +18,18 @@ let token = ""
 let string_size = "."
 let last_token = ""
 let last_expression_reg = ""
+let last_expression_type = ""
 let function_call = ""
 let parsing_string = ""
 let parsing_string_delimiter = ""
 let size = ""
 let do_create_to_variable_at_eol = ""
-let concat_at_eol_reg = ""
-let do_concat_at_eol = ""
+let add_at_eol_reg = ""
+let do_add_at_eol = ""
 let parsing_if = ""
-let evaluate_expression_at_eol = ""
-let do_evaluate_expression_at_eol = ""
+let evaluate_equals_at_eol_reg = ""
+let do_evaluate_if_at_eol = ""
+let evaluate_in_at_eol_reg = ""
 
 -- Implementing nested if / else blocks is kinda hard 
 -- without a numeric type. 
@@ -84,6 +73,7 @@ let out = ""
 print("declare i32 @puts(i8*)\n")
 print("declare i8* @strcpy(i8*, i8*)\n")
 print("declare i8* @strcat(i8*, i8*)\n")
+print("declare i8* @strstr(i8*, i8*)\n")
 print("declare i32 @strcmp(i8*, i8*)\n")
 print("declare i64 @strlen(i8*)\n")
 print("declare i32 @sprintf(i8*, i8*, ...)\n")
@@ -176,6 +166,7 @@ loop
             out_string_constants = out_string_constants + "00"
             out_string_constants = out_string_constants + '"\n'
             last_expression_reg = id
+            last_expression_type = "string"
 
             -- Cast the array of chars to a pointer.
             out =  "%." 
@@ -241,14 +232,18 @@ loop
             end
         end
         if c == "+" then
-            concat_at_eol_reg = last_expression_reg
-            do_concat_at_eol = "true"
+            add_at_eol_reg = last_expression_reg
+            do_add_at_eol = "true"
             last_expression_reg = ""
             c = ""
         end
         if c == " " then
             if token == "then" then
                 token = ""
+            end
+            if token == "in" then
+                evaluate_in_at_eol_reg = last_expression_reg
+                do_evaluate_if_at_eol = "true"
             end
             if token == "--" then
                 do_skip_to_eol = "true"
@@ -261,8 +256,8 @@ loop
                 parsing_if = "true" 
             end
             if token == "==" then
-                evaluate_expression_at_eol = last_expression_reg
-                do_evaluate_expression_at_eol = "true"
+                evaluate_equals_at_eol_reg = last_expression_reg
+                do_evaluate_if_at_eol = "true"
             end
             if token == "loop" then
                 -- In LLVM IR each block of code must end with a
@@ -563,31 +558,30 @@ loop
                 print(out)
             end
             if do_assign_to_variable_at_eol == "true" then
-                out = "\n%.strcpy"
+                out = "%.strcpy"
                 out = out + id
                 out = out + " = call i8* (i8*, i8*) @strcpy(i8* %."
                 out = out + assign_to_variable_at_eol
                 out = out + ", i8* %."
-                if do_concat_at_eol == "true" then
-                    out = out + concat_at_eol_reg
+                if do_add_at_eol == "true" then
+                    out = out + add_at_eol_reg
                 else
                     out = out + last_expression_reg
                 end
                 out = out + ")"
                 print(out)
-                if do_concat_at_eol == "true" then
+                if do_add_at_eol == "true" then
                     out = "%.strcat"
                     out = out + id
                     out = out + " = call i8* (i8*, i8*) @strcat(i8* %."
                     out = out + assign_to_variable_at_eol
                     out = out + ", i8* %."
                     out = out + last_expression_reg
-                    out = out + ")\n"
+                    out = out + ")"
                     print(out)
                 end
             end
-            if do_evaluate_expression_at_eol == "true" then
-                -- We only ever evaluate expression inside an if statement.
+            if do_evaluate_if_at_eol == "true" then
                 -- The following code handles the expression evaluation
                 -- as well as branching.
                 if_branch_label = if_branch_label + "1"
@@ -644,34 +638,64 @@ loop
                         if_level_helper = "true"
                     end
                 end
-                out = "%.strcmp"
-                out = out + id
-                out = out + " = call i32 (i8*, i8*) @strcmp(i8* %."
-                out = out + evaluate_expression_at_eol
-                out = out + ", i8* %."
-                out = out + last_expression_reg
-                out = out + ")\n"
-                out = out + "%.strcmp2"
-                out = out + id
-                out = out + " = icmp eq i32 %.strcmp"
-                out = out + id
-                out = out + " , 0\n"
-                out = out + "br i1 %.strcmp2" 
-                out = out + id
-                out = out + ", label %if" 
-                out = out + if_branch_label
-                out = out + ", label %else" 
-                out = out + if_branch_label
-                out = out + "\n"
-                out = out + "if"
-                out = out + if_branch_label
-                out = out + ":"
-                print(out)
+                if evaluate_equals_at_eol_reg == "" then
+                    -- `in
+                    out = "%.in"  
+                    out = out + id
+                    out = out + " = call i8* (i8*, i8*) @strstr(i8* %."  
+                    out = out + last_expression_reg
+                    out = out + ", i8* %."
+                    out = out + evaluate_in_at_eol_reg
+                    out = out + ")\n"
+                    out = out + "%.in2"
+                    out = out + id
+                    out = out + " = icmp eq i8* %.in"
+                    out = out + id
+                    out = out + ", null\n"
+                    out = out + "br i1 %.in2" 
+                    out = out + id
+                    out = out + ", label %else" 
+                    out = out + if_branch_label
+                    out = out + ", label %if" 
+                    out = out + if_branch_label
+                    out = out + "\n"
+                    out = out + "if"
+                    out = out + if_branch_label
+                    out = out + ":"
+                    print(out)
+                else
+                    -- `==`
+                    out = "%.strcmp"
+                    out = out + id
+                    out = out + " = call i32 (i8*, i8*) @strcmp(i8* %."
+                    out = out + evaluate_equals_at_eol_reg
+                    out = out + ", i8* %."
+                    out = out + last_expression_reg
+                    out = out + ")\n"
+                    out = out + "%.strcmp2"
+                    out = out + id
+                    out = out + " = icmp eq i32 %.strcmp"
+                    out = out + id
+                    out = out + " , 0\n"
+                    out = out + "br i1 %.strcmp2" 
+                    out = out + id
+                    out = out + ", label %if" 
+                    out = out + if_branch_label
+                    out = out + ", label %else" 
+                    out = out + if_branch_label
+                    out = out + "\n"
+                    out = out + "if"
+                    out = out + if_branch_label
+                    out = out + ":"
+                    print(out)
+                end
             end
             parsing_if = ""
-            do_evaluate_expression_at_eol = ""
+            do_evaluate_if_at_eol = ""
+            evaluate_equals_at_eol_reg = ""
+            evaluate_in_at_eol_reg = ""
             do_assign_to_variable_at_eol = ""
-            do_concat_at_eol = ""
+            do_add_at_eol = ""
             do_create_to_variable_at_eol = ""
             token = ""
             c = ""

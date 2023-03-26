@@ -686,7 +686,7 @@ loop
                     if assign_to_variable_at_eol == "out_string_constants" then
                         -- Oops, found that one variable that wants to be bigger
                         -- than 500 bytes. :-)
-                        var_size = "75000"
+                        var_size = "80000"
                     end
                     if assign_to_variable_at_eol == "out" then
                         -- ... and another one.

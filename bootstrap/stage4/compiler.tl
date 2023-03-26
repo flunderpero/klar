@@ -1,7 +1,10 @@
 -- Bootstrap stage 4
 --
 -- This implementation cleans up a bit using the integer
--- type added by the previous stage.
+-- type added by the previous stage and adds:
+-- 
+-- - lists of strings
+-- - multiple (but not nested) loops
 -- 
 -- Things will get better in the next stages. :^)
 
@@ -33,12 +36,16 @@ let parsing_if = ""
 let evaluate_equals_at_eol_reg = ""
 let do_evaluate_if_at_eol = ""
 let evaluate_in_at_eol_reg = ""
+let obj_var = ""
 -- We use this as a container to store the names of all
 -- integer variable names so we can distinguish between
 -- string and integer variables.
 let int_var_names = ""
 let int_var_lookup = ""
+let list_var_names = ""
+let list_var_lookup = ""
 
+let loop_index = 0
 let if_level_1_label = ""
 let if_level_2_label = ""
 let if_level_3_label = ""
@@ -55,7 +62,7 @@ let if_level_5_had_else = ""
 let if_level_6_had_else = ""
 let if_level_7_had_else = ""
 let if_level_8_had_else = ""
-let if_level_helper = ""
+let if_level_helper = "_if"
 let do_skip_to_eol = ""
 let sizeof_sprintf_format_str = "%ld"
 
@@ -285,7 +292,7 @@ loop
             c = ""
         end
         if c == "." then
-            -- We simply ignore dots and expect `to_string()` to follow.
+            obj_var = token
             c = ""
             if token == "" then
             else
@@ -301,7 +308,14 @@ loop
                 if int_var_lookup in int_var_names then
                     last_expression_type = "int"
                 else
-                    last_expression_type = "string"
+                    list_var_lookup = ":"
+                    list_var_lookup = list_var_lookup + token
+                    list_var_lookup = list_var_lookup + ":"
+                    if list_var_lookup in list_var_names then
+                        last_expression_type = "list"
+                    else
+                        last_expression_type = "string"
+                    end
                 end
                 token = ""
             end
@@ -340,15 +354,16 @@ loop
             if token == "loop" then
                 -- In LLVM IR each block of code must end with a
                 -- jump to the next block, even if it is the next.
-                print("br label %loop")
-                print("loop:")
+                out = "br label %loop"
+                out = out + loop_index.to_string()
+                out = out + "\nloop"
+                out = out + loop_index.to_string()
+                out = out + ":"
+                print(out)
             end
             if token == "" then
             else
                 -- This is a variable.
-                out = "; READ var at space: "
-                out = out + token
-                print(out)
                 last_expression_reg = token
                 last_token = token
                 int_var_lookup = ":"
@@ -357,8 +372,20 @@ loop
                 if int_var_lookup in int_var_names then
                     last_expression_type = "int"
                 else
-                    last_expression_type = "string"
+                    list_var_lookup = ":"
+                    list_var_lookup = list_var_lookup + token
+                    list_var_lookup = list_var_lookup + ":"
+                    if list_var_lookup in list_var_names then
+                        last_expression_type = "list"
+                    else
+                        last_expression_type = "string"
+                    end
                 end
+                out = "; READ var at space: "
+                out = out + token
+                out = out + " of type"
+                out = out + last_expression_type
+                print(out)
             end
             token = ""
             c = ""
@@ -367,7 +394,9 @@ loop
             id_counter = id_counter + 1
             id = id_counter.to_string()
             if token == "break" then
-                print("br label %end")
+                out = "br label %end_loop"
+                out = out + loop_index.to_string()
+                print(out)
             end
             if last_expression_reg == "" then
                 if token == "" then
@@ -383,7 +412,14 @@ loop
                     if int_var_lookup in int_var_names then
                         last_expression_type = "int"
                     else
-                        last_expression_type = "string"
+                        list_var_lookup = ":"
+                        list_var_lookup = list_var_lookup + token
+                        list_var_lookup = list_var_lookup + ":"
+                        if list_var_lookup in list_var_names then
+                            last_expression_type = "list"
+                        else
+                            last_expression_type = "string"
+                        end
                     end
                 end
             end
@@ -583,13 +619,22 @@ loop
                     end
                 end
                 if if_level_helper == "" then
-                    print("br label %loop")
+                    -- This is the end of a loop.
+                    out = "br label %loop"
+                    out = out + loop_index.to_string()
+                    out = out + "\nbr label %end_loop"
+                    out = out + loop_index.to_string()
+                    out = out + "\nend_loop"
+                    out = out + loop_index.to_string()
+                    out = out + ":"
+                    loop_index = loop_index + 1
+                else
+                    out = "br label %end"
+                    out = out + if_level_helper
+                    out = out + "\nend"
+                    out = out + if_level_helper
+                    out = out + ":"
                 end
-                out = "br label %end"
-                out = out + if_level_helper
-                out = out + "\nend"
-                out = out + if_level_helper
-                out = out + ":"
                 print(out)
             end
             if do_create_to_variable_at_eol == "true" then
@@ -602,42 +647,58 @@ loop
                     int_var_names = int_var_names + ":"
                     print(out)
                 else
-                    -- Our main goal for now is to be able to compile this compiler
-                    -- with itself. We don't care about memory usage at this point.
-                    -- We don't care about buffer overruns as well at this stage.
-                    -- Let's make the variables big enough for now.
-                    -- Nobody would ever want to store more than 500 bytes in 
-                    -- a variable anyway.
-                    var_size = "500"
-                    if assign_to_variable_at_eol == "out_string_constants" then
-                        -- Oops, found that one variable that wants to be bigger
-                        -- than 500 bytes. :-)
-                        var_size = "75000"
+                    if last_expression_type == "string" then
+                        -- Our main goal for now is to be able to compile this compiler
+                        -- with itself. We don't care about memory usage at this point.
+                        -- We don't care about buffer overruns as well at this stage.
+                        -- Let's make the variables big enough for now.
+                        -- Nobody would ever want to store more than 500 bytes in 
+                        -- a variable anyway.
+                        var_size = "500"
+                        if assign_to_variable_at_eol == "out_string_constants" then
+                            -- Oops, found that one variable that wants to be bigger
+                            -- than 500 bytes. :-)
+                            var_size = "75000"
+                        end
+                        if assign_to_variable_at_eol == "out" then
+                            -- ... and another one.
+                            var_size = "3000"
+                        end
+                        out = "%._"
+                        out = out + assign_to_variable_at_eol
+                        out = out + " = alloca ["
+                        out = out + var_size
+                        out = out + " x i8]\n"
+                        out = out + "%." 
+                        out = out + assign_to_variable_at_eol
+                        out = out + " = bitcast ["
+                        out = out + var_size
+                        out = out + " x i8]* %._"
+                        out = out + assign_to_variable_at_eol
+                        out = out + " to i8*\n"
+                        out = out + "%." 
+                        out = out + assign_to_variable_at_eol
+                        out = out + "_clear = call i32 @memset(i8* %."
+                        out = out + assign_to_variable_at_eol
+                        out = out + ", i32 0, i32 "
+                        out = out + var_size
+                        out = out + ")"
+                        print(out)
+                    else
+                        -- This is a list.
+                        out = "%."
+                        out = out + assign_to_variable_at_eol
+                        out = out + " = alloca [100 x i8*]"
+                        out = out + "\n%.len_"
+                        out = out + assign_to_variable_at_eol
+                        out = out + " = alloca i32\n"
+                        out = out + "store i32 0, i32* %.len_"
+                        out = out + assign_to_variable_at_eol
+                        list_var_names = list_var_names + ":"
+                        list_var_names = list_var_names + assign_to_variable_at_eol
+                        list_var_names = list_var_names + ":"
+                        print(out)
                     end
-                    if assign_to_variable_at_eol == "out" then
-                        -- ... and another one.
-                        var_size = "3000"
-                    end
-                    out = "%._"
-                    out = out + assign_to_variable_at_eol
-                    out = out + " = alloca ["
-                    out = out + var_size
-                    out = out + " x i8]\n"
-                    out = out + "%." 
-                    out = out + assign_to_variable_at_eol
-                    out = out + " = bitcast ["
-                    out = out + var_size
-                    out = out + " x i8]* %._"
-                    out = out + assign_to_variable_at_eol
-                    out = out + " to i8*\n"
-                    out = out + "%." 
-                    out = out + assign_to_variable_at_eol
-                    out = out + "_clear = call i32 @memset(i8* %."
-                    out = out + assign_to_variable_at_eol
-                    out = out + ", i32 0, i32 "
-                    out = out + var_size
-                    out = out + ")"
-                    print(out)
                 end
             end
             if do_assign_to_variable_at_eol == "true" then
@@ -681,27 +742,31 @@ loop
                     out = out + assign_to_variable_at_eol
                     print(out)
                 else
-                    out = "%.strcpy"
-                    out = out + id
-                    out = out + " = call i8* (i8*, i8*) @strcpy(i8* %."
-                    out = out + assign_to_variable_at_eol
-                    out = out + ", i8* %."
-                    if do_add_at_eol == "true" then
-                        out = out + add_at_eol_reg
-                    else
-                        out = out + last_expression_reg
-                    end
-                    out = out + ")"
-                    print(out)
-                    if do_add_at_eol == "true" then
-                        out = "%.strcat"
+                    if last_expression_type == "string" then
+                        out = "%.strcpy"
                         out = out + id
-                        out = out + " = call i8* (i8*, i8*) @strcat(i8* %."
+                        out = out + " = call i8* (i8*, i8*) @strcpy(i8* %."
                         out = out + assign_to_variable_at_eol
                         out = out + ", i8* %."
-                        out = out + last_expression_reg
+                        if do_add_at_eol == "true" then
+                            out = out + add_at_eol_reg
+                        else
+                            out = out + last_expression_reg
+                        end
                         out = out + ")"
                         print(out)
+                        if do_add_at_eol == "true" then
+                            out = "%.strcat"
+                            out = out + id
+                            out = out + " = call i8* (i8*, i8*) @strcat(i8* %."
+                            out = out + assign_to_variable_at_eol
+                            out = out + ", i8* %."
+                            out = out + last_expression_reg
+                            out = out + ")"
+                            print(out)
+                        end
+                    else
+                        -- Assigning lists is currently not supported.
                     end
                 end
             end
@@ -871,8 +936,89 @@ loop
                 if int_var_lookup in int_var_names then
                     last_expression_type = "int"
                 else
-                    last_expression_type = "string"
+                    list_var_lookup = ":"
+                    list_var_lookup = list_var_lookup + token
+                    list_var_lookup = list_var_lookup + ":"
+                    if list_var_lookup in list_var_names then
+                        last_expression_type = "list"
+                    else
+                        last_expression_type = "string"
+                    end
                 end
+            end
+            if function_call == "list" then
+                -- We don't need to actually create anything here.
+                -- That's done when the corresponding variable is created.
+                last_expression_reg = "<not set>"
+                last_expression_type = "list"
+            end
+            if function_call == "push" then
+                -- First, copy the current expression value (which is expected to be a string).
+                out = "%.pushcopy_alloc"
+                out = out + id
+                out = out + " = alloca [500 x i8]\n" 
+                out = out + "%.pushcopy" 
+                out = out + id
+                out = out + " = bitcast [500 x i8]* %.pushcopy_alloc"
+                out = out + id
+                out = out + " to i8*\n"
+                out = out + "%.pushstrcopy"
+                out = out + id
+                out = out + " = call i8* (i8*, i8*) @strcpy(i8* %.pushcopy"
+                out = out + id
+                out = out + ", i8* %."
+                out = out + last_expression_reg
+                out = out + ")\n"
+                -- Get the current length of the array.
+                out = out + "%.pushlen_"
+                out = out + id
+                out = out + " = load i32, i32* %.len_"
+                out = out + obj_var
+                -- And store the copied value at the index.
+                out = out + "\n%.elmptr"
+                out = out + id
+                out = out + " = getelementptr [100 x i8*], [100 x i8*]* %." 
+                out = out + obj_var
+                out = out + ", i32 0, i32 %.pushlen_"
+                out = out + id
+                out = out + "\nstore i8* %.pushcopy"
+                out = out + id
+                out = out + ", i8** %.elmptr"
+                out = out + id
+                -- At last, increment the length of the array.
+                out = out + "\n%.inclen"
+                out = out + id
+                out = out + " = add i32 %.pushlen_"
+                out = out + id
+                out = out + ", 1\n"
+                out = out + "store i32 %.inclen"
+                out = out + id
+                out = out + ", i32* %.len_"
+                out = out + obj_var
+                print(out)
+            end
+            if function_call == "at" then
+                out = "%.atidx"
+                out = out + id
+                out = out + " = load i32, i32* %."
+                out = out + last_expression_reg
+                out = out + "\n%.atptr"
+                out = out + id
+                out = out + " = getelementptr [100 x i8*], [100 x i8*]* %." 
+                out = out + obj_var
+                out = out + ", i32 0, i32 %.atidx"
+                out = out + id
+                out = out + "\n%.atload"
+                out = out + id
+                out = out + " = load i8*, i8** %.atptr"
+                out = out + id
+                print(out) 
+                last_expression_reg = "atload" + id
+                last_expression_type = "string"
+            end
+            if function_call == "length" then
+                last_expression_type = "int"
+                last_expression_reg = "len_" + obj_var
             end
             if function_call == "print" then
                 if last_expression_type == "int" then
@@ -911,7 +1057,7 @@ loop
                 out = out + ")"
                 print(out)
                 last_expression_reg = "sprintf_buf"
-                last_expression_type = "str"
+                last_expression_type = "string"
             end
             if function_call == "sizeof" then
                 out = "%.strlen"
@@ -927,7 +1073,7 @@ loop
                 out = out + ")"
                 print(out)
                 last_expression_reg = "sprintf_buf"
-                last_expression_type = "str"
+                last_expression_type = "string"
             end
             if function_call == "read" then
                 -- Read from stdin. Evaluate to "" if we are at the end of input.
@@ -959,6 +1105,7 @@ loop
                 last_expression_reg = "read_buf"
             end
             function_call = ""
+            obj_var = ""
             token = ""
             c = ""
         end

@@ -6,7 +6,6 @@ dir_name=$(dirname $0)
 for stage in $dir_name/stage*; do
     echo "Building $stage ..."
     cd $dir_name/$stage
-    echo $(pwd)
     bash build_compiler.sh
     cd ..
     echo "Building $stage done."

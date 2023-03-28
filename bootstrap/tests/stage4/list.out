@@ -1,5 +1,16 @@
 length()
 3
+
+pop()
+Third
+
+Iterate
 First
 Hello
-Third
+
+x in list
+OK: `First` is in the list
+OK: `not_there` is not in the list
+
+clear()
+0

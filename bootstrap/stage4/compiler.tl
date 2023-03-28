@@ -830,28 +830,109 @@ loop
                 end
                 if evaluate_equals_at_eol_reg == "" then
                     -- `in
-                    out = "%.in"  
-                    out = out + id
-                    out = out + " = call i8* (i8*, i8*) @strstr(i8* %."  
-                    out = out + last_expression_reg
-                    out = out + ", i8* %."
-                    out = out + evaluate_in_at_eol_reg
-                    out = out + ")\n"
-                    out = out + "%.in2"
-                    out = out + id
-                    out = out + " = icmp eq i8* %.in"
-                    out = out + id
-                    out = out + ", null\n"
-                    out = out + "br i1 %.in2" 
-                    out = out + id
-                    out = out + ", label %else" 
-                    out = out + if_branch_label
-                    out = out + ", label %if" 
-                    out = out + if_branch_label
-                    out = out + "\n"
-                    out = out + "if"
-                    out = out + if_branch_label
-                    out = out + ":"
+                    if last_expression_type == "string" then
+                        out = "%.in"  
+                        out = out + id
+                        out = out + " = call i8* (i8*, i8*) @strstr(i8* %."  
+                        out = out + last_expression_reg
+                        out = out + ", i8* %."
+                        out = out + evaluate_in_at_eol_reg
+                        out = out + ")\n"
+                        out = out + "%.in2"
+                        out = out + id
+                        out = out + " = icmp eq i8* %.in"
+                        out = out + id
+                        out = out + ", null\n"
+                        out = out + "br i1 %.in2" 
+                        out = out + id
+                        out = out + ", label %else" 
+                        out = out + if_branch_label
+                        out = out + ", label %if" 
+                        out = out + if_branch_label
+                        out = out + "\n"
+                        out = out + "if"
+                        out = out + if_branch_label
+                        out = out + ":"
+                    else
+                        -- This is a list.
+                        out = "%.in_pos"
+                        out = out + id
+                        out = out + " = alloca i32\n"
+                        out = out + "%.getlen_"
+                        out = out + id
+                        out = out + " = load i32, i32* %.len_"
+                        out = out + last_expression_reg
+                        out = out + "\nstore i32 %.getlen_"
+                        out = out + id
+                        out = out + ", i32* %.in_pos"
+                        out = out + id
+                        out = out + "\nbr label %in_loop"
+                        out = out + id
+                        -- The loop.
+                        out = out + "\nin_loop"
+                        out = out + id
+                        out = out + ":\n"
+                        out = out + "%.idx_load"
+                        out = out + id
+                        out = out + " = load i32, i32* %.in_pos"
+                        out = out + id
+                        out = out + "\n%.idx"
+                        out = out + id
+                        out = out + " = sub i32 %.idx_load"  
+                        out = out + id
+                        out = out + ", 1"  
+                        out = out + "\n%.idxcmp"
+                        out = out + id
+                        out = out + " = icmp eq i32 %.idx"
+                        out = out + id
+                        out = out + ", -1\n"
+                        out = out + "br i1 %.idxcmp" 
+                        out = out + id
+                        out = out + ", label %else" 
+                        out = out + if_branch_label
+                        out = out + ", label %cont" 
+                        out = out + id
+                        out = out + "\ncont"
+                        out = out + id
+                        out = out + ":\n"
+                        out = out + "store i32 %.idx"
+                        out = out + id
+                        out = out + ", i32* %.in_pos"
+                        out = out + id
+                        -- Read what's at the current position.
+                        out = out + "\n%.atptr"
+                        out = out + id
+                        out = out + " = getelementptr [100 x i8*], [100 x i8*]* %." 
+                        out = out + last_expression_reg
+                        out = out + ", i32 0, i32 %.idx"
+                        out = out + id
+                        out = out + "\n%.atload"
+                        out = out + id
+                        out = out + " = load i8*, i8** %.atptr"
+                        out = out + id
+                        out = out + "\n%.strcmp"
+                        out = out + id
+                        out = out + " = call i32 (i8*, i8*) @strcmp(i8* %.atload"
+                        out = out + id
+                        out = out + ", i8* %."
+                        out = out + evaluate_in_at_eol_reg
+                        out = out + ")\n"
+                        out = out + "%.strcmp2"
+                        out = out + id
+                        out = out + " = icmp eq i32 %.strcmp"
+                        out = out + id
+                        out = out + ", 0\n"
+                        out = out + "br i1 %.strcmp2" 
+                        out = out + id
+                        out = out + ", label %if" 
+                        out = out + if_branch_label
+                        out = out + ", label %in_loop" 
+                        out = out + id
+                        out = out + "\n"
+                        out = out + "if"
+                        out = out + if_branch_label
+                        out = out + ":"
+                    end
                     print(out)
                 else
                     -- `==`
@@ -996,6 +1077,45 @@ loop
                 out = out + ", i32* %.len_"
                 out = out + obj_var
                 print(out)
+            end
+            if function_call == "pop" then
+                -- First, decrement `length`.
+                out = "%.getlen_"
+                out = out + id
+                out = out + " = load i32, i32* %.len_"
+                out = out + obj_var
+                out = out + "\n%.declen"
+                out = out + id
+                out = out + " = sub i32 %.getlen_"
+                out = out + id
+                out = out + ", 1\n"
+                out = out + "store i32 %.declen"
+                out = out + id
+                out = out + ", i32* %.len_"
+                out = out + obj_var
+                -- Then read what's at the end.
+                out = out + "\n%.atptr"
+                out = out + id
+                out = out + " = getelementptr [100 x i8*], [100 x i8*]* %." 
+                out = out + obj_var
+                out = out + ", i32 0, i32 %.declen"
+                out = out + id
+                out = out + "\n%.atload"
+                out = out + id
+                out = out + " = load i8*, i8** %.atptr"
+                out = out + id
+                print(out) 
+                last_expression_reg = "atload" + id
+                last_expression_type = "string"
+            end
+            if function_call == "clear" then
+                -- Just set `length` to 0.
+                out = "store i32 0"
+                out = out + ", i32* %.len_"
+                out = out + obj_var
+                print(out) 
+                last_expression_reg = "" 
+                last_expression_type = ""
             end
             if function_call == "at" then
                 out = "%.atidx"

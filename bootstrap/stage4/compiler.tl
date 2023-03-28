@@ -658,11 +658,19 @@ loop
                         if assign_to_variable_at_eol == "out_string_constants" then
                             -- Oops, found that one variable that wants to be bigger
                             -- than 500 bytes. :-)
-                            var_size = "75000"
+                            var_size = "100000"
+                        end
+                        if assign_to_variable_at_eol == "string_constant_declarations" then
+                            -- ... and another one.
+                            var_size = "100000"
+                        end
+                        if assign_to_variable_at_eol == "string_constant_casts" then
+                            -- ... and another one.
+                            var_size = "100000"
                         end
                         if assign_to_variable_at_eol == "out" then
                             -- ... and another one.
-                            var_size = "3000"
+                            var_size = "100000"
                         end
                         out = "%._"
                         out = out + assign_to_variable_at_eol
@@ -688,7 +696,7 @@ loop
                         -- This is a list.
                         out = "%."
                         out = out + assign_to_variable_at_eol
-                        out = out + " = alloca [100 x i8*]"
+                        out = out + " = alloca [10000 x i8*]"
                         out = out + "\n%.len_"
                         out = out + assign_to_variable_at_eol
                         out = out + " = alloca i32\n"
@@ -902,7 +910,7 @@ loop
                         -- Read what's at the current position.
                         out = out + "\n%.atptr"
                         out = out + id
-                        out = out + " = getelementptr [100 x i8*], [100 x i8*]* %." 
+                        out = out + " = getelementptr [10000 x i8*], [10000 x i8*]* %." 
                         out = out + last_expression_reg
                         out = out + ", i32 0, i32 %.idx"
                         out = out + id
@@ -1058,7 +1066,7 @@ loop
                 -- And store the copied value at the index.
                 out = out + "\n%.elmptr"
                 out = out + id
-                out = out + " = getelementptr [100 x i8*], [100 x i8*]* %." 
+                out = out + " = getelementptr [10000 x i8*], [10000 x i8*]* %." 
                 out = out + obj_var
                 out = out + ", i32 0, i32 %.pushlen_"
                 out = out + id
@@ -1096,7 +1104,7 @@ loop
                 -- Then read what's at the end.
                 out = out + "\n%.atptr"
                 out = out + id
-                out = out + " = getelementptr [100 x i8*], [100 x i8*]* %." 
+                out = out + " = getelementptr [10000 x i8*], [10000 x i8*]* %." 
                 out = out + obj_var
                 out = out + ", i32 0, i32 %.declen"
                 out = out + id
@@ -1124,7 +1132,7 @@ loop
                 out = out + last_expression_reg
                 out = out + "\n%.atptr"
                 out = out + id
-                out = out + " = getelementptr [100 x i8*], [100 x i8*]* %." 
+                out = out + " = getelementptr [10000 x i8*], [10000 x i8*]* %." 
                 out = out + obj_var
                 out = out + ", i32 0, i32 %.atidx"
                 out = out + id

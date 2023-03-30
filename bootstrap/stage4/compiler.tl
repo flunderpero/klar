@@ -5,6 +5,7 @@
 -- 
 -- - lists of strings
 -- - multiple (but not nested) loops
+-- - continue statement
 -- 
 -- Things will get better in the next stages. :^)
 
@@ -396,6 +397,13 @@ loop
             if token == "break" then
                 out = "br label %end_loop"
                 out = out + loop_index.to_string()
+                token = ""
+                print(out)
+            end
+            if token == "continue" then
+                out = "br label %loop"
+                out = out + loop_index.to_string()
+                token = ""
                 print(out)
             end
             if last_expression_reg == "" then
@@ -664,7 +672,7 @@ loop
                             -- ... and another one.
                             var_size = "100000"
                         end
-                        if assign_to_variable_at_eol == "string_constant_casts" then
+                        if assign_to_variable_at_eol == "constant_definitions" then
                             -- ... and another one.
                             var_size = "100000"
                         end
@@ -672,7 +680,7 @@ loop
                             -- ... and another one.
                             var_size = "100000"
                         end
-                        out = "%._"
+                        out = "\n%._"
                         out = out + assign_to_variable_at_eol
                         out = out + " = alloca ["
                         out = out + var_size
@@ -925,12 +933,12 @@ loop
                         out = out + ", i8* %."
                         out = out + evaluate_in_at_eol_reg
                         out = out + ")\n"
-                        out = out + "%.strcmp2"
+                        out = out + "%.strcmpb"
                         out = out + id
                         out = out + " = icmp eq i32 %.strcmp"
                         out = out + id
                         out = out + ", 0\n"
-                        out = out + "br i1 %.strcmp2" 
+                        out = out + "br i1 %.strcmpb" 
                         out = out + id
                         out = out + ", label %if" 
                         out = out + if_branch_label
@@ -979,12 +987,12 @@ loop
                         out = out + ", i8* %."
                         out = out + last_expression_reg
                         out = out + ")\n"
-                        out = out + "%.strcmp2"
+                        out = out + "%.strcmpb"
                         out = out + id
                         out = out + " = icmp eq i32 %.strcmp"
                         out = out + id
                         out = out + ", 0\n"
-                        out = out + "br i1 %.strcmp2" 
+                        out = out + "br i1 %.strcmpb" 
                         out = out + id
                         out = out + ", label %if" 
                         out = out + if_branch_label

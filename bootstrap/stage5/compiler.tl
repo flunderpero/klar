@@ -4,6 +4,11 @@
 -- from the parser and overall produce code that does
 -- not look like spaghetti thrown at the wall.
 --
+-- This stage also adds:
+--
+-- - Multiple string concatenations
+-- - Simple function calls
+--
 -- But it will still be a bit messy.
 
 -- All variables need to be declared at the top.
@@ -24,6 +29,8 @@ let skip_to_eol = 0
 let c = ""
 let next_c = ""
 let c_is_int = 0
+let compiling_function = 0
+let functions = list()
 
 -- These are just general helper variables.
 let s = ""
@@ -36,6 +43,7 @@ let id = ""
 let string_constant_declarations = ""
 let constant_definitions = ""
 let out = ""
+let function_out = ""
 let expression_reg = ""
 let expression_type = ""
 let handle = ""
@@ -329,7 +337,23 @@ loop
     out = out + token_type
     out = out + ": token_value="
     out = out + token_value
-    
+
+    if token_type == "identifier" then
+        if token_value == "fn" then
+            compiling_function = 1
+            function_out = function_out + "\ndefine void @"
+            function_out = function_out + next_token_value
+            function_out = function_out + "()\n{\n"
+            function_out = function_out + constant_definitions
+            nesting_types.push("function")
+            nesting_ids.push(next_token_value)  -- This is the function name.
+            functions.push(next_token_value)
+            -- Skip the next tokens to the body of the function.
+            token_index = token_index + 6
+            continue
+        end
+    end
+
     if next_token_type == "dot" then
         obj_var = token_value
         token_index = token_index + 1
@@ -491,6 +515,12 @@ loop
                 out = out + "\nloop_end"
                 out = out + id
                 out = out + ":"
+            end
+            if s == "function" then
+                function_out = function_out + "\n"
+                function_out = function_out + out
+                function_out = function_out + "\nret void\n}"
+                compiling_function = 0
             end
             continue
         end
@@ -907,6 +937,11 @@ loop
             out = out + obj_var
             expression_reg = "" 
         end
+        if call_function in functions then
+            out = out + "\ncall void @"
+            out = out + call_function
+            out = out + "()"
+        end
         call_function = ""
     end
 
@@ -951,6 +986,10 @@ loop
                     i = 100000
                 end
                 if create_variable_at_eol == "out" then
+                    -- ... and another one.
+                    i = 100000
+                end
+                if create_variable_at_eol == "function_out" then
                     -- ... and another one.
                     i = 100000
                 end
@@ -1011,11 +1050,17 @@ loop
     end
     if out == "" then
     else
-        print(out)
+        if compiling_function == 1 then
+            function_out = function_out + "\n"
+            function_out = function_out + out
+        else
+            print(out)
+        end
         out = ""
     end
 end
 
 print("ret i8 0")
 print("}")
+print(function_out)
 print(string_constant_declarations)

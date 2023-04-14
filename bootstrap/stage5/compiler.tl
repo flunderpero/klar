@@ -7,7 +7,9 @@
 -- This stage also adds:
 --
 -- - Multiple string concatenations
+-- - Nested loops
 -- - Simple function calls
+-- - `string.push()`
 --
 -- But it will still be a bit messy.
 
@@ -355,7 +357,14 @@ loop
     end
 
     if next_token_type == "dot" then
-        obj_var = token_value
+        if token_type == "rparen" then
+            -- We use the same `obj_var` when chaining methods.
+        else
+            if call_function == "" then
+                obj_var = token_value
+            end
+        end
+        s = token_value
         token_index = token_index + 1
         token_value = token_values.at(token_index)
         if token_value == "to_string" then
@@ -364,7 +373,7 @@ loop
             out = out + "\n%.tostrload"
             out = out + id
             out = out + " = load i32, i32* %."
-            out = out + obj_var
+            out = out + s
             out = out + "\n%.tostr"
             out = out + id
             out = out + " = call i32 (i8*, i8*, ...) @sprintf(i8* %.sprintf_buf"
@@ -382,7 +391,7 @@ loop
             out = out + "\n%.loadlen"
             out = out + id
             out = out + " = load i32, i32* %.len_"
-            out = out + obj_var
+            out = out + s
             expression_op_rhs_reg = "loadlen" + id
             expression_type = "int"
             token_index = token_index + 2
@@ -391,12 +400,12 @@ loop
         if token_value == "pop" then
             out = out + "\n; CALLING method=pop"
             out = out + ", obj_var="
-            out = out + obj_var
+            out = out + s
             -- First, decrement `length`.
             out = out + "\n%.getlen_"
             out = out + id
             out = out + " = load i32, i32* %.len_"
-            out = out + obj_var
+            out = out + s
             out = out + "\n%.declen"
             out = out + id
             out = out + " = sub i32 %.getlen_"
@@ -405,12 +414,12 @@ loop
             out = out + "store i32 %.declen"
             out = out + id
             out = out + ", i32* %.len_"
-            out = out + obj_var
+            out = out + s
             -- Then read what's at the end.
             out = out + "\n%.atptr"
             out = out + id
             out = out + " = getelementptr [10000 x i8*], [10000 x i8*]* %." 
-            out = out + obj_var
+            out = out + s
             out = out + ", i32 0, i32 %.declen"
             out = out + id
             out = out + "\n%.atload"
@@ -873,48 +882,61 @@ loop
             expression_type = "string"
         end
         if call_function == "push" then
-            -- First, copy the current expression value (which is expected to be a string).
-            out = out + "\n%.pushcopy_alloc"
-            out = out + id
-            out = out + " = alloca [500 x i8]\n" 
-            out = out + "%.pushcopy" 
-            out = out + id
-            out = out + " = bitcast [500 x i8]* %.pushcopy_alloc"
-            out = out + id
-            out = out + " to i8*\n"
-            out = out + "%.pushstrcopy"
-            out = out + id
-            out = out + " = call i8* (i8*, i8*) @strcpy(i8* %.pushcopy"
-            out = out + id
-            out = out + ", "
-            out = out + call_args
-            out = out + ")\n"
-            -- Get the current length of the array.
-            out = out + "%.pushlen_"
-            out = out + id
-            out = out + " = load i32, i32* %.len_"
-            out = out + obj_var
-            -- And store the copied value at the index.
-            out = out + "\n%.elmptr"
-            out = out + id
-            out = out + " = getelementptr [10000 x i8*], [10000 x i8*]* %." 
-            out = out + obj_var
-            out = out + ", i32 0, i32 %.pushlen_"
-            out = out + id
-            out = out + "\nstore i8* %.pushcopy"
-            out = out + id
-            out = out + ", i8** %.elmptr"
-            out = out + id
-            -- At last, increment the length of the array.
-            out = out + "\n%.inclen"
-            out = out + id
-            out = out + " = add i32 %.pushlen_"
-            out = out + id
-            out = out + ", 1\n"
-            out = out + "store i32 %.inclen"
-            out = out + id
-            out = out + ", i32* %.len_"
-            out = out + obj_var
+            if obj_var in list_vars then
+                -- First, copy the current expression value (which is expected to be a string).
+                out = out + "\n%.pushcopy_alloc"
+                out = out + id
+                out = out + " = alloca [500 x i8]\n" 
+                out = out + "%.pushcopy" 
+                out = out + id
+                out = out + " = bitcast [500 x i8]* %.pushcopy_alloc"
+                out = out + id
+                out = out + " to i8*\n"
+                out = out + "%.pushstrcopy"
+                out = out + id
+                out = out + " = call i8* (i8*, i8*) @strcpy(i8* %.pushcopy"
+                out = out + id
+                out = out + ", "
+                out = out + call_args
+                out = out + ")\n"
+                -- Get the current length of the array.
+                out = out + "%.pushlen_"
+                out = out + id
+                out = out + " = load i32, i32* %.len_"
+                out = out + obj_var
+                -- And store the copied value at the index.
+                out = out + "\n%.elmptr"
+                out = out + id
+                out = out + " = getelementptr [10000 x i8*], [10000 x i8*]* %." 
+                out = out + obj_var
+                out = out + ", i32 0, i32 %.pushlen_"
+                out = out + id
+                out = out + "\nstore i8* %.pushcopy"
+                out = out + id
+                out = out + ", i8** %.elmptr"
+                out = out + id
+                -- At last, increment the length of the array.
+                out = out + "\n%.inclen"
+                out = out + id
+                out = out + " = add i32 %.pushlen_"
+                out = out + id
+                out = out + ", 1\n"
+                out = out + "store i32 %.inclen"
+                out = out + id
+                out = out + ", i32* %.len_"
+                out = out + obj_var
+            end
+            if obj_var in string_vars then
+                out = out + "\n%.strpush"
+                out = out + id
+                out = out + " = call i8* (i8*, i8*) @strcat(i8* %."
+                out = out + obj_var
+                out = out + ", " 
+                out = out + call_args
+                out = out + ")\n"
+                expression_reg = "strpush" + id
+                expression_type = "string"
+            end
         end
         if call_function == "at" then
             out = out + "\n%.atptr"

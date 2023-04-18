@@ -511,6 +511,7 @@ loop
                 out.push(":")
             end
             if s == "loop" then
+                nesting_loop_ids.pop()
                 out.push("\nbr label %loop")
                 out.push(id)
                 out.push("\nloop_end")

@@ -519,6 +519,7 @@ loop
                 out = out + ":"
             end
             if s == "loop" then
+                nesting_loop_ids.pop()
                 out = out + "\nbr label %loop"
                 out = out + id
                 out = out + "\nloop_end"

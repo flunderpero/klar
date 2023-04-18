@@ -3,9 +3,6 @@ let j = 0
 let s = ""
 
 loop
-    if i == 3 then
-        break
-    end
     if "Hi" == "Hi" then
         print("OK: `Hi` matched")
         j = 0
@@ -23,4 +20,7 @@ loop
         print("ERR: `Hi` did not match")
     end
     i = i + 1
+    if i == 3 then
+        break
+    end
 end

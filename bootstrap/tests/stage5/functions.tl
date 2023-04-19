@@ -2,5 +2,8 @@ fn test() void begin
     print("OK")
 end
 
-test()
-test()
+fn main() i32 begin
+    test()
+    test()
+    return 0
+end

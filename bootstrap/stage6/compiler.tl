@@ -23,7 +23,6 @@ let skip_to_eol = 0
 let c = ""
 let next_c = ""
 let c_is_int = 0
-let compiling_function = 0
 let functions = list()
 
 -- These are just general helper variables.
@@ -37,7 +36,8 @@ let id = ""
 let string_constant_declarations = ""
 let constant_definitions = ""
 let out = ""
-let function_out = ""
+let function_prelude = ""
+let function_name = ""
 let expression_reg = ""
 let expression_type = ""
 let handle = ""
@@ -267,8 +267,13 @@ loop
         add_token = 0
         if token_value == "" then
         else
+            if token_value == "fn" then
+                token_types.push("function_declaration")
+                token_values.push("")
+            else
             token_types.push("identifier")
             token_values.push(token_value)
+        end
         end
         token_value = ""
         if next_token_type == "" then
@@ -296,16 +301,12 @@ print("declare i32 @sprintf(i8*, i8*, ...)")
 print("declare i32 @read(i32, i8*, i32)")
 print("declare i32 @memset(i8*, i32, i32)")
 print('@int_to_string_sprintf_format = internal constant [3 x i8] c"%d\\00"')
-print("define i8 @main()")
-print("{")
-print("entry:")
-print("%.read_buf_alloc = alloca [2 x i8]")
-print("%.read_buf = bitcast [2 x i8]* %.read_buf_alloc to i8*")
-print("%.read_buf_clear = call i32 @memset(i8* %.read_buf, i32 0, i32 2)")
-print("%.sprintf_buf_alloc = alloca [100 x i8]")
-print("%.sprintf_buf = bitcast [100 x i8]* %.sprintf_buf_alloc to i8*")
-print("%.int_to_string_sprintf_format = getelementptr [3 x i8], [3 x i8]* @int_to_string_sprintf_format, i32 0, i32 0")
-print(constant_definitions)
+function_prelude = "\n%.read_buf_alloc = alloca [2 x i8]"
+function_prelude.push("\n%.read_buf = bitcast [2 x i8]* %.read_buf_alloc to i8*")
+function_prelude.push("\n%.read_buf_clear = call i32 @memset(i8* %.read_buf, i32 0, i32 2)")
+function_prelude.push("\n%.sprintf_buf_alloc = alloca [100 x i8]")
+function_prelude.push("\n%.sprintf_buf = bitcast [100 x i8]* %.sprintf_buf_alloc to i8*")
+function_prelude.push("\n%.int_to_string_sprintf_format = getelementptr [3 x i8], [3 x i8]* @int_to_string_sprintf_format, i32 0, i32 0")
 
 token_index = 0
 loop 
@@ -332,20 +333,23 @@ loop
     out.push(": token_value=")
     out.push(token_value)
 
-    if token_type == "identifier" then
-        if token_value == "fn" then
-            compiling_function = 1
-            function_out.push("\ndefine void @")
-            function_out.push(next_token_value)
-            function_out.push("()\n{\n")
-            function_out.push(constant_definitions)
-            nesting_types.push("function")
-            nesting_ids.push(next_token_value)  -- This is the function name.
-            functions.push(next_token_value)
-            -- Skip the next tokens to the body of the function.
-            token_index = token_index + 6
-            continue
+    if token_type == "function_declaration" then
+        function_name = next_token_value
+        if function_name == "main" then
+            out = "\ndefine i32 @"
+        else
+            out = "\ndefine void @"
         end
+        out.push(function_name)
+        out.push("(){\n")
+        out.push(function_prelude)
+        out.push(constant_definitions)
+        nesting_types.push("function")
+        nesting_ids.push(function_name)
+        functions.push(function_name)
+        -- Skip the next tokens to the body of the function.
+        token_index = token_index + 6
+        continue
     end
 
     if next_token_type == "dot" then
@@ -519,10 +523,12 @@ loop
                 out.push(":")
             end
             if s == "function" then
-                function_out.push("\n")
-                function_out.push(out)
-                function_out.push("\nret void\n}")
-                compiling_function = 0
+                print(out)
+                if function_name == "main" then
+                    print("ret i32 0\n}")
+                else
+                    print("ret void\n}")
+                end
             end
             continue
         end
@@ -1004,10 +1010,6 @@ loop
                     -- ... and another one.
                     i = 100000
                 end
-                if create_variable_at_eol == "function_out" then
-                    -- ... and another one.
-                    i = 100000
-                end
                 out.push("\n; CREATE STRING: var=")
                 out.push(create_variable_at_eol)
                 out.push(", size=")
@@ -1065,17 +1067,9 @@ loop
     end
     if out == "" then
     else
-        if compiling_function == 1 then
-            function_out.push("\n")
-            function_out.push(out)
-        else
-            print(out)
-        end
+        print(out)
         out = ""
     end
 end
 
-print("ret i8 0")
-print("}")
-print(function_out)
 print(string_constant_declarations)

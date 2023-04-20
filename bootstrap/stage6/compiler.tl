@@ -1,7 +1,10 @@
 -- Bootstrap stage 6
 --
--- Replacing all string concatenations using the operator `+` with `.push()` 
--- since we will not support the former one in the final language.
+-- Changes in this stage:
+--
+-- - Replacing all string concatenations using the operator `+` with `.push()` 
+--   since we will not support the former one in the final language.
+-- - Use opaque pointers.
 --
 -- But it will still be a bit messy.
 
@@ -136,7 +139,7 @@ loop
             constant_definitions.push(" = alloca i32, align 4\n")
             constant_definitions.push("store i32 ")
             constant_definitions.push(token_value)
-            constant_definitions.push(", i32* %.")
+            constant_definitions.push(", ptr %.")
             constant_definitions.push(id)
             token_types.push("int")
             token_values.push(id)
@@ -164,11 +167,11 @@ loop
             string_constant_declarations.push('"\n')
             constant_definitions.push("\n%." )
             constant_definitions.push(id)
-            constant_definitions.push(" = bitcast [")
+            constant_definitions.push(" = getelementptr [")
             constant_definitions.push(parsing_string_length.to_string())
-            constant_definitions.push(" x i8]* @.")
+            constant_definitions.push(" x i8], ptr @.")
             constant_definitions.push(id)
-            constant_definitions.push(" to i8*")
+            constant_definitions.push(", i32 0, i32 0")
             token_types.push("string")
             token_values.push(id)
             token_value = ""
@@ -301,12 +304,11 @@ print("declare i32 @sprintf(i8*, i8*, ...)")
 print("declare i32 @read(i32, i8*, i32)")
 print("declare i32 @memset(i8*, i32, i32)")
 print('@int_to_string_sprintf_format = internal constant [3 x i8] c"%d\\00"')
-function_prelude = "\n%.read_buf_alloc = alloca [2 x i8]"
-function_prelude.push("\n%.read_buf = bitcast [2 x i8]* %.read_buf_alloc to i8*")
-function_prelude.push("\n%.read_buf_clear = call i32 @memset(i8* %.read_buf, i32 0, i32 2)")
-function_prelude.push("\n%.sprintf_buf_alloc = alloca [100 x i8]")
-function_prelude.push("\n%.sprintf_buf = bitcast [100 x i8]* %.sprintf_buf_alloc to i8*")
-function_prelude.push("\n%.int_to_string_sprintf_format = getelementptr [3 x i8], [3 x i8]* @int_to_string_sprintf_format, i32 0, i32 0")
+function_prelude = "\n%.read_buf = alloca [2 x i8]"
+function_prelude.push("\n%.read_buf_clear = call i32 @memset(ptr %.read_buf, i32 0, i32 2)")
+function_prelude.push("\n%.sprintf_buf = alloca [100 x i8]")
+function_prelude.push("\n%.int_to_string_sprintf_format = ")
+function_prelude.push("getelementptr [3 x i8], ptr @int_to_string_sprintf_format, i32 0, i32 0")
 
 token_index = 0
 loop 
@@ -368,12 +370,12 @@ loop
             -- string concatenations.
             out.push("\n%.tostrload")
             out.push(id)
-            out.push(" = load i32, i32* %.")
+            out.push(" = load i32, ptr %.")
             out.push(s)
             out.push("\n%.tostr")
             out.push(id)
-            out.push(" = call i32 (i8*, i8*, ...) @sprintf(i8* %.sprintf_buf")
-            out.push(", i8* %.int_to_string_sprintf_format, i32 %.tostrload")
+            out.push(" = call i32 (i8*, i8*, ...) @sprintf(ptr %.sprintf_buf")
+            out.push(", ptr %.int_to_string_sprintf_format, i32 %.tostrload")
             out.push(id)
             out.push(")")
             expression_op_rhs_reg = "sprintf_buf"
@@ -386,7 +388,7 @@ loop
             -- string concatenations.
             out.push("\n%.loadlen")
             out.push(id)
-            out.push(" = load i32, i32* %.len_")
+            out.push(" = load i32, ptr %.len_")
             out.push(s)
             expression_op_rhs_reg = "loadlen" + id
             expression_type = "int"
@@ -400,7 +402,7 @@ loop
             -- First, decrement `length`.
             out.push("\n%.getlen_")
             out.push(id)
-            out.push(" = load i32, i32* %.len_")
+            out.push(" = load i32, ptr %.len_")
             out.push(s)
             out.push("\n%.declen")
             out.push(id)
@@ -409,18 +411,18 @@ loop
             out.push(", 1\n")
             out.push("store i32 %.declen")
             out.push(id)
-            out.push(", i32* %.len_")
+            out.push(", ptr %.len_")
             out.push(s)
             -- Then read what's at the end.
             out.push("\n%.atptr")
             out.push(id)
-            out.push(" = getelementptr [10000 x i8*], [10000 x i8*]* %." )
+            out.push(" = getelementptr [10000 x i8*], ptr %." )
             out.push(s)
             out.push(", i32 0, i32 %.declen")
             out.push(id)
             out.push("\n%.atload")
             out.push(id)
-            out.push(" = load i8*, i8** %.atptr")
+            out.push(" = load i8*, ptr %.atptr")
             out.push(id)
             expression_op_rhs_reg = "atload" + id
             expression_type = "string"
@@ -446,7 +448,7 @@ loop
         if token_value in int_vars then
             out.push("\n%.loadintvar_")
             out.push(id)
-            out.push(" = load i32, i32* %.")
+            out.push(" = load i32, ptr %.")
             out.push(token_value)
             expression_op_rhs_reg = "loadintvar_" + id
             expression_type = "int"
@@ -559,7 +561,7 @@ loop
     if token_type == "int" then
         out.push("\n%.loadintconst_")
         out.push(id)
-        out.push(" = load i32, i32* %.")
+        out.push(" = load i32, ptr %.")
         out.push(token_value)
         expression_op_rhs_reg = "loadintconst_" + id
         expression_type = "int"
@@ -601,37 +603,32 @@ loop
                     -- Concatenate with expression_op_rhs_reg.
                     out.push("\n%.addstr")
                     out.push(id)
-                    out.push(" = call i8* (i8*, i8*) @strcat(i8* %.")
+                    out.push(" = call i8* (i8*, i8*) @strcat(ptr %.")
                     out.push(assign_variable_at_eol)
-                    out.push(", i8* %.")
+                    out.push(", ptr %.")
                     out.push(expression_op_rhs_reg)
                     out.push(")\n")
                     expression_reg = "addstr" + id 
                 else
                     -- If we are not assigning the expression to a variable, 
                     -- create a new string with enough room. 
-                    out.push("\n%.add_alloca")
+                    out.push("\n%.add")
                     out.push(id)
                     out.push(" = alloca [500 x i8]\n")
-                    out.push("%.add" )
-                    out.push(id)
-                    out.push(" = bitcast [500 x i8]* %.add_alloca")
-                    out.push(id)
-                    out.push(" to i8*\n")
                     -- Copy the last expression_reg into the new string.
                     out.push("%.addcpy")
                     out.push(id)
-                    out.push(" = call i8* (i8*, i8*) @strcpy(i8* %.add")
+                    out.push(" = call i8* (i8*, i8*) @strcpy(ptr %.add")
                     out.push(id)
-                    out.push(", i8* %.")
+                    out.push(", ptr %.")
                     out.push(expression_reg)
                     out.push(")")
                     -- Now concatenate this with expression_op_rhs_reg.
                     out.push("\n%.addadd")
                     out.push(id)
-                    out.push(" = call i8* (i8*, i8*) @strcat(i8* %.add")
+                    out.push(" = call i8* (i8*, i8*) @strcat(ptr %.add")
                     out.push(id)
-                    out.push(", i8* %.")
+                    out.push(", ptr %.")
                     out.push(expression_op_rhs_reg)
                     out.push(")\n")
                     expression_reg = "add" + id
@@ -677,9 +674,9 @@ loop
             if expression_type == "string" then
                 out.push("\n%.strcmp")
                 out.push(id)
-                out.push(" = call i32 (i8*, i8*) @strcmp(i8* %.")
+                out.push(" = call i32 (i8*, i8*) @strcmp(ptr %.")
                 out.push(expression_reg)
-                out.push(", i8* %.")
+                out.push(", ptr %.")
                 out.push(expression_op_rhs_reg)
                 out.push(")\n")
                 out.push("%.eqstr")
@@ -695,14 +692,14 @@ loop
             if expression_type == "string" then
                 out.push("\n%.instrstr"  )
                 out.push(id)
-                out.push(" = call i8* (i8*, i8*) @strstr(i8* %."  )
+                out.push(" = call i8* (i8*, i8*) @strstr(ptr %."  )
                 out.push(expression_op_rhs_reg)
-                out.push(", i8* %.")
+                out.push(", ptr %.")
                 out.push(expression_reg)
                 out.push(")\n")
                 out.push("%.instrcmp")
                 out.push(id)
-                out.push(" = icmp eq i8* %.instrstr")
+                out.push(" = icmp eq ptr %.instrstr")
                 out.push(id)
                 out.push(", null")
                 out.push("%.instr")
@@ -717,11 +714,11 @@ loop
                 out.push(" = alloca i32\n")
                 out.push("%.getlen_")
                 out.push(id)
-                out.push(" = load i32, i32* %.len_")
+                out.push(" = load i32, ptr %.len_")
                 out.push(expression_op_rhs_reg)
                 out.push("\nstore i32 %.getlen_")
                 out.push(id)
-                out.push(", i32* %.in_pos")
+                out.push(", ptr %.in_pos")
                 out.push(id)
                 out.push("\nbr label %in_loop")
                 out.push(id)
@@ -731,7 +728,7 @@ loop
                 out.push(":\n")
                 out.push("%.idx_load")
                 out.push(id)
-                out.push(" = load i32, i32* %.in_pos")
+                out.push(" = load i32, ptr %.in_pos")
                 out.push(id)
                 out.push("\n%.idx")
                 out.push(id)
@@ -754,24 +751,24 @@ loop
                 out.push(":\n")
                 out.push("store i32 %.idx")
                 out.push(id)
-                out.push(", i32* %.in_pos")
+                out.push(", ptr %.in_pos")
                 out.push(id)
                 -- Read what's at the current position.
                 out.push("\n%.atptr")
                 out.push(id)
-                out.push(" = getelementptr [10000 x i8*], [10000 x i8*]* %." )
+                out.push(" = getelementptr [10000 x i8*], ptr %." )
                 out.push(expression_op_rhs_reg)
                 out.push(", i32 0, i32 %.idx")
                 out.push(id)
                 out.push("\n%.atload")
                 out.push(id)
-                out.push(" = load i8*, i8** %.atptr")
+                out.push(" = load i8*, ptr %.atptr")
                 out.push(id)
                 out.push("\n%.strcmp")
                 out.push(id)
-                out.push(" = call i32 (i8*, i8*) @strcmp(i8* %.atload")
+                out.push(" = call i32 (i8*, i8*) @strcmp(ptr %.atload")
                 out.push(id)
-                out.push(", i8* %.")
+                out.push(", ptr %.")
                 out.push(expression_reg)
                 out.push(")\n")
                 out.push("%.strcmpb")
@@ -820,8 +817,9 @@ loop
                 else
                     call_args.push(", ")
                 end
-                if expression_type == "string" then
-                    call_args.push("i8* " )
+                if expression_type == "int" then
+                else
+                    call_args.push("ptr " )
                 end
                 call_args.push("%." )
                 call_args.push(expression_reg )
@@ -855,7 +853,7 @@ loop
             -- Read from stdin. Evaluate to "" if we are at the end of input.
             out.push("\n%.read")
             out.push(id)
-            out.push(" = call i32 (i32, i8*, i32) @read(i32 0, i8* %.read_buf, i32 1)\n")
+            out.push(" = call i32 (i32, i8*, i32) @read(i32 0, ptr %.read_buf, i32 1)\n")
             out.push("%.read")
             out.push(id)
             out.push("_test = icmp eq i32 %.read")
@@ -871,7 +869,7 @@ loop
             out.push(id)
             out.push("_true:\n%b")
             out.push(id)
-            out.push("_clear = call i32 @memset(i8* %.read_buf, i32 0, i32 2)\n")
+            out.push("_clear = call i32 @memset(ptr %.read_buf, i32 0, i32 2)\n")
             out.push("br label %b")
             out.push(id)
             out.push("_end\nb")
@@ -883,17 +881,12 @@ loop
         if call_function == "push" then
             if obj_var in list_vars then
                 -- First, copy the current expression value (which is expected to be a string).
-                out.push("\n%.pushcopy_alloc")
+                out.push("\n%.pushcopy")
                 out.push(id)
                 out.push(" = alloca [500 x i8]\n" )
-                out.push("%.pushcopy" )
-                out.push(id)
-                out.push(" = bitcast [500 x i8]* %.pushcopy_alloc")
-                out.push(id)
-                out.push(" to i8*\n")
                 out.push("%.pushstrcopy")
                 out.push(id)
-                out.push(" = call i8* (i8*, i8*) @strcpy(i8* %.pushcopy")
+                out.push(" = call i8* (i8*, i8*) @strcpy(ptr %.pushcopy")
                 out.push(id)
                 out.push(", ")
                 out.push(call_args)
@@ -901,18 +894,18 @@ loop
                 -- Get the current length of the array.
                 out.push("%.pushlen_")
                 out.push(id)
-                out.push(" = load i32, i32* %.len_")
+                out.push(" = load i32, ptr %.len_")
                 out.push(obj_var)
                 -- And store the copied value at the index.
                 out.push("\n%.elmptr")
                 out.push(id)
-                out.push(" = getelementptr [10000 x i8*], [10000 x i8*]* %." )
+                out.push(" = getelementptr [10000 x i8*], ptr %." )
                 out.push(obj_var)
                 out.push(", i32 0, i32 %.pushlen_")
                 out.push(id)
-                out.push("\nstore i8* %.pushcopy")
+                out.push("\nstore ptr %.pushcopy")
                 out.push(id)
-                out.push(", i8** %.elmptr")
+                out.push(", ptr %.elmptr")
                 out.push(id)
                 -- At last, increment the length of the array.
                 out.push("\n%.inclen")
@@ -922,13 +915,13 @@ loop
                 out.push(", 1\n")
                 out.push("store i32 %.inclen")
                 out.push(id)
-                out.push(", i32* %.len_")
+                out.push(", ptr %.len_")
                 out.push(obj_var)
             end
             if obj_var in string_vars then
                 out.push("\n%.strpush")
                 out.push(id)
-                out.push(" = call i8* (i8*, i8*) @strcat(i8* %.")
+                out.push(" = call i8* (i8*, i8*) @strcat(ptr %.")
                 out.push(obj_var)
                 out.push(", " )
                 out.push(call_args)
@@ -940,13 +933,13 @@ loop
         if call_function == "at" then
             out.push("\n%.atptr")
             out.push(id)
-            out.push(" = getelementptr [10000 x i8*], [10000 x i8*]* %." )
+            out.push(" = getelementptr [10000 x i8*], ptr %." )
             out.push(obj_var)
             out.push(", i32 0, i32 ")
             out.push(call_args)
             out.push("\n%.atload")
             out.push(id)
-            out.push(" = load i8*, i8** %.atptr")
+            out.push(" = load i8*, ptr %.atptr")
             out.push(id)
             expression_reg = "atload" + id
             expression_type = "string"
@@ -954,7 +947,7 @@ loop
         if call_function == "clear" then
             -- Just set `length` to 0.
             out.push("\nstore i32 0")
-            out.push(", i32* %.len_")
+            out.push(", ptr %.len_")
             out.push(obj_var)
             expression_reg = "" 
         end
@@ -985,7 +978,7 @@ loop
                 out.push("\n%.len_")
                 out.push(create_variable_at_eol)
                 out.push(" = alloca i32\n")
-                out.push("store i32 0, i32* %.len_")
+                out.push("store i32 0, ptr %.len_")
                 out.push(create_variable_at_eol)
                 list_vars.push(create_variable_at_eol)
             end
@@ -1014,21 +1007,14 @@ loop
                 out.push(create_variable_at_eol)
                 out.push(", size=")
                 out.push(i.to_string())
-                out.push("\n%._")
+                out.push("\n%.")
                 out.push(create_variable_at_eol)
                 out.push(" = alloca [")
                 out.push(i.to_string())
                 out.push(" x i8]\n")
                 out.push("%." )
                 out.push(create_variable_at_eol)
-                out.push(" = bitcast [")
-                out.push(i.to_string())
-                out.push(" x i8]* %._")
-                out.push(create_variable_at_eol)
-                out.push(" to i8*\n")
-                out.push("%." )
-                out.push(create_variable_at_eol)
-                out.push("_clear = call i32 @memset(i8* %.")
+                out.push("_clear = call i32 @memset(ptr %.")
                 out.push(create_variable_at_eol)
                 out.push(", i32 0, i32 ")
                 out.push(i.to_string())
@@ -1048,15 +1034,15 @@ loop
             if expression_type == "int" then
                 out.push("\nstore i32 %.")
                 out.push(expression_reg)
-                out.push(", i32* %.")
+                out.push(", ptr %.")
                 out.push(assign_variable_at_eol)
             end
             if expression_type == "string" then
                 out.push("\n%.strcpy")
                 out.push(id)
-                out.push(" = call i8* (i8*, i8*) @strcpy(i8* %.")
+                out.push(" = call i8* (i8*, i8*) @strcpy(ptr %.")
                 out.push(assign_variable_at_eol)
-                out.push(", i8* %.")
+                out.push(", ptr %.")
                 out.push(expression_reg)
                 out.push(")")
             end

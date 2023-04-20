@@ -3,7 +3,7 @@ set -e
 
 mkdir -p build
 
-echo "Phase 1: Compile with stage4 compiler"
+echo "Phase 1: Compile with stage5 compiler"
 ../stage5/compile.sh compiler.tl build/compiler
 
 echo "Phase 2: Compile with itself"

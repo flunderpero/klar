@@ -26,5 +26,5 @@ LLVM_TARGET_TRIPLE="${LLVM_TARGET_TRIPLE:-$(llvm-config --host-target)}"
 
 echo "target triple = \"$LLVM_TARGET_TRIPLE\"" > "$build_dir/$ir_file"
 bash -c "$build_dir/compiler" < "$src_file" >> "$build_dir/$ir_file"
-llc -O=0 -filetype=obj "$build_dir/$ir_file" -o "$build_dir/$obj_file"
+llc -O=0 -opaque-pointers -filetype=obj "$build_dir/$ir_file" -o "$build_dir/$obj_file"
 clang "$build_dir/$obj_file" -o "$out_file"

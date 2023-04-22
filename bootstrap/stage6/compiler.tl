@@ -5,6 +5,7 @@
 -- - Replacing all string concatenations using the operator `+` with `.push()` 
 --   since we will not support the former one in the final language.
 -- - Use opaque pointers.
+-- - Rewrite the list implementation to use a struct.
 --
 -- But it will still be a bit messy.
 
@@ -304,6 +305,10 @@ print("declare i32 @sprintf(i8*, i8*, ...)")
 print("declare i32 @read(i32, i8*, i32)")
 print("declare i32 @memset(i8*, i32, i32)")
 print('@int_to_string_sprintf_format = internal constant [3 x i8] c"%d\\00"')
+print("%List = type {")
+print("    i32, ; Length")
+print("    [10000 x ptr] ; Values")
+print("}")
 function_prelude = "\n%.read_buf = alloca [2 x i8]"
 function_prelude.push("\n%.read_buf_clear = call i32 @memset(ptr %.read_buf, i32 0, i32 2)")
 function_prelude.push("\n%.sprintf_buf = alloca [100 x i8]")
@@ -386,10 +391,15 @@ loop
         if token_value == "length" then
             -- We shortcut this here, so we can use `list.length()` in
             -- string concatenations.
+            out.push("\n%.lenptr")
+            out.push(id)
+            out.push(" = getelementptr inbounds %List, ptr %.")
+            out.push(s)
+            out.push(", i32 0")
             out.push("\n%.loadlen")
             out.push(id)
-            out.push(" = load i32, ptr %.len_")
-            out.push(s)
+            out.push(" = load i32, ptr %.lenptr")
+            out.push(id)
             expression_op_rhs_reg = "loadlen" + id
             expression_type = "int"
             token_index = token_index + 2
@@ -400,10 +410,15 @@ loop
             out.push(", obj_var=")
             out.push(s)
             -- First, decrement `length`.
+            out.push("\n%.lenptr")
+            out.push(id)
+            out.push(" = getelementptr inbounds %List, ptr %.")
+            out.push(s)
+            out.push(", i32 0, i32 0")
             out.push("\n%.getlen_")
             out.push(id)
-            out.push(" = load i32, ptr %.len_")
-            out.push(s)
+            out.push(" = load i32, ptr %.lenptr")
+            out.push(id)
             out.push("\n%.declen")
             out.push(id)
             out.push(" = sub i32 %.getlen_")
@@ -411,13 +426,18 @@ loop
             out.push(", 1\n")
             out.push("store i32 %.declen")
             out.push(id)
-            out.push(", ptr %.len_")
-            out.push(s)
+            out.push(", ptr %.lenptr")
+            out.push(id)
             -- Then read what's at the end.
+            out.push("\n%.valuesptr")
+            out.push(id)
+            out.push(" = getelementptr inbounds %List, ptr %.")
+            out.push(s)
+            out.push(", i32 0, i32 1")
             out.push("\n%.atptr")
             out.push(id)
-            out.push(" = getelementptr [10000 x i8*], ptr %." )
-            out.push(s)
+            out.push(" = getelementptr inbounds [10000 x ptr], ptr %.valuesptr" )
+            out.push(id)
             out.push(", i32 0, i32 %.declen")
             out.push(id)
             out.push("\n%.atload")
@@ -709,13 +729,23 @@ loop
                 expression_reg = "instr" + id
             end
             if expression_type == "list" then
+                out.push("\n%.lenptr")
+                out.push(id)
+                out.push(" = getelementptr inbounds %List, ptr %.")
+                out.push(expression_op_rhs_reg)
+                out.push(", i32 0, i32 0")
+                out.push("\n%.valuesptr")
+                out.push(id)
+                out.push(" = getelementptr inbounds %List, ptr %.")
+                out.push(expression_op_rhs_reg)
+                out.push(", i32 0, i32 1")
                 out.push("\n%.in_pos")
                 out.push(id)
                 out.push(" = alloca i32\n")
                 out.push("%.getlen_")
                 out.push(id)
-                out.push(" = load i32, ptr %.len_")
-                out.push(expression_op_rhs_reg)
+                out.push(" = load i32, ptr %.lenptr")
+                out.push(id)
                 out.push("\nstore i32 %.getlen_")
                 out.push(id)
                 out.push(", ptr %.in_pos")
@@ -756,8 +786,8 @@ loop
                 -- Read what's at the current position.
                 out.push("\n%.atptr")
                 out.push(id)
-                out.push(" = getelementptr [10000 x i8*], ptr %." )
-                out.push(expression_op_rhs_reg)
+                out.push(" = getelementptr [10000 x ptr], ptr %.valuesptr" )
+                out.push(id)
                 out.push(", i32 0, i32 %.idx")
                 out.push(id)
                 out.push("\n%.atload")
@@ -890,17 +920,27 @@ loop
                 out.push(id)
                 out.push(", ")
                 out.push(call_args)
-                out.push(")\n")
+                out.push(")")
                 -- Get the current length of the array.
-                out.push("%.pushlen_")
+                out.push("\n%.lenptr")
                 out.push(id)
-                out.push(" = load i32, ptr %.len_")
+                out.push(" = getelementptr inbounds %List, ptr %.")
                 out.push(obj_var)
+                out.push(", i32 0, i32 0")
+                out.push("\n%.pushlen_")
+                out.push(id)
+                out.push(" = load i32, ptr %.lenptr")
+                out.push(id)
                 -- And store the copied value at the index.
+                out.push("\n%.valuesptr")
+                out.push(id)
+                out.push(" = getelementptr inbounds %List, ptr %.")
+                out.push(obj_var)
+                out.push(", i32 0, i32 1")
                 out.push("\n%.elmptr")
                 out.push(id)
-                out.push(" = getelementptr [10000 x i8*], ptr %." )
-                out.push(obj_var)
+                out.push(" = getelementptr inbounds [10000 x i8*], ptr %.valuesptr" )
+                out.push(id)
                 out.push(", i32 0, i32 %.pushlen_")
                 out.push(id)
                 out.push("\nstore ptr %.pushcopy")
@@ -915,8 +955,8 @@ loop
                 out.push(", 1\n")
                 out.push("store i32 %.inclen")
                 out.push(id)
-                out.push(", ptr %.len_")
-                out.push(obj_var)
+                out.push(", ptr %.lenptr")
+                out.push(id)
             end
             if obj_var in string_vars then
                 out.push("\n%.strpush")
@@ -931,10 +971,15 @@ loop
             end
         end
         if call_function == "at" then
+            out.push("\n%.valuesptr")
+            out.push(id)
+            out.push(" = getelementptr inbounds %List, ptr %.")
+            out.push(obj_var)
+            out.push(", i32 0, i32 1")
             out.push("\n%.atptr")
             out.push(id)
-            out.push(" = getelementptr [10000 x i8*], ptr %." )
-            out.push(obj_var)
+            out.push(" = getelementptr [10000 x ptr], ptr %.valuesptr")
+            out.push(id)
             out.push(", i32 0, i32 ")
             out.push(call_args)
             out.push("\n%.atload")
@@ -946,9 +991,14 @@ loop
         end
         if call_function == "clear" then
             -- Just set `length` to 0.
-            out.push("\nstore i32 0")
-            out.push(", ptr %.len_")
+            out.push("\n%.lenptr")
+            out.push(id)
+            out.push(" = getelementptr inbounds %List, ptr %.")
             out.push(obj_var)
+            out.push(", i32 0, i32 0")
+            out.push("\nstore i32 0")
+            out.push(", ptr %.lenptr")
+            out.push(id)
             expression_reg = "" 
         end
         if call_function in functions then
@@ -974,11 +1024,9 @@ loop
                 -- This is a list.
                 out.push("\n%.")
                 out.push(create_variable_at_eol)
-                out.push(" = alloca [10000 x i8*]")
-                out.push("\n%.len_")
-                out.push(create_variable_at_eol)
-                out.push(" = alloca i32\n")
-                out.push("store i32 0, ptr %.len_")
+                out.push(" = alloca %List\n")
+                -- Set length to 0.
+                out.push("\nstore i32 0, ptr %.")
                 out.push(create_variable_at_eol)
                 list_vars.push(create_variable_at_eol)
             end

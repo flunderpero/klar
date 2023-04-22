@@ -1,0 +1,12 @@
+add():
+5
+
+append_str():
+Hi there!
+
+return_str():
+Hi there! returns a string
+
+print_list():
+first
+second

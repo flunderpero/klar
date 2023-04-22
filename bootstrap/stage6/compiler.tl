@@ -6,6 +6,7 @@
 --   since we will not support the former one in the final language.
 -- - Use opaque pointers.
 -- - Rewrite the list implementation to use a struct.
+-- - Functions can have parameters now.
 --
 -- But it will still be a bit messy.
 
@@ -27,7 +28,6 @@ let skip_to_eol = 0
 let c = ""
 let next_c = ""
 let c_is_int = 0
-let functions = list()
 
 -- These are just general helper variables.
 let s = ""
@@ -42,6 +42,11 @@ let constant_definitions = ""
 let out = ""
 let function_prelude = ""
 let function_name = ""
+let function_return_type = ""
+let function_params = ""
+let functions = list()
+let functions_return_type = list()
+let type = ""
 let expression_reg = ""
 let expression_type = ""
 let handle = ""
@@ -275,9 +280,14 @@ loop
                 token_types.push("function_declaration")
                 token_values.push("")
             else
-            token_types.push("identifier")
-            token_values.push(token_value)
-        end
+                if token_value == "return" then
+                    token_types.push("return")
+                    token_values.push("")
+                else
+                    token_types.push("identifier")
+                    token_values.push(token_value)
+                end
+            end
         end
         token_value = ""
         if next_token_type == "" then
@@ -341,21 +351,95 @@ loop
     out.push(token_value)
 
     if token_type == "function_declaration" then
+        print(out)
+        out = ""
+        string_vars.clear()
+        int_vars.clear()
+        list_vars.clear()
         function_name = next_token_value
-        if function_name == "main" then
-            out = "\ndefine i32 @"
-        else
-            out = "\ndefine void @"
+        -- Skip to the parameter list and parse parameters.
+        token_index = token_index + 2
+        s = ""
+        function_params = ""
+        loop
+            token_value = token_values.at(token_index)
+            token_type = token_types.at(token_index)
+            token_index = token_index + 1
+            if token_type == "rparen" then
+                -- We are done parameter parsing.
+                break
+            end
+            if token_type == "comma" then
+                continue
+            end
+            if token_value == "mut" then
+                -- We ignore this modifier for now. All parameters are mutable.
+                continue
+            end
+            if s == "" then
+                s = ", "
+            else
+                function_params.push(s)
+            end
+            type = token_values.at(token_index)
+            if type == "string" then
+                type = "i8*"
+                string_vars.push(token_value)
+            end
+            if type == "i32" then
+                type = "i32"
+                int_vars.push(token_value)
+                out.push("\n%.").push(token_value).push(" = alloca i32")
+                out.push("\nstore i32 %.").push(token_value)
+                out.push("_, i32* %.").push(token_value)
+                token_value.push("_")
+            end
+            if type == "List<string>" then
+                type = "%List*"
+                list_vars.push(token_value)
+            end
+            -- `type` `name`  
+            function_params.push(type).push(" %.").push(token_value)
+            token_index = token_index + 1
         end
-        out.push(function_name)
-        out.push("(){\n")
-        out.push(function_prelude)
-        out.push(constant_definitions)
+        function_return_type = token_values.at(token_index)
+        if function_return_type == "string" then
+            function_return_type = "i8*"
+            -- Strings are allocated on the stack (for now). We cannot return
+            -- a string reference because the stack frame is destroyed upon
+            -- function exit. That's why we give the reference as a parameter.
+            function_params.push(s).push("i8* %_ret")
+        end
+        token_index = token_index + 2
+        s = "\ndefine "
+        s.push(function_return_type)
+        s.push(" @").push(function_name)
+        s.push("(")
+        print(s)
+        print(function_params)
+        print(") {\n")
+        print(function_prelude)
+        print(constant_definitions)
         nesting_types.push("function")
         nesting_ids.push(function_name)
         functions.push(function_name)
-        -- Skip the next tokens to the body of the function.
-        token_index = token_index + 6
+        functions_return_type.push(function_return_type)
+        continue
+    end
+
+    if token_type == "return" then
+        -- TODO: This allows only constants and variables to be returned.
+        if function_return_type == "i8*" then
+            -- Copy the string to the hidden return parameter we added earlier.
+            out.push("\n%_retvalue = call i8* @strcpy(i8* %_ret, i8* %.")
+            out.push(next_token_value).push(")")
+        else
+            out.push("\n%_retvalue").push(" = load ")
+            out.push(function_return_type).push(", ").push(function_return_type)
+            out.push("* %.").push(next_token_value)
+        end
+        out.push("\nret ").push(function_return_type).push(" %_retvalue")
+        token_index = token_index + 1
         continue
     end
 
@@ -545,12 +629,11 @@ loop
                 out.push(":")
             end
             if s == "function" then
-                print(out)
-                if function_name == "main" then
-                    print("ret i32 0\n}")
-                else
-                    print("ret void\n}")
+                out.push("\n")
+                if function_return_type == "void" then
+                    out.push("\nret void")
                 end
+                out.push("\n}")
             end
             continue
         end
@@ -851,6 +934,9 @@ loop
                 else
                     call_args.push("ptr " )
                 end
+                if expression_type == "int" then
+                    call_args.push("i32 " )
+                end
                 call_args.push("%." )
                 call_args.push(expression_reg )
                 expression_reg = ""
@@ -939,7 +1025,7 @@ loop
                 out.push(", i32 0, i32 1")
                 out.push("\n%.elmptr")
                 out.push(id)
-                out.push(" = getelementptr inbounds [10000 x i8*], ptr %.valuesptr" )
+                out.push(" = getelementptr inbounds [10000 x ptr], ptr %.valuesptr" )
                 out.push(id)
                 out.push(", i32 0, i32 %.pushlen_")
                 out.push(id)
@@ -980,7 +1066,7 @@ loop
             out.push(id)
             out.push(" = getelementptr [10000 x ptr], ptr %.valuesptr")
             out.push(id)
-            out.push(", i32 0, i32 ")
+            out.push(", i32 0, ")
             out.push(call_args)
             out.push("\n%.atload")
             out.push(id)
@@ -1002,9 +1088,53 @@ loop
             expression_reg = "" 
         end
         if call_function in functions then
-            out.push("\ncall void @")
+            -- First find the return type of the function.
+            i = 0
+            loop
+                s = functions.at(i)
+                if s == call_function then
+                    s = functions_return_type.at(i)
+                    break
+                end
+                i = i + 1
+            end
+            out.push("\n")
+            if s == "i8*" then
+                -- We have to add the result reference as a hidden parameter.
+                out.push("\n%.ret_str_alloca")
+                out.push(id)
+                out.push(" = alloca [5000 x i8]\n")
+                out.push("%.ret_str" )
+                out.push(id)
+                out.push(" = bitcast [5000 x i8]* %.ret_str_alloca")
+                out.push(id)
+                out.push(" to i8*\n")
+                out.push("%." )
+                out.push(id)
+                out.push("_clear = call i32 @memset(i8* %.ret_str")
+                out.push(id)
+                out.push(", i32 0, i32 5000)\n")
+                if call_args == "" then
+                else
+                    call_args.push(", ")
+                end
+                call_args.push("i8* %.ret_str").push(id)
+                expression_type = "string"
+                expression_reg = "ret_str"
+                expression_reg.push(id)
+            end
+            if s == "void" then
+            else
+                out.push("%.call_").push(id).push(" = ")
+            end
+            out.push("call ").push(s).push(" @")
             out.push(call_function)
-            out.push("()")
+            out.push("(").push(call_args).push(")")
+            if s == "i32" then
+                expression_type = "int" 
+                expression_reg = "call_"
+                expression_reg.push(id)
+            end
         end
         call_function = ""
     end
@@ -1104,6 +1234,12 @@ loop
         print(out)
         out = ""
     end
+end
+
+if out == "" then
+else
+    print(out)
+    out = ""
 end
 
 print(string_constant_declarations)

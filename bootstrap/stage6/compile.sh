@@ -8,7 +8,7 @@ ulimit -s 65000
 src_file="$1"
 base_file=$(basename "$1")
 # If the source file does not contain a function declaration we 
-# surround it with a `fn main() void`. 
+# surround it with a `fn main()`. 
 if ! grep -q "fn main" "$src_file"; then
     tmp_file="$build_dir/$base_file"
     echo "fn main() i32 begin" > $tmp_file

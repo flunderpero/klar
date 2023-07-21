@@ -7,6 +7,7 @@
 -- - Use opaque pointers.
 -- - Rewrite the list implementation to use a struct.
 -- - Functions can have parameters now.
+-- - Lists can be initialized with a list of values.
 --
 -- But it will still be a bit messy.
 
@@ -31,6 +32,7 @@ let c_is_int = 0
 
 -- These are just general helper variables.
 let s = ""
+let s2 = ""
 let i = 0
 
 -- Variables used by the code generation.
@@ -52,6 +54,7 @@ let expression_type = ""
 let handle = ""
 let call_function = ""
 let call_args = ""
+let call_args_list = list()
 let string_vars = list()
 let int_vars = list()
 let list_vars = list()
@@ -634,6 +637,7 @@ loop
                     out.push("\nret void")
                 end
                 out.push("\n}")
+                expression_reg = ""
             end
             continue
         end
@@ -656,6 +660,7 @@ loop
     if next_token_type == "lparen" then
         call_function = token_value
         call_args = ""
+        call_args_list.clear()
     end
     if token_type == "string" then
         expression_op_rhs_reg = token_value
@@ -926,19 +931,20 @@ loop
                 out.push(expression_reg)
                 out.push(", call_function=")
                 out.push(call_function)
+                s = "" 
                 if call_args == "" then
                 else
                     call_args.push(", ")
                 end
                 if expression_type == "int" then
+                    s.push("i32 ")
                 else
-                    call_args.push("ptr " )
+                    s.push("ptr ")
                 end
-                if expression_type == "int" then
-                    call_args.push("i32 " )
-                end
-                call_args.push("%." )
-                call_args.push(expression_reg )
+                s.push("%.")
+                s.push(expression_reg)
+                call_args_list.push(s)
+                call_args.push(s)
                 expression_reg = ""
             end
         end
@@ -1118,7 +1124,10 @@ loop
                 else
                     call_args.push(", ")
                 end
-                call_args.push("i8* %.ret_str").push(id)
+                s2 = "i8* %.ret_str"
+                s2.push(id)
+                call_args.push(s2)
+                call_args_list.push(s2)
                 expression_type = "string"
                 expression_reg = "ret_str"
                 expression_reg.push(id)
@@ -1159,6 +1168,65 @@ loop
                 out.push("\nstore i32 0, ptr %.")
                 out.push(create_variable_at_eol)
                 list_vars.push(create_variable_at_eol)
+                -- -- Push all call_args to the list.
+                i = 0
+                loop
+                    if i == call_args_list.length() then
+                        break
+                    end
+                    s = call_args_list.at(i)
+                    i = i + 1
+                    id_counter = id_counter + 1
+                    id = id_counter.to_string()
+                    -- This code is straight up copied from the `push` function above.
+                    -- First, copy the current expression value (which is expected to be a string).
+                    out.push("\n%.pushcopy")
+                    out.push(id)
+                    out.push(" = alloca [500 x i8]\n" )
+                    out.push("%.pushstrcopy")
+                    out.push(id)
+                    out.push(" = call i8* (i8*, i8*) @strcpy(ptr %.pushcopy")
+                    out.push(id)
+                    out.push(", ")
+                    out.push(s)
+                    out.push(")")
+                    -- Get the current length of the array.
+                    out.push("\n%.lenptr")
+                    out.push(id)
+                    out.push(" = getelementptr inbounds %List, ptr %.")
+                    out.push(create_variable_at_eol)
+                    out.push(", i32 0, i32 0")
+                    out.push("\n%.pushlen_")
+                    out.push(id)
+                    out.push(" = load i32, ptr %.lenptr")
+                    out.push(id)
+                    -- And store the copied value at the index.
+                    out.push("\n%.valuesptr")
+                    out.push(id)
+                    out.push(" = getelementptr inbounds %List, ptr %.")
+                    out.push(create_variable_at_eol)
+                    out.push(", i32 0, i32 1")
+                    out.push("\n%.elmptr")
+                    out.push(id)
+                    out.push(" = getelementptr inbounds [10000 x ptr], ptr %.valuesptr" )
+                    out.push(id)
+                    out.push(", i32 0, i32 %.pushlen_")
+                    out.push(id)
+                    out.push("\nstore ptr %.pushcopy")
+                    out.push(id)
+                    out.push(", ptr %.elmptr")
+                    out.push(id)
+                    -- At last, increment the length of the array.
+                    out.push("\n%.inclen")
+                    out.push(id)
+                    out.push(" = add i32 %.pushlen_")
+                    out.push(id)
+                    out.push(", 1\n")
+                    out.push("store i32 %.inclen")
+                    out.push(id)
+                    out.push(", ptr %.lenptr")
+                    out.push(id)
+                end
             end
             if expression_type == "string" then
                 -- Our main goal for now is to be able to compile this compiler

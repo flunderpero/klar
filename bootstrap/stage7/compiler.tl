@@ -3,7 +3,9 @@
 -- Changes in this stage:
 --
 -- - Rewrite using some functions.
--- - Add basic support for stucts.
+-- - Add 'string.at' function.
+-- - Add 'string.length' function.
+-- - Add basic support for structs.
 --
 -- But it will still be a bit messy.
 
@@ -689,18 +691,45 @@ fn main() i32 begin
                 continue
             end
             if token_value == "length" then
-                -- We shortcut this here, so we can use `list.length()` in
+                if obj_var in struct_vars then
+                    s3 = ""
+                    s = ""
+                    id.push("x")
+                    struct_member(
+                        obj_var, obj_field_name, struct_vars, struct_vars_type,
+                        struct_field1_name, struct_field1_type,
+                        struct_field2_name, struct_field2_type,
+                        struct_field3_name, struct_field3_type,
+                        struct_field4_name, struct_field4_type,
+                        struct_field5_name, struct_field5_type,
+                        id,
+                        out, s3, s)
+                else
+                    if obj_var in list_vars then
+                        s3 = "list"
+                    end
+                    if obj_var in string_vars then
+                        s3 = "string"
+                    end
+                end
+                -- We shortcut this here, so we can use `x.length()` in
                 -- string concatenations.
-                out.push("\n%.lenptr")
-                out.push(id)
-                out.push(" = getelementptr inbounds %List, ptr %.")
-                out.push(s)
-                out.push(", i32 0")
-                out.push("\n%.loadlen")
-                out.push(id)
-                out.push(" = load i32, ptr %.lenptr")
-                out.push(id)
-                expression_op_rhs_reg = "loadlen" + id
+                if s3 == "list" then
+                    out.push("\n%.lenptr")
+                    out.push(id)
+                    out.push(" = getelementptr inbounds %List, ptr %.")
+                    out.push(s)
+                    out.push(", i32 0")
+                    out.push("\n%.loadlen")
+                    out.push(id)
+                    out.push(" = load i32, ptr %.lenptr")
+                    out.push(id)
+                    expression_op_rhs_reg = "loadlen" + id
+                end
+                if s3 == "string" then
+                    out.push("\n%.strlen").push(id).push(" = call i32 @strlen(i8* %.").push(s).push(")")
+                    expression_op_rhs_reg = "strlen" + id
+                end
                 expression_type = "int"
                 token_index = token_index + 2
                 continue
@@ -1321,24 +1350,48 @@ fn main() i32 begin
                         id,
                         out, s, s2)
                     obj_var = s2
+                else
+                    if obj_var in list_vars then
+                        s = "list"
+                    end
+                    if obj_var in string_vars then
+                        s = "string"
+                    end
                 end
-                out.push("\n%.valuesptr")
-                out.push(id)
-                out.push(" = getelementptr inbounds %List, ptr %.")
-                out.push(obj_var)
-                out.push(", i32 0, i32 1")
-                out.push("\n%.atptr")
-                out.push(id)
-                out.push(" = getelementptr [10000 x ptr], ptr %.valuesptr")
-                out.push(id)
-                out.push(", i32 0, ")
-                out.push(call_args)
-                out.push("\n%.atload")
-                out.push(id)
-                out.push(" = load i8*, ptr %.atptr")
-                out.push(id)
-                expression_reg = "atload" + id
-                expression_type = "string"
+                if s == "list" then
+                    out.push("\n%.valuesptr")
+                    out.push(id)
+                    out.push(" = getelementptr inbounds %List, ptr %.")
+                    out.push(obj_var)
+                    out.push(", i32 0, i32 1")
+                    out.push("\n%.atptr")
+                    out.push(id)
+                    out.push(" = getelementptr [10000 x ptr], ptr %.valuesptr")
+                    out.push(id)
+                    out.push(", i32 0, ")
+                    out.push(call_args)
+                    out.push("\n%.atload")
+                    out.push(id)
+                    out.push(" = load i8*, ptr %.atptr")
+                    out.push(id)
+                    expression_reg = "atload" + id
+                    expression_type = "string"
+                end
+                if s == "string" then
+                    out.push("\n%.atptr").push(id)
+                    out.push(" = getelementptr inbounds i8, i8* %.").push(obj_var).push(", ").push(call_args)
+                    out.push("\n%.atload").push(id)
+                    out.push(" = load i8, i8* %.atptr").push(id)
+                    out.push("\n%.attmp")
+                    out.push(id)
+                    out.push(" = alloca [500 x i8]")
+                    out.push("\n%.attmpclear").push(id).push("= call i32 @memset(ptr %.attmp").push(id)
+                    out.push(", i32 0, i32 500")
+                    out.push(")")
+                    out.push("\nstore i8 %.atload").push(id).push(", i8* %.attmp").push(id)
+                    expression_reg = "attmp" + id
+                    expression_type = "string"
+                end
             end
             if call_function == "clear" then
                 if obj_var in struct_vars then

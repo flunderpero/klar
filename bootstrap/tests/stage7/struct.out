@@ -1,0 +1,23 @@
+Peter
+42
+1
+43
+Age is 43
+Age is not 69
+Name is Peter
+Name is not Paul
+'et' is in name
+'ou' is not in name
+Running is in hobbies
+Lifting is not in hobbies
+Running has been removed from hobbies
+0
+clear:
+2
+0
+function argument:
+MyStruct:
+  name: Peter
+  age: 43
+  hobbies: Lifting, Running
+44

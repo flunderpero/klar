@@ -28,6 +28,7 @@ class TokenKind(Enum):
     newline = auto()
     dot = auto()
     colon = auto()
+    comma = auto()
     lparen = auto()
     rparen = auto()
     lbracket = auto()
@@ -78,6 +79,10 @@ class Span:
         self.start_column = start_column
         self.end_line = end_line or start_line
         self.end_column = end_column or start_column
+
+    def merge(self, other: "Span"):
+        return Span(self.start_line, self.start_column, other.end_line,
+                    other.end_column)
 
     def __repr__(self):
         if self.start_line == self.end_line and self.start_column == self.end_column:
@@ -173,6 +178,8 @@ class Lexer:
                             self.emit_single(TokenKind.equal)
                         case "\n":
                             self.emit_newline()
+                        case ",":
+                            self.emit_single(TokenKind.comma)
                         case c if c.isspace():
                             self.state = ValueToken(TokenKind.whitespace,
                                                     self.span(), c)
@@ -240,7 +247,7 @@ class BuiltinTypes:
 
 @dataclass
 class Node:
-    pass
+    span: Span
 
 
 @dataclass
@@ -325,14 +332,19 @@ class Parser:
 
     def parse_program(self):
         expressions = []
+        span_start = Span(-1, -1)
+        span_end = Span(-1, -1)
         while True:
             token = self.token()
             if not token:
                 break
+            if span_start.start_line == -1:
+                span_start = token.span
+            span_end = token.span
             if token.kind == TokenKind.newline:
                 continue
             expressions.append(self.parse_expression(token))
-        return Block(expressions)
+        return Block(span_start.merge(span_end), expressions)
 
     def parse_expression(self, token: t.Optional[Token]):
         if not token:
@@ -347,16 +359,17 @@ class Parser:
                         return self.parse_function_call(token.value)
                     case Token(TokenKind.equal):
                         value = self.parse_expression(self.token())
-                        return VariableWrite(token.value, value)
+                        return VariableWrite(token.span.merge(value.span),
+                                             token.value, value)
                     case _:
                         self.idx -= 1
-                        return VariableRead(token.value)
+                        return VariableRead(token.span, token.value)
             case ValueToken(TokenKind.integer, _, value):
-                return Literal(int(value))
+                return Literal(token.span, int(value))
             case ValueToken(TokenKind.float_, _, value):
-                return Literal(float(value))
+                return Literal(token.span, float(value))
             case ValueToken(TokenKind.string, _, value):
-                return Literal(value)
+                return Literal(token.span, value)
             case KeywordToken(TokenKind.keyword, _, Keyword.let):
                 return self.parse_variable_definition(mutable=False)
             case KeywordToken(TokenKind.keyword, _, Keyword.mut):
@@ -378,7 +391,8 @@ class Parser:
                 if token is None:
                     raise ValueError("Unexpected EOF")
                 expression = self.parse_expression(token)
-                return VariableDefinition(name, mutable, None, expression)
+                return VariableDefinition(token.span.merge(expression.span),
+                                          name, mutable, None, expression)
 
     def parse_function_definition(self):
         token = self.token()
@@ -404,8 +418,11 @@ class Parser:
                 body = self.parse_block()
                 if name == "main":
                     # `main` functions must return `int`.
-                    body.expressions.append(ReturnExpression(Literal(0)))
-                return FunctionDefinition(name, name, parameters, type_, body)
+                    span = Span(body.span.end_line, body.span.end_column)
+                    body.expressions.append(
+                        ReturnExpression(span, Literal(span, 0)))
+                return FunctionDefinition(token.span.merge(body.span), name,
+                                          name, parameters, type_, body)
             case _:
                 raise ValueError(f"Expected identifier: {token}")
 
@@ -419,26 +436,32 @@ class Parser:
                 case Token(TokenKind.rparen):
                     break
                 case ValueToken(TokenKind.identifier, _, name):
-                    type_ = self.token()
-                    match type_:
-                        case ValueToken(TokenKind.identifier, type_):
+                    type_token = self.token()
+                    match type_token:
+                        case ValueToken(TokenKind.identifier, _, _):
                             parameters.append(
-                                Parameter(name, Type(type_.value)))
+                                Parameter(token.span.merge(type_token.span),
+                                          name, Type(type_token.value)))
                         case _:
-                            raise ValueError(f"Expected type: {type_}")
+                            raise ValueError(f"Expected type: {type_token}")
                 case _:
                     raise ValueError(f"Unexpected token: {token}")
         return parameters
 
     def parse_block(self):
         expressions = []
+        span_start = Span(-1, -1)
+        span_end = Span(-1, -1)
         while True:
             token = self.token()
             if not token:
                 break
+            if span_start.start_line == -1:
+                span_start = token.span
+            span_end = token.span
             match token:
                 case KeywordToken(TokenKind.keyword, _, Keyword.end):
-                    return Block(expressions)
+                    return Block(span_start.merge(span_end), expressions)
                 case Token(TokenKind.newline):
                     continue
                 case _:
@@ -447,13 +470,21 @@ class Parser:
 
     def parse_function_call(self, name):
         arguments = []
+        span_start = Span(-1, -1)
+        span_end = Span(-1, -1)
         while True:
             token = self.token()
             if not token:
                 break
+            if span_start.start_line == -1:
+                span_start = token.span
+            span_end = token.span
             match token:
                 case Token(TokenKind.rparen):
-                    return FunctionCall(name, arguments)
+                    return FunctionCall(span_start.merge(span_end), name,
+                                        arguments)
+                case Token(TokenKind.comma):
+                    continue
                 case _:
                     arguments.append(self.parse_expression(token))
 
@@ -545,7 +576,7 @@ class BlockCodegen:
 
     def generate_function_call(self, call: FunctionCall) -> Value:
         arument_values = [self.generate_expression(x) for x in call.arguments]
-        func = self.find_function(call.name)
+        func = self.find_function(call.name, call.span)
         res = self.Value("void", BuiltinTypes.void)
         code = ""
         if func.return_type.name != "void":
@@ -555,7 +586,7 @@ class BlockCodegen:
         code += ", ".join([f"{x}" for x in arument_values])
         code += ")"
         self.emit(code)
-        return self.Value("void", BuiltinTypes.void)
+        return res
 
     def generate_variable_definition(self,
                                      variable: VariableDefinition) -> Value:
@@ -567,7 +598,7 @@ class BlockCodegen:
         return res
 
     def generate_variable_read(self, variable_read: VariableRead) -> Value:
-        variable = self.find_variable(variable_read.name)
+        variable = self.find_variable(variable_read.name, variable_read.span)
         if variable.type is None:
             raise ValueError(f"Unknown variable type: {variable_read.name}")
         res = self.Value(f"%{self.codegen.next_id()}", variable.type)
@@ -577,7 +608,7 @@ class BlockCodegen:
         return res
 
     def generate_variable_write(self, variable_write: VariableWrite) -> Value:
-        variable = self.find_variable(variable_write.name)
+        variable = self.find_variable(variable_write.name, variable_write.span)
         if variable.type is None:
             raise ValueError(f"Unknown variable type: {variable_write.name}")
         if not variable.mutable:
@@ -586,27 +617,37 @@ class BlockCodegen:
         self.emit(f"store {res}, {variable.type}* %{variable.name}")
         return res
 
-    def find_function(self, name: str) -> FunctionDefinition:
+    def find_function(self, name: str, span: Span) -> FunctionDefinition:
         func = self.functions.get(name)
         if func:
             return func
         if not self.parent:
-            raise ValueError(f"Unknown function: {name}")
-        return self.parent.find_function(name)
+            raise ValueError(f"Unknown function: {name} at {span}")
+        return self.parent.find_function(name, span)
 
-    def find_variable(self, name: str) -> VariableDefinition:
+    def find_variable(self, name: str, span: Span) -> VariableDefinition:
         variable = self.variables.get(name)
         if variable:
             return variable
         if not self.parent:
-            raise ValueError(f"Unknown variable: {name}")
-        return self.parent.find_variable(name)
+            raise ValueError(f"Unknown variable: {name} at {span}")
+        return self.parent.find_variable(name, span)
 
 
 class Codegen:
 
     llvm_ir_prelude = """
 declare i32 @puts(i8*) 
+declare i32 @sprintf(i8*, i8*, ...)
+declare i8* @malloc(i64)
+declare i32 @memset(i8*, i32, i32)
+
+define i8* @format(i8* %fmt, i32 %i) {
+    %1 = call i8* @malloc(i32 32)
+    %2 = call i8* @memset(i8* %1, i32 0, i32 32)
+    %3 = call i32 (i8*, i8*, ...) @sprintf(i8* %1, i8* %fmt, i32 %i)
+    ret i8* %1
+}
     """
 
     def __init__(self, program: Block):
@@ -638,9 +679,17 @@ declare i32 @puts(i8*)
         block.functions["print"] = FunctionDefinition(
             name="print",
             call_name="puts",
+            span=Span(-1, -1),
             return_type=Type("i32"),
-            parameters=[Parameter("str", Type("i8*"))],
-            body=Block([]))
+            parameters=[Parameter(Span(-1, -1), "str", Type("i8*"))],
+            body=Block(Span(-1, -1), []))
+        block.functions["format"] = FunctionDefinition(
+            name="format",
+            call_name="format",
+            span=Span(-1, -1),
+            return_type=BuiltinTypes.i8_ptr,
+            parameters=[Parameter(Span(-1, -1), "i", Type("i32"))],
+            body=Block(Span(-1, -1), []))
 
     def literal_const(self, literal: Literal) -> str:
         literal_const = self.literals.get(

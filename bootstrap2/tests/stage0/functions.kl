@@ -1,0 +1,30 @@
+fn print_ok():
+    print("Ok")
+end
+
+fn print_str(s str):
+    print(s)
+end
+
+fn print_i(i i32):
+    let s = format("%i", i)
+    print(s)
+end
+
+fn print_i2(a i32, b i32) i32:
+    print_i(a)
+    print_i(b)
+    return 45
+end
+
+fn i32s(i i32) str:
+    return format("%i", i)
+end
+
+fn main():
+    print_ok()
+    print_str("Ok, again")
+    print_i(42)
+    print_i(print_i2(43, 44))
+    print(i32s(46))
+end

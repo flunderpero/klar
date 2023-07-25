@@ -4,7 +4,7 @@ fn main():
     mut mutable = "Not Ok"
     mutable = "Ok: mutable"
     print(mutable)
-    let i = 5
+    let i = 42
     let s = format("%i", i)
     print(s)
 end

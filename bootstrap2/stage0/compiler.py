@@ -221,7 +221,7 @@ class Lexer:
                     if c.isalnum() or c == "_":
                         self.state.value += c
                     else:
-                        if self.state.value in Keyword.__members__:
+                        if self.state.value in Keyword.__members__.values():
                             self.state = KeywordToken(
                                 TokenKind.keyword, self.state.span,
                                 Keyword(self.state.value))
@@ -261,6 +261,11 @@ class Literal(Expression):
 
 
 @dataclass
+class Void(Expression):
+    pass
+
+
+@dataclass
 class Block(Expression):
     expressions: t.List[Expression]
 
@@ -285,7 +290,6 @@ class VariableWrite(Expression):
 @dataclass
 class FunctionDefinition(Expression):
     name: str
-    call_name: str
     parameters: t.List[Parameter]
     return_type: Type
     body: Block
@@ -374,8 +378,15 @@ class Parser:
                 return self.parse_variable_definition(mutable=False)
             case KeywordToken(TokenKind.keyword, _, Keyword.mut):
                 return self.parse_variable_definition(mutable=True)
+            case KeywordToken(TokenKind.keyword, _, Keyword.return_):
+                return self.parse_return_expression(token)
             case _:
                 raise ValueError(f"Unexpected token: {token}")
+
+    def parse_type(self, type: str):
+        if type == "str":
+            return BuiltinTypes.i8_ptr
+        return Type(type)
 
     def parse_variable_definition(self, mutable: bool):
         token = self.token()
@@ -406,23 +417,33 @@ class Parser:
                         raise ValueError(f"Expected '(': {token}")
                 parameters = self.parse_parameters()
                 token = self.token()
-                type_ = BuiltinTypes.void
+                return_type = BuiltinTypes.void
                 match token:
                     case Token(TokenKind.colon, _):
                         pass
-                    case ValueToken(TokenKind.identifier, _, type_):
-                        body = self.parse_block()
-                        type_ = Type(type_)
+                    case ValueToken(TokenKind.identifier, _, return_type):
+                        return_type = self.parse_type(return_type)
                     case _:
                         raise ValueError(f"Unexpected token: {token}")
+                next_token = self.token()
+                if next_token is None:
+                    raise ValueError("Unexpected EOF")
+                if next_token.kind != TokenKind.colon:
+                    self.idx -= 1
                 body = self.parse_block()
-                if name == "main":
-                    # `main` functions must return `int`.
+                if return_type == BuiltinTypes.void:
+                    # `void` functions must end with `return`.
                     span = Span(body.span.end_line, body.span.end_column)
-                    body.expressions.append(
-                        ReturnExpression(span, Literal(span, 0)))
+                    # `main` functions must return `int`.
+                    if name == "main":
+                        body.expressions.append(
+                            ReturnExpression(span, Literal(span, 0)))
+                        return_type = BuiltinTypes.i32
+                    else:
+                        body.expressions.append(
+                            ReturnExpression(span, Void(span)))
                 return FunctionDefinition(token.span.merge(body.span), name,
-                                          name, parameters, type_, body)
+                                          parameters, return_type, body)
             case _:
                 raise ValueError(f"Expected identifier: {token}")
 
@@ -435,13 +456,16 @@ class Parser:
             match token:
                 case Token(TokenKind.rparen):
                     break
+                case Token(TokenKind.comma):
+                    continue
                 case ValueToken(TokenKind.identifier, _, name):
                     type_token = self.token()
                     match type_token:
                         case ValueToken(TokenKind.identifier, _, _):
                             parameters.append(
                                 Parameter(token.span.merge(type_token.span),
-                                          name, Type(type_token.value)))
+                                          name,
+                                          self.parse_type(type_token.value)))
                         case _:
                             raise ValueError(f"Expected type: {type_token}")
                 case _:
@@ -467,6 +491,17 @@ class Parser:
                 case _:
                     expressions.append(self.parse_expression(token))
         raise ValueError("Expected end")
+
+    def parse_return_expression(self, return_token: Token):
+        token = self.token()
+        match token:
+            case Token(TokenKind.newline) | None:
+                return ReturnExpression(return_token.span,
+                                        Void(return_token.span))
+            case _:
+                expression = self.parse_expression(token)
+                return ReturnExpression(
+                    return_token.span.merge(expression.span), expression)
 
     def parse_function_call(self, name):
         arguments = []
@@ -499,6 +534,14 @@ class BlockCodegen:
         def __repr__(self):
             return f"{self.type} {self.name}"
 
+    @dataclass
+    class Variable:
+        span: Span
+        name: str
+        type: Type
+        mutable: bool
+        is_parameter: bool = False
+
     def __init__(self,
                  codegen: "Codegen",
                  block: Block,
@@ -510,7 +553,7 @@ class BlockCodegen:
         self.indent: int = 1 if parent else 0
         self.literals: t.Dict[t.Union[str, int, float], int] = {}
         self.functions: t.Dict[str, FunctionDefinition] = {}
-        self.variables: t.Dict[str, VariableDefinition] = {}
+        self.variables: t.Dict[str, BlockCodegen.Variable] = {}
 
     def emit(self, code):
         self.code.append(f"{'  ' * (self.indent)}{code}")
@@ -524,6 +567,8 @@ class BlockCodegen:
         match expression:
             case Literal():
                 return self.generate_literal(expression)
+            case Void():
+                return self.generate_void(expression)
             case Block():
                 return self.generate_block(expression)
             case FunctionDefinition():
@@ -554,6 +599,9 @@ class BlockCodegen:
                     BuiltinTypes.i8_ptr,
                 )
 
+    def generate_void(self, void: Void) -> Value:
+        return self.Value("", BuiltinTypes.void)
+
     def generate_block(self, block: Block) -> Value:
         codegen = BlockCodegen(self.codegen, block, self)
         reg = codegen.generate()
@@ -562,8 +610,15 @@ class BlockCodegen:
         return reg
 
     def generate_function_definition(self, func: FunctionDefinition) -> Value:
-        if func.name == "main":
-            self.emit("define i32 @main() {")
+        parameters = ", ".join(
+            [f"{x.type} %{x.name}" for x in func.parameters])
+        self.emit(f"define {func.return_type} @{func.name}({parameters}) {{")
+        for param in func.parameters:
+            self.variables[param.name] = self.Variable(span=param.span,
+                                                       name=param.name,
+                                                       is_parameter=True,
+                                                       mutable=False,
+                                                       type=param.type)
         self.generate_block(func.body)
         self.emit("}")
         self.functions[func.name] = func
@@ -575,15 +630,15 @@ class BlockCodegen:
         return reg
 
     def generate_function_call(self, call: FunctionCall) -> Value:
-        arument_values = [self.generate_expression(x) for x in call.arguments]
+        argument_values = [self.generate_expression(x) for x in call.arguments]
         func = self.find_function(call.name, call.span)
         res = self.Value("void", BuiltinTypes.void)
         code = ""
         if func.return_type.name != "void":
-            res = self.Value(f"%{self.codegen.next_id()}", func.return_type)
+            res = self.Value(f"%.{self.codegen.next_id()}", func.return_type)
             code += f"{res.name} = "
-        code += f"call {func.return_type} @{func.call_name}("
-        code += ", ".join([f"{x}" for x in arument_values])
+        code += f"call {func.return_type} @{func.name}("
+        code += ", ".join([f"{x}" for x in argument_values])
         code += ")"
         self.emit(code)
         return res
@@ -594,14 +649,19 @@ class BlockCodegen:
         variable.type = res.type
         self.emit(f"%{variable.name} = alloca {res.type}")
         self.emit(f"store {res}, {res.type}* %{variable.name}")
-        self.variables[variable.name] = variable
+        self.variables[variable.name] = self.Variable(span=variable.span,
+                                                      name=variable.name,
+                                                      mutable=True,
+                                                      type=res.type)
         return res
 
     def generate_variable_read(self, variable_read: VariableRead) -> Value:
         variable = self.find_variable(variable_read.name, variable_read.span)
         if variable.type is None:
             raise ValueError(f"Unknown variable type: {variable_read.name}")
-        res = self.Value(f"%{self.codegen.next_id()}", variable.type)
+        if variable.is_parameter:
+            return self.Value(f"%{variable.name}", variable.type)
+        res = self.Value(f"%.{self.codegen.next_id()}", variable.type)
         self.emit(
             f"{res.name} = load {variable.type}, {variable.type}* %{variable.name}"
         )
@@ -625,7 +685,7 @@ class BlockCodegen:
             raise ValueError(f"Unknown function: {name} at {span}")
         return self.parent.find_function(name, span)
 
-    def find_variable(self, name: str, span: Span) -> VariableDefinition:
+    def find_variable(self, name: str, span: Span) -> Variable:
         variable = self.variables.get(name)
         if variable:
             return variable
@@ -641,6 +701,11 @@ declare i32 @puts(i8*)
 declare i32 @sprintf(i8*, i8*, ...)
 declare i8* @malloc(i64)
 declare i32 @memset(i8*, i32, i32)
+
+define void @print(i8* %str) {
+    %1 = call i32 @puts(i8* %str)
+    ret void
+}
 
 define i8* @format(i8* %fmt, i32 %i) {
     %1 = call i8* @malloc(i32 32)
@@ -678,14 +743,12 @@ define i8* @format(i8* %fmt, i32 %i) {
     def register_builtin_functions(self, block: BlockCodegen):
         block.functions["print"] = FunctionDefinition(
             name="print",
-            call_name="puts",
             span=Span(-1, -1),
             return_type=Type("i32"),
             parameters=[Parameter(Span(-1, -1), "str", Type("i8*"))],
             body=Block(Span(-1, -1), []))
         block.functions["format"] = FunctionDefinition(
             name="format",
-            call_name="format",
             span=Span(-1, -1),
             return_type=BuiltinTypes.i8_ptr,
             parameters=[Parameter(Span(-1, -1), "i", Type("i32"))],

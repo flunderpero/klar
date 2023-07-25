@@ -1,0 +1,7 @@
+fn main():
+    let string = "Ok"
+    print(string)
+    mut mutable = "Not Ok"
+    mutable = "Ok: mutable"
+    print(mutable)
+end

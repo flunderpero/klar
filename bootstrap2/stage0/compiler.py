@@ -54,6 +54,7 @@ class TokenKind(Enum):
 
 class Keyword(StrEnum):
     let = "let"
+    mut = "mut"
     if_ = "if"
     else_ = "else"
     end = "end"
@@ -168,6 +169,8 @@ class Lexer:
                             self.emit_single(TokenKind.rparen)
                         case ":":
                             self.emit_single(TokenKind.colon)
+                        case "=":
+                            self.emit_single(TokenKind.equal)
                         case "\n":
                             self.emit_newline()
                         case c if c.isspace():
@@ -262,12 +265,31 @@ class Parameter(Expression):
 
 
 @dataclass
+class VariableRead(Expression):
+    name: str
+
+
+@dataclass
+class VariableWrite(Expression):
+    name: str
+    value: Expression
+
+
+@dataclass
 class FunctionDefinition(Expression):
     name: str
     call_name: str
     parameters: t.List[Parameter]
     return_type: Type
     body: Block
+
+
+@dataclass
+class VariableDefinition(Expression):
+    name: str
+    mutable: bool
+    type: t.Optional[Type]
+    value: Expression
 
 
 @dataclass
@@ -312,7 +334,9 @@ class Parser:
             expressions.append(self.parse_expression(token))
         return Block(expressions)
 
-    def parse_expression(self, token: Token):
+    def parse_expression(self, token: t.Optional[Token]):
+        if not token:
+            raise ValueError("Unexpected end of tokens")
         match token:
             case KeywordToken(TokenKind.keyword, _, Keyword.fn):
                 return self.parse_function_definition()
@@ -321,16 +345,40 @@ class Parser:
                 match next_token:
                     case Token(TokenKind.lparen):
                         return self.parse_function_call(token.value)
+                    case Token(TokenKind.equal):
+                        value = self.parse_expression(self.token())
+                        return VariableWrite(token.value, value)
                     case _:
-                        raise ValueError(f"Expected '(': {next_token}")
+                        self.idx -= 1
+                        return VariableRead(token.value)
             case ValueToken(TokenKind.integer, _, value):
                 return Literal(int(value))
             case ValueToken(TokenKind.float_, _, value):
                 return Literal(float(value))
             case ValueToken(TokenKind.string, _, value):
                 return Literal(value)
+            case KeywordToken(TokenKind.keyword, _, Keyword.let):
+                return self.parse_variable_definition(mutable=False)
+            case KeywordToken(TokenKind.keyword, _, Keyword.mut):
+                return self.parse_variable_definition(mutable=True)
             case _:
                 raise ValueError(f"Unexpected token: {token}")
+
+    def parse_variable_definition(self, mutable: bool):
+        token = self.token()
+        match token:
+            case ValueToken(TokenKind.identifier, _, name):
+                token = self.token()
+                match token:
+                    case Token(TokenKind.equal):
+                        pass
+                    case _:
+                        raise ValueError(f"Expected '=': {token}")
+                token = self.token()
+                if token is None:
+                    raise ValueError("Unexpected EOF")
+                expression = self.parse_expression(token)
+                return VariableDefinition(name, mutable, None, expression)
 
     def parse_function_definition(self):
         token = self.token()
@@ -431,6 +479,7 @@ class BlockCodegen:
         self.indent: int = 1 if parent else 0
         self.literals: t.Dict[t.Union[str, int, float], int] = {}
         self.functions: t.Dict[str, FunctionDefinition] = {}
+        self.variables: t.Dict[str, VariableDefinition] = {}
 
     def emit(self, code):
         self.code.append(f"{'  ' * (self.indent)}{code}")
@@ -448,6 +497,12 @@ class BlockCodegen:
                 return self.generate_block(expression)
             case FunctionDefinition():
                 return self.generate_function_definition(expression)
+            case VariableDefinition():
+                return self.generate_variable_definition(expression)
+            case VariableRead():
+                return self.generate_variable_read(expression)
+            case VariableWrite():
+                return self.generate_variable_write(expression)
             case FunctionCall():
                 return self.generate_function_call(expression)
             case ReturnExpression():
@@ -465,7 +520,8 @@ class BlockCodegen:
                 literal_const = self.codegen.literal_const(literal)
                 return self.Value(
                     f"getelementptr ([{len(literal.value) + 1} x i8], ptr {literal_const}, i32 0, i32 0)",
-                    BuiltinTypes.i8_ptr,)
+                    BuiltinTypes.i8_ptr,
+                )
 
     def generate_block(self, block: Block) -> Value:
         codegen = BlockCodegen(self.codegen, block, self)
@@ -496,10 +552,39 @@ class BlockCodegen:
             res = self.Value(f"%{self.codegen.next_id()}", func.return_type)
             code += f"{res.name} = "
         code += f"call {func.return_type} @{func.call_name}("
-        code += ", ".join( [f"{x}" for x in arument_values])
+        code += ", ".join([f"{x}" for x in arument_values])
         code += ")"
         self.emit(code)
-        return self.Value("void",BuiltinTypes.void)
+        return self.Value("void", BuiltinTypes.void)
+
+    def generate_variable_definition(self,
+                                     variable: VariableDefinition) -> Value:
+        res = self.generate_expression(variable.value)
+        variable.type = res.type
+        self.emit(f"%{variable.name} = alloca {res.type}")
+        self.emit(f"store {res}, {res.type}* %{variable.name}")
+        self.variables[variable.name] = variable
+        return res
+
+    def generate_variable_read(self, variable_read: VariableRead) -> Value:
+        variable = self.find_variable(variable_read.name)
+        if variable.type is None:
+            raise ValueError(f"Unknown variable type: {variable_read.name}")
+        res = self.Value(f"%{self.codegen.next_id()}", variable.type)
+        self.emit(
+            f"{res.name} = load {variable.type}, {variable.type}* %{variable.name}"
+        )
+        return res
+
+    def generate_variable_write(self, variable_write: VariableWrite) -> Value:
+        variable = self.find_variable(variable_write.name)
+        if variable.type is None:
+            raise ValueError(f"Unknown variable type: {variable_write.name}")
+        if not variable.mutable:
+            raise ValueError(f"Variable is not mutable: {variable_write.name}")
+        res = self.generate_expression(variable_write.value)
+        self.emit(f"store {res}, {variable.type}* %{variable.name}")
+        return res
 
     def find_function(self, name: str) -> FunctionDefinition:
         func = self.functions.get(name)
@@ -508,6 +593,14 @@ class BlockCodegen:
         if not self.parent:
             raise ValueError(f"Unknown function: {name}")
         return self.parent.find_function(name)
+
+    def find_variable(self, name: str) -> VariableDefinition:
+        variable = self.variables.get(name)
+        if variable:
+            return variable
+        if not self.parent:
+            raise ValueError(f"Unknown variable: {name}")
+        return self.parent.find_variable(name)
 
 
 class Codegen:

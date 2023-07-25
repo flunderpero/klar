@@ -180,6 +180,9 @@ class Lexer:
                             self.emit_newline()
                         case ",":
                             self.emit_single(TokenKind.comma)
+                        case "-":
+                            self.state = ValueToken(TokenKind.comment,
+                                                    self.span(), c)
                         case c if c.isspace():
                             self.state = ValueToken(TokenKind.whitespace,
                                                     self.span(), c)
@@ -191,6 +194,27 @@ class Lexer:
                                                     self.span(), c)
                         case _:
                             raise ValueError(f"Unexpected character: {c}")
+                case ValueToken(TokenKind.comment, _):
+                    if self.state.value == "-":
+                        if c != "-":
+                            self.emit_single(TokenKind.minus)
+                            self.idx -= 1
+                        else:
+                            self.state.value += c
+                        continue
+                    if self.state.value.startswith("---"):
+                        # Multiline comment.
+                        if self.state.value.endswith("---") and len(
+                                self.state.value) >= 6:
+                            self.emit()
+                        else:
+                            self.state.value += c
+                    else:
+                        if c == "\n":
+                            self.emit()
+                            self.emit_newline()
+                        else:
+                            self.state.value += c
                 case StringToken(TokenKind.string, _):
                     if c == self.state.quote:
                         self.emit(advance=True)
@@ -324,7 +348,8 @@ class Parser:
         token = None
         while self.idx < len(self.tokens):
             token = self.tokens[self.idx]
-            if token.kind == TokenKind.whitespace:
+            if token.kind == TokenKind.whitespace or \
+                token.kind == TokenKind.comment:
                 self.idx += 1
             else:
                 break

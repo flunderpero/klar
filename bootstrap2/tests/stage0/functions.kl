@@ -25,6 +25,7 @@ fn main():
     print_ok()
     print_str("Ok, again")
     print_i(42)
+    -- Test nested calls.
     print_i(print_i2(43, 44))
     print(i32s(46))
 end

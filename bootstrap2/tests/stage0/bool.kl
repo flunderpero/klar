@@ -1,0 +1,12 @@
+fn print_bool(b bool):
+    print(format("%i", b))
+end
+
+fn main():
+    let a = false
+    let b = true
+    print_bool(a)
+    print_bool(b)
+    print_bool(a == b)
+    print_bool(a == a)
+end

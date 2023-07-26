@@ -38,6 +38,7 @@ class TokenKind(Enum):
     langle_bracket = auto()
     rangle_bracket = auto()
     equal = auto()
+    double_equal = auto()
     plus = auto()
     minus = auto()
     star = auto()
@@ -50,6 +51,7 @@ class TokenKind(Enum):
     string = auto()
     integer = auto()
     float_ = auto()
+    bool_ = auto()
     comment = auto()
 
 
@@ -61,6 +63,8 @@ class Keyword(StrEnum):
     end = "end"
     fn = "fn"
     return_ = "return"
+    false = "false"
+    true = "true"
 
 
 @dataclass
@@ -175,7 +179,13 @@ class Lexer:
                         case ":":
                             self.emit_single(TokenKind.colon)
                         case "=":
-                            self.emit_single(TokenKind.equal)
+                            c = self.src[self.idx]
+                            if c == "=":
+                                self.idx += 1
+                                self.column += 1
+                                self.emit_single(TokenKind.double_equal)
+                            else:
+                                self.emit_single(TokenKind.equal)
                         case "\n":
                             self.emit_newline()
                         case ",":
@@ -272,6 +282,7 @@ class BuiltinTypes:
     i32 = Type("i32")
     f32 = Type("f32")
     i8_ptr = Type("i8*")
+    bool_ = Type("i1")
     void = Type("void")
 
 
@@ -308,7 +319,7 @@ class BinaryExpression(Expression):
 
 @dataclass
 class Literal(Expression):
-    value: t.Union[int, float, str]
+    value: t.Union[int, float, bool, str]
 
 
 @dataclass
@@ -427,6 +438,10 @@ class Parser:
                 expression = Literal(token.span, float(value))
             case ValueToken(TokenKind.string, _, value):
                 expression = Literal(token.span, value)
+            case KeywordToken(TokenKind.keyword, _, Keyword.true):
+                expression = Literal(token.span, True)
+            case KeywordToken(TokenKind.keyword, _, Keyword.false):
+                expression = Literal(token.span, False)
             case KeywordToken(TokenKind.keyword, _, Keyword.let):
                 expression = self.parse_variable_definition(mutable=False)
             case KeywordToken(TokenKind.keyword, _, Keyword.mut):
@@ -456,12 +471,16 @@ class Parser:
                 return BinaryExpression.Operator.mul
             case Token(TokenKind.slash, _):
                 return BinaryExpression.Operator.div
+            case Token(TokenKind.double_equal, _):
+                return BinaryExpression.Operator.eq
         self.idx -= 1
         return None
 
     def parse_type(self, type: str) -> Type:
         if type == "str":
             return BuiltinTypes.i8_ptr
+        if type == "bool":
+            return BuiltinTypes.bool_
         return Type(type)
 
     def parse_variable_definition(self, mutable: bool) -> VariableDefinition:
@@ -629,7 +648,7 @@ class BlockCodegen:
         self.parent = parent
         self.code: t.List[str] = []
         self.indent: int = 1 if parent else 0
-        self.literals: t.Dict[t.Union[str, int, float], int] = {}
+        self.literals: t.Dict[t.Union[str, int, bool, float], int] = {}
         self.functions: t.Dict[str, FunctionDefinition] = {}
         self.variables: t.Dict[str, BlockCodegen.Variable] = {}
 
@@ -668,6 +687,9 @@ class BlockCodegen:
 
     def generate_literal(self, literal: Literal) -> Value:
         match literal.value:
+            case bool():
+                return self.Value(str(1 if literal.value else 0),
+                                  BuiltinTypes.bool_)
             case int():
                 return self.Value(str(literal.value), BuiltinTypes.i32)
             case float():
@@ -764,6 +786,8 @@ class BlockCodegen:
         op_name = binary.operator.name
         if op_name == "div":
             op_name = "sdiv"
+        if op_name == "eq":
+            op_name = "icmp eq"
         self.emit(f"{res.name} = {op_name} {left}, {right.name}")
         return res
 
@@ -807,7 +831,7 @@ define i8* @format(i8* %fmt, i32 %i) {
 
     def __init__(self, program: Block):
         self.program = program
-        self.literals: t.Dict[t.Union[str, int, float], int] = {}
+        self.literals: t.Dict[t.Union[str, int, bool, float], int] = {}
         self.id_counter = 0
 
     def next_id(self) -> int:

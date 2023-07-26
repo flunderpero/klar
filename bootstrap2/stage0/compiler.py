@@ -180,6 +180,12 @@ class Lexer:
                             self.emit_newline()
                         case ",":
                             self.emit_single(TokenKind.comma)
+                        case "+":
+                            self.emit_single(TokenKind.plus)
+                        case "*":
+                            self.emit_single(TokenKind.star)
+                        case "/":
+                            self.emit_single(TokenKind.slash)
                         case "-":
                             self.state = ValueToken(TokenKind.comment,
                                                     self.span(), c)
@@ -280,6 +286,27 @@ class Expression(Node):
 
 
 @dataclass
+class BinaryExpression(Expression):
+
+    class Operator(Enum):
+        add = "+"
+        sub = "-"
+        mul = "*"
+        div = "/"
+        mod = "%"
+        eq = "=="
+        ne = "!="
+        lt = "<"
+        gt = ">"
+        le = "<="
+        ge = ">="
+
+    left: Expression
+    right: Expression
+    operator: Operator
+
+
+@dataclass
 class Literal(Expression):
     value: t.Union[int, float, str]
 
@@ -359,7 +386,7 @@ class Parser:
     def parse(self):
         return self.parse_program()
 
-    def parse_program(self):
+    def parse_program(self) -> Block:
         expressions = []
         span_start = Span(-1, -1)
         span_end = Span(-1, -1)
@@ -375,45 +402,69 @@ class Parser:
             expressions.append(self.parse_expression(token))
         return Block(span_start.merge(span_end), expressions)
 
-    def parse_expression(self, token: t.Optional[Token]):
+    def parse_expression(self, token: t.Optional[Token]) -> Expression:
         if not token:
             raise ValueError("Unexpected end of tokens")
+        expression: Expression
         match token:
             case KeywordToken(TokenKind.keyword, _, Keyword.fn):
-                return self.parse_function_definition()
+                expression = self.parse_function_definition()
             case ValueToken(TokenKind.identifier, _):
                 next_token = self.token()
                 match next_token:
                     case Token(TokenKind.lparen):
-                        return self.parse_function_call(token.value)
+                        expression = self.parse_function_call(token.value)
                     case Token(TokenKind.equal):
                         value = self.parse_expression(self.token())
-                        return VariableWrite(token.span.merge(value.span),
-                                             token.value, value)
+                        expression = VariableWrite(
+                            token.span.merge(value.span), token.value, value)
                     case _:
                         self.idx -= 1
-                        return VariableRead(token.span, token.value)
+                        expression = VariableRead(token.span, token.value)
             case ValueToken(TokenKind.integer, _, value):
-                return Literal(token.span, int(value))
+                expression = Literal(token.span, int(value))
             case ValueToken(TokenKind.float_, _, value):
-                return Literal(token.span, float(value))
+                expression = Literal(token.span, float(value))
             case ValueToken(TokenKind.string, _, value):
-                return Literal(token.span, value)
+                expression = Literal(token.span, value)
             case KeywordToken(TokenKind.keyword, _, Keyword.let):
-                return self.parse_variable_definition(mutable=False)
+                expression = self.parse_variable_definition(mutable=False)
             case KeywordToken(TokenKind.keyword, _, Keyword.mut):
-                return self.parse_variable_definition(mutable=True)
+                expression = self.parse_variable_definition(mutable=True)
             case KeywordToken(TokenKind.keyword, _, Keyword.return_):
-                return self.parse_return_expression(token)
+                expression = self.parse_return_expression(token)
             case _:
                 raise ValueError(f"Unexpected token: {token}")
+        binary_expression_op = self.probe_binary_expression_op()
+        if not binary_expression_op:
+            return expression
+        rhs = self.parse_expression(self.token())
+        return BinaryExpression(expression.span.merge(rhs.span), expression,
+                                rhs, binary_expression_op)
 
-    def parse_type(self, type: str):
+    def probe_binary_expression_op(
+            self) -> t.Optional[BinaryExpression.Operator]:
+        next_token = self.token()
+        if not next_token:
+            return None
+        match next_token:
+            case Token(TokenKind.plus, _):
+                return BinaryExpression.Operator.add
+            case Token(TokenKind.minus, _):
+                return BinaryExpression.Operator.sub
+            case Token(TokenKind.star, _):
+                return BinaryExpression.Operator.mul
+            case Token(TokenKind.slash, _):
+                return BinaryExpression.Operator.div
+        self.idx -= 1
+        return None
+
+    def parse_type(self, type: str) -> Type:
         if type == "str":
             return BuiltinTypes.i8_ptr
         return Type(type)
 
-    def parse_variable_definition(self, mutable: bool):
+    def parse_variable_definition(self, mutable: bool) -> VariableDefinition:
         token = self.token()
         match token:
             case ValueToken(TokenKind.identifier, _, name):
@@ -429,8 +480,10 @@ class Parser:
                 expression = self.parse_expression(token)
                 return VariableDefinition(token.span.merge(expression.span),
                                           name, mutable, None, expression)
+            case _:
+                raise ValueError(f"Expected identifier: {token}")
 
-    def parse_function_definition(self):
+    def parse_function_definition(self) -> FunctionDefinition:
         token = self.token()
         match token:
             case ValueToken(TokenKind.identifier, _, name):
@@ -446,8 +499,8 @@ class Parser:
                 match token:
                     case Token(TokenKind.colon, _):
                         pass
-                    case ValueToken(TokenKind.identifier, _, return_type):
-                        return_type = self.parse_type(return_type)
+                    case ValueToken(TokenKind.identifier, _, type_):
+                        return_type = self.parse_type(type_)
                     case _:
                         raise ValueError(f"Unexpected token: {token}")
                 next_token = self.token()
@@ -472,7 +525,7 @@ class Parser:
             case _:
                 raise ValueError(f"Expected identifier: {token}")
 
-    def parse_parameters(self):
+    def parse_parameters(self) -> t.List[Parameter]:
         parameters = []
         while True:
             token = self.token()
@@ -497,8 +550,8 @@ class Parser:
                     raise ValueError(f"Unexpected token: {token}")
         return parameters
 
-    def parse_block(self):
-        expressions = []
+    def parse_block(self) -> Block:
+        expressions: t.List[Expression] = []
         span_start = Span(-1, -1)
         span_end = Span(-1, -1)
         while True:
@@ -517,7 +570,7 @@ class Parser:
                     expressions.append(self.parse_expression(token))
         raise ValueError("Expected end")
 
-    def parse_return_expression(self, return_token: Token):
+    def parse_return_expression(self, return_token: Token) -> ReturnExpression:
         token = self.token()
         match token:
             case Token(TokenKind.newline) | None:
@@ -528,14 +581,14 @@ class Parser:
                 return ReturnExpression(
                     return_token.span.merge(expression.span), expression)
 
-    def parse_function_call(self, name):
-        arguments = []
+    def parse_function_call(self, name) -> FunctionCall:
+        arguments: t.List[Expression] = []
         span_start = Span(-1, -1)
         span_end = Span(-1, -1)
         while True:
             token = self.token()
             if not token:
-                break
+                raise ValueError("Unexpected EOF")
             if span_start.start_line == -1:
                 span_start = token.span
             span_end = token.span
@@ -608,6 +661,8 @@ class BlockCodegen:
                 return self.generate_function_call(expression)
             case ReturnExpression():
                 return self.generate_return_expression(expression)
+            case BinaryExpression():
+                return self.generate_binary_expression(expression)
             case _:
                 raise ValueError(f"Unknown expression: {expression}")
 
@@ -700,6 +755,16 @@ class BlockCodegen:
             raise ValueError(f"Variable is not mutable: {variable_write.name}")
         res = self.generate_expression(variable_write.value)
         self.emit(f"store {res}, {variable.type}* %{variable.name}")
+        return res
+
+    def generate_binary_expression(self, binary: BinaryExpression) -> Value:
+        left = self.generate_expression(binary.left)
+        right = self.generate_expression(binary.right)
+        res = self.Value(f"%.{self.codegen.next_id()}", left.type)
+        op_name = binary.operator.name
+        if op_name == "div":
+            op_name = "sdiv"
+        self.emit(f"{res.name} = {op_name} {left}, {right.name}")
         return res
 
     def find_function(self, name: str, span: Span) -> FunctionDefinition:

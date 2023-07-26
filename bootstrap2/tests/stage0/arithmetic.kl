@@ -1,0 +1,26 @@
+fn add(a i32, b i32) i32:
+    return a + b
+end
+
+fn sub(a i32, b i32) i32:
+    return a - b
+end
+
+fn mul(a i32, b i32) i32:
+    return a * b
+end
+
+fn div(a i32, b i32) i32:
+    return a / b
+end
+
+fn print_int(a i32):
+    print(format("%i", a))
+end
+
+fn main():
+    print_int(add(1, 2))
+    print_int(sub(3, 2))
+    print_int(mul(3, 2))
+    print_int(div(6, 2))
+end

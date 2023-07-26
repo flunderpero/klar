@@ -376,6 +376,13 @@ class ReturnExpression(Expression):
     expression: Expression
 
 
+@dataclass
+class IfExpression(Expression):
+    condition: Expression
+    then: Block
+    else_: t.Optional[Block]
+
+
 class Parser:
 
     def __init__(self, tokens: t.List[Token]):
@@ -444,6 +451,8 @@ class Parser:
                 expression = Literal(token.span, False)
             case KeywordToken(TokenKind.keyword, _, Keyword.let):
                 expression = self.parse_variable_definition(mutable=False)
+            case KeywordToken(TokenKind.keyword, _, Keyword.if_):
+                expression = self.parse_if_expression()
             case KeywordToken(TokenKind.keyword, _, Keyword.mut):
                 expression = self.parse_variable_definition(mutable=True)
             case KeywordToken(TokenKind.keyword, _, Keyword.return_):
@@ -475,6 +484,17 @@ class Parser:
                 return BinaryExpression.Operator.eq
         self.idx -= 1
         return None
+
+    def parse_if_expression(self) -> IfExpression:
+        condition = self.parse_expression(self.token())
+        then, then_end_keyword = self.parse_block()
+        if then_end_keyword == Keyword.else_:
+            else_, _ = self.parse_block()
+            span = condition.span.merge(else_.span)
+        else:
+            span = condition.span.merge(then.span)
+            else_ = None
+        return IfExpression(span, condition, then, else_)
 
     def parse_type(self, type: str) -> Type:
         if type == "str":
@@ -513,21 +533,18 @@ class Parser:
                     case _:
                         raise ValueError(f"Expected '(': {token}")
                 parameters = self.parse_parameters()
-                token = self.token()
-                return_type = BuiltinTypes.void
-                match token:
-                    case Token(TokenKind.colon, _):
-                        pass
-                    case ValueToken(TokenKind.identifier, _, type_):
-                        return_type = self.parse_type(type_)
-                    case _:
-                        raise ValueError(f"Unexpected token: {token}")
-                next_token = self.token()
-                if next_token is None:
+                type_token = self.token()
+                if type_token is None:
                     raise ValueError("Unexpected EOF")
-                if next_token.kind != TokenKind.colon:
-                    self.idx -= 1
-                body = self.parse_block()
+                match type_token:
+                    case ValueToken(TokenKind.identifier, _):
+                        return_type = self.parse_type(type_token.value)
+                    case _:
+                        return_type = BuiltinTypes.void
+                        self.idx -= 1
+                body, body_block_end = self.parse_block()
+                if body_block_end != Keyword.end:
+                    raise ValueError(f"Expected 'end': {body_block_end}")
                 if return_type == BuiltinTypes.void:
                     # `void` functions must end with `return`.
                     span = Span(body.span.end_line, body.span.end_column)
@@ -569,10 +586,15 @@ class Parser:
                     raise ValueError(f"Unexpected token: {token}")
         return parameters
 
-    def parse_block(self) -> Block:
+    def parse_block(self) -> t.Tuple[Block, Keyword]:
         expressions: t.List[Expression] = []
         span_start = Span(-1, -1)
         span_end = Span(-1, -1)
+        token = self.token()
+        if token is None:
+            raise ValueError("Unexpected EOF")
+        if token.kind != TokenKind.colon:
+            raise ValueError(f"Expected ':': {token}")
         while True:
             token = self.token()
             if not token:
@@ -581,8 +603,11 @@ class Parser:
                 span_start = token.span
             span_end = token.span
             match token:
-                case KeywordToken(TokenKind.keyword, _, Keyword.end):
-                    return Block(span_start.merge(span_end), expressions)
+                case KeywordToken(TokenKind.keyword, _,
+                                  Keyword.end) | KeywordToken(
+                                      TokenKind.keyword, _, Keyword.else_):
+                    return Block(span_start.merge(span_end),
+                                 expressions), token.keyword
                 case Token(TokenKind.newline):
                     continue
                 case _:
@@ -682,6 +707,8 @@ class BlockCodegen:
                 return self.generate_return_expression(expression)
             case BinaryExpression():
                 return self.generate_binary_expression(expression)
+            case IfExpression():
+                return self.generate_if_expression(expression)
             case _:
                 raise ValueError(f"Unknown expression: {expression}")
 
@@ -745,6 +772,20 @@ class BlockCodegen:
         self.emit(code)
         return res
 
+    def generate_if_expression(self, if_: IfExpression) -> Value:
+        condition = self.generate_expression(if_.condition)
+        id = self.codegen.next_id()
+        self.emit(f"br {condition}, label %if_true_{id}, label %if_false_{id}")
+        self.emit(f"if_true_{id}:")
+        self.generate_expression(if_.then)
+        self.emit(f"br label %if_end_{id}")
+        self.emit(f"if_false_{id}:")
+        if if_.else_:
+            self.generate_expression(if_.else_)
+        self.emit(f"br label %if_end_{id}")
+        self.emit(f"if_end_{id}:")
+        return self.Value("void", BuiltinTypes.void)
+
     def generate_variable_definition(self,
                                      variable: VariableDefinition) -> Value:
         res = self.generate_expression(variable.value)
@@ -788,6 +829,7 @@ class BlockCodegen:
             op_name = "sdiv"
         if op_name == "eq":
             op_name = "icmp eq"
+            res.type = BuiltinTypes.bool_
         self.emit(f"{res.name} = {op_name} {left}, {right.name}")
         return res
 

@@ -278,6 +278,7 @@ class Lexer:
 class Type():
     klar_name: str
     llvm_name: str
+    size: int
 
     def __repr__(self):
         return self.llvm_name
@@ -285,11 +286,11 @@ class Type():
 
 @dataclass
 class BuiltinTypes:
-    i32 = Type("i32", "i32")
-    f32 = Type("f32", "f32")
-    str_ = Type("str", "i8*")
-    bool_ = Type("bool", "i1")
-    void = Type("void", "void")
+    i32 = Type("i32", "i32", 4)
+    f32 = Type("f32", "f32", 4)
+    str_ = Type("str", "i8*", 8)
+    bool_ = Type("bool", "i1", 1)
+    void = Type("void", "void", 0)
 
 
 @dataclass
@@ -400,6 +401,12 @@ class StructDefinition(Expression):
     name: str
     fields: t.List[StructField]
 
+    def size(self):
+        return sum(f.type.size for f in self.fields)
+
+    def type(self):
+        return Type(self.name, f"%{self.name}*", self.size())
+
 
 @dataclass
 class FieldRead(Expression):
@@ -418,6 +425,7 @@ class Parser:
 
     def __init__(self, tokens: t.List[Token]):
         self.tokens = tokens
+        self.structs: t.List[StructDefinition] = []
         self.idx = 0
 
     def token(self):
@@ -519,7 +527,9 @@ class Parser:
             case KeywordToken(TokenKind.keyword, _, Keyword.let):
                 expression = self.parse_variable_definition(mutable=False)
             case KeywordToken(TokenKind.keyword, _, Keyword.struct):
-                expression = self.parse_struct_definition()
+                struct = self.parse_struct_definition()
+                self.structs.append(struct)
+                expression = struct
             case KeywordToken(TokenKind.keyword, _, Keyword.if_):
                 expression = self.parse_if_expression()
             case KeywordToken(TokenKind.keyword, _, Keyword.mut):
@@ -572,7 +582,10 @@ class Parser:
         if builtin_type:
             return builtin_type
         # This must be a user-defined type.
-        return Type(type, f"%{type}*")
+        struct = next((x for x in self.structs if x.name == type), None)
+        if not struct:
+            raise ValueError(f"Unknown type: {type}")
+        return struct.type()
 
     def parse_struct_definition(self) -> StructDefinition:
         token = self.token()
@@ -921,7 +934,7 @@ class BlockCodegen:
         func = FunctionDefinition(
             span=struct.span,
             name=struct.name,
-            return_type=Type(struct.name, f"%{struct.name}*"),
+            return_type=struct.type(),
             parameters=[
                 Parameter(name=x.name, type=x.type, span=x.span)
                 for x in struct.fields

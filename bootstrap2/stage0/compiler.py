@@ -63,6 +63,7 @@ class Keyword(StrEnum):
     end = "end"
     fn = "fn"
     struct = "struct"
+    enum = "enum"
     return_ = "return"
     false = "false"
     true = "true"
@@ -279,6 +280,7 @@ class Type():
     klar_name: str
     llvm_name: str
     size: int
+    enum_variant: t.Optional[str] = None
 
     def __repr__(self):
         return self.llvm_name
@@ -291,6 +293,8 @@ class BuiltinTypes:
     str_ = Type("str", "i8*", 8)
     bool_ = Type("bool", "i1", 1)
     void = Type("void", "void", 0)
+    # This is not a real type, but it's used to represent a function.
+    fn = Type("fn", "fn", 0)
 
 
 @dataclass
@@ -391,7 +395,7 @@ class IfExpression(Expression):
 
 
 @dataclass
-class StructField(Expression):
+class Field(Expression):
     name: str
     type: Type
 
@@ -399,10 +403,11 @@ class StructField(Expression):
 @dataclass
 class StructDefinition(Expression):
     name: str
-    fields: t.List[StructField]
+    fields: t.List[Field]
 
     def size(self):
-        return sum(f.type.size for f in self.fields)
+        return sum(f.type.size for f in self.fields
+                   if not f.name.startswith("__@"))
 
     def type(self):
         return Type(self.name, f"%{self.name}*", self.size())
@@ -421,11 +426,24 @@ class FieldWrite(Expression):
     value: Expression
 
 
+@dataclass
+class EnumDefinition(Expression):
+    name: str
+    variants: t.List[StructDefinition]
+
+    def size(self):
+        return max(x.size() for x in self.variants)
+
+    def type(self):
+        return Type(self.name, f"%{self.name}*", self.size())
+
+
 class Parser:
 
     def __init__(self, tokens: t.List[Token]):
         self.tokens = tokens
         self.structs: t.List[StructDefinition] = []
+        self.enums: t.List[EnumDefinition] = []
         self.idx = 0
 
     def token(self):
@@ -489,6 +507,9 @@ class Parser:
                                     match next_token:
                                         case Token(TokenKind.dot):
                                             continue
+                                        case Token(TokenKind.lparen):
+                                            return self.parse_function_call(
+                                                f"{name}.{'.'.join(fields)}")
                                         case _:
                                             self.idx -= 1
                                             break
@@ -530,6 +551,10 @@ class Parser:
                 struct = self.parse_struct_definition()
                 self.structs.append(struct)
                 expression = struct
+            case KeywordToken(TokenKind.keyword, _, Keyword.enum):
+                enum = self.parse_enum_definition()
+                self.enums.append(enum)
+                expression = enum
             case KeywordToken(TokenKind.keyword, _, Keyword.if_):
                 expression = self.parse_if_expression()
             case KeywordToken(TokenKind.keyword, _, Keyword.mut):
@@ -583,9 +608,12 @@ class Parser:
             return builtin_type
         # This must be a user-defined type.
         struct = next((x for x in self.structs if x.name == type), None)
-        if not struct:
+        if struct:
+            return struct.type()
+        enum = next((x for x in self.enums if x.name == type), None)
+        if not enum:
             raise ValueError(f"Unknown type: {type}")
-        return struct.type()
+        return enum.type()
 
     def parse_struct_definition(self) -> StructDefinition:
         token = self.token()
@@ -606,7 +634,7 @@ class Parser:
             span = span.merge(fields[-1].span)
         return StructDefinition(span, name, fields)
 
-    def parse_struct_fields(self) -> t.List[StructField]:
+    def parse_struct_fields(self) -> t.List[Field]:
         fields = []
         while True:
             token = self.token()
@@ -618,15 +646,86 @@ class Parser:
                     match type_token:
                         case ValueToken(TokenKind.identifier, _, _):
                             fields.append(
-                                StructField(token.span.merge(type_token.span),
-                                            name,
-                                            self.parse_type(type_token.value)))
+                                Field(token.span.merge(type_token.span), name,
+                                      self.parse_type(type_token.value)))
                         case _:
                             raise ValueError(f"Expected type: {type_token}")
                 case Token(TokenKind.newline):
                     continue
                 case KeywordToken(TokenKind.keyword, _, Keyword.end):
                     break
+                case _:
+                    raise ValueError(f"Unexpected token: {token}")
+        return fields
+
+    def parse_enum_definition(self) -> EnumDefinition:
+        token = self.token()
+        match token:
+            case ValueToken(TokenKind.identifier, _, _):
+                name = token.value
+            case _:
+                raise ValueError(f"Expected identifier: {token}")
+        token = self.token()
+        match token:
+            case Token(TokenKind.colon):
+                pass
+            case _:
+                raise ValueError(f"Expected ':': {token}")
+        variants = self.parse_enum_variants(name)
+        span = token.span
+        if variants:
+            span = span.merge(variants[-1].span)
+        return EnumDefinition(span, name, variants)
+
+    def parse_enum_variants(self, enum_name: str) -> t.List[StructDefinition]:
+        variants = []
+        while True:
+            token = self.token()
+            if not token:
+                raise ValueError("Unexpected EOF")
+            match token:
+                case ValueToken(TokenKind.identifier, _, name):
+                    fields = []
+                    next_token = self.token()
+                    match next_token:
+                        case Token(TokenKind.lparen):
+                            fields = self.parse_enum_fields()
+                        case Token(TokenKind.newline):
+                            pass
+                        case _:
+                            self.idx -= 1
+                    span = token.span
+                    if fields:
+                        span = span.merge(fields[-1].span)
+                    variants.append(StructDefinition(span, name, fields))
+                case KeywordToken(TokenKind.keyword, _, Keyword.end):
+                    break
+                case Token(TokenKind.newline):
+                    continue
+                case _:
+                    raise ValueError(f"Unexpected token: {token}")
+        return variants
+
+    def parse_enum_fields(self) -> t.List[Field]:
+        fields = []
+        while True:
+            token = self.token()
+            if not token:
+                raise ValueError("Expected ')'")
+            match token:
+                case Token(TokenKind.rparen):
+                    break
+                case Token(TokenKind.comma):
+                    continue
+                case ValueToken(TokenKind.identifier, _, name):
+                    type_token = self.token()
+                    match type_token:
+                        case ValueToken(TokenKind.identifier, _, _):
+                            fields.append(
+                                Field(token.span.merge(type_token.span), name,
+                                      self.parse_type(type_token.value)))
+                        case _:
+                            raise ValueError(f"Expected type: {type_token}")
                 case _:
                     raise ValueError(f"Unexpected token: {token}")
         return fields
@@ -773,6 +872,10 @@ class Parser:
             case Token(TokenKind.newline) | None:
                 return ReturnExpression(return_token.span,
                                         Void(return_token.span))
+            case KeywordToken(TokenKind.keyword, _, Keyword.end):
+                self.idx -= 1
+                return ReturnExpression(return_token.span,
+                                        Void(return_token.span))
             case _:
                 expression = self.parse_expression(token)
                 return ReturnExpression(
@@ -818,12 +921,26 @@ class BlockCodegen:
             return f"{self.definition.name} {self.name}"
 
     @dataclass
+    class Enum:
+        name: str
+        definition: EnumDefinition
+
+        def __repr__(self):
+            return f"{self.definition.name} {self.name}"
+
+    @dataclass
     class Variable:
         span: Span
         name: str
         type: Type
         mutable: bool
         is_parameter: bool = False
+
+    @dataclass
+    class Namespace:
+        name: str
+        constants: t.Dict[str, "BlockCodegen.Value"]
+        functions: t.Dict[str, FunctionDefinition]
 
     def __init__(self,
                  codegen: "Codegen",
@@ -838,6 +955,8 @@ class BlockCodegen:
         self.functions: t.Dict[str, FunctionDefinition] = {}
         self.variables: t.Dict[str, BlockCodegen.Variable] = {}
         self.structs: t.Dict[str, BlockCodegen.Struct] = {}
+        self.namespaces: t.Dict[str, BlockCodegen.Namespace] = {}
+        self.enums: t.Dict[str, BlockCodegen.Enum] = {}
 
     def emit(self, code):
         self.code.append(f"{'  ' * (self.indent)}{code}")
@@ -859,6 +978,8 @@ class BlockCodegen:
                 return self.generate_function_definition(expression)
             case StructDefinition():
                 return self.generate_struct_definition(expression)
+            case EnumDefinition():
+                return self.generate_enum_definition(expression)
             case VariableDefinition():
                 return self.generate_variable_definition(expression)
             case FieldRead():
@@ -930,6 +1051,7 @@ class BlockCodegen:
                 f"{field.type}{',' if i < len(struct.fields) - 1 else ''}")
         self.indent -= 1
         self.emit("}")
+        res = self.Value("void", BuiltinTypes.void)
         # Create the constructor.
         func = FunctionDefinition(
             span=struct.span,
@@ -961,16 +1083,108 @@ class BlockCodegen:
         self.emit(f"ret ptr %alloc")
         self.indent -= 1
         self.emit("}")
+        return res
+
+    def generate_enum_definition(self, enum: EnumDefinition) -> Value:
+        self.enums[enum.name] = self.Enum(enum.name, enum)
+        self.emit(f"%{enum.name} = type {{")
+        self.indent += 1
+        self.emit(f"i32, [{enum.size()} x i8]")
+        self.indent -= 1
+        self.emit("}")
+        namespace = BlockCodegen.Namespace(enum.name, {}, {})
+        for variant in enum.variants:
+            self.generate_enum_variant(enum, variant, namespace)
+        self.namespaces[enum.name] = namespace
         return self.Value("void", BuiltinTypes.void)
 
+    def generate_enum_variant(self, enum: EnumDefinition,
+                              variant: StructDefinition,
+                              namespace: Namespace) -> Value:
+        struct_name = f"{enum.name}.{variant.name}"
+        variant_index = enum.variants.index(variant)
+        self.structs[struct_name] = self.Struct(struct_name, variant)
+        self.emit(f"%{struct_name} = type {{")
+        self.indent += 1
+        self.emit(f"i32{',' if variant.fields else ''}")
+        for i, field in enumerate(variant.fields):
+            self.emit(
+                f"{field.type}{',' if i < len(variant.fields) - 1 else ''}")
+        self.indent -= 1
+        self.emit("}")
+        res = self.Value("void", BuiltinTypes.void)
+        if not variant.fields:
+            self.emit(
+                f'@{enum.name}.{variant.name}_const = constant %{enum.name} {{i32 {variant_index}, [{enum.size()} x i8] c"{" " * (enum.size())}"}}'
+            )
+            namespace.constants[variant.name] = self.Value(
+                f"@{enum.name}.{variant.name}_const", enum.type())
+            return res
+        # Create the constructor.
+        func = FunctionDefinition(
+            span=variant.span,
+            name=variant.name,
+            return_type=Type(enum.name,
+                             f"%{enum.name}*",
+                             enum.size(),
+                             enum_variant=variant.name),
+            parameters=[
+                Parameter(name=x.name, type=x.type, span=x.span)
+                for x in variant.fields
+            ],
+            body=Block(variant.span, []),
+        )
+        namespace.functions[func.name] = func
+        parameters = ", ".join(
+            [f"{x.type} %{x.name}" for x in func.parameters])
+        self.emit(f"define {func.return_type} @{func.name}({parameters}) {{")
+        self.indent += 1
+        self.emit(
+            f"%sizeptr = getelementptr inbounds {func.return_type}, {func.return_type}* null, i32 1"
+        )
+        self.emit(f"%size = ptrtoint {func.return_type}* %sizeptr to i64")
+        self.emit(f"%alloc = call i8* @malloc(i64 %size)")
+        variant.fields.insert(
+            0, Field(variant.span, "__@tag__", BuiltinTypes.i32))
+        # Copy the fields.
+        for i, field in enumerate(variant.fields):
+            self.emit(
+                f"%field{i} = getelementptr inbounds %{struct_name}, ptr %alloc, i32 0, i32 {i}"
+            )
+            if i == 0:
+                self.emit(f"store i32 {variant_index}, i32* %field{i}")
+            else:
+                self.emit(
+                    f"store {field.type} %{field.name}, {field.type}* %field{i}"
+                )
+        self.emit(f"ret ptr %alloc")
+        self.indent -= 1
+        self.emit("}")
+        return res
+
     def generate_field_read(self, field_read: FieldRead) -> Value:
+        try:
+            return self.generate_namespace_read(field_read.name,
+                                                field_read.field_path[0],
+                                                field_read.span)
+        except ValueError as e:
+            pass
         var = self.generate_variable_read(
             VariableRead(field_read.span, field_read.name))
+        if var.type == BuiltinTypes.fn:
+            return var
         struct_name = var.type.klar_name
+        if var.type.enum_variant:
+            struct_name = f"{struct_name}.{var.type.enum_variant}"
         struct = self.find_struct(struct_name, field_read.span)
         for field_name in field_read.field_path[:-1]:
-            field = next(x for x in struct.definition.fields
-                         if x.name == field_name)
+            field = next(
+                (x for x in struct.definition.fields if x.name == field_name),
+                None)
+            if field is None:
+                raise ValueError(
+                    f"Struct {struct_name} does not have a field named {field_name}",
+                    field_read.span)
             field_index = struct.definition.fields.index(field)
             new_var = self.Value(f"%.{self.codegen.next_id()}", field.type)
             self.emit(
@@ -982,8 +1196,13 @@ class BlockCodegen:
             var = new_var
             struct = self.find_struct(field.type.klar_name, field.span)
         field_name = field_read.field_path[-1]
-        field = next(x for x in struct.definition.fields
-                     if x.name == field_name)
+        field = next(
+            (x for x in struct.definition.fields if x.name == field_name),
+            None)
+        if field is None:
+            raise ValueError(
+                f"Struct {struct_name} does not have a field named {field_name}",
+                field_read.span)
         field_index = struct.definition.fields.index(field)
         res = self.Value(f"%.{self.codegen.next_id()}", field.type)
         self.emit(
@@ -1090,6 +1309,19 @@ class BlockCodegen:
         self.emit(f"store {res}, {variable.type}* %{variable.name}")
         return res
 
+    def generate_namespace_read(self, namespace_name: str, field: str,
+                                span: Span) -> Value:
+        namespace = self.find_namespace(namespace_name, span)
+        if namespace is None:
+            raise ValueError(f"Unknown namespace: {namespace_name}")
+        constant = next((x for x in namespace.constants if x == field), None)
+        if constant:
+            return namespace.constants[constant]
+        function = next((x for x in namespace.functions if x == field), None)
+        if not function:
+            raise ValueError(f"Unknown field: {namespace_name}.{field}")
+        return self.Value(f"@{function}", BuiltinTypes.fn)
+
     def generate_binary_expression(self, binary: BinaryExpression) -> Value:
         left = self.generate_expression(binary.left)
         right = self.generate_expression(binary.right)
@@ -1104,6 +1336,16 @@ class BlockCodegen:
         return res
 
     def find_function(self, name: str, span: Span) -> FunctionDefinition:
+        if "." in name:
+            namespace_name, function_name = name.split(".")
+            namespace = self.find_namespace(namespace_name, span)
+            if namespace is None:
+                raise ValueError(f"Unknown namespace: {namespace_name}")
+            function = namespace.functions.get(function_name)
+            if not function:
+                raise ValueError(
+                    f"Unknown function: {namespace_name}.{function_name}")
+            return function
         func = self.functions.get(name)
         if func:
             return func
@@ -1126,6 +1368,22 @@ class BlockCodegen:
         if not self.parent:
             raise ValueError(f"Unknown struct: {name} at {span}")
         return self.parent.find_struct(name, span)
+
+    def find_enum(self, name: str, span: Span) -> Enum:
+        enum = self.enums.get(name)
+        if enum:
+            return enum
+        if not self.parent:
+            raise ValueError(f"Unknown enum: {name} at {span}")
+        return self.parent.find_enum(name, span)
+
+    def find_namespace(self, name: str, span: Span) -> Namespace:
+        namespace = self.namespaces.get(name)
+        if namespace:
+            return namespace
+        if not self.parent:
+            raise ValueError(f"Unknown namespace: {name} at {span}")
+        return self.parent.find_namespace(name, span)
 
 
 class Codegen:

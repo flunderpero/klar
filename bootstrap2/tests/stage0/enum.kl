@@ -1,0 +1,39 @@
+enum Color:
+    Red
+    Green
+    Blue
+    HSL(hue i32, saturation i32, lightness i32)
+end
+
+fn print_color(c Color):
+    if c == Color.Blue:
+        print("Blue")
+        return
+    end
+    if c == Color.Green:
+        print("Green")
+        return
+    end
+    if c == Color.Red:
+        print("Red")
+        return
+    end
+    print("HSL")
+end
+
+fn main():
+    let color = Color.Blue
+    if color == Color.Blue:
+        print("Ok: Blue")
+    else:
+        print("Fail: Not blue")
+    end
+    let orange = Color.HSL(30, 100, 50)
+    print(format("Hue: %i", orange.hue))
+    print(format("Saturation: %i", orange.saturation))
+    print(format("Lightness: %i", orange.lightness))
+    print_color(Color.Blue)
+    print_color(Color.Red)
+    print_color(Color.Green)
+    print_color(orange)
+end

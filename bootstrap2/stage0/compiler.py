@@ -62,6 +62,7 @@ class Keyword(StrEnum):
     else_ = "else"
     end = "end"
     fn = "fn"
+    struct = "struct"
     return_ = "return"
     false = "false"
     true = "true"
@@ -190,6 +191,8 @@ class Lexer:
                             self.emit_newline()
                         case ",":
                             self.emit_single(TokenKind.comma)
+                        case ".":
+                            self.emit_single(TokenKind.dot)
                         case "+":
                             self.emit_single(TokenKind.plus)
                         case "*":
@@ -209,7 +212,8 @@ class Lexer:
                             self.state = ValueToken(TokenKind.identifier,
                                                     self.span(), c)
                         case _:
-                            raise ValueError(f"Unexpected character: {c}")
+                            raise ValueError(
+                                f"Unexpected character: {c} at {self.span()}")
                 case ValueToken(TokenKind.comment, _):
                     if self.state.value == "-":
                         if c != "-":
@@ -385,6 +389,31 @@ class IfExpression(Expression):
     else_: t.Optional[Block]
 
 
+@dataclass
+class StructField(Expression):
+    name: str
+    type: Type
+
+
+@dataclass
+class StructDefinition(Expression):
+    name: str
+    fields: t.List[StructField]
+
+
+@dataclass
+class FieldRead(Expression):
+    name: str
+    field_path: t.List[str]
+
+
+@dataclass
+class FieldWrite(Expression):
+    name: str
+    field_path: t.List[str]
+    value: Expression
+
+
 class Parser:
 
     def __init__(self, tokens: t.List[Token]):
@@ -438,6 +467,42 @@ class Parser:
                         value = self.parse_expression(self.token())
                         expression = VariableWrite(
                             token.span.merge(value.span), token.value, value)
+                    case Token(TokenKind.dot):
+                        name = token.value
+                        fields = []
+                        end_of_fields_span = token.span
+                        while True:
+                            next_token = self.token()
+                            match next_token:
+                                case ValueToken(TokenKind.identifier, _, _):
+                                    fields.append(next_token.value)
+                                    end_of_fields_span = next_token.span
+                                    next_token = self.token()
+                                    match next_token:
+                                        case Token(TokenKind.dot):
+                                            continue
+                                        case _:
+                                            self.idx -= 1
+                                            break
+                                case _:
+                                    raise ValueError(
+                                        f"Expected identifier, got {next_token}"
+                                    )
+                        if not fields:
+                            raise ValueError(
+                                f"Expected at least one field at {token.span}")
+                        next_token = self.token()
+                        match next_token:
+                            case Token(TokenKind.equal):
+                                value = self.parse_expression(self.token())
+                                expression = FieldWrite(
+                                    token.span.merge(value.span), name, fields,
+                                    value)
+                            case _:
+                                self.idx -= 1
+                                expression = FieldRead(
+                                    token.span.merge(end_of_fields_span), name,
+                                    fields)
                     case _:
                         self.idx -= 1
                         expression = VariableRead(token.span, token.value)
@@ -453,6 +518,8 @@ class Parser:
                 expression = Literal(token.span, False)
             case KeywordToken(TokenKind.keyword, _, Keyword.let):
                 expression = self.parse_variable_definition(mutable=False)
+            case KeywordToken(TokenKind.keyword, _, Keyword.struct):
+                expression = self.parse_struct_definition()
             case KeywordToken(TokenKind.keyword, _, Keyword.if_):
                 expression = self.parse_if_expression()
             case KeywordToken(TokenKind.keyword, _, Keyword.mut):
@@ -505,7 +572,51 @@ class Parser:
         if builtin_type:
             return builtin_type
         # This must be a user-defined type.
-        return Type(f"%{type}", type)
+        return Type(type, f"%{type}*")
+
+    def parse_struct_definition(self) -> StructDefinition:
+        token = self.token()
+        match token:
+            case ValueToken(TokenKind.identifier, _, _):
+                name = token.value
+            case _:
+                raise ValueError(f"Expected identifier: {token}")
+        token = self.token()
+        match token:
+            case Token(TokenKind.colon):
+                pass
+            case _:
+                raise ValueError(f"Expected ':': {token}")
+        fields = self.parse_struct_fields()
+        span = token.span
+        if fields:
+            span = span.merge(fields[-1].span)
+        return StructDefinition(span, name, fields)
+
+    def parse_struct_fields(self) -> t.List[StructField]:
+        fields = []
+        while True:
+            token = self.token()
+            if not token:
+                raise ValueError("Unexpected EOF")
+            match token:
+                case ValueToken(TokenKind.identifier, _, name):
+                    type_token = self.token()
+                    match type_token:
+                        case ValueToken(TokenKind.identifier, _, _):
+                            fields.append(
+                                StructField(token.span.merge(type_token.span),
+                                            name,
+                                            self.parse_type(type_token.value)))
+                        case _:
+                            raise ValueError(f"Expected type: {type_token}")
+                case Token(TokenKind.newline):
+                    continue
+                case KeywordToken(TokenKind.keyword, _, Keyword.end):
+                    break
+                case _:
+                    raise ValueError(f"Unexpected token: {token}")
+        return fields
 
     def parse_variable_definition(self, mutable: bool) -> VariableDefinition:
         token = self.token()
@@ -566,6 +677,31 @@ class Parser:
                 raise ValueError(f"Expected identifier: {token}")
 
     def parse_parameters(self) -> t.List[Parameter]:
+        parameters = []
+        while True:
+            token = self.token()
+            if not token:
+                raise ValueError("Expected ')'")
+            match token:
+                case Token(TokenKind.rparen):
+                    break
+                case Token(TokenKind.comma):
+                    continue
+                case ValueToken(TokenKind.identifier, _, name):
+                    type_token = self.token()
+                    match type_token:
+                        case ValueToken(TokenKind.identifier, _, _):
+                            parameters.append(
+                                Parameter(token.span.merge(type_token.span),
+                                          name,
+                                          self.parse_type(type_token.value)))
+                        case _:
+                            raise ValueError(f"Expected type: {type_token}")
+                case _:
+                    raise ValueError(f"Unexpected token: {token}")
+        return parameters
+
+    def parse_fields(self) -> t.List[Parameter]:
         parameters = []
         while True:
             token = self.token()
@@ -661,6 +797,14 @@ class BlockCodegen:
             return f"{self.type} {self.name}"
 
     @dataclass
+    class Struct:
+        name: str
+        definition: StructDefinition
+
+        def __repr__(self):
+            return f"{self.definition.name} {self.name}"
+
+    @dataclass
     class Variable:
         span: Span
         name: str
@@ -680,6 +824,7 @@ class BlockCodegen:
         self.literals: t.Dict[t.Union[str, int, bool, float], int] = {}
         self.functions: t.Dict[str, FunctionDefinition] = {}
         self.variables: t.Dict[str, BlockCodegen.Variable] = {}
+        self.structs: t.Dict[str, BlockCodegen.Struct] = {}
 
     def emit(self, code):
         self.code.append(f"{'  ' * (self.indent)}{code}")
@@ -699,8 +844,14 @@ class BlockCodegen:
                 return self.generate_block(expression)
             case FunctionDefinition():
                 return self.generate_function_definition(expression)
+            case StructDefinition():
+                return self.generate_struct_definition(expression)
             case VariableDefinition():
                 return self.generate_variable_definition(expression)
+            case FieldRead():
+                return self.generate_field_read(expression)
+            case FieldWrite():
+                return self.generate_field_write(expression)
             case VariableRead():
                 return self.generate_variable_read(expression)
             case VariableWrite():
@@ -756,6 +907,108 @@ class BlockCodegen:
         self.emit("}")
         self.functions[func.name] = func
         return self.Value("void", BuiltinTypes.void)
+
+    def generate_struct_definition(self, struct: StructDefinition) -> Value:
+        self.structs[struct.name] = self.Struct(struct.name, struct)
+        self.emit(f"%{struct.name} = type {{")
+        self.indent += 1
+        for i, field in enumerate(struct.fields):
+            self.emit(
+                f"{field.type}{',' if i < len(struct.fields) - 1 else ''}")
+        self.indent -= 1
+        self.emit("}")
+        # Create the constructor.
+        func = FunctionDefinition(
+            span=struct.span,
+            name=struct.name,
+            return_type=Type(struct.name, f"%{struct.name}*"),
+            parameters=[
+                Parameter(name=x.name, type=x.type, span=x.span)
+                for x in struct.fields
+            ],
+            body=Block(struct.span, []),
+        )
+        self.functions[func.name] = func
+        parameters = ", ".join(
+            [f"{x.type} %{x.name}" for x in func.parameters])
+        self.emit(f"define {func.return_type} @{func.name}({parameters}) {{")
+        self.indent += 1
+        self.emit(
+            f"%sizeptr = getelementptr inbounds {func.return_type}, {func.return_type}* null, i32 1"
+        )
+        self.emit(f"%size = ptrtoint {func.return_type}* %sizeptr to i64")
+        self.emit(f"%alloc = call i8* @malloc(i64 %size)")
+        # Copy the fields.
+        for i, field in enumerate(struct.fields):
+            self.emit(
+                f"%field{i} = getelementptr inbounds %{struct.name}, ptr %alloc, i32 0, i32 {i}"
+            )
+            self.emit(
+                f"store {field.type} %{field.name}, {field.type}* %field{i}")
+        self.emit(f"ret ptr %alloc")
+        self.indent -= 1
+        self.emit("}")
+        return self.Value("void", BuiltinTypes.void)
+
+    def generate_field_read(self, field_read: FieldRead) -> Value:
+        var = self.generate_variable_read(
+            VariableRead(field_read.span, field_read.name))
+        struct_name = var.type.klar_name
+        struct = self.find_struct(struct_name, field_read.span)
+        for field_name in field_read.field_path[:-1]:
+            field = next(x for x in struct.definition.fields
+                         if x.name == field_name)
+            field_index = struct.definition.fields.index(field)
+            new_var = self.Value(f"%.{self.codegen.next_id()}", field.type)
+            self.emit(
+                f"{new_var.name}_ptr = getelementptr %{struct.name}, {var}, i32 0, i32 {field_index}"
+            )
+            self.emit(
+                f"{new_var.name} = load {field.type}, {field.type}* {new_var.name}_ptr"
+            )
+            var = new_var
+            struct = self.find_struct(field.type.klar_name, field.span)
+        field_name = field_read.field_path[-1]
+        field = next(x for x in struct.definition.fields
+                     if x.name == field_name)
+        field_index = struct.definition.fields.index(field)
+        res = self.Value(f"%.{self.codegen.next_id()}", field.type)
+        self.emit(
+            f"{res.name}_field = getelementptr %{struct.name}, {var}, i32 0, i32 {field_index}"
+        )
+        self.emit(
+            f"{res.name} = load {field.type}, {field.type}* {res.name}_field")
+        return res
+
+    def generate_field_write(self, field_write: FieldWrite) -> Value:
+        var = self.generate_variable_read(
+            VariableRead(field_write.span, field_write.name))
+        struct_name = var.type.klar_name
+        struct = self.find_struct(struct_name, field_write.span)
+        for field_name in field_write.field_path[:-1]:
+            field = next(x for x in struct.definition.fields
+                         if x.name == field_name)
+            field_index = struct.definition.fields.index(field)
+            new_var = self.Value(f"%.{self.codegen.next_id()}", field.type)
+            self.emit(
+                f"{new_var.name}_ptr = getelementptr %{struct.name}, {var}, i32 0, i32 {field_index}"
+            )
+            self.emit(
+                f"{new_var.name} = load {field.type}, {field.type}* {new_var.name}_ptr"
+            )
+            var = new_var
+            struct = self.find_struct(field.type.klar_name, field.span)
+        field_name = field_write.field_path[-1]
+        field = next(x for x in struct.definition.fields
+                     if x.name == field_name)
+        field_index = struct.definition.fields.index(field)
+        value = self.generate_expression(field_write.value)
+        id = self.codegen.next_id()
+        self.emit(
+            f"%.{id} = getelementptr %{struct.name}, {var}, i32 0, i32 {field_index}"
+        )
+        self.emit(f"store {value}, {field.type}* %.{id}")
+        return value
 
     def generate_return_expression(self, return_: ReturnExpression) -> Value:
         reg = self.generate_expression(return_.expression)
@@ -853,6 +1106,14 @@ class BlockCodegen:
             raise ValueError(f"Unknown variable: {name} at {span}")
         return self.parent.find_variable(name, span)
 
+    def find_struct(self, name: str, span: Span) -> Struct:
+        struct = self.structs.get(name)
+        if struct:
+            return struct
+        if not self.parent:
+            raise ValueError(f"Unknown struct: {name} at {span}")
+        return self.parent.find_struct(name, span)
+
 
 class Codegen:
 
@@ -863,15 +1124,15 @@ declare i8* @malloc(i64)
 declare i32 @memset(i8*, i32, i32)
 
 define void @print(i8* %str) {
-    %1 = call i32 @puts(i8* %str)
-    ret void
+  %1 = call i32 @puts(i8* %str)
+  ret void
 }
 
 define i8* @format(i8* %fmt, i32 %i) {
-    %1 = call i8* @malloc(i32 32)
-    %2 = call i8* @memset(i8* %1, i32 0, i32 32)
-    %3 = call i32 (i8*, i8*, ...) @sprintf(i8* %1, i8* %fmt, i32 %i)
-    ret i8* %1
+  %1 = call i8* @malloc(i64 64)
+  %2 = call i8* @memset(i8* %1, i32 0, i32 64)
+  %3 = call i32 (i8*, i8*, ...) @sprintf(i8* %1, i8* %fmt, i32 %i)
+  ret i8* %1
 }
     """
 

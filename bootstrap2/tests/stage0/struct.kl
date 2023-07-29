@@ -1,0 +1,39 @@
+struct Address:
+    street str
+    number i32
+end
+
+struct Person:
+    name str
+    age i32
+    address Address -- Structs can be nested.
+end
+
+-- Struct as parameter.
+fn print_person(p Person):
+    print("Person:")
+    -- Raad struct field.
+    print(p.name)
+    print(format("%i", p.age))
+    -- Read nested struct field.
+    let address = p.address
+    print(address.street)
+    -- Read nested struct field using dot notation.
+    print(format("%i", p.address.number))
+end
+
+fn create_person(name str, age i32) Person:
+    return Person(name, age, Address("Street", 123))
+end
+
+fn main():
+    let p = create_person("John", 20)
+    print_person(p)
+    -- Update struct field.
+    p.name = "Jane"
+    p.age = 21
+    -- Update nested struct field.
+    p.address.street = "New Street"
+    p.address.number = 456
+    print_person(p)
+end

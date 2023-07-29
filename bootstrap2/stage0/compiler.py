@@ -272,18 +272,20 @@ class Lexer:
 
 @dataclass
 class Type():
-    name: str
+    klar_name: str
+    llvm_name: str
 
     def __repr__(self):
-        return self.name
+        return self.llvm_name
 
 
+@dataclass
 class BuiltinTypes:
-    i32 = Type("i32")
-    f32 = Type("f32")
-    i8_ptr = Type("i8*")
-    bool_ = Type("i1")
-    void = Type("void")
+    i32 = Type("i32", "i32")
+    f32 = Type("f32", "f32")
+    str_ = Type("str", "i8*")
+    bool_ = Type("bool", "i1")
+    void = Type("void", "void")
 
 
 @dataclass
@@ -497,11 +499,13 @@ class Parser:
         return IfExpression(span, condition, then, else_)
 
     def parse_type(self, type: str) -> Type:
-        if type == "str":
-            return BuiltinTypes.i8_ptr
-        if type == "bool":
-            return BuiltinTypes.bool_
-        return Type(type)
+        builtin_type = next((t for t in BuiltinTypes.__dict__.values()
+                             if isinstance(t, Type) and t.klar_name == type),
+                            None)
+        if builtin_type:
+            return builtin_type
+        # This must be a user-defined type.
+        return Type(f"%{type}", type)
 
     def parse_variable_definition(self, mutable: bool) -> VariableDefinition:
         token = self.token()
@@ -725,7 +729,7 @@ class BlockCodegen:
                 literal_const = self.codegen.literal_const(literal)
                 return self.Value(
                     f"getelementptr ([{len(literal.value) + 1} x i8], ptr {literal_const}, i32 0, i32 0)",
-                    BuiltinTypes.i8_ptr,
+                    BuiltinTypes.str_,
                 )
 
     def generate_void(self, void: Void) -> Value:
@@ -763,7 +767,7 @@ class BlockCodegen:
         func = self.find_function(call.name, call.span)
         res = self.Value("void", BuiltinTypes.void)
         code = ""
-        if func.return_type.name != "void":
+        if func.return_type.klar_name != "void":
             res = self.Value(f"%.{self.codegen.next_id()}", func.return_type)
             code += f"{res.name} = "
         code += f"call {func.return_type} @{func.name}("
@@ -900,14 +904,14 @@ define i8* @format(i8* %fmt, i32 %i) {
         block.functions["print"] = FunctionDefinition(
             name="print",
             span=Span(-1, -1),
-            return_type=Type("i32"),
-            parameters=[Parameter(Span(-1, -1), "str", Type("i8*"))],
+            return_type=BuiltinTypes.i32,
+            parameters=[Parameter(Span(-1, -1), "str", BuiltinTypes.str_)],
             body=Block(Span(-1, -1), []))
         block.functions["format"] = FunctionDefinition(
             name="format",
             span=Span(-1, -1),
-            return_type=BuiltinTypes.i8_ptr,
-            parameters=[Parameter(Span(-1, -1), "i", Type("i32"))],
+            return_type=BuiltinTypes.str_,
+            parameters=[Parameter(Span(-1, -1), "i", BuiltinTypes.i32)],
             body=Block(Span(-1, -1), []))
 
     def literal_const(self, literal: Literal) -> str:

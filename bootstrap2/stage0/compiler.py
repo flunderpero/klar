@@ -25,7 +25,6 @@ import os
 
 class TokenKind(Enum):
     whitespace = auto()
-    newline = auto()
     dot = auto()
     colon = auto()
     comma = auto()
@@ -155,11 +154,6 @@ class Lexer:
         self.tokens.append(Token(kind, Span(self.line, self.column)))
         self.state = None
 
-    def emit_newline(self):
-        self.emit_single(TokenKind.newline)
-        self.line += 1
-        self.column = 0
-
     def span(self) -> Span:
         return Span(self.line, self.column)
 
@@ -188,8 +182,6 @@ class Lexer:
                                 self.emit_single(TokenKind.double_equal)
                             else:
                                 self.emit_single(TokenKind.equal)
-                        case "\n":
-                            self.emit_newline()
                         case ",":
                             self.emit_single(TokenKind.comma)
                         case ".":
@@ -204,6 +196,9 @@ class Lexer:
                             self.state = ValueToken(TokenKind.comment,
                                                     self.span(), c)
                         case c if c.isspace():
+                            if c == "\n":
+                                self.line += 1
+                                self.column = 1
                             self.state = ValueToken(TokenKind.whitespace,
                                                     self.span(), c)
                         case c if c.isnumeric():
@@ -233,7 +228,6 @@ class Lexer:
                     else:
                         if c == "\n":
                             self.emit()
-                            self.emit_newline()
                         else:
                             self.state.value += c
                 case StringToken(TokenKind.string, _):
@@ -242,10 +236,10 @@ class Lexer:
                     else:
                         self.state.value += c
                 case ValueToken(TokenKind.whitespace, _):
-                    if c == "\n":
-                        self.emit()
-                        self.emit_newline()
-                    elif c.isspace():
+                    if c.isspace():
+                        if c == "\n":
+                            self.line += 1
+                            self.column = 1
                         self.state.value += c
                     else:
                         self.emit()
@@ -450,11 +444,13 @@ class Parser:
         token = None
         while self.idx < len(self.tokens):
             token = self.tokens[self.idx]
-            if token.kind == TokenKind.whitespace or \
-                token.kind == TokenKind.comment:
-                self.idx += 1
-            else:
-                break
+            match token:
+                case ValueToken(TokenKind.comment, _):
+                    self.idx += 1
+                case ValueToken(TokenKind.whitespace, _):
+                    self.idx += 1
+                case _:
+                    break
         self.idx += 1
         return token
 
@@ -472,8 +468,6 @@ class Parser:
             if span_start.start_line == -1:
                 span_start = token.span
             span_end = token.span
-            if token.kind == TokenKind.newline:
-                continue
             expressions.append(self.parse_expression(token))
         return Block(span_start.merge(span_end), expressions)
 
@@ -650,8 +644,6 @@ class Parser:
                                       self.parse_type(type_token.value)))
                         case _:
                             raise ValueError(f"Expected type: {type_token}")
-                case Token(TokenKind.newline):
-                    continue
                 case KeywordToken(TokenKind.keyword, _, Keyword.end):
                     break
                 case _:
@@ -690,8 +682,6 @@ class Parser:
                     match next_token:
                         case Token(TokenKind.lparen):
                             fields = self.parse_enum_fields()
-                        case Token(TokenKind.newline):
-                            pass
                         case _:
                             self.idx -= 1
                     span = token.span
@@ -700,8 +690,6 @@ class Parser:
                     variants.append(StructDefinition(span, name, fields))
                 case KeywordToken(TokenKind.keyword, _, Keyword.end):
                     break
-                case Token(TokenKind.newline):
-                    continue
                 case _:
                     raise ValueError(f"Unexpected token: {token}")
         return variants
@@ -860,8 +848,6 @@ class Parser:
                                       TokenKind.keyword, _, Keyword.else_):
                     return Block(span_start.merge(span_end),
                                  expressions), token.keyword
-                case Token(TokenKind.newline):
-                    continue
                 case _:
                     expressions.append(self.parse_expression(token))
         raise ValueError("Expected end")
@@ -869,7 +855,7 @@ class Parser:
     def parse_return_expression(self, return_token: Token) -> ReturnExpression:
         token = self.token()
         match token:
-            case Token(TokenKind.newline) | None:
+            case None:
                 return ReturnExpression(return_token.span,
                                         Void(return_token.span))
             case KeywordToken(TokenKind.keyword, _, Keyword.end):

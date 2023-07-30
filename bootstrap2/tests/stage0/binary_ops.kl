@@ -1,0 +1,39 @@
+fn print_bool(b bool):
+    if b:
+        print("true")
+    else:
+        print("false")
+    end
+end
+
+fn main():
+    print("==")
+    print_bool(1 == 1)
+    print_bool(1 == 2)
+    print("!=")
+    print_bool(1 != 2)
+    print_bool(1 != 1)
+    print("<")
+    print_bool(1 < 2)
+    print_bool(1 < 1)
+    print("<=")
+    print_bool(1 <= 2)
+    print_bool(1 <= 1)
+    print_bool(1 <= 0)
+    print(">")
+    print_bool(2 > 1)
+    print_bool(2 > 2)
+    print(">=")
+    print_bool(2 >= 1)
+    print_bool(2 >= 2)
+    print_bool(2 >= 3)
+    mut left = "abc"
+    -- Make sure `right` is a new string and not a reference to `left`.
+    mut right = f"{left}"
+    print("`str` ==")
+    print_bool(left == right)
+    print_bool(left == "def")
+    print("`str` !=")
+    print_bool(left != right)
+    print_bool(left != "def")
+end

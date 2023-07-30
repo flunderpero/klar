@@ -52,6 +52,7 @@ class TokenKind(Enum):
     float_ = auto()
     bool_ = auto()
     comment = auto()
+    exclamation = auto()
 
 
 class Keyword(StrEnum):
@@ -193,6 +194,12 @@ class Lexer:
                             self.emit_single(TokenKind.star)
                         case "/":
                             self.emit_single(TokenKind.slash)
+                        case "!":
+                            self.emit_single(TokenKind.exclamation)
+                        case "<":
+                            self.emit_single(TokenKind.langle_bracket)
+                        case ">":
+                            self.emit_single(TokenKind.rangle_bracket)
                         case "-":
                             self.state = ValueToken(TokenKind.comment,
                                                     self.span(), c)
@@ -606,6 +613,29 @@ class Parser:
                 return BinaryExpression.Operator.div
             case Token(TokenKind.double_equal, _):
                 return BinaryExpression.Operator.eq
+            case Token(TokenKind.langle_bracket, _):
+                next_token = self.token()
+                match next_token:
+                    case Token(TokenKind.equal, _):
+                        return BinaryExpression.Operator.le
+                    case _:
+                        self.idx -= 1
+                return BinaryExpression.Operator.lt
+            case Token(TokenKind.rangle_bracket, _):
+                next_token = self.token()
+                match next_token:
+                    case Token(TokenKind.equal, _):
+                        return BinaryExpression.Operator.ge
+                    case _:
+                        self.idx -= 1
+                return BinaryExpression.Operator.gt
+            case Token(TokenKind.exclamation, _):
+                next_token = self.token()
+                match next_token:
+                    case Token(TokenKind.equal, _):
+                        return BinaryExpression.Operator.ne
+                    case _:
+                        self.idx -= 1
         self.idx -= 1
         return None
 
@@ -1437,7 +1467,32 @@ class BlockCodegen:
         if op_name == "div":
             op_name = "sdiv"
         if op_name == "eq":
+            res.type = BuiltinTypes.bool_
+            if right.type.klar_name == "str":
+                self.emit(
+                    f"{res.name}_str = call i32 @strcmp({left}, {right})")
+                self.emit(f"{res.name} = icmp eq i32 {res.name}_str, 0")
+                return res
             op_name = "icmp eq"
+        if op_name == "ne":
+            res.type = BuiltinTypes.bool_
+            if right.type.klar_name == "str":
+                self.emit(
+                    f"{res.name}_str = call i32 @strcmp({left}, {right})")
+                self.emit(f"{res.name} = icmp ne i32 {res.name}_str, 0")
+                return res
+            op_name = "icmp ne"
+        if op_name == "lt":
+            op_name = "icmp slt"
+            res.type = BuiltinTypes.bool_
+        if op_name == "gt":
+            op_name = "icmp sgt"
+            res.type = BuiltinTypes.bool_
+        if op_name == "le":
+            op_name = "icmp sle"
+            res.type = BuiltinTypes.bool_
+        if op_name == "ge":
+            op_name = "icmp sge"
             res.type = BuiltinTypes.bool_
         self.emit(f"{res.name} = {op_name} {left}, {right.name}")
         return res

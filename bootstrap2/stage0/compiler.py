@@ -645,10 +645,18 @@ class Parser:
         if then_end_keyword == Keyword.else_:
             else_, _ = self.parse_block()
             span = condition.span.merge(else_.span)
-        else:
-            span = condition.span.merge(then.span)
-            else_ = None
-        return IfExpression(span, condition, then, else_)
+            return IfExpression(span, condition, then, else_)
+        elif then_end_keyword is None:
+            token = self.token()
+            match token:
+                case KeywordToken(TokenKind.keyword, _, Keyword.else_):
+                    else_, _ = self.parse_block()
+                    span = condition.span.merge(else_.span)
+                    return IfExpression(span, condition, then, else_)
+                case _:
+                    self.idx -= 1
+        span = condition.span.merge(then.span)
+        return IfExpression(span, condition, then, None)
 
     def parse_match_expression(self) -> MatchExpression:
         value = self.parse_expression(self.token())
@@ -892,7 +900,7 @@ class Parser:
                         return_type = BuiltinTypes.void
                         self.idx -= 1
                 body, body_block_end = self.parse_block()
-                if body_block_end != Keyword.end:
+                if body_block_end and body_block_end != Keyword.end:
                     raise ValueError(f"Expected 'end': {body_block_end}")
                 if return_type == BuiltinTypes.void:
                     # `void` functions must end with `return`.
@@ -960,15 +968,27 @@ class Parser:
                     raise ValueError(f"Unexpected token: {token}")
         return parameters
 
-    def parse_block(self) -> t.Tuple[Block, Keyword]:
+    def parse_block(self) -> t.Tuple[Block, t.Optional[Keyword]]:
         expressions: t.List[Expression] = []
         span_start = Span(-1, -1)
         span_end = Span(-1, -1)
         token = self.token()
-        if token is None:
-            raise ValueError("Unexpected EOF")
-        if token.kind != TokenKind.colon:
-            raise ValueError(f"Expected ':': {token}")
+        is_single_line = False
+        match token:
+            case Token(TokenKind.colon, _):
+                is_single_line = False
+            case Token(TokenKind.equal, _):
+                next_token = self.token()
+                match next_token:
+                    case Token(TokenKind.rangle_bracket, _):
+                        is_single_line = True
+                    case _:
+                        raise ValueError(f"Expected '>': {next_token}")
+            case _:
+                raise ValueError(f"Expected ':' or '=>': {token}")
+        if is_single_line:
+            expression = self.parse_expression(self.token())
+            return Block(token.span.merge(expression.span), [expression]), None
         while True:
             token = self.token()
             if not token:
@@ -1788,7 +1808,7 @@ def main():
     subprocess.check_call(
         f"llc -O=0 -opaque-pointers -filetype=obj {ll_file} -o {obj_file}",
         shell=True)
-    subprocess.check_call(f"clang -O0 {obj_file} -o {bin_file}", shell=True)
+    subprocess.check_call(f"gcc -O0 {obj_file} -o {bin_file}", shell=True)
 
 
 if __name__ == "__main__":

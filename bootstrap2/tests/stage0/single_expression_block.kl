@@ -1,0 +1,11 @@
+fn print_ok() => print("Ok")
+
+fn main():
+    if 1 == 1 => print("Ok")
+    else => print("Not Ok")
+    match 1:
+        1 => print("Ok")
+        else => print("Not Ok")
+    end
+    print_ok()
+end

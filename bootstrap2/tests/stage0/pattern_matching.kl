@@ -1,0 +1,130 @@
+fn str_matching(s str):
+    match s:
+        "Ok":
+            print("Matched on 'Ok'") 
+        end
+        "Well": 
+            print ("Matched on 'Well'") 
+        end
+        else: 
+            print("String did not match") 
+        end
+    end
+end
+
+fn i32_matching(i i32):
+    match i:
+        1:
+            print("Matched on 1") 
+        end
+        2:
+            print("Matched on 2") 
+        end
+        else: 
+            print("Number did not match") 
+        end
+    end
+end
+
+struct Person:
+    name str
+    age i32
+end
+
+fn struct_matching(p Person):
+    match p:
+        Person("Peter", 42):
+            print("Matched on Peter") 
+        end
+        Person("Mary", 24): 
+            print("Matched on Mary") 
+        end
+        else: 
+            print("Person did not match") 
+        end
+    end
+end
+
+fn struct_capture(p Person):
+    match p:
+        Person("Peter", age):
+            print(format("Matched Peter with age %i", age))
+        end
+        else: 
+            print("Person did not match when trying to capture")
+        end
+    end
+end
+
+enum Color:
+    Red
+    Green
+    Blue
+    Orange(intensity i32)
+end
+
+fn enum_matching(c Color):
+    match c:
+        Color.Red:
+            print("Matched on Red") 
+        end
+        Color.Green:
+            print("Matched on Green") 
+        end
+        Color.Orange(42):
+            print("Matched on Orange with fixed intensity 42")
+        end
+        Color.Orange(intensity):
+            print(format("Matched on wildcard Orange with intensity %i", intensity))
+        end
+        else: 
+            print("Color did not match") 
+        end
+    end
+end
+
+struct Palette:
+    primary Color
+    secondary Color
+end
+
+fn enum_in_struct_matching(palette Palette):
+    match palette:
+        Palette(Color.Red, Color.Blue):
+            print("Matched on Red and Blue") 
+        end
+        Palette(Color.Green, Color.Blue):
+            print("Matched on Green and Blue") 
+        end
+        Palette(Color.Green, secondary):
+            print("Matched on Green and wildcard secondary color")
+        end
+        else: 
+            print("Palette did not match") 
+        end
+    end
+end
+
+fn main():
+    str_matching("Ok")
+    str_matching("Well")
+    str_matching("no match")
+    i32_matching(1)
+    i32_matching(2)
+    i32_matching(42)
+    struct_matching(Person("Peter", 42))
+    struct_matching(Person("Mary", 24))
+    struct_matching(Person("Marie", 24))
+    struct_capture(Person("Peter", 42))
+    struct_capture(Person("Peter", 21))
+    struct_capture(Person("Mary", 25))
+    enum_matching(Color.Red)
+    enum_matching(Color.Green)
+    enum_matching(Color.Blue)
+    enum_matching(Color.Orange(42))
+    enum_matching(Color.Orange(100))
+    enum_in_struct_matching(Palette(Color.Red, Color.Blue))
+    enum_in_struct_matching(Palette(Color.Green, Color.Blue))
+    enum_in_struct_matching(Palette(Color.Green, Color.Orange(100)))
+    enum_in_struct_matching(Palette(Color.Red, Color.Orange(42)))
+end

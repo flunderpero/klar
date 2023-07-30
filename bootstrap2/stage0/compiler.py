@@ -63,6 +63,7 @@ class Keyword(StrEnum):
     fn = "fn"
     struct = "struct"
     enum = "enum"
+    match_ = "match"
     return_ = "return"
     false = "false"
     true = "true"
@@ -411,6 +412,8 @@ class StructDefinition(Expression):
 class FieldRead(Expression):
     name: str
     field_path: t.List[str]
+    struct_name: t.Optional[str] = None
+    enum_variant: t.Optional[str] = None
 
 
 @dataclass
@@ -418,6 +421,27 @@ class FieldWrite(Expression):
     name: str
     field_path: t.List[str]
     value: Expression
+
+
+@dataclass
+class MatchPattern(Node):
+    literal: t.Optional[Literal] = None
+    identifier: t.Optional[str] = None
+    namespace: t.Optional[str] = None
+    field_patterns: t.Optional[t.List["MatchPattern"]] = None
+
+
+@dataclass
+class MatchArm(Node):
+    pattern: MatchPattern
+    block: Block
+
+
+@dataclass
+class MatchExpression(Expression):
+    expression: Expression
+    arms: t.List[MatchArm]
+    default_arm: t.Optional[Block]
 
 
 @dataclass
@@ -549,6 +573,8 @@ class Parser:
                 enum = self.parse_enum_definition()
                 self.enums.append(enum)
                 expression = enum
+            case KeywordToken(TokenKind.keyword, _, Keyword.match_):
+                expression = self.parse_match_expression()
             case KeywordToken(TokenKind.keyword, _, Keyword.if_):
                 expression = self.parse_if_expression()
             case KeywordToken(TokenKind.keyword, _, Keyword.mut):
@@ -593,6 +619,84 @@ class Parser:
             span = condition.span.merge(then.span)
             else_ = None
         return IfExpression(span, condition, then, else_)
+
+    def parse_match_expression(self) -> MatchExpression:
+        value = self.parse_expression(self.token())
+        match self.token():
+            case Token(TokenKind.colon):
+                pass
+            case _:
+                raise ValueError(f"Expected :, got {self.token()}")
+        arms = []
+        default_arm: t.Optional[Block] = None
+        while True:
+            token = self.token()
+            match token:
+                case KeywordToken(TokenKind.keyword, _, Keyword.end):
+                    break
+                case None:
+                    raise ValueError("Unexpected EOF")
+                case _:
+                    match token:
+                        case KeywordToken(TokenKind.keyword, _, Keyword.else_):
+                            default_arm, _ = self.parse_block()
+                        case _:
+                            pattern = self.parse_match_pattern(token)
+                            body, _ = self.parse_block()
+                            arms.append(
+                                MatchArm(token.span.merge(body.span), pattern,
+                                         body))
+        return MatchExpression(value.span.merge(token.span), value, arms,
+                               default_arm)
+
+    def parse_match_pattern(self, token: Token) -> MatchPattern:
+        match token:
+            case ValueToken(TokenKind.string, _, value) | ValueToken(
+                    TokenKind.float_, _, value) | ValueToken(
+                        TokenKind.integer, _, value) | ValueToken(
+                            TokenKind.bool_, _, value):
+                literal = self.parse_expression(token)
+                if not isinstance(literal, Literal):
+                    raise ValueError(f"Expected literal, got {literal}")
+                return MatchPattern(span=token.span, literal=literal)
+            case ValueToken(TokenKind.identifier, _, identifier):
+                namespace = None
+                next_token = self.token()
+                match next_token:
+                    case Token(TokenKind.dot):
+                        namespace = identifier
+                        next_token = self.token()
+                        match next_token:
+                            case ValueToken(TokenKind.identifier, _,
+                                            identifier_):
+                                identifier = identifier_
+                            case _:
+                                raise ValueError(
+                                    f"Expected identifier, got {next_token}")
+                        next_token = self.token()
+                field_patterns = []
+                match next_token:
+                    case Token(TokenKind.lparen):
+                        while True:
+                            next_token = self.token()
+                            match next_token:
+                                case Token(TokenKind.rparen):
+                                    break
+                                case Token(TokenKind.comma):
+                                    continue
+                                case _:
+                                    if not next_token:
+                                        raise ValueError("Unexpected EOF")
+                                    field_patterns.append(
+                                        self.parse_match_pattern(next_token))
+                    case _:
+                        self.idx -= 1
+                return MatchPattern(span=token.span,
+                                    identifier=identifier,
+                                    namespace=namespace,
+                                    field_patterns=field_patterns)
+            case _:
+                raise ValueError(f"Unexpected token: {token}")
 
     def parse_type(self, type: str) -> Type:
         builtin_type = next((t for t in BuiltinTypes.__dict__.values()
@@ -918,6 +1022,7 @@ class BlockCodegen:
     class Variable:
         span: Span
         name: str
+        llvm_reg: str
         type: Type
         mutable: bool
         is_parameter: bool = False
@@ -984,6 +1089,8 @@ class BlockCodegen:
                 return self.generate_binary_expression(expression)
             case IfExpression():
                 return self.generate_if_expression(expression)
+            case MatchExpression():
+                return self.generate_match_expression(expression)
             case _:
                 raise ValueError(f"Unknown expression: {expression}")
 
@@ -1020,6 +1127,7 @@ class BlockCodegen:
         for param in func.parameters:
             self.variables[param.name] = self.Variable(span=param.span,
                                                        name=param.name,
+                                                       llvm_reg=f"%{param.name}",
                                                        is_parameter=True,
                                                        mutable=False,
                                                        type=param.type)
@@ -1155,21 +1263,32 @@ class BlockCodegen:
                                                 field_read.span)
         except ValueError as e:
             pass
-        var = self.generate_variable_read(
-            VariableRead(field_read.span, field_read.name))
-        if var.type == BuiltinTypes.fn:
-            return var
-        struct_name = var.type.klar_name
-        if var.type.enum_variant:
-            struct_name = f"{struct_name}.{var.type.enum_variant}"
-        struct = self.find_struct(struct_name, field_read.span)
+        if field_read.struct_name and field_read.name.startswith("."):
+            struct_name = field_read.struct_name
+            struct = self.find_struct(struct_name, field_read.span)
+            var_type = struct.definition.type()
+            if field_read.enum_variant:
+                var_type = Type(**struct.definition.type().__dict__)
+                var_type.llvm_name = f"%{struct_name}*"
+            var = self.Value(f"%{field_read.name}", var_type)
+        else:
+            var = self.generate_variable_read(
+                VariableRead(field_read.span, field_read.name))
+            if var.type == BuiltinTypes.fn:
+                return var
+            struct_name = var.type.klar_name
+            if var.type.enum_variant:
+                struct_name = f"{struct_name}.{var.type.enum_variant}"
+            elif field_read.enum_variant:
+                struct_name = f"{struct_name}.{field_read.enum_variant}"
+            struct = self.find_struct(struct_name, field_read.span)
         for field_name in field_read.field_path[:-1]:
             field = next(
                 (x for x in struct.definition.fields if x.name == field_name),
                 None)
             if field is None:
                 raise ValueError(
-                    f"Struct {struct_name} does not have a field named {field_name}",
+                    f"Struct {struct.name} does not have a field named {field_name}",
                     field_read.span)
             field_index = struct.definition.fields.index(field)
             new_var = self.Value(f"%.{self.codegen.next_id()}", field.type)
@@ -1187,7 +1306,7 @@ class BlockCodegen:
             None)
         if field is None:
             raise ValueError(
-                f"Struct {struct_name} does not have a field named {field_name}",
+                f"Struct {struct.name} does not have a field named {field_name}",
                 field_read.span)
         field_index = struct.definition.fields.index(field)
         res = self.Value(f"%.{self.codegen.next_id()}", field.type)
@@ -1264,11 +1383,13 @@ class BlockCodegen:
     def generate_variable_definition(self,
                                      variable: VariableDefinition) -> Value:
         res = self.generate_expression(variable.value)
+        var_reg = f"%.{variable.name}_{self.codegen.next_id()}"
         variable.type = res.type
-        self.emit(f"%{variable.name} = alloca {res.type}")
-        self.emit(f"store {res}, {res.type}* %{variable.name}")
+        self.emit(f"{var_reg} = alloca {res.type}")
+        self.emit(f"store {res}, {res.type}* {var_reg}")
         self.variables[variable.name] = self.Variable(span=variable.span,
                                                       name=variable.name,
+                                                      llvm_reg=var_reg,
                                                       mutable=True,
                                                       type=res.type)
         return res
@@ -1278,10 +1399,10 @@ class BlockCodegen:
         if variable.type is None:
             raise ValueError(f"Unknown variable type: {variable_read.name}")
         if variable.is_parameter:
-            return self.Value(f"%{variable.name}", variable.type)
+            return self.Value(variable.llvm_reg, variable.type)
         res = self.Value(f"%.{self.codegen.next_id()}", variable.type)
         self.emit(
-            f"{res.name} = load {variable.type}, {variable.type}* %{variable.name}"
+            f"{res.name} = load {variable.type}, {variable.type}* {variable.llvm_reg}"
         )
         return res
 
@@ -1292,7 +1413,7 @@ class BlockCodegen:
         if not variable.mutable:
             raise ValueError(f"Variable is not mutable: {variable_write.name}")
         res = self.generate_expression(variable_write.value)
-        self.emit(f"store {res}, {variable.type}* %{variable.name}")
+        self.emit(f"store {res}, {variable.type}* {variable.llvm_reg}")
         return res
 
     def generate_namespace_read(self, namespace_name: str, field: str,
@@ -1320,6 +1441,137 @@ class BlockCodegen:
             res.type = BuiltinTypes.bool_
         self.emit(f"{res.name} = {op_name} {left}, {right.name}")
         return res
+
+    def generate_match_expression(self, match: MatchExpression) -> Value:
+        value = self.generate_expression(match.expression)
+        id = self.codegen.next_id()
+        end_label = f"match_{id}_match_end"
+
+        def string_match(value: BlockCodegen.Value,
+                         arm_value: BlockCodegen.Value, id: int):
+            self.emit(
+                f"%match_{id}_strcmp = call i32 @strcmp({value}, {arm_value})")
+            self.emit(f"%match_{id} = icmp eq i32 %match_{id}_strcmp, 0")
+
+        def float_match(value: BlockCodegen.Value,
+                        arm_value: BlockCodegen.Value, id: int):
+            self.emit(f"%match_{id} = fcmp oeq {value}, {arm_value.name}")
+
+        def int_type_match(value: BlockCodegen.Value,
+                           arm_value: BlockCodegen.Value, id: int):
+            self.emit(f"%match_{id} = icmp eq {value}, {arm_value.name}")
+
+        def struct_match(value: BlockCodegen.Value, pattern: MatchPattern,
+                         id: int) -> t.List[Expression]:
+            if pattern.identifier is None or pattern.field_patterns is None:
+                raise ValueError(f"Invalid struct pattern: {pattern}")
+            if pattern.namespace:
+                enum = self.find_enum(pattern.namespace, pattern.span)
+                variant = next((x for x in enum.definition.variants
+                                if x.name == pattern.identifier), None)
+                if not variant:
+                    raise ValueError(
+                        f"Unknown enum variant: {pattern.identifier}")
+                variant_index = enum.definition.variants.index(variant)
+                # First test the variant type.
+                var_id = self.codegen.next_id(
+                ) if pattern.field_patterns else id
+                self.emit(
+                    f"%match_{var_id}_load_enum_ptr = getelementptr inbounds %{enum.name}, {value}, i32 0, i32 0"
+                )
+                self.emit(
+                    f"%match_{var_id}_load_enum_value = load i32, i32* %match_{var_id}_load_enum_ptr"
+                )
+                self.emit(
+                    f"%match_{var_id} = icmp eq i32 %match_{var_id}_load_enum_value, {variant_index}"
+                )
+                if not pattern.field_patterns:
+                    return []
+                self.emit(
+                    f"br i1 %match_{var_id}, label %match_{id}_field_matches, label %match_{id}_else"
+                )
+                self.emit(f"match_{id}_field_matches:")
+                _struct = self.find_struct(f"{enum.name}.{variant.name}",
+                                           pattern.span)
+                enum_variant = variant.name
+                fields = _struct.definition.fields.copy()[1:]
+                struct_name = _struct.name
+            else:
+                _struct = self.find_struct(pattern.identifier, pattern.span)
+                enum_variant = None
+                fields = _struct.definition.fields
+                struct_name = _struct.name
+            block_prelude: t.List[Expression] = []
+            for pattern, field in zip(pattern.field_patterns, fields):
+                id2 = self.codegen.next_id()
+                if pattern.identifier and not pattern.namespace:
+                    variable_definition = VariableDefinition(
+                        span=pattern.span,
+                        name=pattern.identifier,
+                        mutable=False,
+                        type=field.type,
+                        value=FieldRead(span=pattern.span,
+                                        name=value.name.replace("%", ""),
+                                        struct_name=struct_name,
+                                        enum_variant=enum_variant,
+                                        field_path=[pattern.identifier]))
+                    block_prelude.append(variable_definition)
+                    continue
+                field_value = self.generate_field_read(
+                    FieldRead(pattern.span,
+                              name=value.name.replace("%", ""),
+                              struct_name=struct_name,
+                              enum_variant=enum_variant,
+                              field_path=[field.name]))
+                if pattern.identifier and pattern.namespace:
+                    match_pattern(field_value, pattern, id2)
+                else:
+                    match_pattern(field_value, pattern, id2)
+                self.emit(
+                    f"br i1 %match_{id2}, label %match_{id2}_matches, label %match_{id}_else"
+                )
+                self.emit(f"match_{id2}_matches:")
+            self.emit(f"%match_{id} = add i1 1, 0")
+            return block_prelude
+
+        def match_pattern(value: BlockCodegen.Value, pattern: MatchPattern,
+                          id: int) -> t.List[Expression]:
+            if pattern.literal is not None:
+                arm_value = self.generate_literal(pattern.literal)
+                match arm_value.type:
+                    case BuiltinTypes.str_:
+                        string_match(value, arm_value, id)
+                    case BuiltinTypes.f32:
+                        float_match(value, arm_value, id)
+                    case BuiltinTypes.i32 | BuiltinTypes.bool_:
+                        int_type_match(value, arm_value, id)
+                return []
+            return struct_match(value, pattern, id)
+
+        for arm in match.arms:
+            scope_prelude = match_pattern(value, arm.pattern, id)
+            self.emit(
+                f"br i1 %match_{id}, label %match_{id}_matches, label %match_{id}_else"
+            )
+            self.emit(f"match_{id}_matches:")
+            arm.block.expressions = scope_prelude + arm.block.expressions
+            self.generate_block(arm.block)
+            self.indent += 1
+            self.emit(f"br label %{end_label}")
+            self.indent -= 1
+            self.emit(f"match_{id}_else:")
+            id = self.codegen.next_id()
+        if match.default_arm:
+            self.generate_block(match.default_arm)
+            self.indent += 1
+            self.emit(f"br label %{end_label}")
+            self.indent -= 1
+        else:
+            self.emit(f"br label %{end_label}")
+        self.emit(f"{end_label}:")
+        # TODO: If the match expression is used as a value, we need to return
+        #       the value of the block that was executed.
+        return BlockCodegen.Value("void", BuiltinTypes.void)
 
     def find_function(self, name: str, span: Span) -> FunctionDefinition:
         if "." in name:
@@ -1377,6 +1629,7 @@ class Codegen:
     llvm_ir_prelude = """
 declare i32 @puts(i8*) 
 declare i32 @sprintf(i8*, i8*, ...)
+declare i32 @strcmp(i8*, i8*)
 declare i8* @malloc(i64)
 declare i32 @memset(i8*, i32, i32)
 

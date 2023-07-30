@@ -1,0 +1,21 @@
+Matched on 'Ok'
+Matched on 'Well'
+String did not match
+Matched on 1
+Matched on 2
+Number did not match
+Matched on Peter
+Matched on Mary
+Person did not match
+Matched Peter with age 42
+Matched Peter with age 21
+Person did not match when trying to capture
+Matched on Red
+Matched on Green
+Color did not match
+Matched on Orange with fixed intensity 42
+Matched on wildcard Orange with intensity 100
+Matched on Red and Blue
+Matched on Green and Blue
+Matched on Green and wildcard secondary color
+Palette did not match

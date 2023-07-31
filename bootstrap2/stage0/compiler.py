@@ -48,6 +48,7 @@ class TokenKind(Enum):
     keyword = auto()
     identifier = auto()
     string = auto()
+    format_string = auto()
     integer = auto()
     float_ = auto()
     bool_ = auto()
@@ -131,10 +132,17 @@ class StringToken(ValueToken):
         return f"{repr(self.span)} {self.kind.name}({self.quote}{value}{self.quote})"
 
 
+@dataclass
+class FormatStringToken(Token):
+    parts: t.List[t.Union[StringToken, t.List[Token]]]
+
+
 class Lexer:
 
     def __init__(self, src: str):
-        self.src = src
+        # We add a null byte to the end of the source code to make it easier
+        # to lex the last token.
+        self.src = src + "\0"
         self.state: t.Optional[Token] = None
         self.tokens: t.List[Token] = []
         self.line = 1
@@ -215,6 +223,8 @@ class Lexer:
                         case c if c.isalpha():
                             self.state = ValueToken(TokenKind.identifier,
                                                     self.span(), c)
+                        case "\0":
+                            continue
                         case _:
                             raise ValueError(
                                 f"Unexpected character: {c} at {self.span()}")
@@ -238,8 +248,10 @@ class Lexer:
                             self.emit()
                         else:
                             self.state.value += c
-                case StringToken(TokenKind.string, _):
+                case StringToken(_, _):
                     if c == self.state.quote:
+                        if self.state.kind == TokenKind.format_string:
+                            self.parse_format_string()
                         self.emit(advance=True)
                     else:
                         self.state.value += c
@@ -267,6 +279,9 @@ class Lexer:
                 case ValueToken(TokenKind.identifier, _):
                     if c.isalnum() or c == "_":
                         self.state.value += c
+                    elif c == '"' and self.state.value == "f":
+                        self.state = StringToken(TokenKind.format_string,
+                                                 self.span(), "", c)
                     else:
                         if self.state.value in Keyword.__members__.values():
                             self.state = KeywordToken(
@@ -275,6 +290,57 @@ class Lexer:
                         self.emit()
                 case _:
                     raise ValueError(f"Unexpected state: {self.state}")
+
+    def parse_format_string(self):
+
+        @dataclass
+        class Part:
+            value: str
+            is_expression: bool
+
+        if not isinstance(self.state, StringToken):
+            raise ValueError(f"Expected StringToken at {self.span()}")
+
+        part: Part = Part("", False)
+        parts: t.List[Part] = []
+        next_iter = iter(self.state.value)
+        next(next_iter, None)
+        this_iter = iter(self.state.value)
+        for c in this_iter:
+            next_c = next(next_iter, None)
+            if part.is_expression:
+                if c == "}":
+                    parts.append(part)
+                    part = Part("", False)
+                else:
+                    part.value += c
+            else:
+                if c == "{" and next_c == "{":
+                    next(this_iter, None)
+                    part.value += c
+                elif c == "{":
+                    if part.value:
+                        parts.append(part)
+                    part = Part("", True)
+                else:
+                    part.value += c
+        parts.append(part)
+        res = FormatStringToken(TokenKind.format_string, self.span(), [])
+        for part in parts:
+            if part.is_expression:
+                lexer = Lexer(part.value)
+                lexer.parse()
+                if not lexer.tokens:
+                    raise ValueError(
+                        f"Empty format string expression at {self.span()}")
+                res.parts.append(lexer.tokens)
+            else:
+                res.parts.append(
+                    StringToken(TokenKind.string,
+                                self.span(),
+                                part.value,
+                                quote=self.state.quote))
+        self.state = res
 
 
 @dataclass
@@ -291,7 +357,7 @@ class Type():
 @dataclass
 class BuiltinTypes:
     i32 = Type("i32", "i32", 4)
-    f32 = Type("f32", "f32", 4)
+    f32 = Type("f32", "float", 4)
     str_ = Type("str", "i8*", 8)
     bool_ = Type("bool", "i1", 1)
     void = Type("void", "void", 0)
@@ -333,6 +399,11 @@ class BinaryExpression(Expression):
 @dataclass
 class Literal(Expression):
     value: t.Union[int, float, bool, str]
+
+
+@dataclass
+class FormatString(Expression):
+    parts: t.List[Expression]
 
 
 @dataclass
@@ -566,6 +637,8 @@ class Parser:
                 expression = Literal(token.span, float(value))
             case ValueToken(TokenKind.string, _, value):
                 expression = Literal(token.span, value)
+            case FormatStringToken(TokenKind.format_string, _, value):
+                expression = self.parse_format_string(token)
             case KeywordToken(TokenKind.keyword, _, Keyword.true):
                 expression = Literal(token.span, True)
             case KeywordToken(TokenKind.keyword, _, Keyword.false):
@@ -735,6 +808,17 @@ class Parser:
                                     field_patterns=field_patterns)
             case _:
                 raise ValueError(f"Unexpected token: {token}")
+
+    def parse_format_string(self, token: FormatStringToken) -> FormatString:
+        res = FormatString(token.span, [])
+        for part in token.parts:
+            match part:
+                case StringToken(_, span, string):
+                    res.parts.append(Literal(span, string))
+                case _:
+                    parser = Parser(part)
+                    res.parts.append(parser.parse())
+        return res
 
     def parse_type(self, type: str) -> Type:
         builtin_type = next((t for t in BuiltinTypes.__dict__.values()
@@ -1103,14 +1187,17 @@ class BlockCodegen:
         self.code.append(f"{'  ' * (self.indent)}{code}")
 
     def generate(self) -> Value:
+        res = self.Value("void", BuiltinTypes.void)
         for node in self.block.expressions:
-            self.generate_expression(node)
-        return self.Value("void", BuiltinTypes.void)
+            res = self.generate_expression(node)
+        return res
 
     def generate_expression(self, expression) -> Value:
         match expression:
             case Literal():
                 return self.generate_literal(expression)
+            case FormatString():
+                return self.generate_format_string(expression)
             case Void():
                 return self.generate_void(expression)
             case Block():
@@ -1159,6 +1246,91 @@ class BlockCodegen:
                     f"getelementptr ([{len(literal.value) + 1} x i8], ptr {literal_const}, i32 0, i32 0)",
                     BuiltinTypes.str_,
                 )
+
+    def generate_format_string(self, format_string: FormatString) -> Value:
+        id = self.codegen.next_id()
+        self.emit("; format-string")
+        res = self.Value(f"%.{id}_fstr", BuiltinTypes.str_)
+        res_len_reg = f"%.{id}_fstr_len"
+        self.emit(f"{res_len_reg} = alloca i32")
+        self.emit(f"store i32 1, i32* {res_len_reg}")
+        code = []
+
+        def handle_number(value: self.Value):
+            self.emit(f"%.{id}_str = alloca i8, i32 32")
+            self.emit(
+                f"%.{id}_clear = call i8* @memset(i8* %.{id}_str, i8 0, i32 32)"
+            )
+            self.emit(
+                f"%.{id}_printf = call i32 (i8*, i8*, ...) @sprintf(i8* %.{id}_str, i8* getelementptr inbounds ([32 x i8], [32 x i8]* @i32_format, i32 0, i32 0), {value})"
+            )
+            self.emit(f"%.{id}_str_len = call i32 @strlen(i8* %.{id}_str)")
+            code.append(
+                f"%.{id} = call i8* @strcat(i8* {res.name}, i8* %.{id}_str)")
+
+        for part in format_string.parts:
+            id = self.codegen.next_id()
+            match part:
+                case Literal(_, str()):
+                    if not part.value:
+                        continue
+                    literal = self.generate_literal(part)
+                    self.emit(f"%.{id}_str_len = call i32 @strlen({literal})")
+                    code.append(
+                        f"%.{id} = call i8* @strcat(i8* {res.name}, {literal})"
+                    )
+                case Block():
+                    block_val = self.generate_block(part)
+                    match block_val.type:
+                        case BuiltinTypes.str_:
+                            self.emit(
+                                f"%.{id}_str_len = call i32 @strlen({block_val})"
+                            )
+                            code.append(
+                                f"%.{id} = call i8* @strcat(i8* {res.name}, {block_val})"
+                            )
+                        case BuiltinTypes.i32 | BuiltinTypes.f32:
+                            handle_number(block_val)
+                        case BuiltinTypes.bool_:
+                            self.emit(
+                                f"%.{id}_str = select {block_val}, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @true_str, i32 0, i32 0), i8* getelementptr inbounds ([6 x i8], [6 x i8]* @false_str, i32 0, i32 0)"
+                            )
+                            self.emit(
+                                f"%.{id}_str_len = call i32 @strlen(i8* %.{id}_str)"
+                            )
+                            code.append(
+                                f"%.{id} = call i8* @strcat(i8* {res.name}, i8* %.{id}_str)"
+                            )
+                        case _:
+                            try:
+                                enum = self.find_enum(block_val.type.klar_name,
+                                                      format_string.span)
+                                enum_val = self.Value(f"%.{id}_enum_variant",
+                                                      BuiltinTypes.i32)
+                                self.emit(
+                                    f"%.{id}_enum_variant = load i32, i32* {block_val.name}"
+                                )
+                                handle_number(enum_val)
+                            except ValueError:
+                                raise ValueError(
+                                    f"Unknown format string block type: {block_val.type} at {format_string.span}"
+                                )
+                case _:
+                    raise ValueError(f"Unknown format string part: {part}")
+
+            self.emit(f"%.{id}_res_len = load i32, i32* {res_len_reg}")
+            self.emit(
+                f"%.{id}_add_len = add i32 %.{id}_res_len, %.{id}_str_len")
+            self.emit(f"store i32 %.{id}_add_len, i32* {res_len_reg}")
+
+        self.emit(f"{res_len_reg}_val_32 = load i32, i32* {res_len_reg}")
+        self.emit(f"{res_len_reg}_val = sext i32 {res_len_reg}_val_32 to i64")
+        self.emit(
+            f"{res.name} = call i8* @calloc(i64 1, i64 {res_len_reg}_val)")
+        for line in code:
+            self.emit(line)
+        self.emit("; /format-string")
+        return res
 
     def generate_void(self, void: Void) -> Value:
         return self.Value("", BuiltinTypes.void)
@@ -1216,7 +1388,7 @@ class BlockCodegen:
             f"%sizeptr = getelementptr inbounds {func.return_type}, {func.return_type}* null, i32 1"
         )
         self.emit(f"%size = ptrtoint {func.return_type}* %sizeptr to i64")
-        self.emit(f"%alloc = call i8* @malloc(i64 %size)")
+        self.emit(f"%alloc = call i8* @calloc(i64 1, i64 %size)")
         # Copy the fields.
         for i, field in enumerate(struct.fields):
             self.emit(
@@ -1287,7 +1459,7 @@ class BlockCodegen:
             f"%sizeptr = getelementptr inbounds {func.return_type}, {func.return_type}* null, i32 1"
         )
         self.emit(f"%size = ptrtoint {func.return_type}* %sizeptr to i64")
-        self.emit(f"%alloc = call i8* @malloc(i64 %size)")
+        self.emit(f"%alloc = call i8* @calloc(i64 1, i64 %size)")
         variant.fields.insert(
             0, Field(variant.span, "__@tag__", BuiltinTypes.i32))
         # Copy the fields.
@@ -1704,20 +1876,23 @@ class Codegen:
     llvm_ir_prelude = """
 declare i32 @puts(i8*) 
 declare i32 @sprintf(i8*, i8*, ...)
+declare i32 @printf(i8*, ...)
 declare i32 @strcmp(i8*, i8*)
-declare i8* @malloc(i64)
+declare i8* @strcat(i8*, i8*)
+declare i32 @strlen(i8*)
+declare i8* @calloc(i64, i64)
 declare i32 @memset(i8*, i32, i32)
+
+@i32_format = internal constant [3 x i8] c"%d\00"
+@f32_format = internal constant [3 x i8] c"%f\00"
+@true_str = internal constant [5 x i8] c"true\00"
+@false_str = internal constant [6 x i8] c"false\00"
+
+@debug_format_int = constant [8 x i8] c"deb:%d\n\00"
 
 define void @print(i8* %str) {
   %1 = call i32 @puts(i8* %str)
   ret void
-}
-
-define i8* @format(i8* %fmt, i32 %i) {
-  %1 = call i8* @malloc(i64 64)
-  %2 = call i8* @memset(i8* %1, i32 0, i32 64)
-  %3 = call i32 (i8*, i8*, ...) @sprintf(i8* %1, i8* %fmt, i32 %i)
-  ret i8* %1
 }
     """
 

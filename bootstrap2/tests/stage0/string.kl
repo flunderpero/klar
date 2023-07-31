@@ -1,0 +1,34 @@
+enum Color:
+    Red
+    Green
+    Blue
+    Orange(intensity i32)
+end
+
+struct Person:
+    name str
+    age i32
+    favorite_color Color
+end
+
+fn person_to_str(p Person) str:
+    return f"Person: name={p.name}, age={p.age}"
+end
+
+fn main():
+    let name = "Mary"
+    let i = 42
+    let b = true
+    let p = Person("Mary", 42)
+    print(f"str: Hi {name}")
+    print(f"i32: {i}")
+    print(f"bool: {b}")
+    print(f"bool: {false}")
+    print(f"enum (Red): {Color.Red}")
+    print(f"enum (Green): {Color.Green}")
+    print(f"enum (Blue): {Color.Blue}")
+    print(f"enum (Orange): {Color.Orange(42)}")
+    print(f"struct members: name={p.name}, age={p.age}")
+    print(f"function call: {person_to_str(p)}")
+    print(f"multiple: Hi {name}, the i32 is {i}, the bool is {b}, and {p.name} is {p.age} years old.")
+end

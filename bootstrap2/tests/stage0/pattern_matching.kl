@@ -48,7 +48,7 @@ end
 fn struct_capture(p Person):
     match p:
         Person("Peter", age):
-            print(format("Matched Peter with age %i", age))
+            print(f"Matched Peter with age {age}")
         end
         else: 
             print("Person did not match when trying to capture")
@@ -75,7 +75,7 @@ fn enum_matching(c Color):
             print("Matched on Orange with fixed intensity 42")
         end
         Color.Orange(intensity):
-            print(format("Matched on wildcard Orange with intensity %i", intensity))
+            print(f"Matched on wildcard Orange with intensity {intensity}")
         end
         else: 
             print("Color did not match") 

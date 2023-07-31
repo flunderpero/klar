@@ -7,8 +7,7 @@ fn print_str(s str):
 end
 
 fn print_i(i i32):
-    let s = format("%i", i)
-    print(s)
+    print(f"{i}")
 end
 
 fn print_i2(a i32, b i32) i32:
@@ -18,7 +17,7 @@ fn print_i2(a i32, b i32) i32:
 end
 
 fn i32s(i i32) str:
-    return format("%i", i)
+    return f"{i}"
 end
 
 fn main():

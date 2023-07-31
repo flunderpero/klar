@@ -15,7 +15,7 @@ fn div(a i32, b i32) i32:
 end
 
 fn print_int(a i32):
-    print(format("%i", a))
+    print(f"{a}")
 end
 
 fn main():

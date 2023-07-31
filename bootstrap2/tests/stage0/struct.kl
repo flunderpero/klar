@@ -11,15 +11,14 @@ end
 
 -- Struct as parameter.
 fn print_person(p Person):
-    print("Person:")
-    -- Raad struct field.
-    print(p.name)
-    print(format("%i", p.age))
+print(p.address.street)
+    let s = f"Person: name={p.name}, age={p.age}"
     -- Read nested struct field.
     let address = p.address
-    print(address.street)
+    s = f"{s}, address={address.street}"
     -- Read nested struct field using dot notation.
-    print(format("%i", p.address.number))
+    s = f"{s}, address={p.address.number}"
+    print(s)
 end
 
 fn create_person(name str, age i32) Person:
@@ -27,7 +26,7 @@ fn create_person(name str, age i32) Person:
 end
 
 fn main():
-    let p = create_person("John", 20)
+    let p = create_person("John", 20, Address("Street", 123))
     print_person(p)
     -- Update struct field.
     p.name = "Jane"

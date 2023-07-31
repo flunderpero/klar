@@ -1,10 +1,4 @@
-Person:
-John
-20
 Street
-123
-Person:
-Jane
-21
+Person: name=John, age=20, address=Street, address=123
 New Street
-456
+Person: name=Jane, age=21, address=New Street, address=456

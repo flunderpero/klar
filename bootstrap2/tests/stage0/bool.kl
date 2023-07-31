@@ -1,5 +1,5 @@
 fn print_bool(b bool):
-    print(format("%i", b))
+    print(f"{b}")
 end
 
 fn main():

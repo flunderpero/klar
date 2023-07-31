@@ -29,9 +29,7 @@ fn main():
         print("Fail: Not blue")
     end
     let orange = Color.HSL(30, 100, 50)
-    print(format("Hue: %i", orange.hue))
-    print(format("Saturation: %i", orange.saturation))
-    print(format("Lightness: %i", orange.lightness))
+    print(f"Orange: H{orange.hue}, S{orange.saturation}, L{orange.lightness}")
     print_color(Color.Blue)
     print_color(Color.Red)
     print_color(Color.Green)

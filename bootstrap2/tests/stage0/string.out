@@ -1,0 +1,11 @@
+str: Hi Mary
+i32: 42
+bool: true
+bool: false
+enum (Red): 0
+enum (Green): 1
+enum (Blue): 2
+enum (Orange): 3
+struct members: name=Mary, age=42
+function call: Person: name=Mary, age=42
+multiple: Hi Mary, the i32 is 42, the bool is true, and Mary is 42 years old.

@@ -5,6 +5,6 @@ fn main():
     mutable = "Ok: mutable"
     print(mutable)
     let i = 42
-    let s = format("%i", i)
+    let s = f"{i}"
     print(s)
 end

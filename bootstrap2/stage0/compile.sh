@@ -1,1 +1,1 @@
-python compiler.py "$@"
+python $(dirname $0)/compiler.py "$@"

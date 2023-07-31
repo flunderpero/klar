@@ -1957,6 +1957,7 @@ declare i8* @strcat(i8*, i8*)
 declare i32 @strlen(i8*)
 declare i8* @calloc(i64, i64)
 declare i32 @memset(i8*, i32, i32)
+declare i32 @getchar()
 
 @i32_format = internal constant [3 x i8] c"%d\00"
 @f32_format = internal constant [3 x i8] c"%f\00"
@@ -2003,11 +2004,11 @@ define void @print(i8* %str) {
             return_type=BuiltinTypes.i32,
             parameters=[Parameter(Span(-1, -1), "str", BuiltinTypes.str_)],
             body=Block(Span(-1, -1), []))
-        block.functions["format"] = FunctionDefinition(
-            name="format",
+        block.functions["getchar"] = FunctionDefinition(
+            name="getchar",
             span=Span(-1, -1),
-            return_type=BuiltinTypes.str_,
-            parameters=[Parameter(Span(-1, -1), "i", BuiltinTypes.i32)],
+            return_type=BuiltinTypes.i32,
+            parameters=[],
             body=Block(Span(-1, -1), []))
 
     def literal_const(self, literal: Literal) -> str:

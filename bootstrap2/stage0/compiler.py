@@ -69,6 +69,9 @@ class Keyword(StrEnum):
     return_ = "return"
     false = "false"
     true = "true"
+    while_ = "while"
+    break_ = "break"
+    continue_ = "continue"
 
 
 @dataclass
@@ -534,6 +537,22 @@ class EnumDefinition(Expression):
         return Type(self.name, f"%{self.name}*", self.size())
 
 
+@dataclass
+class While(Expression):
+    condition: Expression
+    block: Block
+
+
+@dataclass
+class Break(Expression):
+    pass
+
+
+@dataclass
+class Continue(Expression):
+    pass
+
+
 class Parser:
 
     def __init__(self, tokens: t.List[Token]):
@@ -661,6 +680,12 @@ class Parser:
                 expression = self.parse_variable_definition(mutable=True)
             case KeywordToken(TokenKind.keyword, _, Keyword.return_):
                 expression = self.parse_return_expression(token)
+            case KeywordToken(TokenKind.keyword, _, Keyword.while_):
+                expression = self.parse_while(token)
+            case KeywordToken(TokenKind.keyword, _, Keyword.break_):
+                expression = Break(token.span)
+            case KeywordToken(TokenKind.keyword, _, Keyword.continue_):
+                expression = Continue(token.span)
             case _:
                 raise ValueError(f"Unexpected token: {token}")
         binary_expression_op = self.probe_binary_expression_op()
@@ -963,6 +988,10 @@ class Parser:
             case _:
                 raise ValueError(f"Expected identifier: {token}")
 
+    def parse_while(self, token: KeywordToken) -> While:
+        return While(token.span, self.parse_expression(self.token()),
+                     self.parse_block()[0])
+
     def parse_function_definition(self) -> FunctionDefinition:
         token = self.token()
         match token:
@@ -1170,9 +1199,13 @@ class BlockCodegen:
     def __init__(self,
                  codegen: "Codegen",
                  block: Block,
+                 break_label: t.Optional[str] = None,
+                 continue_label: t.Optional[str] = None,
                  parent: t.Optional["BlockCodegen"] = None):
         self.codegen = codegen
         self.block = block
+        self.break_label = break_label
+        self.continue_label = continue_label
         self.parent = parent
         self.code: t.List[str] = []
         self.indent: int = 1 if parent else 0
@@ -1228,6 +1261,12 @@ class BlockCodegen:
                 return self.generate_if_expression(expression)
             case MatchExpression():
                 return self.generate_match_expression(expression)
+            case While():
+                return self.generate_while(expression)
+            case Break():
+                return self.generate_break(expression)
+            case Continue():
+                return self.generate_continue(expression)
             case _:
                 raise ValueError(f"Unknown expression: {expression}")
 
@@ -1246,6 +1285,38 @@ class BlockCodegen:
                     f"getelementptr ([{len(literal.value) + 1} x i8], ptr {literal_const}, i32 0, i32 0)",
                     BuiltinTypes.str_,
                 )
+
+    def generate_while(self, while_: While) -> Value:
+        id = self.codegen.next_id()
+        continue_label = f".{id}_while_cond"
+        break_label = f".{id}_while_end"
+        self.emit(f"br label %{continue_label}")
+        self.emit(f"{continue_label}:")
+        cond = self.generate_expression(while_.condition)
+        self.emit(f"br {cond}, label %.{id}_while_body, label %{break_label}")
+        self.emit(f".{id}_while_body:")
+        res = self.generate_block(while_.block, break_label, continue_label)
+        self.emit(f"br label %{continue_label}")
+        self.emit(f"{break_label}:")
+        return res
+
+    def generate_break(self, break_: Break) -> Value:
+        block_codegen: t.Optional[BlockCodegen] = self
+        while block_codegen and block_codegen.break_label is None:
+            block_codegen = block_codegen.parent
+        if block_codegen is None:
+            raise ValueError(f"No break label found at {break_.span}")
+        self.emit(f"br label %{block_codegen.break_label}")
+        return self.Value("void", BuiltinTypes.void)
+
+    def generate_continue(self, continue_: Continue) -> Value:
+        block_codegen: t.Optional[BlockCodegen] = self
+        while block_codegen and block_codegen.continue_label is None:
+            block_codegen = block_codegen.parent
+        if block_codegen is None:
+            raise ValueError(f"No continue label found at {continue_.span}")
+        self.emit(f"br label %{block_codegen.continue_label}")
+        return self.Value("void", BuiltinTypes.void)
 
     def generate_format_string(self, format_string: FormatString) -> Value:
         id = self.codegen.next_id()
@@ -1335,8 +1406,12 @@ class BlockCodegen:
     def generate_void(self, void: Void) -> Value:
         return self.Value("", BuiltinTypes.void)
 
-    def generate_block(self, block: Block) -> Value:
-        codegen = BlockCodegen(self.codegen, block, self)
+    def generate_block(self,
+                       block: Block,
+                       break_label: t.Optional[str] = None,
+                       continue_label: t.Optional[str] = None) -> Value:
+        codegen = BlockCodegen(self.codegen, block, break_label,
+                               continue_label, self)
         reg = codegen.generate()
         for line in codegen.code:
             self.emit(line)

@@ -1,0 +1,23 @@
+fn while_loop():
+    let i = 0
+    while i < 3:
+        i = i + 1
+        print(f"regular: {i}")
+    end
+    i = 0
+    while i < 3:
+        i = i + 1
+        print(f"with break: {i}")
+        if i == 2 => break
+    end
+    i = 0
+    while i < 3:
+        i = i + 1
+        if i == 1 => continue
+        print(f"with continue: {i}")
+    end
+end
+
+fn main():
+    while_loop()
+end

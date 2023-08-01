@@ -15,7 +15,8 @@ fn person_to_str(p Person) str:
     return f"Person: name={p.name}, age={p.age}"
 end
 
-fn main():
+fn format_string():
+    print("Format strings:")
     let name = "Mary"
     let i = 42
     let b = true
@@ -32,4 +33,18 @@ fn main():
     print(f"function call: {person_to_str(p)}")
     print(f"multiple: Hi {name}, the i32 is {i}, the bool is {b}, and {p.name} is {p.age} years old.")
     print(f"chr(65): {chr(65)}")
+end
+
+fn escape_sequences():
+    print("Escape sequences:")
+    print("Well\nthen")
+    print("Well\tthen")
+    print("Well\rthen")
+    print("Well\\then")
+    print("Well\"then\"")
+end
+
+fn main():
+    format_string()
+    escape_sequences()
 end

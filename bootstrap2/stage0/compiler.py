@@ -171,6 +171,7 @@ class Lexer:
         return Span(self.line, self.column)
 
     def parse(self):
+        is_escape = False
         while self.idx < len(self.src):
             c = self.src[self.idx]
             self.idx += 1
@@ -252,6 +253,28 @@ class Lexer:
                         else:
                             self.state.value += c
                 case StringToken(_, _):
+                    if is_escape:
+                        match c:
+                            case "n":
+                                self.state.value += "\n"
+                            case "t":
+                                self.state.value += "\t"
+                            case "r":
+                                self.state.value += "\r"
+                            case "\\":
+                                self.state.value += "\\"
+                            case "'":
+                                self.state.value += "'"
+                            case '"':
+                                self.state.value += '"'
+                            case _:
+                                raise ValueError(
+                                    f"Invalid escape sequence: \\{c} at {self.span()}")
+                        is_escape = False
+                        continue
+                    if c == "\\":
+                        is_escape = True
+                        continue
                     if c == self.state.quote:
                         if self.state.kind == TokenKind.format_string:
                             self.parse_format_string()
@@ -2035,8 +2058,10 @@ define i8* @chr(i32 %i) {
         for value, name in self.literals.items():
             match value:
                 case str():
+                    value_len = len(value) + 1
+                    value = value.replace('"', '\\22')
                     literals.append(
-                        f"@const_{name} = internal constant [{len(value) + 1} x i8] c\"{value}\\00\""
+                        f"@const_{name} = internal constant [{value_len} x i8] c\"{value}\\00\""
                     )
         return literals
 

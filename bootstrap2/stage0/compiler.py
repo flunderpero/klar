@@ -1970,6 +1970,13 @@ define void @print(i8* %str) {
   %1 = call i32 @puts(i8* %str)
   ret void
 }
+
+define i8* @chr(i32 %i) {
+    %1 = call i8* @calloc(i64 2, i64 1)
+    %2 = trunc i32 %i to i8
+    store i8 %2, i8* %1
+    ret i8* %1
+}
     """
 
     def __init__(self, program: Block):
@@ -2009,6 +2016,12 @@ define void @print(i8* %str) {
             span=Span(-1, -1),
             return_type=BuiltinTypes.i32,
             parameters=[],
+            body=Block(Span(-1, -1), []))
+        block.functions["chr"] = FunctionDefinition(
+            name="chr",
+            span=Span(-1, -1),
+            return_type=BuiltinTypes.str_,
+            parameters=[Parameter(Span(-1, -1), "i", BuiltinTypes.i32)],
             body=Block(Span(-1, -1), []))
 
     def literal_const(self, literal: Literal) -> str:

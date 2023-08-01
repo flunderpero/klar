@@ -31,4 +31,5 @@ fn main():
     print(f"struct members: name={p.name}, age={p.age}")
     print(f"function call: {person_to_str(p)}")
     print(f"multiple: Hi {name}, the i32 is {i}, the bool is {b}, and {p.name} is {p.age} years old.")
+    print(f"chr(65): {chr(65)}")
 end

@@ -187,6 +187,10 @@ class Lexer:
                             self.emit_single(TokenKind.lparen)
                         case ")":
                             self.emit_single(TokenKind.rparen)
+                        case "[":
+                            self.emit_single(TokenKind.lbracket)
+                        case "]":
+                            self.emit_single(TokenKind.rbracket)
                         case ":":
                             self.emit_single(TokenKind.colon)
                         case "=":
@@ -272,7 +276,8 @@ class Lexer:
                                 self.state.value += '"'
                             case _:
                                 raise ValueError(
-                                    f"Invalid escape sequence: \\{c} at {self.span()}")
+                                    f"Invalid escape sequence: \\{c} at {self.span()}"
+                                )
                         is_escape = False
                         continue
                     if c == "\\":
@@ -579,6 +584,17 @@ class Continue(Expression):
     pass
 
 
+@dataclass
+class ArrayLiteral(Expression):
+    elements: t.List[Expression]
+
+
+@dataclass
+class IndexRead(Expression):
+    container: Expression
+    index: Expression
+
+
 class Parser:
 
     def __init__(self, tokens: t.List[Token]):
@@ -634,6 +650,18 @@ class Parser:
                         value = self.parse_expression(self.token())
                         expression = VariableWrite(
                             token.span.merge(value.span), token.value, value)
+                    case Token(TokenKind.lbracket):
+                        index_expression = self.parse_expression(self.token())
+                        match self.token():
+                            case Token(TokenKind.rbracket):
+                                pass
+                            case _:
+                                raise ValueError(
+                                    f"Expected ], got {self.token()}")
+                        expression = IndexRead(
+                            token.span.merge(index_expression.span),
+                            VariableRead(token.span, token.value),
+                            index_expression)
                     case Token(TokenKind.dot):
                         name = token.value
                         fields = []
@@ -676,6 +704,26 @@ class Parser:
                     case _:
                         self.idx -= 1
                         expression = VariableRead(token.span, token.value)
+            case Token(TokenKind.lbracket, _):
+                elements = []
+                while True:
+                    next_token = self.token()
+                    match next_token:
+                        case Token(TokenKind.rbracket):
+                            break
+                        case _:
+                            elements.append(self.parse_expression(next_token))
+                            next_token = self.token()
+                            match next_token:
+                                case Token(TokenKind.comma):
+                                    continue
+                                case Token(TokenKind.rbracket):
+                                    break
+                                case _:
+                                    raise ValueError(
+                                        f"Expected comma or right bracket, got {next_token}"
+                                    )
+                expression = ArrayLiteral(token.span, elements)
             case ValueToken(TokenKind.integer, _, value):
                 expression = Literal(token.span, int(value))
             case ValueToken(TokenKind.float_, _, value):
@@ -886,12 +934,13 @@ class Parser:
                     case ValueToken(TokenKind.identifier, _, type_):
                         type_str = type_
                     case _:
-                        raise ValueError(f"Expected identifier, got {next_token}")
+                        raise ValueError(
+                            f"Expected identifier, got {next_token}")
             case _:
                 raise ValueError(f"Expected type, got {type_token}")
-        builtin_type = next((t for t in BuiltinTypes.__dict__.values()
-                             if isinstance(t, Type) and t.klar_name == type_str),
-                            None)
+        builtin_type = next(
+            (t for t in BuiltinTypes.__dict__.values()
+             if isinstance(t, Type) and t.klar_name == type_str), None)
         if builtin_type:
             return builtin_type
         # This must be a user-defined type.
@@ -934,7 +983,8 @@ class Parser:
                     if not type_token:
                         raise ValueError("Unexpected EOF")
                     type_ = self.parse_type(type_token)
-                    fields.append(Field(token.span.merge(type_token.span), name, type_))
+                    fields.append(
+                        Field(token.span.merge(type_token.span), name, type_))
                 case KeywordToken(TokenKind.keyword, _, Keyword.end):
                     break
                 case _:
@@ -1088,8 +1138,7 @@ class Parser:
                         case ValueToken(TokenKind.identifier, _, _):
                             parameters.append(
                                 Parameter(token.span.merge(type_token.span),
-                                          name,
-                                          self.parse_type(type_token)))
+                                          name, self.parse_type(type_token)))
                         case _:
                             raise ValueError(f"Expected type: {type_token}")
                 case _:

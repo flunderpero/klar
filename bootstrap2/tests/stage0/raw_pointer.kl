@@ -1,0 +1,24 @@
+struct Person:
+    name str
+    age i32
+end
+
+fn get_person(buf ptr, index i32) Person:
+    let p = getptr(buf, index)
+    return p
+end
+
+fn main():
+    mut buf = malloc(16)
+    setptr(buf, "Hi", 0)
+    setptr(buf, "there", 1)
+    print(getptr(buf, 0))
+    print(getptr(buf, 1))
+    buf = realloc(buf, 32)
+    print(getptr(buf, 0))
+    print(getptr(buf, 1))
+    let p = Person("Bob", 42)
+    setptr(buf, p, 2)
+    let p2 = get_person(buf, 2)
+    print(f"{p2.name} is {p2.age} years old")
+end

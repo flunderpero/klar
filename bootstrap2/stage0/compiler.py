@@ -395,6 +395,7 @@ class BuiltinTypes:
     str_ = Type("str", "i8*", 8)
     bool_ = Type("bool", "i1", 1)
     void = Type("void", "void", 0)
+    ptr = Type("ptr", "i8*", 8)
     # This is not a real type, but it's used to represent a function.
     fn = Type("fn", "fn", 0)
 
@@ -1162,8 +1163,7 @@ class Parser:
                         case ValueToken(TokenKind.identifier, _, _):
                             parameters.append(
                                 Parameter(token.span.merge(type_token.span),
-                                          name,
-                                          self.parse_type(type_token)))
+                                          name, self.parse_type(type_token)))
                         case _:
                             raise ValueError(f"Expected type: {type_token}")
                 case _:
@@ -2044,7 +2044,10 @@ declare i32 @printf(i8*, ...)
 declare i32 @strcmp(i8*, i8*)
 declare i8* @strcat(i8*, i8*)
 declare i32 @strlen(i8*)
-declare i8* @calloc(i64, i64)
+declare i8* @calloc(i64, i64) 
+declare i32 @free(i8*) 
+declare i8* @malloc(i64)
+declare i8* @realloc(i8*, i64)
 declare i32 @memset(i8*, i32, i32)
 declare i32 @getchar()
 
@@ -2065,6 +2068,18 @@ define i8* @chr(i32 %i) {
     %2 = trunc i32 %i to i8
     store i8 %2, i8* %1
     ret i8* %1
+}
+
+define void @setptr(i8** %ptr, i8* %value, i32 %index) {
+    %1 = getelementptr i8*, i8** %ptr, i32 %index
+    store i8* %value, i8** %1
+    ret void
+}
+
+define i8* @getptr(i8** %ptr, i32 %index) {
+    %1 = getelementptr i8*, i8** %ptr, i32 %index
+    %2 = load i8*, i8** %1
+    ret i8* %2
 }
     """
 
@@ -2111,6 +2126,42 @@ define i8* @chr(i32 %i) {
             span=Span(-1, -1),
             return_type=BuiltinTypes.str_,
             parameters=[Parameter(Span(-1, -1), "i", BuiltinTypes.i32)],
+            body=Block(Span(-1, -1), []))
+        block.functions["malloc"] = FunctionDefinition(
+            name="malloc",
+            span=Span(-1, -1),
+            return_type=BuiltinTypes.ptr,
+            parameters=[
+                Parameter(Span(-1, -1), "size", BuiltinTypes.i32),
+            ],
+            body=Block(Span(-1, -1), []))
+        block.functions["realloc"] = FunctionDefinition(
+            name="realloc",
+            span=Span(-1, -1),
+            return_type=BuiltinTypes.ptr,
+            parameters=[
+                Parameter(Span(-1, -1), "p", BuiltinTypes.ptr),
+                Parameter(Span(-1, -1), "size", BuiltinTypes.i32),
+            ],
+            body=Block(Span(-1, -1), []))
+        block.functions["setptr"] = FunctionDefinition(
+            name="setptr",
+            span=Span(-1, -1),
+            return_type=BuiltinTypes.void,
+            parameters=[
+                Parameter(Span(-1, -1), "dest", BuiltinTypes.ptr),
+                Parameter(Span(-1, -1), "src", BuiltinTypes.ptr),
+                Parameter(Span(-1, -1), "index", BuiltinTypes.i32)
+            ],
+            body=Block(Span(-1, -1), []))
+        block.functions["getptr"] = FunctionDefinition(
+            name="getptr",
+            span=Span(-1, -1),
+            return_type=BuiltinTypes.ptr,
+            parameters=[
+                Parameter(Span(-1, -1), "src", BuiltinTypes.ptr),
+                Parameter(Span(-1, -1), "index", BuiltinTypes.i32)
+            ],
             body=Block(Span(-1, -1), []))
 
     def literal_const(self, literal: Literal) -> str:

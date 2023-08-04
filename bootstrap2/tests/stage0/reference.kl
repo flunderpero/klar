@@ -1,0 +1,16 @@
+struct Address:
+    city str
+end
+
+struct Person:
+    name str
+    address &Address
+end
+
+fn main():
+    let address = Address("London")
+    let person = Person("John", &address)
+    print(f"{person.name} lives in {person.address.city}")
+    let ref = &address
+    print(f"Address is {ref.city}")
+end

@@ -43,6 +43,7 @@ class TokenKind(Enum):
     star = auto()
     slash = auto()
     percent = auto()
+    ampersand = auto()
     single_quote = auto()
     double_quote = auto()
     keyword = auto()
@@ -208,6 +209,8 @@ class Lexer:
                             self.emit_single(TokenKind.slash)
                         case "!":
                             self.emit_single(TokenKind.exclamation)
+                        case "&":
+                            self.emit_single(TokenKind.ampersand)
                         case "<":
                             self.emit_single(TokenKind.langle_bracket)
                         case ">":
@@ -679,6 +682,9 @@ class Parser:
                 expression = Literal(token.span, float(value))
             case ValueToken(TokenKind.string, _, value):
                 expression = Literal(token.span, value)
+            case Token(TokenKind.ampersand):
+                # In this implementation, everything is a reference.
+                expression = self.parse_expression(self.token())
             case FormatStringToken(TokenKind.format_string, _, value):
                 expression = self.parse_format_string(token)
             case KeywordToken(TokenKind.keyword, _, Keyword.true):
@@ -868,19 +874,33 @@ class Parser:
                     res.parts.append(parser.parse())
         return res
 
-    def parse_type(self, type: str) -> Type:
+    def parse_type(self, type_token: Token) -> Type:
+        match type_token:
+            case ValueToken(TokenKind.identifier, _, type_):
+                type_str = type_
+            case Token(TokenKind.ampersand):
+                # In this implementation, we don't distinguish between references
+                # and the actual object - everything is a reference.
+                next_token = self.token()
+                match next_token:
+                    case ValueToken(TokenKind.identifier, _, type_):
+                        type_str = type_
+                    case _:
+                        raise ValueError(f"Expected identifier, got {next_token}")
+            case _:
+                raise ValueError(f"Expected type, got {type_token}")
         builtin_type = next((t for t in BuiltinTypes.__dict__.values()
-                             if isinstance(t, Type) and t.klar_name == type),
+                             if isinstance(t, Type) and t.klar_name == type_str),
                             None)
         if builtin_type:
             return builtin_type
         # This must be a user-defined type.
-        struct = next((x for x in self.structs if x.name == type), None)
+        struct = next((x for x in self.structs if x.name == type_str), None)
         if struct:
             return struct.type()
-        enum = next((x for x in self.enums if x.name == type), None)
+        enum = next((x for x in self.enums if x.name == type_str), None)
         if not enum:
-            raise ValueError(f"Unknown type: {type}")
+            raise ValueError(f"Unknown type: {type_str}")
         return enum.type()
 
     def parse_struct_definition(self) -> StructDefinition:
@@ -911,13 +931,10 @@ class Parser:
             match token:
                 case ValueToken(TokenKind.identifier, _, name):
                     type_token = self.token()
-                    match type_token:
-                        case ValueToken(TokenKind.identifier, _, _):
-                            fields.append(
-                                Field(token.span.merge(type_token.span), name,
-                                      self.parse_type(type_token.value)))
-                        case _:
-                            raise ValueError(f"Expected type: {type_token}")
+                    if not type_token:
+                        raise ValueError("Unexpected EOF")
+                    type_ = self.parse_type(type_token)
+                    fields.append(Field(token.span.merge(type_token.span), name, type_))
                 case KeywordToken(TokenKind.keyword, _, Keyword.end):
                     break
                 case _:
@@ -985,7 +1002,7 @@ class Parser:
                         case ValueToken(TokenKind.identifier, _, _):
                             fields.append(
                                 Field(token.span.merge(type_token.span), name,
-                                      self.parse_type(type_token.value)))
+                                      self.parse_type(type_token)))
                         case _:
                             raise ValueError(f"Expected type: {type_token}")
                 case _:
@@ -1031,7 +1048,7 @@ class Parser:
                     raise ValueError("Unexpected EOF")
                 match type_token:
                     case ValueToken(TokenKind.identifier, _):
-                        return_type = self.parse_type(type_token.value)
+                        return_type = self.parse_type(type_token)
                     case _:
                         return_type = BuiltinTypes.void
                         self.idx -= 1
@@ -1072,7 +1089,7 @@ class Parser:
                             parameters.append(
                                 Parameter(token.span.merge(type_token.span),
                                           name,
-                                          self.parse_type(type_token.value)))
+                                          self.parse_type(type_token)))
                         case _:
                             raise ValueError(f"Expected type: {type_token}")
                 case _:
@@ -1097,7 +1114,7 @@ class Parser:
                             parameters.append(
                                 Parameter(token.span.merge(type_token.span),
                                           name,
-                                          self.parse_type(type_token.value)))
+                                          self.parse_type(type_token)))
                         case _:
                             raise ValueError(f"Expected type: {type_token}")
                 case _:
@@ -1350,7 +1367,7 @@ class BlockCodegen:
         self.emit(f"store i32 1, i32* {res_len_reg}")
         code = []
 
-        def handle_number(value: self.Value):
+        def handle_number(value: BlockCodegen.Value):
             self.emit(f"%.{id}_str = alloca i8, i32 32")
             self.emit(
                 f"%.{id}_clear = call i8* @memset(i8* %.{id}_str, i8 0, i32 32)"

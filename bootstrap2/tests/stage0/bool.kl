@@ -1,12 +1,19 @@
-fn print_bool(b bool):
-    print(f"{b}")
-end
-
 fn main():
     let a = false
     let b = true
-    print_bool(a)
-    print_bool(b)
-    print_bool(a == b)
-    print_bool(a == a)
+    print("`bool` type:")
+    print(f"true: {a}")
+    print(f"false: {b}")
+    print(f"a == b: {a == b}")
+    print(f"a == a: {a == a}")
+    print(f"b == a or b == b: {b == a or b == b}")
+    print(f"b == a or a == b: {b == a or a == b}")
+    print(f"b == a and a == b: {b == a and a == b}")
+    print(f"a == a and b == b: {a == a and b == b}")
+    print("`str` type:")
+    let sa = "a"
+    let sb = "b"
+    print(f"sa == sb or sa == sa: {sa == sb or sa == sa}")
+    print("precedence:")
+    print(f"true or false and false: {true or false and false}")
 end

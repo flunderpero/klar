@@ -72,6 +72,8 @@ class Keyword(StrEnum):
     true = "true"
     while_ = "while"
     break_ = "break"
+    and_ = "and"
+    or_ = "or"
     continue_ = "continue"
 
 
@@ -425,6 +427,8 @@ class BinaryExpression(Expression):
         gt = ">"
         le = "<="
         ge = ">="
+        and_ = "and"
+        or_ = "or"
 
     left: Expression
     right: Expression
@@ -639,10 +643,12 @@ class Parser:
             expressions.append(self.parse_expression(token))
         return Block(span_start.merge(span_end), expressions)
 
-    def parse_expression(self, token: t.Optional[Token]) -> Expression:
+    def parse_expression(self,
+                         token: t.Optional[Token],
+                         min_precedence=0) -> Expression:
         if not token:
             raise ValueError("Unexpected end of tokens")
-        expression: Expression
+        expression: t.Optional[Expression] = None
         match token:
             case KeywordToken(TokenKind.keyword, _, Keyword.fn):
                 expression = self.parse_function_definition()
@@ -682,8 +688,9 @@ class Parser:
                                         case Token(TokenKind.dot):
                                             continue
                                         case Token(TokenKind.lparen):
-                                            return self.parse_function_call(
+                                            expression = self.parse_function_call(
                                                 f"{name}.{'.'.join(fields)}")
+                                            break
                                         case _:
                                             self.idx -= 1
                                             break
@@ -691,21 +698,23 @@ class Parser:
                                     raise ValueError(
                                         f"Expected identifier, got {next_token}"
                                     )
-                        if not fields:
-                            raise ValueError(
-                                f"Expected at least one field at {token.span}")
-                        next_token = self.token()
-                        match next_token:
-                            case Token(TokenKind.equal):
-                                value = self.parse_expression(self.token())
-                                expression = FieldWrite(
-                                    token.span.merge(value.span), name, fields,
-                                    value)
-                            case _:
-                                self.idx -= 1
-                                expression = FieldRead(
-                                    token.span.merge(end_of_fields_span), name,
-                                    fields)
+                        if not expression:
+                            if not fields:
+                                raise ValueError(
+                                    f"Expected at least one field at {token.span}"
+                                )
+                            next_token = self.token()
+                            match next_token:
+                                case Token(TokenKind.equal):
+                                    value = self.parse_expression(self.token())
+                                    expression = FieldWrite(
+                                        token.span.merge(value.span), name,
+                                        fields, value)
+                                case _:
+                                    self.idx -= 1
+                                    expression = FieldRead(
+                                        token.span.merge(end_of_fields_span),
+                                        name, fields)
                     case _:
                         self.idx -= 1
                         expression = VariableRead(token.span, token.value)
@@ -770,54 +779,69 @@ class Parser:
                 expression = Continue(token.span)
             case _:
                 raise ValueError(f"Unexpected token: {token}")
-        binary_expression_op = self.probe_binary_expression_op()
-        if not binary_expression_op:
-            return expression
-        rhs = self.parse_expression(self.token())
-        return BinaryExpression(expression.span.merge(rhs.span), expression,
-                                rhs, binary_expression_op)
+        assert expression
+        while True:
+            op, precedence = self.probe_binary_expression_op()
+            if not op or precedence < min_precedence:
+                if op:
+                    self.idx -= 1
+                return expression
+            rhs = self.parse_expression(self.token(), precedence + 1)
+            expression = BinaryExpression(expression.span.merge(rhs.span),
+                                          expression, rhs, op)
 
     def probe_binary_expression_op(
-            self) -> t.Optional[BinaryExpression.Operator]:
+            self) -> t.Tuple[t.Optional[BinaryExpression.Operator], int]:
         next_token = self.token()
         if not next_token:
-            return None
+            return None, -1
+        # Order of precedence:
+        # 1. or
+        # 2. and
+        # 3. ==, !=
+        # 4. <, >, <=, >=
+        # 5. *, /
+        # 6. +, -
         match next_token:
+            case KeywordToken(TokenKind.keyword, _, Keyword.and_):
+                return BinaryExpression.Operator.and_, 2
+            case KeywordToken(TokenKind.keyword, _, Keyword.or_):
+                return BinaryExpression.Operator.or_, 1
             case Token(TokenKind.plus, _):
-                return BinaryExpression.Operator.add
+                return BinaryExpression.Operator.add, 6
             case Token(TokenKind.minus, _):
-                return BinaryExpression.Operator.sub
+                return BinaryExpression.Operator.sub, 6
             case Token(TokenKind.star, _):
-                return BinaryExpression.Operator.mul
+                return BinaryExpression.Operator.mul, 5
             case Token(TokenKind.slash, _):
-                return BinaryExpression.Operator.div
+                return BinaryExpression.Operator.div, 5
             case Token(TokenKind.double_equal, _):
-                return BinaryExpression.Operator.eq
+                return BinaryExpression.Operator.eq, 3
             case Token(TokenKind.langle_bracket, _):
                 next_token = self.token()
                 match next_token:
                     case Token(TokenKind.equal, _):
-                        return BinaryExpression.Operator.le
+                        return BinaryExpression.Operator.le, 4
                     case _:
                         self.idx -= 1
-                return BinaryExpression.Operator.lt
+                return BinaryExpression.Operator.lt, 4
             case Token(TokenKind.rangle_bracket, _):
                 next_token = self.token()
                 match next_token:
                     case Token(TokenKind.equal, _):
-                        return BinaryExpression.Operator.ge
+                        return BinaryExpression.Operator.ge, 4
                     case _:
                         self.idx -= 1
-                return BinaryExpression.Operator.gt
+                return BinaryExpression.Operator.gt, 4
             case Token(TokenKind.exclamation, _):
                 next_token = self.token()
                 match next_token:
                     case Token(TokenKind.equal, _):
-                        return BinaryExpression.Operator.ne
+                        return BinaryExpression.Operator.ne, 3
                     case _:
                         self.idx -= 1
         self.idx -= 1
-        return None
+        return None, -1
 
     def parse_if_expression(self) -> IfExpression:
         condition = self.parse_expression(self.token())
@@ -1515,12 +1539,13 @@ class BlockCodegen:
             [f"{x.type} %{x.name}" for x in func.parameters])
         self.emit(f"define {func.return_type} @{func.name}({parameters}) {{")
         for param in func.parameters:
-            self.variables[param.name] = self.Variable(span=param.span,
-                                                       name=param.name,
-                                                       llvm_reg=f"%{param.name}",
-                                                       is_parameter=True,
-                                                       mutable=False,
-                                                       type=param.type)
+            self.variables[param.name] = self.Variable(
+                span=param.span,
+                name=param.name,
+                llvm_reg=f"%{param.name}",
+                is_parameter=True,
+                mutable=False,
+                type=param.type)
         self.generate_block(func.body)
         self.emit("}")
         self.functions[func.name] = func
@@ -1854,6 +1879,12 @@ class BlockCodegen:
         if op_name == "ge":
             op_name = "icmp sge"
             res.type = BuiltinTypes.bool_
+        if op_name == "and_":
+            op_name = "and"
+            res.type = BuiltinTypes.bool_
+        if op_name == "or_":
+            op_name = "or"
+            res.type = BuiltinTypes.bool_
         self.emit(f"{res.name} = {op_name} {left}, {right.name}")
         return res
 
@@ -2108,7 +2139,6 @@ define i8* @getptr(i8** %ptr, i32 %index) {
         self.block.enums.update(codegen.block.enums)
         self.block.namespaces.update(codegen.block.namespaces)
 
-
     def generate(self) -> str:
         code = ""
         self.block.generate()
@@ -2199,6 +2229,7 @@ define i8* @getptr(i8** %ptr, i32 %index) {
                     )
         return literals
 
+
 def generate_prelude() -> t.Tuple[Parser, Codegen]:
     prelude_path = os.path.join(os.path.dirname(__file__), "prelude.kl")
     src = open(prelude_path).read()
@@ -2208,7 +2239,7 @@ def generate_prelude() -> t.Tuple[Parser, Codegen]:
     ast = parser.parse()
     codegen = Codegen(ast)
     return parser, codegen
-    
+
 
 def main():
     prelude = generate_prelude()

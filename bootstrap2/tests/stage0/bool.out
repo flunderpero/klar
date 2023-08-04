@@ -1,4 +1,13 @@
-false
-true
-false
-true
+`bool` type:
+true: false
+false: true
+a == b: false
+a == a: true
+b == a or b == b: true
+b == a or a == b: false
+b == a and a == b: false
+a == a and b == b: true
+`str` type:
+sa == sb or sa == sa: true
+precedence:
+true or false and false: true

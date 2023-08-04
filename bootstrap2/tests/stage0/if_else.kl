@@ -9,4 +9,10 @@ fn main():
     else:
         print("a is not b")
     end
+    if a == 1 and b == 2:
+        print("a is 1 and b is 2")
+    end
+    if a == 2 or b == 2:
+        print("a is 2 or b is 2")
+    end
 end

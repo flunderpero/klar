@@ -604,6 +604,10 @@ class Parser:
         self.enums: t.List[EnumDefinition] = []
         self.idx = 0
 
+    def inject(self, parser: "Parser"):
+        self.structs.extend(parser.structs)
+        self.enums.extend(parser.enums)
+
     def token(self):
         token = None
         while self.idx < len(self.tokens):
@@ -2087,47 +2091,60 @@ define i8* @getptr(i8** %ptr, i32 %index) {
         self.program = program
         self.literals: t.Dict[t.Union[str, int, bool, float], int] = {}
         self.id_counter = 0
+        self.block = BlockCodegen(self, self.program)
+        self.injected_code = ""
+        self.register_builtin_functions()
 
     def next_id(self) -> int:
         self.id_counter += 1
         return self.id_counter
 
+    def inject(self, codegen: "Codegen"):
+        codegen.block.generate()
+        self.injected_code += "\n".join(codegen.block.code)
+        self.block.functions.update(codegen.block.functions)
+        self.block.variables.update(codegen.block.variables)
+        self.block.structs.update(codegen.block.structs)
+        self.block.enums.update(codegen.block.enums)
+        self.block.namespaces.update(codegen.block.namespaces)
+
+
     def generate(self) -> str:
         code = ""
-        program_codegen = BlockCodegen(self, self.program)
-        self.register_builtin_functions(program_codegen)
-        program_codegen.generate()
+        self.block.generate()
         target_triple = subprocess.check_output("llvm-config --host-target",
                                                 shell=True).decode().strip()
         code += f'target triple = "{target_triple}"'
         code += "\n\n; Prelude\n"
         code += self.llvm_ir_prelude.strip()
+        code += "\n\n; Injected code\n"
+        code += self.injected_code.strip()
         code += "\n\n; Program\n"
-        code += "\n".join(program_codegen.code)
+        code += "\n".join(self.block.code)
         code += "\n\n; Literals\n"
         code += "\n".join(self.emit_literal_constants())
         return code
 
-    def register_builtin_functions(self, block: BlockCodegen):
-        block.functions["print"] = FunctionDefinition(
+    def register_builtin_functions(self):
+        self.block.functions["print"] = FunctionDefinition(
             name="print",
             span=Span(-1, -1),
             return_type=BuiltinTypes.i32,
             parameters=[Parameter(Span(-1, -1), "str", BuiltinTypes.str_)],
             body=Block(Span(-1, -1), []))
-        block.functions["getchar"] = FunctionDefinition(
+        self.block.functions["getchar"] = FunctionDefinition(
             name="getchar",
             span=Span(-1, -1),
             return_type=BuiltinTypes.i32,
             parameters=[],
             body=Block(Span(-1, -1), []))
-        block.functions["chr"] = FunctionDefinition(
+        self.block.functions["chr"] = FunctionDefinition(
             name="chr",
             span=Span(-1, -1),
             return_type=BuiltinTypes.str_,
             parameters=[Parameter(Span(-1, -1), "i", BuiltinTypes.i32)],
             body=Block(Span(-1, -1), []))
-        block.functions["malloc"] = FunctionDefinition(
+        self.block.functions["malloc"] = FunctionDefinition(
             name="malloc",
             span=Span(-1, -1),
             return_type=BuiltinTypes.ptr,
@@ -2135,7 +2152,7 @@ define i8* @getptr(i8** %ptr, i32 %index) {
                 Parameter(Span(-1, -1), "size", BuiltinTypes.i32),
             ],
             body=Block(Span(-1, -1), []))
-        block.functions["realloc"] = FunctionDefinition(
+        self.block.functions["realloc"] = FunctionDefinition(
             name="realloc",
             span=Span(-1, -1),
             return_type=BuiltinTypes.ptr,
@@ -2144,7 +2161,7 @@ define i8* @getptr(i8** %ptr, i32 %index) {
                 Parameter(Span(-1, -1), "size", BuiltinTypes.i32),
             ],
             body=Block(Span(-1, -1), []))
-        block.functions["setptr"] = FunctionDefinition(
+        self.block.functions["setptr"] = FunctionDefinition(
             name="setptr",
             span=Span(-1, -1),
             return_type=BuiltinTypes.void,
@@ -2154,7 +2171,7 @@ define i8* @getptr(i8** %ptr, i32 %index) {
                 Parameter(Span(-1, -1), "index", BuiltinTypes.i32)
             ],
             body=Block(Span(-1, -1), []))
-        block.functions["getptr"] = FunctionDefinition(
+        self.block.functions["getptr"] = FunctionDefinition(
             name="getptr",
             span=Span(-1, -1),
             return_type=BuiltinTypes.ptr,
@@ -2182,8 +2199,19 @@ define i8* @getptr(i8** %ptr, i32 %index) {
                     )
         return literals
 
+def generate_prelude() -> t.Tuple[Parser, Codegen]:
+    prelude_path = os.path.join(os.path.dirname(__file__), "prelude.kl")
+    src = open(prelude_path).read()
+    lexer = Lexer(src)
+    lexer.parse()
+    parser = Parser(lexer.tokens)
+    ast = parser.parse()
+    codegen = Codegen(ast)
+    return parser, codegen
+    
 
 def main():
+    prelude = generate_prelude()
     debug = any(x == "--debug" for x in sys.argv)
     print_to_stdout = any(x == "--stdout" for x in sys.argv)
     src_file = sys.argv[-2]
@@ -2199,11 +2227,13 @@ def main():
         print("Tokens:")
         pprint(lexer.tokens)
     parser = Parser(lexer.tokens)
+    parser.inject(prelude[0])
     ast = parser.parse()
     if debug:
         print("AST:")
         pprint(ast)
     codegen = Codegen(ast)
+    codegen.inject(prelude[1])
     code = codegen.generate()
     if not os.path.exists("build"):
         os.mkdir("build")

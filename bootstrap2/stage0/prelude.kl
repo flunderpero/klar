@@ -1,0 +1,28 @@
+struct List:
+    buf ptr
+    len i32
+    cap i32
+end
+
+fn list_new() List:
+    let cap = 1
+    let res = List()
+    res.buf = malloc(cap * 8)
+    res.len = 0
+    res.cap = cap
+    return res
+end
+
+fn list_push(list List, val ptr):
+    if list.len == list.cap:
+        list.cap = list.cap * 2
+        list.buf = realloc(list.buf, list.cap * 8)
+    end
+    setptr(list.buf, val, list.len)
+    list.len = list.len + 1
+end
+
+-- To get the correct type, you have to implement a wrapper function.
+fn list_get(list List, idx i32) ptr:
+    return getptr(list.buf, idx)
+end

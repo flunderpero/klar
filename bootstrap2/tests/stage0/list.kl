@@ -1,0 +1,29 @@
+struct Person:
+    name str
+    age i32
+end
+
+fn get_person(list List, index i32) Person:
+    return list_get(list, index)
+end
+
+fn main():
+    let list = list_new()
+    print(f"len: {list.len}, cap: {list.cap}")
+    list_push(list, Person("Alice", 20))
+    print(f"len: {list.len}, cap: {list.cap}")
+    list_push(list, Person("Bob", 21))
+    print(f"len: {list.len}, cap: {list.cap}")
+    list_push(list, Person("Peter", 22))
+    print(f"len: {list.len}, cap: {list.cap}")
+    list_push(list, Person("Paul", 23))
+    print(f"len: {list.len}, cap: {list.cap}")
+    list_push(list, Person("Mary", 24))
+    print(f"len: {list.len}, cap: {list.cap}")
+    mut i = 0
+    while i < list.len:
+        let p = get_person(list, i)
+        print(f"{p.name} is {p.age} years old.")
+        i = i + 1
+    end
+end

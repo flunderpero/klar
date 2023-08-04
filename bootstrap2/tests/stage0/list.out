@@ -1,0 +1,11 @@
+len: 0, cap: 1
+len: 1, cap: 1
+len: 2, cap: 2
+len: 3, cap: 4
+len: 4, cap: 4
+len: 5, cap: 8
+Alice is 20 years old.
+Bob is 21 years old.
+Peter is 22 years old.
+Paul is 23 years old.
+Mary is 24 years old.

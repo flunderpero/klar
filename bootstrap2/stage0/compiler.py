@@ -55,6 +55,7 @@ class TokenKind(Enum):
     bool_ = auto()
     comment = auto()
     exclamation = auto()
+    fat_arrow = auto()
 
 
 class Keyword(StrEnum):
@@ -201,6 +202,10 @@ class Lexer:
                                 self.idx += 1
                                 self.column += 1
                                 self.emit_single(TokenKind.double_equal)
+                            elif c == ">":
+                                self.idx += 1
+                                self.column += 1
+                                self.emit_single(TokenKind.fat_arrow)
                             else:
                                 self.emit_single(TokenKind.equal)
                         case ",":
@@ -1211,13 +1216,8 @@ class Parser:
         match token:
             case Token(TokenKind.colon, _):
                 is_single_line = False
-            case Token(TokenKind.equal, _):
-                next_token = self.token()
-                match next_token:
-                    case Token(TokenKind.rangle_bracket, _):
-                        is_single_line = True
-                    case _:
-                        raise ValueError(f"Expected '>': {next_token}")
+            case Token(TokenKind.fat_arrow, _):
+                is_single_line = True
             case _:
                 raise ValueError(f"Expected ':' or '=>': {token}")
         if is_single_line:

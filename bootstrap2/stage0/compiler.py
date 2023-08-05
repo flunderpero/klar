@@ -244,8 +244,12 @@ class Lexer:
                 case ValueToken(TokenKind.comment, _):
                     if self.state.value == "-":
                         if c != "-":
-                            self.emit_single(TokenKind.minus)
-                            self.idx -= 1
+                            if c.isnumeric():
+                                self.state.kind = TokenKind.integer
+                                self.state.value += c
+                            else:
+                                self.emit_single(TokenKind.minus)
+                                self.idx -= 1
                         else:
                             self.state.value += c
                         continue

@@ -1,0 +1,455 @@
+-- # Language design
+--
+-- This is a living design document where we develop the design of the
+-- language.  It is not a specification, and it is not a tutorial.  It
+-- is a place for us to work out the design of the language, and to
+-- record the decisions we make.
+
+-- ## Basic syntax
+--
+-- Goals: simple, familiar, unambiguous, easy to type, easy to read.
+
+-- No semicolons, no curly braces for blocks, no colon before type, no needless
+-- parentheses or commas, few keywords, words instead of punctuation.
+fn main():
+    -- Comments start with two dashes.
+    --- 
+        Multi-line comments are three dashes.
+    ---
+    struct Person:
+        name str -- No comma needed or allowed.
+        age i32
+    end
+    enum Color:
+        Red
+        HSL(hue f32, saturation f32, lightness f32)
+    end
+    -- Constructors are just functions.
+    let person = Person(name="Alice", age=42)
+    -- Blocks can either consist of a single expression, or a series of
+    -- expressions.
+    if person.age > 18 and person.age < 65: -- `and` instead of `&&`.
+        -- This is a multi-expression block.
+        -- f-strings to interpolate values into strings.
+        print(f"{person.name} is an adult before retirement.")
+        print(f"{person.name} is {person.age} years old.")
+    else => print(f"{person.name} is a child.") -- Single-expression block.
+end
+
+-- ## Types
+--
+-- We believe that a robust and expressive type system is a great utility for
+-- designing and reasoning about programs. However, we also believe that
+-- a type system should not get in the way of writing code. That's why included
+-- features like optional generics, that help you escape a complex type hierarchy.
+
+-- Built-in types are: `bool`, `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`,
+-- `u64`, `f32`, `f64`, `str`, `list`, `tuple`, `dict`.
+
+-- ### Optional values
+--
+-- Klar does not have null values. Instead, we use optional values.
+
+fn main():
+    let name_none str? = None
+    let name_alice str? = "Alice" -- No need to say `Some("Alice")`.
+
+    fn print_name(name str?):
+        match name:
+            None => print("No name.")
+            Some(name) => print(name)
+        end
+        if name.is_some():
+            print(name) -- The type is coerced to `str`.
+        end
+        print(name.or("No name.")) -- `or` returns the value or the default.
+    end
+
+    -- The `?` annotation is a shorthand for `Option<T>`.
+    let name_bob Option<str> = "Bob" 
+end
+
+-- ### Structs, Enums, and Traits
+--
+-- We believe that most program designs benefit from being developed with the
+-- data structure as the fundamental unit of abstraction. Furthermore, we
+-- encourage composition over inheritance. Therefore, Klar does not have
+-- classes. Instead, we have Structs, Enums, and Traits. 
+
+enum Occupation:
+    Student(university str)
+    Employed(company str, position str)
+    Retired
+end
+
+struct Address:
+    street str
+    city str
+    zip str?
+end
+
+struct Person:
+    name str
+    age i32
+    address Address
+    occupation Occupation?
+end
+
+-- Add functions to a Struct with the `impl` keyword.
+impl Person:
+    fn is_adult(self):
+        self.age > 18
+    end
+
+    -- `mut` is required to mutate the struct.
+    fn happy_birthday(mut self):
+        self.age += 1
+    end
+end
+
+trait HasName:
+    -- All implmentations of this trait must implement this function.
+    fn name(self) str
+
+    -- Traits can have default implementations that _can_ be overridden.
+    fn greet(self):
+        print(f"Hello, {self.name()}!")
+    end
+end
+
+impl HasName for Person:
+    fn name(self) => self.name
+end
+
+-- ### Generics
+--
+
+struct Pair<A, B>:
+    first A
+    second B
+end
+
+trait Elements<A>:
+    fn elements(self) list<A>
+end
+
+impl<A, B> Elements<A> for Pair<A, B>:
+    fn elements(self) => [self.first]
+end
+
+-- Because Klar does not support function overloading, you cannot implement
+-- the same trait for the same type twice. So this would not compile.
+impl<A, B> Elements<B> for Pair<A, B>:
+    fn elements(self) => [self.second]
+end
+
+-- #### Type constraints
+
+struct Pair<A HasName and Eq, B ToString and From<A>>:
+    first A
+    second B
+end
+
+-- #### Optional generics.
+--
+-- Here is an example of the built-in `error` struct.
+
+struct error<T>:
+    message str
+    cause T? 
+end
+
+-- You can use this struct without specifying the generic type, because all uses
+-- of the generic type are optional. 
+-- All specific types of `Error` are compatible to `Error`.
+fn fail_with_str() Error<str>:
+    return Error(message="Something went wrong.", cause="Some error.")
+end
+
+fn fail_with_int() Error:
+    -- We can access the cause, because the inferred type of `result` is `Error<str>`.
+    let result = might_fail()
+    print(f"cause: {result.cause}")
+
+    -- This function is declared to return the base type `Error`, but we can
+    -- return an `Error<str>`, because `Error<str>` is compatible with `Error`.
+    -- `error.cause` will implicitly be `None`.
+    return result
+end
+
+-- ## Functions
+--
+-- Klar does no support function overloading. 
+-- Klar supports higher-order functions - functions are first-class values.
+fn map(list [A], f (fn(A) B)) [B]:
+    let mut result = []
+    for item in list => result.append(f(item))
+    return result
+end
+
+-- ## Immutable by default
+
+-- Everything is immutable by default. Use `mut` to make it mutable.
+fn do_something(i i32, mut person Person, optional str?) SomeReturnType:
+    print(f"i: {i}, name: {person.name}, optional: {optional}")
+    i = i + 1  -- Compile error because `i` is not mutable.
+    person.name = "Bob" -- OK because `person` is mutable.
+
+    let a = 1
+    a = 2 -- Compile error because `a` is not mutable.
+    mut b = 42
+    b = 43 -- OK because `b` is mutable.
+end
+
+-- ## References
+--
+-- Klar gives the programmer control over whether a value is copied or referenced. 
+
+struct Address:
+    street str
+    city str
+end
+
+struct Person:
+    name str
+    -- This is a reference to an `Address`.
+    primary_address &Address
+    -- This `Address` is part of the `Person` struct.
+    secondary_address Address
+end
+
+fn main():
+    let address = Address(street="Main Street", city="New York")
+    let person = Person(name="Alice", primary_address=&address, secondary_address=address)
+    -- `person.primary_address` is a reference to `address`.
+    -- `person.secondary_address` is a copy of `address`.
+    print(person.primary_address.street) -- Prints "Main Street".
+    print(person.secondary_address.street) -- Prints "Main Street".
+    address.street = "Broadway"
+    print(person.primary_address.street) -- Prints "Broadway".
+    print(person.secondary_address.street) -- Prints "Main Street".
+end
+
+-- ## Memory management
+--
+-- Klar tries to allocate on the stack first. If an object, a part of an object,
+-- or a reference to an object or part of an object escapes the scope, the object
+-- is allocated on the heap. Primitive (all number-types, `bool`, `str`) are always
+-- allocated on the stack. If a `str` is mutable, it is allocated on the heap.
+
+-- ### Garbage collection
+--
+-- Klar uses reference counting for garbage collection. Only heap-allocated objects
+-- are reference counted. 
+-- Reference counts are not updated when a local variable creates a reference, making
+-- code like this very efficient:
+
+fn is_in_list(name str, people list<Person>) bool:
+    for person in people:
+        if person.name == name => return true
+    end
+    return false
+end
+
+-- Because no reference to `people` or its contents escapes the scope, no reference
+-- counts are updated.
+-- Klar employs more optimizations to reduce the number of reference count updates.
+-- You can analyze where reference counts are updated by using the `--print-rc` flag.
+--
+-- #### Cycles
+--
+-- Klar can detect cycles in the object graph and break them. We might either use
+-- a tracing garbage collector or a cycle-breaking reference counting algorithm.
+
+-- ## Concurrency
+--
+-- Klar supports concurrency using threads and channels and prevents concurrent access
+-- to mutable data.
+-- Asynchronous programming is not supported and will not be supported. We believe 
+-- that threads and channels are a better abstraction for concurrency than asynchronous 
+-- programming. 
+-- [TODO: Add benchmarks.]
+-- Klar's concurrency model makes it easy to reason about a program's behavior and makes
+-- many optimizations possible.
+
+-- Klar's concurrency is inspired by Go's concurrency model.
+
+fn calculate(i i32) i32 => i * 2
+
+fn communicate(prefix str, emoticons [str], c channel<str>):
+    while c.is_open():
+        let message = c.receive()
+        c.send(f"{prefix}: {message}")
+    end
+end
+
+fn main():
+    let emoticons = [":)", ":(", ":D", ":P", ":O", ":|", ":/"]
+    -- `spawn` creates a new thread and returns a `Future`.
+    let future = spawn calculate(42)
+    -- Create a channel to communicate between threads.
+    let c = channel<str>()
+    -- We can safely share `emoticons` between threads, because it is immutable.
+    spawn communicate("Alice", emoticons, c)
+    spawn communicate("Bob", emoticons, c)
+    c.send("Hello")
+    c.send("World")
+    while c.is_open():
+        print(c.receive())
+    end
+    c.close()
+    let res = future.await()! -- Wait for the future to complete. It can error.
+    print(res) -- Prints "84".
+end
+
+-- ## Pattern matching
+--
+
+fn main():
+    let person = Person(name="Alice", address=Address(city="New York"))
+    match person:
+        Person(name="Alice", address=Address(city="New York")) => print("Alice from New York")
+        Person(name="Alice", address) => print("Alice")
+        Person(name="Bob", address) | Person(name="Charlie", address) => print("Bob or Charlie")
+        else => print("Someone else")
+    end
+    -- Klar supports all patterns you'd expect from a modern language.
+end
+
+-- ## Error handling
+--
+-- Klar uses errors as values. This makes error handling explicit and easy to reason about.
+-- `error` and `Result` are built-in types.
+
+struct error<T>:
+    message str
+    cause T?
+end
+
+enum Result<T, E>:
+    Ok(T)
+    Error(E)
+end
+
+-- Functions that can error have to declare the error type in the signature.
+-- `str or error<str>` is syntactic sugar for `Result<str, i32>`.
+fn can_error() str or error<i32>:
+    return error(message="Something went wrong.", cause=42)
+end
+
+-- Errors can be propagated using `!`.
+fn can_error_too() str or error<i32>:
+    return can_error()!.multiply(2)
+end
+
+-- We don't want users have to convert error types if they don't want to. 
+fn can_error_too_without_specific_error_type() str or error:
+    -- Because the `T` in `error<T>` is optional, we can treat `error<str>` as `error`.
+    return can_error()!
+end
+
+fn main():
+    let result = can_error()
+    match result:
+        Ok(value) => print(f"Result: {value}")
+        Error(error) => print(f"Error: {error.message}")
+    end
+    if result.is_error():
+        -- The type of `result` is coerced to `error<i32>`.
+        print(f"Error: {result.message}")
+    else:
+        print(f"Result: {result}")
+    end
+end
+
+-- ## Short version
+
+-- Klar is a programming language that aims to be:
+-- - Safe (memory, concurrency, error handling)
+-- - Fast
+-- - Easy to use
+-- - Type system that allows you to escape it.
+
+-- Klar uses reference counting and is able to detect cycles in the object graph.
+-- Klar tries to allocate on the stack first.
+
+struct Person<T HasName>:
+    name str 
+    age i32
+    address Address? -- Optional.
+    mother &T -- Reference.
+end
+
+struct error<T>:
+    message str
+    cause T? -- Because all uses of `T` are optional, we can treat `error<T>` as `error`.
+end
+
+enum Result<T, E>:
+    Ok(T)
+    Error(E)
+end
+
+-- `or error<E>` is syntactic sugar for `Result<T, error<E>`.
+fn divide(x i32, y i32) i32 or error<str>:
+    if y == 0 => return error(message="Division by zero.", cause="y")
+    return x / y
+end
+
+fn calculate(x i32, y i32) i32 or error:
+    let result = divide(x, y)! -- `!` unwraps the `Result` or propagates the error.
+    if divide(result, 2).is_error():
+        -- `result` is coerced to `error<i32>
+        return error(message=f"Division by two failed: {result.cause}")
+    end
+    return result * 2
+end
+
+fn main():
+    -- Comments start with two dashes, multiline with three.
+    -- Structs and enums can be defined everywhere.
+    enum Color:
+        Red
+        HSL(hue f32, saturation f32, lightness f32)
+    end
+    let person = Person(name="Alice", age=20, mother=&Person(name="Eve", age=42))
+    if person.age > 18 and person.age < 65: -- `and` instead of `&&`.
+        -- Multi-expression block.
+        print(f"{person.name} is an adult before retirement.")
+        print(f"{person.name} is {person.age} years old.")
+    else => print(f"{person.name} is a child.") -- Single-expression block.
+    let name str? = person.mother?.name -- Optional chaining.
+    match name:
+        Some(name) => print(f"{person.name}'s mother is {name}.")
+        None => print(f"{person.name} did not provide their mother's name.")
+    end
+    if name.is_some(): 
+        -- `name` is coerced to `str`.
+        print(f"{person.name}'s mother is {name}.")
+    end
+    -- Threads and channels.
+    let future = spawn calculate(42, 2)
+
+    let emoticons = [":)", ":("] -- Can be shared between threads because it is immutable.
+    fn communicate(prefix str, emoticons [str], c channel<str>):
+        while c.is_open():
+            let message = c.receive()
+            c.send(f"{prefix}: {message}")
+        end
+    end
+    let c = channel<str>()
+    spawn communicate("Alice", emoticons, c)
+    spawn communicate("Bob", emoticons, c)
+    c.send("Hi")
+    c.send("There")
+    while c.is_open():
+        print(c.receive())
+    end
+    c.close()
+    let result = future.await()!
+    -- Mutability must be declared explicitly.
+    mut person = Person(name="Bob", age=20)
+    fn happy_birthday(mut person &Person):
+        person.age += 1
+    end 
+end

@@ -17,7 +17,7 @@ fn main():
         Multi-line comments are three dashes.
     ---
     struct Person:
-        name Str -- No comma needed or allowed.
+        name str -- No comma needed or allowed.
         age i32
     end
     enum Color:
@@ -43,31 +43,30 @@ end
 -- a type system should not get in the way of writing code. That's why included
 -- features like optional generics, that help you escape a complex type hierarchy.
 
--- Primitive types are: `bool`, `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`,
--- `u64`, `f32`, `f64`
--- Basic stdlib types are: `Str`, `Array`, `Option`, `Result`, `Map`, `Set`
+-- Built-in types are: `bool`, `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`,
+-- `u64`, `f32`, `f64`, `str`, `list`, `tuple`, `dict`.
 
 -- ### Optional values
 --
 -- Klar does not have null values. Instead, we use optional values.
 
 fn main():
-    let name_none Str? = None
-    let name_alice Str? = "Alice" -- No need to say `Some("Alice")`.
+    let name_none str? = None
+    let name_alice str? = "Alice" -- No need to say `Some("Alice")`.
 
-    fn print_name(name Str?):
+    fn print_name(name str?):
         match name:
             None => print("No name.")
             Some(name) => print(name)
         end
         if name.is_some():
-            print(name) -- The type is coerced to `Str`.
+            print(name) -- The type is coerced to `str`.
         end
         print(name.or("No name.")) -- `or` returns the value or the default.
     end
 
     -- The `?` annotation is a shorthand for `Option<T>`.
-    let name_bob Option<Str> = "Bob" 
+    let name_bob Option<str> = "Bob" 
 end
 
 -- ### Structs, Enums, and Traits
@@ -78,19 +77,19 @@ end
 -- classes. Instead, we have Structs, Enums, and Traits. 
 
 enum Occupation:
-    Student(university Str)
-    Employed(company Str, position Str)
+    Student(university str)
+    Employed(company str, position str)
     Retired
 end
 
 struct Address:
-    street Str
-    city Str
-    zip Str?
+    street str
+    city str
+    zip str?
 end
 
 struct Person:
-    name Str
+    name str
     age i32
     address Address
     occupation Occupation?
@@ -110,7 +109,7 @@ end
 
 trait HasName:
     -- All implmentations of this trait must implement this function.
-    fn name(self) Str
+    fn name(self) str
 
     -- Traits can have default implementations that _can_ be overridden.
     fn greet(self):
@@ -131,7 +130,7 @@ struct Pair<A, B>:
 end
 
 trait Elements<A>:
-    fn elements(self) [A]  -- Same as `fn elements(self) Array<A>`
+    fn elements(self) list<A>
 end
 
 impl<A, B> Elements<A> for Pair<A, B>:
@@ -153,28 +152,28 @@ end
 
 -- #### Optional generics.
 --
--- Here is an example of the built-in `Error` struct.
+-- Here is an example of the built-in `error` struct.
 
-struct Error<T>:
-    message Str
+struct error<T>:
+    message str
     cause T? 
 end
 
 -- You can use this struct without specifying the generic type, because all uses
 -- of the generic type are optional. 
 -- All specific types of `Error` are compatible to `Error`.
-fn fail_with_str() Error<Str>:
+fn fail_with_str() Error<str>:
     return Error(message="Something went wrong.", cause="Some error.")
 end
 
 fn fail_with_int() Error:
-    -- We can access the cause, because the inferred type of `result` is `Error<Str>`.
+    -- We can access the cause, because the inferred type of `result` is `Error<str>`.
     let result = might_fail()
     print(f"cause: {result.cause}")
 
     -- This function is declared to return the base type `Error`, but we can
-    -- return an `Error<Str>`, because `Error<Str>` is compatible with `Error`.
-    -- `Error.cause` will implicitly be `None`.
+    -- return an `Error<str>`, because `Error<str>` is compatible with `Error`.
+    -- `error.cause` will implicitly be `None`.
     return result
 end
 
@@ -182,16 +181,16 @@ end
 --
 -- Klar does no support function overloading. 
 -- Klar supports higher-order functions - functions are first-class values.
-fn map(arr [A], f (fn(A) B)) [B]:
+fn map(list [A], f (fn(A) B)) [B]:
     let mut result = []
-    for item in arr => result.append(f(item))
+    for item in list => result.append(f(item))
     return result
 end
 
 -- ## Immutable by default
 
 -- Everything is immutable by default. Use `mut` to make it mutable.
-fn do_something(i i32, mut person Person, optional Str?) SomeReturnType:
+fn do_something(i i32, mut person Person, optional str?) SomeReturnType:
     print(f"i: {i}, name: {person.name}, optional: {optional}")
     i = i + 1  -- Compile error because `i` is not mutable.
     person.name = "Bob" -- OK because `person` is mutable.
@@ -207,12 +206,12 @@ end
 -- Klar gives the programmer control over whether a value is copied or referenced. 
 
 struct Address:
-    street Str
-    city Str
+    street str
+    city str
 end
 
 struct Person:
-    name Str
+    name str
     -- This is a reference to an `Address`.
     primary_address &Address
     -- This `Address` is part of the `Person` struct.
@@ -229,16 +228,14 @@ fn main():
     address.street = "Broadway"
     print(person.primary_address.street) -- Prints "Broadway".
     print(person.secondary_address.street) -- Prints "Main Street".
-    let alice_address = person.address -- Type of `alice_address` is `&Address`.
-    -- Copying is explicit.
-    let alice_address_copy = person.address.copy() -- Type of `alice_address_copy` is `Address`.
 end
 
 -- ## Memory management
 --
 -- Klar tries to allocate on the stack first. If an object, a part of an object,
 -- or a reference to an object or part of an object escapes the scope, the object
--- is allocated on the heap. Primitive types are always allocated on the stack. 
+-- is allocated on the heap. Primitive (all number-types, `bool`, `str`) are always
+-- allocated on the stack. If a `str` is mutable, it is allocated on the heap.
 
 -- ### Garbage collection
 --
@@ -247,7 +244,7 @@ end
 -- Reference counts are not updated when a local variable creates a reference, making
 -- code like this very efficient:
 
-fn is_in_array(name Str, people [Person]) bool:
+fn is_in_list(name str, people list<Person>) bool:
     for person in people:
         if person.name == name => return true
     end
@@ -279,7 +276,7 @@ end
 
 fn calculate(i i32) i32 => i * 2
 
-fn communicate(prefix Str, emoticons [Str], c channel<Str>):
+fn communicate(prefix str, emoticons [str], c channel<str>):
     while c.is_open():
         let message = c.receive()
         c.send(f"{prefix}: {message}")
@@ -291,7 +288,7 @@ fn main():
     -- `spawn` creates a new thread and returns a `Future`.
     let future = spawn calculate(42)
     -- Create a channel to communicate between threads.
-    let c = channel<Str>()
+    let c = channel<str>()
     -- We can safely share `emoticons` between threads, because it is immutable.
     spawn communicate("Alice", emoticons, c)
     spawn communicate("Bob", emoticons, c)
@@ -322,32 +319,32 @@ end
 -- ## Error handling
 --
 -- Klar uses errors as values. This makes error handling explicit and easy to reason about.
--- `Error` and `Result` are built-in types.
+-- `error` and `Result` are built-in types.
 
-struct Error<T>:
-    message Str
+struct error<T>:
+    message str
     cause T?
 end
 
 enum Result<T, E>:
     Ok(T)
-    Err(E)
+    Error(E)
 end
 
 -- Functions that can error have to declare the error type in the signature.
--- `Str or error<i32>` is syntactic sugar for `Result<Str, i32>`.
-fn can_error() Str or Error<i32>:
-    return Error(message="Something went wrong.", cause=42)
+-- `str or error<str>` is syntactic sugar for `Result<str, i32>`.
+fn can_error() str or error<i32>:
+    return error(message="Something went wrong.", cause=42)
 end
 
 -- Errors can be propagated using `!`.
-fn can_error_too() Str or Error<i32>:
+fn can_error_too() str or error<i32>:
     return can_error()!.multiply(2)
 end
 
 -- We don't want users have to convert error types if they don't want to. 
-fn can_error_too_without_specific_error_type() Str or Error:
-    -- Because the `T` in `Error<T>` is optional, we can treat `Error<str>` as `Error`.
+fn can_error_too_without_specific_error_type() str or error:
+    -- Because the `T` in `error<T>` is optional, we can treat `error<str>` as `error`.
     return can_error()!
 end
 
@@ -355,10 +352,10 @@ fn main():
     let result = can_error()
     match result:
         Ok(value) => print(f"Result: {value}")
-        Err(error) => print(f"Error: {error.message}")
+        Error(error) => print(f"Error: {error.message}")
     end
     if result.is_error():
-        -- The type of `result` is coerced to `Error<i32>`.
+        -- The type of `result` is coerced to `error<i32>`.
         print(f"Error: {result.message}")
     else:
         print(f"Result: {result}")
@@ -371,41 +368,39 @@ end
 -- - Safe (memory, concurrency, error handling)
 -- - Fast
 -- - Easy to use
--- - Clear about what happens (is data copied or moved? is a reference counted or not?)
 -- - Type system that allows you to escape it.
 
 -- Klar uses reference counting and is able to detect cycles in the object graph.
--- Klar tries to allocate on the stack first. Primitive types are always copied and you
--- cannot take a reference to a primitive type.
+-- Klar tries to allocate on the stack first.
 
 struct Person<T HasName>:
-    name Str 
+    name str 
     age i32
     address Address? -- Optional.
     mother &T -- Reference.
 end
 
-struct Error<T>:
-    message Str
-    cause T? -- Because all uses of `T` are optional, we can treat `Error<T>` as `Error`.
+struct error<T>:
+    message str
+    cause T? -- Because all uses of `T` are optional, we can treat `error<T>` as `error`.
 end
 
 enum Result<T, E>:
     Ok(T)
-    Err(E)
+    Error(E)
 end
 
--- `or Error<E>` is syntactic sugar for `Result<T, Error<E>`.
-fn divide(x i32, y i32) i32 or Error<Str>:
-    if y == 0 => return Error(message="Division by zero.", cause="y")
+-- `or error<E>` is syntactic sugar for `Result<T, error<E>`.
+fn divide(x i32, y i32) i32 or error<str>:
+    if y == 0 => return error(message="Division by zero.", cause="y")
     return x / y
 end
 
-fn calculate(x i32, y i32) i32 or Error:
+fn calculate(x i32, y i32) i32 or error:
     let result = divide(x, y)! -- `!` unwraps the `Result` or propagates the error.
     if divide(result, 2).is_error():
-        -- `result` is coerced to `Error<i32>
-        return Error(message=f"Division by two failed: {result.cause}")
+        -- `result` is coerced to `error<i32>
+        return error(message=f"Division by two failed: {result.cause}")
     end
     return result * 2
 end
@@ -423,27 +418,26 @@ fn main():
         print(f"{person.name} is an adult before retirement.")
         print(f"{person.name} is {person.age} years old.")
     else => print(f"{person.name} is a child.") -- Single-expression block.
-    let name Str? = person.mother?.name -- Optional chaining.
+    let name str? = person.mother?.name -- Optional chaining.
     match name:
         Some(name) => print(f"{person.name}'s mother is {name}.")
         None => print(f"{person.name} did not provide their mother's name.")
     end
     if name.is_some(): 
-        -- `name` is coerced to `Str`.
+        -- `name` is coerced to `str`.
         print(f"{person.name}'s mother is {name}.")
     end
-    let alice_address = person.address  -- Type of `alice_address` is `&Address?`.
-    
     -- Threads and channels.
     let future = spawn calculate(42, 2)
+
     let emoticons = [":)", ":("] -- Can be shared between threads because it is immutable.
-    fn communicate(prefix Str, emoticons [Str], c channel<Str>):
+    fn communicate(prefix str, emoticons [str], c channel<str>):
         while c.is_open():
             let message = c.receive()
             c.send(f"{prefix}: {message}")
         end
     end
-    let c = channel<Str>()
+    let c = channel<str>()
     spawn communicate("Alice", emoticons, c)
     spawn communicate("Bob", emoticons, c)
     c.send("Hi")
@@ -456,8 +450,6 @@ fn main():
     -- Mutability must be declared explicitly.
     mut person = Person(name="Bob", age=20)
     fn happy_birthday(mut person &Person):
-        -- Only references can be passed as mutable.
-        -- Primitive types cannot be passed as mutable.
         person.age += 1
     end 
 end

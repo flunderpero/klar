@@ -314,6 +314,10 @@ function parse(tokens: Token[]): AST {
             expression = parse_function_definition()
         } else if (simple_token === "let") {
             expression = parse_let()
+        } else if (simple_token === "(") {
+            consume()
+            expression = parse_expression()
+            expect(")")
         } else if (simple_token === "return") {
             expression = parse_return_expression()
         } else if (token.kind === "number") {

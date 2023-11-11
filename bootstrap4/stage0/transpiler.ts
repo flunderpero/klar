@@ -37,7 +37,7 @@ type Token = Identifier | Number_ | SimpleToken
 
 type SimpleToken = {
     kind: "simple"
-    value: "(" | ")" | ":" | "fn" | "end" | "return"
+    value: "(" | ")" | ":" | "=" | "fn" | "end" | "return" | "let"
     span: Span
 }
 
@@ -60,6 +60,14 @@ type FunctionDefinition = {
     parameters: Parameter[]
     body: Expression[]
     transpile?: (fn: FunctionCall, args: string[]) => string
+    span: Span
+}
+
+type Let = {
+    kind: "let"
+    name: string
+    value: Expression
+    type: Type
     span: Span
 }
 
@@ -99,6 +107,15 @@ const builtin_types = {
     } as Type,
 }
 
+const unknown_type: Type = {
+    name: "unknown",
+    kind: "type",
+    transpile: () => {
+        throw new Error("The 'unknown' type cannot be transpiled")
+    },
+    span: new Span(0, 0, ""),
+} 
+
 type Variable = {
     kind: "variable"
     name: string
@@ -106,7 +123,7 @@ type Variable = {
     span: Span
 }
 
-type Expression = FunctionDefinition | ReturnExpression | Number_ | FunctionCall | Variable
+type Expression = FunctionDefinition | ReturnExpression | Number_ | FunctionCall | Variable | Let
 
 type AST = Expression[]
 
@@ -140,7 +157,7 @@ function lexer(src: string) {
     }
     while (i < src.length) {
         const c = peek()
-        if (["(", ")", ":", ","].includes(c)) {
+        if (["(", ")", ":", ",", "="].includes(c)) {
             tokens.push({kind: "simple", value: c as any, span: span()})
             skip()
         } else if (c.match(/\s/)) {
@@ -151,7 +168,7 @@ function lexer(src: string) {
             while (peek().match(/[a-zA-Z0-9_]/)) {
                 value += consume()
             }
-            if (["return", "fn", "end"].includes(value)) {
+            if (["return", "fn", "end", "let"].includes(value)) {
                 tokens.push({kind: "simple", value: value as any, span: span(start_span)})
             } else {
                 tokens.push({kind: "identifier", value, span: span(start_span)})
@@ -175,7 +192,7 @@ function lexer(src: string) {
                 skip()
             }
         } else {
-            throw new Error(`Unexpected char ${c} at ${span()}`)
+            throw new Error(`Unexpected character '${c}' at ${span()}`)
         }
     }
     return tokens
@@ -219,7 +236,7 @@ function parse(tokens: Token[]): AST {
     function consume() {
         return tokens[i++] as Token & {kind?: any; value?: any}
     }
-    function expect(token_kind: "identifier" | "(" | ")" | ":" | "," | "end" | "return" | "fn") {
+    function expect(token_kind: "identifier" | "(" | ")" | ":" | "," | "=" | "end" | "return" | "fn" | "let") {
         let actual = peek() as any
         let actual_kind = actual.kind
         if (actual.kind === "simple") {
@@ -242,6 +259,8 @@ function parse(tokens: Token[]): AST {
         const simple_token = token.kind === "simple" ? token.value : undefined
         if (simple_token === "fn") {
             return parse_function_definition()
+        } else if (simple_token === "let") {
+            return parse_let()
         } else if (simple_token === "return") {
             return parse_return_expression()
         } else if (token.kind === "number") {
@@ -250,11 +269,40 @@ function parse(tokens: Token[]): AST {
             const token = expect("identifier")
             const result = parse_function_call(token) || parse_variable(token)
             if (!result) {
-                throw new Error(`Unexpected identifier ${token.value} at ${token.span}`)
+                throw new Error(`Unknown identifier ${token.value} at ${token.span}`)
             }
             return result
         }
-        throw new Error(`Unexpected token ${JSON.stringify(token)} at ${token.span}`)
+        throw new Error(`Unexpected token ${JSON.stringify(token)} at ${token.span} ${simple_token}`)
+    }
+    function parse_let() {
+        const span = expect("let").span
+        const name = expect("identifier").value
+        const token = peek()
+        let type = unknown_type
+        if (token.kind === "identifier") {
+            type = find_in_env("types", token.value)
+            if (!type) {
+                throw new Error(`Unknown type ${token.value} at ${token.span}`)
+            }
+            consume()
+        }
+        expect("=")
+        const value = parse_expression()
+        const let_: Let = {
+            kind: "let",
+            name,
+            value,
+            type,
+            span: Span.combine(span, value.span),
+        }
+        env.variables[name] = {
+            kind: "variable",
+            name,
+            type,
+            span: Span.combine(span, value.span),
+        }
+        return let_
     }
     function parse_function_definition(): FunctionDefinition {
         const span = expect("fn").span
@@ -377,6 +425,8 @@ function transpile(ast: AST) {
             } else {
                 return `${expression.name}(${args.join(",")});`
             }
+        } else if (expression.kind === "let") {
+            return `const ${expression.name} = ${transpile_expression(expression.value)};`
         } else {
             throw new Error(
                 `Unexpected expression ${JSON.stringify(expression)} at ${expression.span}`,

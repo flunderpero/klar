@@ -40,6 +40,7 @@ type SimpleToken = {
     value:
         | "("
         | ")"
+        | "."
         | ":"
         | "=>"
         | "="
@@ -58,6 +59,7 @@ type SimpleToken = {
         | "loop"
         | "break"
         | "continue"
+        | "struct"
     span: Span
 }
 
@@ -98,9 +100,9 @@ type VariableDeclaration = {
     mutable: boolean
 }
 
-type VariableAssignment = {
-    kind: "variable_assignment"
-    variable: Variable
+type Assignment = {
+    kind: "assignment"
+    target: Variable | FieldAccess
     value: Expression
     span: Span
 }
@@ -128,7 +130,22 @@ type Number_ = {
 type Type = {
     kind: "type"
     name: string
-    transpile: (value: any) => string
+    transpile?: (value: any) => string
+    span: Span
+    members?: Record<string, Type>
+}
+
+type TypeDefinition = {
+    kind: "type_definition"
+    name: string
+    span: Span
+    members?: Record<string, Type>
+}
+
+type FieldAccess = {
+    kind: "field_access"
+    object: Expression
+    field: string
     span: Span
 }
 
@@ -200,10 +217,12 @@ type Expression =
     | BinaryExpression
     | If
     | Block
-    | VariableAssignment
+    | Assignment
     | Loop
     | Break
     | Continue
+    | TypeDefinition
+    | FieldAccess
 
 type AST = Expression[]
 
@@ -211,6 +230,7 @@ type Environment = {
     functions: Record<string, FunctionDefinition>
     variables: Record<string, Variable>
     types: Record<string, Type>
+    type_definitions: Record<string, TypeDefinition>
     outer?: Environment
 }
 
@@ -254,12 +274,12 @@ function lexer(src: string) {
         } else if (c === "=" && peek(1) === ">") {
             tokens.push({kind: "simple", value: "=>", span: span()})
             skip(2)
-        } else if (["(", ")", ":", ",", "=", "+", "-", "*", "/"].includes(c)) {
+        } else if (["(", ")", ":", ".", ",", "=", "+", "-", "*", "/"].includes(c)) {
             tokens.push({kind: "simple", value: c as any, span: span()})
             skip()
         } else if (c.match(/\s/)) {
             skip()
-        } else if (c.match(/[a-z]/)) {
+        } else if (c.match(/[a-zA-Z_]/)) {
             let value = ""
             let start_span = span()
             while (peek().match(/[a-zA-Z0-9_]/)) {
@@ -277,6 +297,7 @@ function lexer(src: string) {
                     "loop",
                     "break",
                     "continue",
+                    "struct",
                 ].includes(value)
             ) {
                 tokens.push({kind: "simple", value: value as any, span: span(start_span)})
@@ -328,6 +349,7 @@ function parse(tokens: Token[]): AST {
             },
         },
         types: {...builtin_types},
+        type_definitions: {},
         variables: {},
     }
     const ast: AST = []
@@ -386,7 +408,9 @@ function parse(tokens: Token[]): AST {
         while (true) {
             const op = simple_peek()
             if (!binary_op_precedence[op]) {
-                // This is not a binary operator.
+                if (op === "=") {
+                    return parse_assignment(lhs)
+                }
                 return lhs
             }
             const op_precedence = binary_op_precedence[op]
@@ -425,6 +449,8 @@ function parse(tokens: Token[]): AST {
             expression = {kind: "break", span: consume().span}
         } else if (simple_token === "continue") {
             expression = {kind: "continue", span: consume().span}
+        } else if (simple_token === "struct") {
+            expression = parse_type_definition()
         } else if (simple_token === "return") {
             expression = parse_return_expression()
         } else if (token.kind === "number") {
@@ -435,29 +461,77 @@ function parse(tokens: Token[]): AST {
             if (!expression) {
                 throw new Error(`Unknown identifier ${token.value} at ${token.span}`)
             }
-            if (simple_peek() === "=") {
-                consume()
-                const value = parse_expression()
-                if (expression.kind === "variable") {
-                    expression = {
-                        kind: "variable_assignment",
-                        variable: expression,
-                        value,
-                        span: Span.combine(expression.span, value.span),
-                    }
-                } else {
-                    throw new Error(
-                        `Cannot assign to ${JSON.stringify(expression)} at ${expression.span}`,
-                    )
-                }
-            }
         }
         if (!expression) {
             throw new Error(
                 `Unexpected token ${JSON.stringify(token)} at ${token.span} ${simple_token}`,
             )
         }
-        return expression
+        return parse_field_access(expression)
+    }
+    function parse_assignment(target: Expression): Assignment {
+        assert(
+            target.kind === "variable" || target.kind === "field_access",
+            `Invalid target for field access: ${JSON.stringify(target)} at ${target.span}`,
+        )
+        const span = consume().span
+        const value = parse_expression()
+        return {
+            kind: "assignment",
+            target: target as Variable | FieldAccess,
+            value,
+            span: Span.combine(span, value.span),
+        }
+    }
+    function parse_field_access(expression: Expression): FieldAccess {
+        while (simple_peek() === ".") {
+            const span = consume().span
+            const field = expect("identifier")
+            expression = {
+                kind: "field_access",
+                object: expression,
+                field: field.value,
+                span: Span.combine(span, field.span),
+            }
+        }
+        return expression as FieldAccess
+    }
+    function parse_type_definition(): TypeDefinition {
+        const span = consume().span
+        const name = expect("identifier").value
+        const members: Record<string, Type> = {}
+        expect(":")
+        while (i < tokens.length && simple_peek() !== "end") {
+            const name = expect("identifier").value
+            const type: Type = find_in_env("types", expect("identifier").value)
+            if (!type) {
+                throw new Error(`Unknown type ${name} at ${name.span}`)
+            }
+            members[name] = type
+        }
+        expect("end")
+        const type_def: TypeDefinition = {kind: "type_definition", name, span, members}
+        env.types[name] = {
+            kind: "type",
+            name,
+            span,
+            members,
+        }
+        const constructor: FunctionDefinition = {
+            kind: "fn",
+            name,
+            parameters: Object.entries(members).map(([name, type]) => ({
+                kind: "parameter",
+                name,
+                type,
+                span,
+            })),
+            block: {} as any,
+            transpile: (_: FunctionCall, args: string[]) => `new ${name}(${args.join(",")})`,
+            span,
+        }
+        env.functions[name] = constructor
+        return type_def
     }
     function parse_block(if_else_mode?: "if_else_mode") {
         const block_type = consume()
@@ -564,7 +638,7 @@ function parse(tokens: Token[]): AST {
         expect(")")
         const fn_def: FunctionDefinition = {kind: "fn", name, parameters, block: {} as any, span}
         env.functions[name] = fn_def
-        env = {functions: {}, types: {}, variables: {}, outer: env}
+        env = {functions: {}, types: {}, variables: {}, type_definitions: {}, outer: env}
         env.functions[name] = fn_def
         for (const parameter of fn_def.parameters) {
             env.variables[parameter.name] = {
@@ -609,7 +683,7 @@ function parse(tokens: Token[]): AST {
         }
     }
     function find_in_env<T>(
-        kind: "functions" | "variables" | "types",
+        kind: "functions" | "variables" | "types" | "type_definitions",
         name: string,
     ): T | undefined {
         let value
@@ -629,18 +703,14 @@ function parse(tokens: Token[]): AST {
 function transpile(ast: AST) {
     let res = ""
     for (const expression of ast) {
+        res += transpile_expression(expression)
+    }
+    function transpile_expression(expression: Expression) {
         if (expression.kind === "fn") {
             const parameters = expression.parameters.map((x) => x.name).join(",")
             const block = transpile_expression(expression.block)
-            res += `function ${expression.name}(${parameters})${block}`
-        } else {
-            throw new Error(
-                `Unexpected expression ${JSON.stringify(expression)} at ${expression.span}`,
-            )
-        }
-    }
-    function transpile_expression(expression: Expression) {
-        if (expression.kind === "return") {
+            return `function ${expression.name}(${parameters})${block}`
+        } else if (expression.kind === "return") {
             return `return ${transpile_expression(expression.value)};`
         } else if (expression.kind === "number") {
             return expression.value
@@ -657,9 +727,10 @@ function transpile(ast: AST) {
             const kind = expression.mutable ? "let" : "const"
             const value = transpile_expression(expression.value)
             return `${kind} ${expression.name} = ${value};`
-        } else if (expression.kind === "variable_assignment") {
+        } else if (expression.kind === "assignment") {
+            const target = transpile_expression(expression.target)
             const value = transpile_expression(expression.value)
-            return `${expression.variable.name} = ${value};`
+            return `${target} = ${value};`
         } else if (expression.kind === "block") {
             const body = expression.body.map(transpile_expression).join("")
             return `{${body}}`
@@ -672,6 +743,16 @@ function transpile(ast: AST) {
                 s += ` else ${else_}`
             }
             return s
+        } else if (expression.kind === "type_definition") {
+            const members = Object.keys(expression.members).join(";")
+            const parameters = Object.keys(expression.members)
+                .map((x) => `${x}`)
+                .join(",")
+            const constructor_body = Object.keys(expression.members)
+                .map((x) => `this.${x} = ${x};`)
+                .join("")
+            const constructor = `constructor (${parameters}) {${constructor_body}}`
+            return `class ${expression.name} {${members};${constructor}}`
         } else if (expression.kind === "loop") {
             const block = transpile_expression(expression.block)
             return `while (true) ${block}`
@@ -684,10 +765,11 @@ function transpile(ast: AST) {
             const rhs = transpile_expression(expression.right)
             const operator = expression.operator === "==" ? "===" : expression.operator
             return `(${lhs} ${operator} ${rhs})`
+        } else if (expression.kind === "field_access") {
+            const object = transpile_expression(expression.object)
+            return `${object}.${expression.field}`
         } else {
-            throw new Error(
-                `Unexpected expression ${JSON.stringify(expression)} at ${expression.span}`,
-            )
+            assert_never(expression)
         }
     }
     return res
@@ -697,6 +779,10 @@ function assert(condition: boolean, msg: string) {
     if (!condition) {
         throw new Error(msg)
     }
+}
+
+function assert_never(x: never): any {
+    throw new Error(`Unexpected object ${JSON.stringify(x)}`)
 }
 
 /**

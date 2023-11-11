@@ -16,6 +16,6 @@ for test_file in ../tests/stage0/*.kl; do
         echo "Updating ${test_file%.kl}.out"
         cp "build/$actual" "${test_file%.kl}.out"
     else
-        diff -u "${test_file%.kl}.out" "build/$actual"
+        diff -u "${test_file%.kl}.out" "build/$actual" || exit 1
     fi
 done

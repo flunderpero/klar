@@ -258,8 +258,9 @@ end
 --
 -- #### Cycles
 --
--- Klar can detect cycles in the object graph and break them. We might either use
--- a tracing garbage collector or a cycle-breaking reference counting algorithm.
+-- Klar can detect cycles in the object graph and break them. It uses a cycle-breaking
+-- reference counting algorithm. Code to detect and break cycles is only generated if
+-- a type can be recursive.
 
 -- ## Concurrency
 --

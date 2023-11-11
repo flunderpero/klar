@@ -1,0 +1,5 @@
+-- Some functions will end up in the prelude eventually.
+fn main():
+    print(42)
+    return 0
+end

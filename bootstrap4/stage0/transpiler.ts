@@ -9,10 +9,24 @@ type Identifier = {
     value: string
 }
 
+type Parameter = {
+    type: "parameter"
+    name: Identifier
+}
+
 type FunctionDefinition = {
     type: "fn"
     name: Identifier
+    parameters: Parameter[]
     body: Expression[]
+    transpile?: (fn: FunctionCall, args: string[]) => string
+}
+
+type FunctionCall = {
+    type: "call"
+    name: Identifier
+    arguments: Expression[]
+    transpile?: (fn: FunctionCall, args: string[]) => string
 }
 
 type ReturnExpression = {
@@ -25,14 +39,17 @@ type Number_ = {
     value: string
 }
 
-type Expression = FunctionDefinition | ReturnExpression | Number_
+type Expression = FunctionDefinition | ReturnExpression | Number_ | FunctionCall
 
 type AST = Expression[]
+
+type Environment = {
+    functions: {[key: string]: FunctionDefinition}
+}
 
 function lexer(src: string) {
     const tokens: Token[] = []
     let i = 0
-
     while (i < src.length) {
         const c = src[i]
         if (["(", ")", ":"].includes(c)) {
@@ -80,6 +97,18 @@ function lexer(src: string) {
 }
 
 function parse(tokens: any[]): AST {
+    const env: Environment = {
+        functions: {
+            // Built-in functions:
+            print: {
+                type: "fn",
+                name: {type: "identifier", value: "print"},
+                parameters: [{type: "parameter", name: {type: "identifier", value: "x"}}],
+                body: [],
+                transpile: (_: FunctionCall, args: string[]) => `console.log(${args.join(",")});`,
+            },
+        },
+    }
     const ast: AST = []
     let i = 0
     while (i < tokens.length) {
@@ -91,9 +120,11 @@ function parse(tokens: any[]): AST {
         } else if (tokens[i] === "return") {
             return parse_return_expression()
         } else if (tokens[i]?.type === "number") {
-            return tokens[i++].value
+            return tokens[i++]
+        } else if (tokens[i]?.type === "identifier") {
+            return parse_function_call()
         }
-        throw new Error(`Unexpected token ${tokens[i]}`)
+        throw new Error(`Unexpected token ${JSON.stringify(tokens[i])}`)
     }
     function parse_function_definition() {
         i++
@@ -110,6 +141,20 @@ function parse(tokens: any[]): AST {
         i++
         return {type: "return", value: parse_expression()}
     }
+    function parse_function_call() {
+        const fn = env.functions[tokens[i].value]
+        if (fn) {
+            i += 2 // skip fn name and "("
+            const args = []
+            while (i < tokens.length && tokens[i] !== ")") {
+                args.push(parse_expression())
+            }
+            i++ // skip ")"
+            return {type: "call", name: fn.name, arguments: args, transpile: fn.transpile}
+        } else {
+            throw new Error(`Undefined function ${tokens[i].value}`)
+        }
+    }
     return ast
 }
 
@@ -121,18 +166,34 @@ function transpile(ast: AST) {
     for (const expression of ast) {
         if (expression.type === "fn") {
             res += `function ${expression.name.value}() {`
-            for (const statement of expression.body) {
-                if (statement.type === "return") {
-                    res += `return ${statement.value};`
-                }
+            for (const body_expr of expression.body) {
+                res += transpile_expression(body_expr)
             }
             res += "}"
+        } else {
+            throw new Error(`Unexpected expression ${JSON.stringify(expression)}`)
+        }
+    }
+    function transpile_expression(expression: Expression) {
+        if (expression.type === "return") {
+            return `return ${transpile_expression(expression.value)};`
+        } else if (expression.type === "number") {
+            return expression.value
+        } else if (expression.type === "call") {
+            const args = expression.arguments.map(transpile_expression)
+            if (expression.transpile) {
+                return expression.transpile(expression, args)
+            } else {
+                return `${expression.name.value}(${args.join(",")});`
+            }
+        } else {
+            throw new Error(`Unexpected expression ${JSON.stringify(expression)}`)
         }
     }
     return res
 }
 
-const prelude = `#!/usr/bin/env bun
+const prelude = `#!/usr/bin/env bun --silent
 process.exit(main())
 
 `
@@ -156,11 +217,11 @@ async function cli() {
     }
     if (debug_tokens) {
         console.log("\nTOKENS:")
-        console.log(tokens)
+        console.log(JSON.stringify(tokens, null, 2))
     }
     if (debug_ast) {
         console.log("\nAST:")
-        console.log(ast)
+        console.log(JSON.stringify(ast, null, 2))
     }
     if (debug_transpiled) {
         console.log("\nTRANSPILED:")

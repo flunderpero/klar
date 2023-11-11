@@ -37,7 +37,7 @@ type Token = Identifier | Number_ | SimpleToken
 
 type SimpleToken = {
     kind: "simple"
-    value: "(" | ")" | ":" | "=" | "fn" | "end" | "return" | "let"
+    value: "(" | ")" | ":" | "=" | "fn" | "end" | "return" | "+" | "-" | "*" | "/" | "let"
     span: Span
 }
 
@@ -98,6 +98,14 @@ type Type = {
     span: Span
 }
 
+type BinaryExpression = {
+    kind: "binary"
+    operator: "+" | "-" | "*" | "/"
+    left: Expression
+    right: Expression
+    span: Span
+}
+
 const builtin_types = {
     i32: {
         name: "i32",
@@ -114,7 +122,7 @@ const unknown_type: Type = {
         throw new Error("The 'unknown' type cannot be transpiled")
     },
     span: new Span(0, 0, ""),
-} 
+}
 
 type Variable = {
     kind: "variable"
@@ -123,7 +131,14 @@ type Variable = {
     span: Span
 }
 
-type Expression = FunctionDefinition | ReturnExpression | Number_ | FunctionCall | Variable | Let
+type Expression =
+    | FunctionDefinition
+    | ReturnExpression
+    | Number_
+    | FunctionCall
+    | Variable
+    | Let
+    | BinaryExpression
 
 type AST = Expression[]
 
@@ -157,7 +172,18 @@ function lexer(src: string) {
     }
     while (i < src.length) {
         const c = peek()
-        if (["(", ")", ":", ",", "="].includes(c)) {
+        if (c === "-" && peek(1) === "-" && peek(2) === "-") {
+            skip(3)
+            while (i < src.length - 1 && !(peek() === "-" && peek(1) === "-" && peek(2) === "-")) {
+                skip()
+            }
+            skip(3)
+        } else if (c === "-" && peek(1) === "-") {
+            skip(2)
+            while (i < src.length - 1 && peek() !== "\n") {
+                skip()
+            }
+        } else if (["(", ")", ":", ",", "=", "+", "-", "*", "/"].includes(c)) {
             tokens.push({kind: "simple", value: c as any, span: span()})
             skip()
         } else if (c.match(/\s/)) {
@@ -180,17 +206,6 @@ function lexer(src: string) {
                 value += consume()
             }
             tokens.push({kind: "number", value, span: span(start_span)})
-        } else if (c === "-" && peek(1) === "-" && peek(2) === "-") {
-            skip(3)
-            while (i < src.length - 1 && !(peek() === "-" && peek(1) === "-" && peek(2) === "-")) {
-                skip()
-            }
-            skip(3)
-        } else if (c === "-" && peek(1) === "-") {
-            skip(2)
-            while (i < src.length - 1 && peek() !== "\n") {
-                skip()
-            }
         } else {
             throw new Error(`Unexpected character '${c}' at ${span()}`)
         }
@@ -202,6 +217,12 @@ function lexer(src: string) {
  * Parse tokens into an AST.
  */
 function parse(tokens: Token[]): AST {
+    const binary_op_precedence = {
+        "*": 3,
+        "/": 3,
+        "+": 2,
+        "-": 2,
+    }
     let env: Environment = {
         functions: {
             // Built-in functions:
@@ -231,12 +252,16 @@ function parse(tokens: Token[]): AST {
     }
     function simple_peek(ahead = 0) {
         const token = peek(ahead)
-        return token.kind === "simple" ? token.value : undefined
+        return token?.kind === "simple" ? token.value : undefined
     }
     function consume() {
-        return tokens[i++] as Token & {kind?: any; value?: any}
+        const value = peek()
+        i++
+        return value as Token & {kind?: any; value?: any}
     }
-    function expect(token_kind: "identifier" | "(" | ")" | ":" | "," | "=" | "end" | "return" | "fn" | "let") {
+    function expect(
+        token_kind: "identifier" | "(" | ")" | ":" | "," | "=" | "end" | "return" | "fn" | "let",
+    ) {
         let actual = peek() as any
         let actual_kind = actual.kind
         if (actual.kind === "simple") {
@@ -255,25 +280,57 @@ function parse(tokens: Token[]): AST {
         ast.push(parse_expression())
     }
     function parse_expression(): Expression {
+        return parse_binary_expression(1)
+    }
+    function parse_binary_expression(min_precedence) {
+        let lhs = parse_primary()
+        while (true) {
+            const op = simple_peek()
+            if (!binary_op_precedence[op]) {
+                // This is not a binary operator.
+                return lhs
+            }
+            const op_precedence = binary_op_precedence[op]
+            if (op_precedence >= min_precedence) {
+                consume() // consume the operator
+                let rhs = parse_binary_expression(op_precedence + 1)
+                lhs = {
+                    kind: "binary",
+                    operator: op,
+                    left: lhs,
+                    right: rhs,
+                    span: Span.combine(lhs.span, rhs.span),
+                }
+            } else {
+                return lhs
+            }
+        }
+    }
+    function parse_primary(): Expression {
         const token = peek()
         const simple_token = token.kind === "simple" ? token.value : undefined
+        let expression: Expression
         if (simple_token === "fn") {
-            return parse_function_definition()
+            expression = parse_function_definition()
         } else if (simple_token === "let") {
-            return parse_let()
+            expression = parse_let()
         } else if (simple_token === "return") {
-            return parse_return_expression()
+            expression = parse_return_expression()
         } else if (token.kind === "number") {
-            return consume() as Number_
+            expression = consume() as Number_
         } else if (token.kind === "identifier") {
             const token = expect("identifier")
-            const result = parse_function_call(token) || parse_variable(token)
-            if (!result) {
+            expression = parse_function_call(token) || parse_variable(token)
+            if (!expression) {
                 throw new Error(`Unknown identifier ${token.value} at ${token.span}`)
             }
-            return result
         }
-        throw new Error(`Unexpected token ${JSON.stringify(token)} at ${token.span} ${simple_token}`)
+        if (!expression) {
+            throw new Error(
+                `Unexpected token ${JSON.stringify(token)} at ${token.span} ${simple_token}`,
+            )
+        }
+        return expression
     }
     function parse_let() {
         const span = expect("let").span
@@ -427,6 +484,10 @@ function transpile(ast: AST) {
             }
         } else if (expression.kind === "let") {
             return `const ${expression.name} = ${transpile_expression(expression.value)};`
+        } else if (expression.kind === "binary") {
+            const lhs = transpile_expression(expression.left)
+            const rhs = transpile_expression(expression.right)
+            return `(${lhs} ${expression.operator} ${rhs})`
         } else {
             throw new Error(
                 `Unexpected expression ${JSON.stringify(expression)} at ${expression.span}`,
@@ -434,6 +495,12 @@ function transpile(ast: AST) {
         }
     }
     return res
+}
+
+function assert(condition: boolean, msg: string) {
+    if (!condition) {
+        throw new Error(msg)
+    }
 }
 
 /**

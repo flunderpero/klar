@@ -1,41 +1,46 @@
+/**
+ * Transpile Klar to JavaScript.
+ */
 declare const Bun: any
 // @ts-ignore
 const dir = import.meta.dir
 
-type Token = Identifier | Number_ | "(" | ")" | ":" | "fn" | "end" | "return"
+type Token = ValueToken | "(" | ")" | ":" | "fn" | "end" | "return"
+
+type ValueToken = Identifier | Number_
 
 type Identifier = {
-    type: "identifier"
+    kind: "identifier"
     value: string
 }
 
 type Parameter = {
-    type: "parameter"
-    name: Identifier
+    kind: "parameter"
+    name: string
 }
 
 type FunctionDefinition = {
-    type: "fn"
-    name: Identifier
+    kind: "fn"
+    name: string
     parameters: Parameter[]
     body: Expression[]
     transpile?: (fn: FunctionCall, args: string[]) => string
 }
 
 type FunctionCall = {
-    type: "call"
-    name: Identifier
+    kind: "call"
+    name: string
     arguments: Expression[]
     transpile?: (fn: FunctionCall, args: string[]) => string
 }
 
 type ReturnExpression = {
-    type: "return"
+    kind: "return"
     value: Expression
 }
 
 type Number_ = {
-    type: "number"
+    kind: "number"
     value: string
 }
 
@@ -47,47 +52,53 @@ type Environment = {
     functions: {[key: string]: FunctionDefinition}
 }
 
+/**
+ * Lex Klar source code into tokens.
+ */
 function lexer(src: string) {
     const tokens: Token[] = []
     let i = 0
+    function peek(ahead = 0) {
+        return src[i + ahead]
+    }
+    function consume() {
+        return src[i++]
+    }
+    function skip(num = 1) {
+        i += num
+    }
     while (i < src.length) {
-        const c = src[i]
+        const c = peek()
         if (["(", ")", ":"].includes(c)) {
-            tokens.push(c as any)
-            i++
+            tokens.push(consume() as Token)
         } else if (c.match(/\s/)) {
-            i++
+            skip()
         } else if (c.match(/[a-z]/)) {
             let value = ""
-            while (src[i].match(/[a-zA-Z0-9]/)) {
-                value += src[i]
-                i++
+            while (peek().match(/[a-zA-Z0-9]/)) {
+                value += consume()
             }
             if (["return", "fn", "end"].includes(value)) {
-                tokens.push(value as any)
+                tokens.push(value as Token)
             } else {
-                tokens.push({type: "identifier", value})
+                tokens.push({kind: "identifier", value})
             }
         } else if (c.match(/[0-9]/)) {
             let value = ""
-            while (src[i].match(/[0-9]/)) {
-                value += src[i]
-                i++
+            while (peek().match(/[0-9]/)) {
+                value += consume()
             }
-            tokens.push({type: "number", value})
-        } else if (src[i] === "-" && src[i + 1] === "-" && src[i + 2] === "-") {
-            i += 3
-            while (
-                i < src.length - 1 &&
-                !(src[i] === "-" && src[i + 1] === "-" && src[i + 2] === "-")
-            ) {
-                i++
+            tokens.push({kind: "number", value})
+        } else if (c === "-" && peek(1) === "-" && peek(2) === "-") {
+            skip(3)
+            while (i < src.length - 1 && !(peek() === "-" && peek(1) === "-" && peek(2) === "-")) {
+                skip()
             }
-            i += 3
-        } else if (src[i] === "-" && src[i + 1] === "-") {
-            i += 2
-            while (i < src.length - 1 && src[i] !== "\n") {
-                i++
+            skip(3)
+        } else if (c === "-" && peek(1) === "-") {
+            skip(2)
+            while (i < src.length - 1 && peek() !== "\n") {
+                skip()
             }
         } else {
             throw new Error(`Unexpected char ${c}`)
@@ -96,14 +107,17 @@ function lexer(src: string) {
     return tokens
 }
 
-function parse(tokens: any[]): AST {
+/**
+ * Parse tokens into an AST.
+ */
+function parse(tokens: Token[]): AST {
     const env: Environment = {
         functions: {
             // Built-in functions:
             print: {
-                type: "fn",
-                name: {type: "identifier", value: "print"},
-                parameters: [{type: "parameter", name: {type: "identifier", value: "x"}}],
+                kind: "fn",
+                name: "print",
+                parameters: [{kind: "parameter", name: "value"}],
                 body: [],
                 transpile: (_: FunctionCall, args: string[]) => `console.log(${args.join(",")});`,
             },
@@ -111,48 +125,65 @@ function parse(tokens: any[]): AST {
     }
     const ast: AST = []
     let i = 0
+    function peek(ahead = 0) {
+        return tokens[i + ahead] as Token & {kind?: any; value?: any}
+    }
+    function consume() {
+        return tokens[i++] as Token & {kind?: any; value?: any}
+    }
+    function expect(token_kind: "identifier" | "(" | ")" | ":" | "end") {
+        let actual = peek() as any
+        if (actual.kind) {
+            actual = actual.kind
+        }
+        if (actual !== token_kind) {
+            throw new Error(`Expected token of kind ${token_kind} but got ${actual}`)
+        }
+        return consume() as Token & {kind?: any; value?: any}
+    }
     while (i < tokens.length) {
         ast.push(parse_expression())
     }
-    function parse_expression() {
-        if (tokens[i] === "fn") {
+    function parse_expression(): Expression {
+        const token = consume()
+        if (token === "fn") {
             return parse_function_definition()
-        } else if (tokens[i] === "return") {
+        } else if (token === "return") {
             return parse_return_expression()
-        } else if (tokens[i]?.type === "number") {
-            return tokens[i++]
-        } else if (tokens[i]?.type === "identifier") {
-            return parse_function_call()
+        } else if (token.kind === "number") {
+            return token as Number_
+        } else if (token.kind === "identifier") {
+            return parse_function_call(token.value)
         }
-        throw new Error(`Unexpected token ${JSON.stringify(tokens[i])}`)
+        throw new Error(`Unexpected token ${JSON.stringify(token)}`)
     }
-    function parse_function_definition() {
-        i++
-        const name = tokens[i]
-        i += 4 // skip "(", ")", and ":"
+    function parse_function_definition(): FunctionDefinition {
+        const name = (expect("identifier") as Identifier).value
+        expect("(")
+        expect(")")
+        expect(":")
         const body = []
-        while (i < tokens.length && tokens[i] !== "end") {
+        while (i < tokens.length && peek() !== "end") {
             body.push(parse_expression())
         }
-        i++ // skip "end"
-        return {type: "fn", name, body}
+        expect("end")
+        return {kind: "fn", name, parameters: [], body}
     }
-    function parse_return_expression() {
-        i++
-        return {type: "return", value: parse_expression()}
+    function parse_return_expression(): ReturnExpression {
+        return {kind: "return", value: parse_expression()}
     }
-    function parse_function_call() {
-        const fn = env.functions[tokens[i].value]
+    function parse_function_call(name: string): FunctionCall {
+        const fn = env.functions[name]
         if (fn) {
-            i += 2 // skip fn name and "("
+            expect("(")
             const args = []
             while (i < tokens.length && tokens[i] !== ")") {
                 args.push(parse_expression())
             }
-            i++ // skip ")"
-            return {type: "call", name: fn.name, arguments: args, transpile: fn.transpile}
+            expect(")")
+            return {kind: "call", name: fn.name, arguments: args, transpile: fn.transpile}
         } else {
-            throw new Error(`Undefined function ${tokens[i].value}`)
+            throw new Error(`Undefined function ${name}`)
         }
     }
     return ast
@@ -164,8 +195,8 @@ function parse(tokens: any[]): AST {
 function transpile(ast: AST) {
     let res = ""
     for (const expression of ast) {
-        if (expression.type === "fn") {
-            res += `function ${expression.name.value}() {`
+        if (expression.kind === "fn") {
+            res += `function ${expression.name}() {`
             for (const body_expr of expression.body) {
                 res += transpile_expression(body_expr)
             }
@@ -175,16 +206,16 @@ function transpile(ast: AST) {
         }
     }
     function transpile_expression(expression: Expression) {
-        if (expression.type === "return") {
+        if (expression.kind === "return") {
             return `return ${transpile_expression(expression.value)};`
-        } else if (expression.type === "number") {
+        } else if (expression.kind === "number") {
             return expression.value
-        } else if (expression.type === "call") {
+        } else if (expression.kind === "call") {
             const args = expression.arguments.map(transpile_expression)
             if (expression.transpile) {
                 return expression.transpile(expression, args)
             } else {
-                return `${expression.name.value}(${args.join(",")});`
+                return `${expression.name}(${args.join(",")});`
             }
         } else {
             throw new Error(`Unexpected expression ${JSON.stringify(expression)}`)
@@ -193,12 +224,14 @@ function transpile(ast: AST) {
     return res
 }
 
-const prelude = `#!/usr/bin/env bun --silent
+/**
+ * Main entry point.
+ */
+async function cli() {
+    const prelude = `#!/usr/bin/env bun --silent
 process.exit(main())
 
 `
-
-async function cli() {
     const src_file = Bun.argv[2]
     const prettify = Bun.argv.includes("--pretty")
     const debug = Bun.argv.includes("--debug")

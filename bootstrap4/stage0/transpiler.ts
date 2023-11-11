@@ -60,6 +60,7 @@ type SimpleToken = {
         | "break"
         | "continue"
         | "struct"
+        | "impl"
     span: Span
 }
 
@@ -74,6 +75,7 @@ type Parameter = {
     name: string
     type: Type
     span: Span
+    mutable: boolean
 }
 
 type Block = {
@@ -88,6 +90,12 @@ type FunctionDefinition = {
     parameters: Parameter[]
     block: Block
     transpile?: (fn: FunctionCall, args: string[]) => string
+    span: Span
+}
+
+type Impl = {
+    kind: "impl"
+    functions: FunctionDefinition[]
     span: Span
 }
 
@@ -109,9 +117,8 @@ type Assignment = {
 
 type FunctionCall = {
     kind: "call"
-    name: string
+    target: FunctionDefinition | FieldAccess
     arguments: Expression[]
-    transpile?: (fn: FunctionCall, args: string[]) => string
     span: Span
 }
 
@@ -139,7 +146,8 @@ type TypeDefinition = {
     kind: "type_definition"
     name: string
     span: Span
-    members?: Record<string, Type>
+    members: Record<string, Type>
+    impls: Impl[]
 }
 
 type FieldAccess = {
@@ -178,6 +186,11 @@ type Break = {
 
 type Continue = {
     kind: "continue"
+    span: Span
+}
+
+type UnitType = {
+    kind: "unit_type"
     span: Span
 }
 
@@ -223,6 +236,7 @@ type Expression =
     | Continue
     | TypeDefinition
     | FieldAccess
+    | UnitType
 
 type AST = Expression[]
 
@@ -298,6 +312,7 @@ function lexer(src: string) {
                     "break",
                     "continue",
                     "struct",
+                    "impl",
                 ].includes(value)
             ) {
                 tokens.push({kind: "simple", value: value as any, span: span(start_span)})
@@ -339,6 +354,7 @@ function parse(tokens: Token[]): AST {
                     {
                         kind: "parameter",
                         name: "value",
+                        mutable: false,
                         type: builtin_types.i32,
                         span: new Span(0, 0, ""),
                     },
@@ -461,13 +477,19 @@ function parse(tokens: Token[]): AST {
             if (!expression) {
                 throw new Error(`Unknown identifier ${token.value} at ${token.span}`)
             }
+        } else if (simple_token === "impl") {
+            expression = parse_impl()
         }
         if (!expression) {
             throw new Error(
                 `Unexpected token ${JSON.stringify(token)} at ${token.span} ${simple_token}`,
             )
         }
-        return parse_field_access(expression)
+        expression = parse_field_access(expression)
+        if (simple_peek() === "(") {
+            expression = parse_function_call(expression) || expression
+        }
+        return expression
     }
     function parse_assignment(target: Expression): Assignment {
         assert(
@@ -496,6 +518,23 @@ function parse(tokens: Token[]): AST {
         }
         return expression as FieldAccess
     }
+    function parse_impl(): UnitType {
+        const span = consume().span
+        const name = expect("identifier").value
+        const target: TypeDefinition = find_in_env("type_definitions", name)
+        if (!target) {
+            throw new Error(`Unknown type ${target} at ${span}`)
+        }
+        const target_type: Type = find_in_env("types", target.name)
+        expect(":")
+        const functions: FunctionDefinition[] = []
+        while (i < tokens.length && simple_peek() !== "end") {
+            functions.push(parse_function_definition(target_type))
+        }
+        const end_span = expect("end").span
+        target.impls.push({kind: "impl", functions, span: Span.combine(span, end_span)})
+        return {kind: "unit_type", span}
+    }
     function parse_type_definition(): TypeDefinition {
         const span = consume().span
         const name = expect("identifier").value
@@ -510,13 +549,14 @@ function parse(tokens: Token[]): AST {
             members[name] = type
         }
         expect("end")
-        const type_def: TypeDefinition = {kind: "type_definition", name, span, members}
+        const type_def: TypeDefinition = {kind: "type_definition", name, impls: [], span, members}
         env.types[name] = {
             kind: "type",
             name,
             span,
             members,
         }
+        env.type_definitions[name] = type_def
         const constructor: FunctionDefinition = {
             kind: "fn",
             name,
@@ -617,7 +657,7 @@ function parse(tokens: Token[]): AST {
         }
         return let_
     }
-    function parse_function_definition(): FunctionDefinition {
+    function parse_function_definition(impl_type?: Type): FunctionDefinition {
         const span = expect("fn").span
         const name = expect("identifier").value
         expect("(")
@@ -626,27 +666,44 @@ function parse(tokens: Token[]): AST {
             if (parameters.length > 0) {
                 expect(",")
             }
+            let mutable = false
+            if (simple_peek() === "mut") {
+                mutable = true
+                consume()
+            }
             const name_token = expect("identifier")
+            if (impl_type) {
+                if (name_token.value === "self") {
+                    parameters.push({
+                        kind: "parameter",
+                        name: name_token.value,
+                        type: impl_type,
+                        span: name_token.span,
+                        mutable,
+                    })
+                    continue
+                }
+            }
             const type_token = expect("identifier")
             parameters.push({
                 kind: "parameter",
                 name: name_token.value,
                 type: find_in_env("types", type_token.value),
                 span: Span.combine(name_token.span, type_token.span),
+                mutable,
             })
         }
         expect(")")
         const fn_def: FunctionDefinition = {kind: "fn", name, parameters, block: {} as any, span}
-        env.functions[name] = fn_def
         env = {functions: {}, types: {}, variables: {}, type_definitions: {}, outer: env}
-        env.functions[name] = fn_def
+        if (!impl_type) {
+            env.outer.functions[name] = fn_def
+            env.functions[name] = fn_def
+        }
         for (const parameter of fn_def.parameters) {
             env.variables[parameter.name] = {
+                ...parameter,
                 kind: "variable",
-                mutable: false,
-                name: parameter.name,
-                type: parameter.type,
-                span: parameter.span,
             }
         }
         fn_def.block = parse_block()
@@ -659,11 +716,18 @@ function parse(tokens: Token[]): AST {
         const value = parse_expression()
         return {kind: "return", value, span: Span.combine(span, value.span)}
     }
-    function parse_function_call(token: Identifier): FunctionCall | undefined {
-        const name = token.value
-        const fn: FunctionDefinition | undefined = find_in_env("functions", name)
-        if (fn) {
-            expect("(")
+    function parse_function_call(token: Identifier | FieldAccess): FunctionCall | undefined {
+        if (simple_peek() !== "(") {
+            return
+        }
+        expect("(")
+        let target: FunctionDefinition | FieldAccess
+        if (token.kind === "identifier") {
+            target = find_in_env("functions", token.value)
+        } else {
+            target = token
+        }
+        if (target) {
             const args = []
             while (i < tokens.length && simple_peek() !== ")") {
                 if (args.length > 0) {
@@ -672,7 +736,7 @@ function parse(tokens: Token[]): AST {
                 args.push(parse_expression())
             }
             const span = Span.combine(expect(")").span, token.span)
-            return {kind: "call", name: fn.name, arguments: args, transpile: fn.transpile, span}
+            return {kind: "call", target, arguments: args, span}
         }
     }
     function parse_variable(token: Identifier): Variable | undefined {
@@ -704,6 +768,7 @@ function transpile(ast: AST) {
     let res = ""
     for (const expression of ast) {
         res += transpile_expression(expression)
+        res += "\n"
     }
     function transpile_expression(expression: Expression) {
         if (expression.kind === "fn") {
@@ -718,10 +783,14 @@ function transpile(ast: AST) {
             return expression.name
         } else if (expression.kind === "call") {
             const args = expression.arguments.map(transpile_expression)
-            if (expression.transpile) {
-                return expression.transpile(expression, args)
+            if (expression.target.kind === "fn") {
+                if (expression.target.transpile) {
+                    return expression.target.transpile(expression, args)
+                }
+                return `${expression.target.name}(${args.join(",")});`
             } else {
-                return `${expression.name}(${args.join(",")});`
+                const target = transpile_expression(expression.target)
+                return `${target}(${args.join(",")});`
             }
         } else if (expression.kind === "var") {
             const kind = expression.mutable ? "let" : "const"
@@ -751,8 +820,22 @@ function transpile(ast: AST) {
             const constructor_body = Object.keys(expression.members)
                 .map((x) => `this.${x} = ${x};`)
                 .join("")
+
+            let impls = ""
+            for (const impl of expression.impls) {
+                for (const fn of impl.functions) {
+                    const parameters = fn.parameters
+                        .filter((x) => x.name !== "self")
+                        .map((x) => x.name)
+                        .join(",")
+                    const block = transpile_expression(fn.block).replace("{", "{const self = this;")
+                    impls += `${fn.name}(${parameters})${block}`
+                }
+            }
             const constructor = `constructor (${parameters}) {${constructor_body}}`
-            return `class ${expression.name} {${members};${constructor}}`
+            return `class ${expression.name} {${members}\n${constructor}\n${impls}}`
+        } else if (expression.kind === "unit_type") {
+            return "undefined"
         } else if (expression.kind === "loop") {
             const block = transpile_expression(expression.block)
             return `while (true) ${block}`

@@ -3,6 +3,17 @@ struct Point:
     y i32
 end
 
+impl Point:
+    fn print_members(self):
+        print(self.x)
+        print(self.y)
+    end
+
+    fn add_to_y(mut self, value i32):
+        self.y = self.y + value
+    end
+end
+
 struct Line:
     start Point
     end_ Point
@@ -10,14 +21,13 @@ end
 
 fn simple():
     let p = Point(1, 2)
-    print(p.x)
-    print(p.y)
+    p.print_members()
 end
 
 fn mutable():
     mut mp = Point(3, 4)
     mp.x = 5
-    mp.y = mp.x + 1
+    mp.add_to_y(2)
     print(mp.x)
     print(mp.y)
 end
@@ -26,10 +36,8 @@ fn nested():
     mut line = Line(Point(10, 11), Point(12, 13))
     line.end_.x = 16
     line.end_.y = line.end_.x + 1
-    print(line.start.x)
-    print(line.start.y)
-    print(line.end_.x)
-    print(line.end_.y)
+    line.start.print_members()
+    line.end_.print_members()
 end
 
 

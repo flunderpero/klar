@@ -50,6 +50,7 @@ type AST = Expression[]
 
 type Environment = {
     functions: {[key: string]: FunctionDefinition}
+    outer?: Environment
 }
 
 /**
@@ -111,7 +112,7 @@ function lexer(src: string) {
  * Parse tokens into an AST.
  */
 function parse(tokens: Token[]): AST {
-    const env: Environment = {
+    let env: Environment = {
         functions: {
             // Built-in functions:
             print: {
@@ -162,18 +163,27 @@ function parse(tokens: Token[]): AST {
         expect("(")
         expect(")")
         expect(":")
-        const body = []
+        const fn_def: FunctionDefinition = {kind: "fn", name, parameters: [], body: []}
+        env.functions[name] = fn_def
+        env = {functions: {}, outer: env}
+        env.functions[name] = fn_def
         while (i < tokens.length && peek() !== "end") {
-            body.push(parse_expression())
+            fn_def.body.push(parse_expression())
         }
         expect("end")
-        return {kind: "fn", name, parameters: [], body}
+        env = env.outer
+        return fn_def
     }
     function parse_return_expression(): ReturnExpression {
         return {kind: "return", value: parse_expression()}
     }
     function parse_function_call(name: string): FunctionCall {
-        const fn = env.functions[name]
+        let fn
+        let search_env = env
+        while (!fn && search_env) {
+            fn = search_env.functions[name]
+            search_env = search_env.outer
+        }
         if (fn) {
             expect("(")
             const args = []

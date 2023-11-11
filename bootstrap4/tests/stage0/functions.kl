@@ -1,0 +1,8 @@
+fn foo():
+    print(1)
+end
+
+fn main():
+    foo()
+    return 0
+end

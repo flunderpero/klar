@@ -55,6 +55,9 @@ type SimpleToken = {
         | "mut"
         | "if"
         | "else"
+        | "loop"
+        | "break"
+        | "continue"
     span: Span
 }
 
@@ -145,6 +148,22 @@ type If = {
     span: Span
 }
 
+type Loop = {
+    kind: "loop"
+    block: Block
+    span: Span
+}
+
+type Break = {
+    kind: "break"
+    span: Span
+}
+
+type Continue = {
+    kind: "continue"
+    span: Span
+}
+
 const builtin_types = {
     i32: {
         name: "i32",
@@ -182,6 +201,9 @@ type Expression =
     | If
     | Block
     | VariableAssignment
+    | Loop
+    | Break
+    | Continue
 
 type AST = Expression[]
 
@@ -243,7 +265,20 @@ function lexer(src: string) {
             while (peek().match(/[a-zA-Z0-9_]/)) {
                 value += consume()
             }
-            if (["return", "fn", "end", "let", "mut", "if", "else"].includes(value)) {
+            if (
+                [
+                    "return",
+                    "fn",
+                    "end",
+                    "let",
+                    "mut",
+                    "if",
+                    "else",
+                    "loop",
+                    "break",
+                    "continue",
+                ].includes(value)
+            ) {
                 tokens.push({kind: "simple", value: value as any, span: span(start_span)})
             } else {
                 tokens.push({kind: "identifier", value, span: span(start_span)})
@@ -323,6 +358,7 @@ function parse(tokens: Token[]): AST {
             | "let"
             | "mut"
             | "if"
+            | "loop"
             | "else",
     ) {
         let actual = peek() as any
@@ -345,7 +381,7 @@ function parse(tokens: Token[]): AST {
     function parse_expression(): Expression {
         return parse_binary_expression(1)
     }
-    function parse_binary_expression(min_precedence) {
+    function parse_binary_expression(min_precedence: number) {
         let lhs = parse_primary()
         while (true) {
             const op = simple_peek()
@@ -379,10 +415,16 @@ function parse(tokens: Token[]): AST {
             expression = parse_variable_declaration()
         } else if (simple_token === "if") {
             expression = parse_if()
+        } else if (simple_token === "loop") {
+            expression = parse_loop()
         } else if (simple_token === "(") {
             consume()
             expression = parse_expression()
             expect(")")
+        } else if (simple_token === "break") {
+            expression = {kind: "break", span: consume().span}
+        } else if (simple_token === "continue") {
+            expression = {kind: "continue", span: consume().span}
         } else if (simple_token === "return") {
             expression = parse_return_expression()
         } else if (token.kind === "number") {
@@ -446,6 +488,11 @@ function parse(tokens: Token[]): AST {
             }
         }
         return block
+    }
+    function parse_loop(): Loop {
+        const span = expect("loop").span
+        const block = parse_block()
+        return {kind: "loop", block, span: Span.combine(span, block.span)}
     }
     function parse_if() {
         const span = expect("if").span
@@ -625,6 +672,13 @@ function transpile(ast: AST) {
                 s += ` else ${else_}`
             }
             return s
+        } else if (expression.kind === "loop") {
+            const block = transpile_expression(expression.block)
+            return `while (true) ${block}`
+        } else if (expression.kind === "break") {
+            return "break;"
+        } else if (expression.kind === "continue") {
+            return "continue;"
         } else if (expression.kind === "binary") {
             const lhs = transpile_expression(expression.left)
             const rhs = transpile_expression(expression.right)

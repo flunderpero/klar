@@ -1,0 +1,15 @@
+fn main():
+    mut i = 0
+    loop:
+        i = i + 1
+        if i == 3 => break
+        print(i)
+    end
+    loop:
+        i = i + 1
+        if i == 3 => continue
+        if i == 6 => break
+        print(i)
+    end
+    return 0
+end

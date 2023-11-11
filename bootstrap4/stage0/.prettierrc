@@ -1,0 +1,15 @@
+{
+  "bracketSpacing": false,
+  "printWidth": 100,
+  "semi": false,
+  "tabWidth": 4,
+  "trailingComma": "all",
+  "overrides": [
+    {
+      "files": ["*.json", "*.yaml", ".prettierrc"],
+      "options": {
+        "tabWidth": 2
+      }
+    }
+  ]
+}

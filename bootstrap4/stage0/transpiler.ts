@@ -52,6 +52,7 @@ type SimpleToken = {
         | "*"
         | "/"
         | "let"
+        | "mut"
         | "if"
         | "else"
     span: Span
@@ -85,11 +86,19 @@ type FunctionDefinition = {
     span: Span
 }
 
-type Let = {
-    kind: "let"
+type VariableDeclaration = {
+    kind: "var"
     name: string
     value: Expression
     type: Type
+    span: Span
+    mutable: boolean
+}
+
+type VariableAssignment = {
+    kind: "variable_assignment"
+    variable: Variable
+    value: Expression
     span: Span
 }
 
@@ -159,6 +168,7 @@ type Variable = {
     name: string
     type: Type
     span: Span
+    mutable: boolean
 }
 
 type Expression =
@@ -167,10 +177,11 @@ type Expression =
     | Number_
     | FunctionCall
     | Variable
-    | Let
+    | VariableDeclaration
     | BinaryExpression
     | If
     | Block
+    | VariableAssignment
 
 type AST = Expression[]
 
@@ -232,7 +243,7 @@ function lexer(src: string) {
             while (peek().match(/[a-zA-Z0-9_]/)) {
                 value += consume()
             }
-            if (["return", "fn", "end", "let", "if", "else"].includes(value)) {
+            if (["return", "fn", "end", "let", "mut", "if", "else"].includes(value)) {
                 tokens.push({kind: "simple", value: value as any, span: span(start_span)})
             } else {
                 tokens.push({kind: "identifier", value, span: span(start_span)})
@@ -310,6 +321,7 @@ function parse(tokens: Token[]): AST {
             | "return"
             | "fn"
             | "let"
+            | "mut"
             | "if"
             | "else",
     ) {
@@ -363,8 +375,8 @@ function parse(tokens: Token[]): AST {
         let expression: Expression
         if (simple_token === "fn") {
             expression = parse_function_definition()
-        } else if (simple_token === "let") {
-            expression = parse_let()
+        } else if (simple_token === "let" || simple_token === "mut") {
+            expression = parse_variable_declaration()
         } else if (simple_token === "if") {
             expression = parse_if()
         } else if (simple_token === "(") {
@@ -380,6 +392,22 @@ function parse(tokens: Token[]): AST {
             expression = parse_function_call(token) || parse_variable(token)
             if (!expression) {
                 throw new Error(`Unknown identifier ${token.value} at ${token.span}`)
+            }
+            if (simple_peek() === "=") {
+                consume()
+                const value = parse_expression()
+                if (expression.kind === "variable") {
+                    expression = {
+                        kind: "variable_assignment",
+                        variable: expression,
+                        value,
+                        span: Span.combine(expression.span, value.span),
+                    }
+                } else {
+                    throw new Error(
+                        `Cannot assign to ${JSON.stringify(expression)} at ${expression.span}`,
+                    )
+                }
             }
         }
         if (!expression) {
@@ -436,8 +464,9 @@ function parse(tokens: Token[]): AST {
         }
         return if_
     }
-    function parse_let() {
-        const span = expect("let").span
+    function parse_variable_declaration() {
+        const mutable = simple_peek() === "mut"
+        const span = consume().span
         const name = expect("identifier").value
         const token = peek()
         let type = unknown_type
@@ -450,17 +479,19 @@ function parse(tokens: Token[]): AST {
         }
         expect("=")
         const value = parse_expression()
-        const let_: Let = {
-            kind: "let",
+        const let_: VariableDeclaration = {
+            kind: "var",
             name,
             value,
             type,
             span: Span.combine(span, value.span),
+            mutable,
         }
         env.variables[name] = {
             kind: "variable",
             name,
             type,
+            mutable,
             span: Span.combine(span, value.span),
         }
         return let_
@@ -491,6 +522,7 @@ function parse(tokens: Token[]): AST {
         for (const parameter of fn_def.parameters) {
             env.variables[parameter.name] = {
                 kind: "variable",
+                mutable: false,
                 name: parameter.name,
                 type: parameter.type,
                 span: parameter.span,
@@ -574,8 +606,13 @@ function transpile(ast: AST) {
             } else {
                 return `${expression.name}(${args.join(",")});`
             }
-        } else if (expression.kind === "let") {
-            return `const ${expression.name} = ${transpile_expression(expression.value)};`
+        } else if (expression.kind === "var") {
+            const kind = expression.mutable ? "let" : "const"
+            const value = transpile_expression(expression.value)
+            return `${kind} ${expression.name} = ${value};`
+        } else if (expression.kind === "variable_assignment") {
+            const value = transpile_expression(expression.value)
+            return `${expression.variable.name} = ${value};`
         } else if (expression.kind === "block") {
             const body = expression.body.map(transpile_expression).join("")
             return `{${body}}`

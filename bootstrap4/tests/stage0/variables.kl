@@ -1,6 +1,12 @@
 fn main():
     let a = 1
     let b = 2
+    mut c = 3
     print(a)
     print(b)
+    print(c)
+    c = 4
+    print(c)
+    c = c + 1
+    print(c)
 end

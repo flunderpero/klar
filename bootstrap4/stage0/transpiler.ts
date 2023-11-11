@@ -41,6 +41,7 @@ type SimpleToken = {
         | "("
         | ")"
         | ":"
+        | "=>"
         | "="
         | "=="
         | "fn"
@@ -69,11 +70,17 @@ type Parameter = {
     span: Span
 }
 
+type Block = {
+    kind: "block"
+    body: Expression[]
+    span: Span
+}
+
 type FunctionDefinition = {
     kind: "fn"
     name: string
     parameters: Parameter[]
-    body: Expression[]
+    block: Block
     transpile?: (fn: FunctionCall, args: string[]) => string
     span: Span
 }
@@ -124,8 +131,8 @@ type BinaryExpression = {
 type If = {
     kind: "if"
     condition: Expression
-    then: Expression[]
-    else_?: Expression[]
+    then_block: Block
+    else_block?: Block
     span: Span
 }
 
@@ -163,6 +170,7 @@ type Expression =
     | Let
     | BinaryExpression
     | If
+    | Block
 
 type AST = Expression[]
 
@@ -209,6 +217,9 @@ function lexer(src: string) {
             }
         } else if (c === "=" && peek(1) === "=") {
             tokens.push({kind: "simple", value: "==", span: span()})
+            skip(2)
+        } else if (c === "=" && peek(1) === ">") {
+            tokens.push({kind: "simple", value: "=>", span: span()})
             skip(2)
         } else if (["(", ")", ":", ",", "=", "+", "-", "*", "/"].includes(c)) {
             tokens.push({kind: "simple", value: c as any, span: span()})
@@ -265,7 +276,7 @@ function parse(tokens: Token[]): AST {
                         span: new Span(0, 0, ""),
                     },
                 ],
-                body: [],
+                block: {} as any,
                 transpile: (_: FunctionCall, args: string[]) => `console.log(${args.join(",")});`,
                 span: new Span(0, 0, ""),
             },
@@ -378,26 +389,50 @@ function parse(tokens: Token[]): AST {
         }
         return expression
     }
+    function parse_block(if_else_mode?: "if_else_mode") {
+        const block_type = consume()
+        if (block_type.kind !== "simple" || !["=>", ":"].includes(block_type.value)) {
+            throw new Error(
+                `Expected block start (':' or '=>') but got ${JSON.stringify(block_type)} at ${
+                    block_type.span
+                }`,
+            )
+        }
+        const block: Block = {
+            kind: "block",
+            body: [],
+            span: block_type.span,
+        }
+        if (block_type.value === "=>") {
+            block.body.push(parse_expression())
+        } else {
+            const end_tokens = ["end"]
+            if (if_else_mode) {
+                end_tokens.push("else")
+            }
+            while (i < tokens.length && !end_tokens.includes(simple_peek())) {
+                block.body.push(parse_expression())
+            }
+            if (!if_else_mode) {
+                expect("end")
+            }
+        }
+        return block
+    }
     function parse_if() {
         const span = expect("if").span
         const condition = parse_expression()
         const if_: If = {
             kind: "if",
             condition,
-            then: [],
+            then_block: parse_block("if_else_mode"),
             span: Span.combine(span, condition.span),
         }
-        expect(":")
-        while (i < tokens.length && !["end", "else"].includes(simple_peek())) {
-            if_.then.push(parse_expression())
-        }
-        if (consume().value === "else") {
-            expect(":")
-            if_.else_ = []
-            while (i < tokens.length && simple_peek() !== "end") {
-                if_.else_.push(parse_expression())
-            }
-            expect("end")
+        if (simple_peek() === "else") {
+            consume()
+            if_.else_block = parse_block()
+        } else if (simple_peek() === "end") {
+            consume()
         }
         return if_
     }
@@ -433,21 +468,15 @@ function parse(tokens: Token[]): AST {
     function parse_function_definition(): FunctionDefinition {
         const span = expect("fn").span
         const name = expect("identifier").value
-        const fn_def: FunctionDefinition = {
-            kind: "fn",
-            name,
-            parameters: [],
-            body: [],
-            span,
-        }
         expect("(")
+        const parameters = []
         while (i < tokens.length && simple_peek() !== ")") {
-            if (fn_def.parameters.length > 0) {
+            if (parameters.length > 0) {
                 expect(",")
             }
             const name_token = expect("identifier")
             const type_token = expect("identifier")
-            fn_def.parameters.push({
+            parameters.push({
                 kind: "parameter",
                 name: name_token.value,
                 type: find_in_env("types", type_token.value),
@@ -455,7 +484,7 @@ function parse(tokens: Token[]): AST {
             })
         }
         expect(")")
-        fn_def.span = Span.combine(span, expect(":").span)
+        const fn_def: FunctionDefinition = {kind: "fn", name, parameters, block: {} as any, span}
         env.functions[name] = fn_def
         env = {functions: {}, types: {}, variables: {}, outer: env}
         env.functions[name] = fn_def
@@ -467,10 +496,8 @@ function parse(tokens: Token[]): AST {
                 span: parameter.span,
             }
         }
-        while (i < tokens.length && simple_peek() !== "end") {
-            fn_def.body.push(parse_expression())
-        }
-        expect("end")
+        fn_def.block = parse_block()
+        fn_def.span = Span.combine(span, fn_def.block.span)
         env = env.outer
         return fn_def
     }
@@ -524,13 +551,9 @@ function transpile(ast: AST) {
     let res = ""
     for (const expression of ast) {
         if (expression.kind === "fn") {
-            res += `function ${expression.name}(${expression.parameters
-                .map((x) => x.name)
-                .join(",")}) {`
-            for (const body_expr of expression.body) {
-                res += transpile_expression(body_expr)
-            }
-            res += "}"
+            const parameters = expression.parameters.map((x) => x.name).join(",")
+            const block = transpile_expression(expression.block)
+            res += `function ${expression.name}(${parameters})${block}`
         } else {
             throw new Error(
                 `Unexpected expression ${JSON.stringify(expression)} at ${expression.span}`,
@@ -553,20 +576,18 @@ function transpile(ast: AST) {
             }
         } else if (expression.kind === "let") {
             return `const ${expression.name} = ${transpile_expression(expression.value)};`
+        } else if (expression.kind === "block") {
+            const body = expression.body.map(transpile_expression).join("")
+            return `{${body}}`
         } else if (expression.kind === "if") {
             const condition = transpile_expression(expression.condition)
-            const then = expression.then.map(transpile_expression).join("")
-            const else_ = expression.else_?.map(transpile_expression).join("")
-            if (else_) {
-                return `if (${condition}) {
-                    ${then}
-                } else {
-                    ${else_}
-                }`
+            const then = transpile_expression(expression.then_block)
+            let s = `if (${condition}) ${then}`
+            if (expression.else_block) {
+                const else_ = transpile_expression(expression.else_block)
+                s += ` else ${else_}`
             }
-            return `if (${condition}) {
-                ${then}
-            }`
+            return s
         } else if (expression.kind === "binary") {
             const lhs = transpile_expression(expression.left)
             const rhs = transpile_expression(expression.right)

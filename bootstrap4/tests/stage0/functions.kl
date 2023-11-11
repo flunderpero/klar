@@ -2,7 +2,18 @@ fn foo():
     print(1)
 end
 
+fn foo_with_arg(x i32):
+    print(x)
+end
+
+fn foo_with_multiple_args(x i32, y i32):
+    print(x)
+    print(y)
+end
+
 fn main():
     foo()
+    foo_with_arg(2)
+    foo_with_multiple_args(3, 4)
     return 0
 end

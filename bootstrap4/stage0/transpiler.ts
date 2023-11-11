@@ -17,6 +17,7 @@ type Identifier = {
 type Parameter = {
     kind: "parameter"
     name: string
+    type: Type
 }
 
 type FunctionDefinition = {
@@ -44,12 +45,34 @@ type Number_ = {
     value: string
 }
 
-type Expression = FunctionDefinition | ReturnExpression | Number_ | FunctionCall
+type Type = {
+    kind: "type"
+    name: string
+    transpile: (value: any) => string
+}
+
+const builtin_types = {
+    i32: {
+        name: "i32",
+        kind: "type",
+        transpile: (value: any) => value,
+    } as Type,
+}
+
+type Variable = {
+    kind: "variable"
+    name: string
+    type: Type
+}
+
+type Expression = FunctionDefinition | ReturnExpression | Number_ | FunctionCall | Variable
 
 type AST = Expression[]
 
 type Environment = {
-    functions: {[key: string]: FunctionDefinition}
+    functions: Record<string, FunctionDefinition>
+    variables: Record<string, Variable>
+    types: Record<string, Type>
     outer?: Environment
 }
 
@@ -70,13 +93,13 @@ function lexer(src: string) {
     }
     while (i < src.length) {
         const c = peek()
-        if (["(", ")", ":"].includes(c)) {
+        if (["(", ")", ":", ","].includes(c)) {
             tokens.push(consume() as Token)
         } else if (c.match(/\s/)) {
             skip()
         } else if (c.match(/[a-z]/)) {
             let value = ""
-            while (peek().match(/[a-zA-Z0-9]/)) {
+            while (peek().match(/[a-zA-Z0-9_]/)) {
                 value += consume()
             }
             if (["return", "fn", "end"].includes(value)) {
@@ -118,11 +141,13 @@ function parse(tokens: Token[]): AST {
             print: {
                 kind: "fn",
                 name: "print",
-                parameters: [{kind: "parameter", name: "value"}],
+                parameters: [{kind: "parameter", name: "value", type: builtin_types.i32}],
                 body: [],
                 transpile: (_: FunctionCall, args: string[]) => `console.log(${args.join(",")});`,
             },
         },
+        types: {...builtin_types},
+        variables: {},
     }
     const ast: AST = []
     let i = 0
@@ -132,7 +157,7 @@ function parse(tokens: Token[]): AST {
     function consume() {
         return tokens[i++] as Token & {kind?: any; value?: any}
     }
-    function expect(token_kind: "identifier" | "(" | ")" | ":" | "end") {
+    function expect(token_kind: "identifier" | "(" | ")" | ":" | "," | "end") {
         let actual = peek() as any
         if (actual.kind) {
             actual = actual.kind
@@ -154,19 +179,38 @@ function parse(tokens: Token[]): AST {
         } else if (token.kind === "number") {
             return token as Number_
         } else if (token.kind === "identifier") {
-            return parse_function_call(token.value)
+            const result = parse_function_call(token.value) || parse_variable(token.value)
+            if (!result) {
+                throw new Error(`Unexpected identifier ${token.value}`)
+            }
+            return result
         }
         throw new Error(`Unexpected token ${JSON.stringify(token)}`)
     }
     function parse_function_definition(): FunctionDefinition {
         const name = (expect("identifier") as Identifier).value
+        const fn_def: FunctionDefinition = {kind: "fn", name, parameters: [], body: []}
         expect("(")
+        while (i < tokens.length && peek() !== ")") {
+            if (fn_def.parameters.length > 0) {
+                expect(",")
+            }
+            const name = (expect("identifier") as Identifier).value
+            const type = (expect("identifier") as Identifier).value
+            fn_def.parameters.push({kind: "parameter", name, type: find_in_env("types", type)})
+        }
         expect(")")
         expect(":")
-        const fn_def: FunctionDefinition = {kind: "fn", name, parameters: [], body: []}
         env.functions[name] = fn_def
-        env = {functions: {}, outer: env}
+        env = {functions: {}, types: {}, variables: {}, outer: env}
         env.functions[name] = fn_def
+        for (const parameter of fn_def.parameters) {
+            env.variables[parameter.name] = {
+                kind: "variable",
+                name: parameter.name,
+                type: parameter.type,
+            }
+        }
         while (i < tokens.length && peek() !== "end") {
             fn_def.body.push(parse_expression())
         }
@@ -177,24 +221,46 @@ function parse(tokens: Token[]): AST {
     function parse_return_expression(): ReturnExpression {
         return {kind: "return", value: parse_expression()}
     }
-    function parse_function_call(name: string): FunctionCall {
-        let fn
-        let search_env = env
-        while (!fn && search_env) {
-            fn = search_env.functions[name]
-            search_env = search_env.outer
-        }
+    function parse_function_call(name: string): FunctionCall | undefined {
+        const fn: FunctionDefinition | undefined = find_in_env(
+            "functions",
+            name,
+            "return_undefined",
+        )
         if (fn) {
             expect("(")
             const args = []
             while (i < tokens.length && tokens[i] !== ")") {
+                if (args.length > 0) {
+                    expect(",")
+                }
                 args.push(parse_expression())
             }
             expect(")")
             return {kind: "call", name: fn.name, arguments: args, transpile: fn.transpile}
-        } else {
-            throw new Error(`Undefined function ${name}`)
         }
+    }
+    function parse_variable(name: string): Variable | undefined {
+        const variable: Variable | undefined = find_in_env("variables", name, "return_undefined")
+        if (variable) {
+            return variable
+        }
+    }
+    function find_in_env<T>(
+        kind: "functions" | "variables" | "types",
+        name: string,
+        return_undefined?: "return_undefined",
+    ): T {
+        let value
+        let search_env = env
+        while (!value && search_env) {
+            value = search_env[kind][name]
+            search_env = search_env.outer
+        }
+        if (!value && !return_undefined) {
+            throw new Error(`Undefined ${kind.slice(-1)} ${name}`)
+        }
+        return value
     }
     return ast
 }
@@ -206,7 +272,9 @@ function transpile(ast: AST) {
     let res = ""
     for (const expression of ast) {
         if (expression.kind === "fn") {
-            res += `function ${expression.name}() {`
+            res += `function ${expression.name}(${expression.parameters
+                .map((x) => x.name)
+                .join(",")}) {`
             for (const body_expr of expression.body) {
                 res += transpile_expression(body_expr)
             }
@@ -220,6 +288,8 @@ function transpile(ast: AST) {
             return `return ${transpile_expression(expression.value)};`
         } else if (expression.kind === "number") {
             return expression.value
+        } else if (expression.kind === "variable") {
+            return expression.name
         } else if (expression.kind === "call") {
             const args = expression.arguments.map(transpile_expression)
             if (expression.transpile) {

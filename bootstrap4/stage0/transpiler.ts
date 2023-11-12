@@ -97,7 +97,8 @@ type FunctionDefinition = {
 
 type Impl = {
     kind: "impl"
-    functions: FunctionDefinition[]
+    member_functions: FunctionDefinition[]
+    static_functions: FunctionDefinition[]
     span: Span
 }
 
@@ -119,7 +120,7 @@ type Assignment = {
 
 type FunctionCall = {
     kind: "call"
-    target: FunctionDefinition | FieldAccess
+    target: FunctionDefinition | FieldAccess | NamespaceAccess
     arguments: Expression[]
     span: Span
 }
@@ -160,10 +161,22 @@ type TypeDefinition = {
     impls: Impl[]
 }
 
+type Namespace = {
+    type: "namespace"
+    name: string
+    functions: Record<string, FunctionDefinition>
+}
+
 type FieldAccess = {
     kind: "field_access"
     object: Expression
     field: string
+    span: Span
+}
+
+type NamespaceAccess = {
+    kind: "namespace_access"
+    namespace: Namespace
     span: Span
 }
 
@@ -201,14 +214,6 @@ type Continue = {
 
 type UnitTypeExpression = {
     kind: "unit_type"
-    span: Span
-}
-
-type FunctionType = {
-    kind: "type"
-    sub_kind: "function"
-    name: string
-    fn: FunctionDefinition
     span: Span
 }
 
@@ -252,6 +257,7 @@ type Expression =
     | Continue
     | TypeDefinition
     | FieldAccess
+    | NamespaceAccess
     | UnitTypeExpression
 
 type AST = Expression[]
@@ -261,6 +267,7 @@ type Environment = {
     variables: Record<string, Variable>
     types: Record<string, Type>
     type_definitions: Record<string, TypeDefinition>
+    namespaces: Record<string, Namespace>
     outer?: Environment
 }
 
@@ -389,6 +396,7 @@ function parse(tokens: Token[]): AST {
         types: {...builtin_types},
         type_definitions: {},
         variables: {},
+        namespaces: {},
     }
     const ast: AST = []
     let i = 0
@@ -430,9 +438,7 @@ function parse(tokens: Token[]): AST {
         }
         if (actual_kind !== token_kind) {
             throw new Error(
-                `Expected token of kind ${token_kind} but got ${to_json(actual)} at ${
-                    actual.span
-                }`,
+                `Expected token of kind ${token_kind} but got ${to_json(actual)} at ${actual.span}`,
             )
         }
         return consume() as Token & {kind?: any; value?: any}
@@ -500,7 +506,8 @@ function parse(tokens: Token[]): AST {
             expression =
                 parse_function_call(token) ||
                 parse_variable(token) ||
-                parse_struct_constructor(token)
+                parse_struct_constructor(token) ||
+                parse_namespace_access(token)
             if (!expression) {
                 throw new Error(`Unknown identifier ${token.value} at ${token.span}`)
             }
@@ -508,9 +515,7 @@ function parse(tokens: Token[]): AST {
             expression = parse_impl()
         }
         if (!expression) {
-            throw new Error(
-                `Unexpected token ${to_json(token)} at ${token.span} ${simple_token}`,
-            )
+            throw new Error(`Unexpected token ${to_json(token)} at ${token.span} ${simple_token}`)
         }
         expression = parse_field_access(expression)
         if (simple_peek() === "(") {
@@ -554,12 +559,24 @@ function parse(tokens: Token[]): AST {
         }
         const target_type: Type = find_in_env("types", target.name)
         expect(":")
-        const functions: FunctionDefinition[] = []
+        const member_functions: FunctionDefinition[] = []
+        const static_functions: FunctionDefinition[] = []
         while (i < tokens.length && simple_peek() !== "end") {
-            functions.push(parse_function_definition(target_type))
+            const fn = parse_function_definition(target_type)
+            if (fn.parameters[0].name !== "self") {
+                static_functions.push(fn)
+                env.namespaces[target.name].functions[fn.name] = fn
+            } else {
+                member_functions.push(fn)
+            }
         }
         const end_span = expect("end").span
-        target.impls.push({kind: "impl", functions, span: Span.combine(span, end_span)})
+        target.impls.push({
+            kind: "impl",
+            member_functions,
+            static_functions,
+            span: Span.combine(span, end_span),
+        })
         return {kind: "unit_type", span: Span.combine(span, end_span)}
     }
     function parse_type_definition(): TypeDefinition {
@@ -579,6 +596,7 @@ function parse(tokens: Token[]): AST {
         const type_def: TypeDefinition = {kind: "type_definition", name, impls: [], span, members}
         env.types[name] = {kind: "type", name, span, members}
         env.type_definitions[name] = type_def
+        env.namespaces[name] = {type: "namespace", name, functions: {}}
         return type_def
     }
     function parse_block(if_else_mode?: "if_else_mode") {
@@ -717,7 +735,14 @@ function parse(tokens: Token[]): AST {
             return_type,
             span,
         }
-        env = {functions: {}, types: {}, variables: {}, type_definitions: {}, outer: env}
+        env = {
+            functions: {},
+            types: {},
+            variables: {},
+            type_definitions: {},
+            namespaces: {},
+            outer: env,
+        }
         if (!impl_type) {
             env.outer.functions[name] = fn_def
             env.functions[name] = fn_def
@@ -737,6 +762,13 @@ function parse(tokens: Token[]): AST {
         const span = expect("return").span
         const value = parse_expression()
         return {kind: "return", value, span: Span.combine(span, value.span)}
+    }
+    function parse_namespace_access(token: Identifier): Expression | undefined {
+        const namespace: Namespace = find_in_env("namespaces", token.value)
+        if (!namespace) {
+            return
+        }
+        return {kind: "namespace_access", namespace, span: token.span}
     }
     function parse_struct_constructor(token: Identifier): StructConstructCall | undefined {
         if (simple_peek() !== "{") {
@@ -760,28 +792,31 @@ function parse(tokens: Token[]): AST {
         const span = Span.combine(expect("}").span, token.span)
         return {kind: "struct_construct", target, values: args, span}
     }
-    function parse_function_call(token: Identifier | FieldAccess): FunctionCall | undefined {
+    function parse_function_call(
+        token: Identifier | FieldAccess | NamespaceAccess,
+    ): FunctionCall | undefined {
         if (simple_peek() !== "(") {
             return
         }
         consume()
-        let target: FunctionDefinition | FieldAccess
+        let target: FunctionDefinition | FieldAccess | NamespaceAccess | undefined
         if (token.kind === "identifier") {
             target = find_in_env("functions", token.value)
         } else {
             target = token
         }
-        if (target) {
-            const args = []
-            while (i < tokens.length && simple_peek() !== ")") {
-                if (args.length > 0) {
-                    expect(",")
-                }
-                args.push(parse_expression())
-            }
-            const span = Span.combine(expect(")").span, token.span)
-            return {kind: "call", target, arguments: args, span}
+        if (!target) {
+            return
         }
+        const args = []
+        while (i < tokens.length && simple_peek() !== ")") {
+            if (args.length > 0) {
+                expect(",")
+            }
+            args.push(parse_expression())
+        }
+        const span = Span.combine(expect(")").span, token.span)
+        return {kind: "call", target, arguments: args, span}
     }
     function parse_variable(token: Identifier): Variable | undefined {
         const name = token.value
@@ -791,7 +826,7 @@ function parse(tokens: Token[]): AST {
         }
     }
     function find_in_env<T>(
-        kind: "functions" | "variables" | "types" | "type_definitions",
+        kind: "functions" | "variables" | "types" | "type_definitions" | "namespaces",
         name: string,
     ): T | undefined {
         let value
@@ -912,14 +947,20 @@ function transpile(ast: AST) {
                 .join("")
 
             let impls = ""
+            function transpile_impl_function(fn: FunctionDefinition, is_static) {
+                const parameters = fn.parameters
+                    .filter((x) => x.name !== "self")
+                    .map((x) => x.name)
+                    .join(",")
+                const block = transpile_expression(fn.block).replace("{", "{const self = this;")
+                impls += `${is_static ? "static " : ""}${fn.name}(${parameters})${block}`
+            }
             for (const impl of expression.impls) {
-                for (const fn of impl.functions) {
-                    const parameters = fn.parameters
-                        .filter((x) => x.name !== "self")
-                        .map((x) => x.name)
-                        .join(",")
-                    const block = transpile_expression(fn.block).replace("{", "{const self = this;")
-                    impls += `${fn.name}(${parameters})${block}`
+                for (const fn of impl.member_functions) {
+                    transpile_impl_function(fn, false)
+                }
+                for (const fn of impl.static_functions) {
+                    transpile_impl_function(fn, true)
                 }
             }
             const constructor = `constructor (${parameters}) {${constructor_body}}`
@@ -941,6 +982,8 @@ function transpile(ast: AST) {
         } else if (expression.kind === "field_access") {
             const object = transpile_expression(expression.object)
             return `${object}.${expression.field}`
+        } else if (expression.kind === "namespace_access") {
+            return expression.namespace.name
         } else {
             assert_never(expression)
         }
@@ -977,7 +1020,7 @@ function to_json(obj: any, indent = 0) {
             return value
         }
     }
-        return JSON.stringify(obj, break_cycles(), indent)
+    return JSON.stringify(obj, break_cycles(), indent)
 }
 
 /**

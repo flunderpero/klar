@@ -13,6 +13,8 @@
 11
 16
 17
+20
+21
 
 /expected ---
 
@@ -22,6 +24,11 @@ struct Point:
 end
 
 impl Point:
+    -- This is a static method.
+    fn new(x i32, y i32) Point:
+        return Point{ x: x, y: y }
+    end
+
     fn print_members(self):
         print(self.x)
         print(self.y)
@@ -61,10 +68,16 @@ fn nested():
     line.end_.print_members()
 end
 
+fn static_method():
+    let p = Point.new(20, 21)
+    p.print_members()
+end
+
 
 fn main():
     simple()
     mutable()
     nested()
+    static_method()
     return 0
 end

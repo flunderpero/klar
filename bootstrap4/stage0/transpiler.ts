@@ -94,6 +94,7 @@ type FunctionDefinition = {
     parameters: Parameter[]
     block: Block
     transpile?: (fn: FunctionCall, args: string[]) => string
+    return_type: Type
     span: Span
 }
 
@@ -136,6 +137,7 @@ type Number_ = {
     kind: "number"
     value: string
     span: Span
+    result_type: Type
 }
 
 type Type = {
@@ -193,27 +195,32 @@ type Continue = {
     span: Span
 }
 
-type UnitType = {
+type UnitTypeExpression = {
     kind: "unit_type"
+    span: Span
+}
+
+type FunctionType = {
+    kind: "type"
+    sub_kind: "function"
+    name: string
+    fn: FunctionDefinition
     span: Span
 }
 
 const builtin_types = {
     i32: {
-        name: "i32",
         kind: "type",
+        name: "i32",
         transpile: (value: any) => value,
-        span: {start: 0, end: 0},
+        span: new Span(0, 0, ""),
     } as Type,
-}
-
-const unknown_type: Type = {
-    name: "unknown",
-    kind: "type",
-    transpile: () => {
-        throw new Error("The 'unknown' type cannot be transpiled")
-    },
-    span: new Span(0, 0, ""),
+    unit_type: {
+        kind: "type",
+        name: "unit_type",
+        transpile: () => "undefined",
+        span: new Span(0, 0, ""),
+    } as Type,
 }
 
 type Variable = {
@@ -240,7 +247,7 @@ type Expression =
     | Continue
     | TypeDefinition
     | FieldAccess
-    | UnitType
+    | UnitTypeExpression
 
 type AST = Expression[]
 
@@ -329,7 +336,12 @@ function lexer(src: string) {
             while (peek().match(/[0-9]/)) {
                 value += consume()
             }
-            tokens.push({kind: "number", value, span: span(start_span)})
+            tokens.push({
+                kind: "number",
+                value,
+                span: span(start_span),
+                result_type: builtin_types.i32,
+            })
         } else {
             throw new Error(`Unexpected character '${c}' at ${span()}`)
         }
@@ -363,6 +375,7 @@ function parse(tokens: Token[]): AST {
                         span: new Span(0, 0, ""),
                     },
                 ],
+                return_type: builtin_types.unit_type,
                 block: {} as any,
                 transpile: (_: FunctionCall, args: string[]) => `console.log(${args.join(",")});`,
                 span: new Span(0, 0, ""),
@@ -522,7 +535,7 @@ function parse(tokens: Token[]): AST {
         }
         return expression as FieldAccess
     }
-    function parse_impl(): UnitType {
+    function parse_impl(): UnitTypeExpression {
         const span = consume().span
         const name = expect("identifier").value
         const target: TypeDefinition = find_in_env("type_definitions", name)
@@ -537,7 +550,7 @@ function parse(tokens: Token[]): AST {
         }
         const end_span = expect("end").span
         target.impls.push({kind: "impl", functions, span: Span.combine(span, end_span)})
-        return {kind: "unit_type", span}
+        return {kind: "unit_type", span: Span.combine(span, end_span)}
     }
     function parse_type_definition(): TypeDefinition {
         const span = consume().span
@@ -571,6 +584,7 @@ function parse(tokens: Token[]): AST {
                 span,
                 mutable: false,
             })),
+            return_type: builtin_types.unit_type,
             block: {} as any,
             transpile: (_: FunctionCall, args: string[]) => `new ${name}(${args.join(",")})`,
             span,
@@ -635,7 +649,7 @@ function parse(tokens: Token[]): AST {
         const span = consume().span
         const name = expect("identifier").value
         const token = peek()
-        let type = unknown_type
+        let type = builtin_types.unit_type
         if (token.kind === "identifier") {
             type = find_in_env("types", token.value)
             if (!type) {
@@ -699,7 +713,21 @@ function parse(tokens: Token[]): AST {
             })
         }
         expect(")")
-        const fn_def: FunctionDefinition = {kind: "fn", name, parameters, block: {} as any, span}
+        let return_type = builtin_types.unit_type
+        if (peek().kind === "identifier") {
+            return_type = find_in_env("types", expect("identifier").value)
+            if (!return_type) {
+                throw new Error(`Unknown type ${return_type} at ${span}`)
+            }
+        }
+        const fn_def: FunctionDefinition = {
+            kind: "fn",
+            name,
+            parameters,
+            block: {} as any,
+            return_type,
+            span,
+        }
         env = {functions: {}, types: {}, variables: {}, type_definitions: {}, outer: env}
         if (!impl_type) {
             env.outer.functions[name] = fn_def
@@ -832,7 +860,7 @@ function transpile(ast: AST) {
                 if (expression.target.transpile) {
                     return expression.target.transpile(expression, args)
                 }
-                return `${expression.target.name}(${args.join(",")});`
+                return `${expression.target.name}(${args.join(",")})\n`
             } else {
                 const target = transpile_expression(expression.target)
                 return `${target}(${args.join(",")});`
@@ -943,6 +971,9 @@ process.exit(main())
         ast = check(ast)
         transpiled = transpile(ast)
     } catch (error) {
+        if (debug) {
+            throw error
+        }
         console.error(`Compile error: ${error.message}`)
         process.exit(1)
     }

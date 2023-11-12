@@ -517,9 +517,14 @@ function parse(tokens: Token[]): AST {
         if (!expression) {
             throw new Error(`Unexpected token ${to_json(token)} at ${token.span} ${simple_token}`)
         }
-        expression = parse_field_access(expression)
-        if (simple_peek() === "(") {
-            expression = parse_function_call(expression) || expression
+        while (true) {
+            if (simple_peek() === "(") {
+                expression = parse_function_call(expression) || expression
+            } else if (simple_peek() === ".") {
+                expression = parse_field_access(expression)
+            } else {
+                break
+            }
         }
         return expression
     }
@@ -537,7 +542,7 @@ function parse(tokens: Token[]): AST {
             span: Span.combine(span, value.span),
         }
     }
-    function parse_field_access(expression: Expression): FieldAccess {
+    function parse_field_access(expression: Expression): Expression {
         while (simple_peek() === ".") {
             const span = consume().span
             const field = expect("identifier")
@@ -548,7 +553,7 @@ function parse(tokens: Token[]): AST {
                 span: Span.combine(span, field.span),
             }
         }
-        return expression as FieldAccess
+        return expression
     }
     function parse_impl(): UnitTypeExpression {
         const span = consume().span
@@ -792,18 +797,27 @@ function parse(tokens: Token[]): AST {
         const span = Span.combine(expect("}").span, token.span)
         return {kind: "struct_construct", target, values: args, span}
     }
-    function parse_function_call(
-        token: Identifier | FieldAccess | NamespaceAccess,
-    ): FunctionCall | undefined {
+    function parse_function_call(target_candidate: Expression | Token): FunctionCall | undefined {
         if (simple_peek() !== "(") {
             return
         }
         consume()
         let target: FunctionDefinition | FieldAccess | NamespaceAccess | undefined
-        if (token.kind === "identifier") {
-            target = find_in_env("functions", token.value)
+        if (target_candidate.kind === "identifier") {
+            target_candidate
+            target = find_in_env("functions", target_candidate.value)
         } else {
-            target = token
+            if (
+                target_candidate.kind !== "field_access" &&
+                target_candidate.kind !== "namespace_access"
+            ) {
+                throw new Error(
+                    `Invalid target for function call: ${to_json(target_candidate)} at ${
+                        target_candidate.span
+                    }`,
+                )
+            }
+            target = target_candidate
         }
         if (!target) {
             return
@@ -815,7 +829,7 @@ function parse(tokens: Token[]): AST {
             }
             args.push(parse_expression())
         }
-        const span = Span.combine(expect(")").span, token.span)
+        const span = Span.combine(expect(")").span, target_candidate.span)
         return {kind: "call", target, arguments: args, span}
     }
     function parse_variable(token: Identifier): Variable | undefined {
@@ -909,7 +923,7 @@ function transpile(ast: AST) {
                 return `${expression.target.name}(${args.join(",")})\n`
             } else {
                 const target = transpile_expression(expression.target)
-                return `${target}(${args.join(",")});`
+                return `${target}(${args.join(",")})\n`
             }
         } else if (expression.kind === "struct_construct") {
             const create_instance = `let _ = new ${expression.target.name}()`

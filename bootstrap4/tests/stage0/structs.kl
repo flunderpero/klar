@@ -15,6 +15,9 @@
 17
 20
 21
+20
+30
+31
 
 /expected ---
 
@@ -44,6 +47,12 @@ struct Line:
     end_ Point
 end
 
+impl Line:
+    fn get_start(self) Point:
+        return self.start
+    end
+end
+
 fn simple():
     let p = Point{ x: 1, y: 2 }
     p.print_members()
@@ -68,8 +77,17 @@ fn nested():
     line.end_.print_members()
 end
 
+fn chained_field_access():
+    let line = Line{ 
+        start: Point{ x: 20, y: 21 }, 
+        end_: Point{ x: 22, y: 23 } 
+    }
+    line.get_start().print_members()
+    print(line.get_start().x)
+end
+
 fn static_method():
-    let p = Point.new(20, 21)
+    let p = Point.new(30, 31)
     p.print_members()
 end
 
@@ -78,6 +96,7 @@ fn main():
     simple()
     mutable()
     nested()
+    chained_field_access()
     static_method()
     return 0
 end

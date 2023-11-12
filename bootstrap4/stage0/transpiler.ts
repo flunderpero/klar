@@ -430,7 +430,7 @@ function parse(tokens: Token[]): AST {
         }
         if (actual_kind !== token_kind) {
             throw new Error(
-                `Expected token of kind ${token_kind} but got ${JSON.stringify(actual)} at ${
+                `Expected token of kind ${token_kind} but got ${to_json(actual)} at ${
                     actual.span
                 }`,
             )
@@ -509,7 +509,7 @@ function parse(tokens: Token[]): AST {
         }
         if (!expression) {
             throw new Error(
-                `Unexpected token ${JSON.stringify(token)} at ${token.span} ${simple_token}`,
+                `Unexpected token ${to_json(token)} at ${token.span} ${simple_token}`,
             )
         }
         expression = parse_field_access(expression)
@@ -521,7 +521,7 @@ function parse(tokens: Token[]): AST {
     function parse_assignment(target: Expression): Assignment {
         assert(
             target.kind === "variable" || target.kind === "field_access",
-            `Invalid target for field access: ${JSON.stringify(target)} at ${target.span}`,
+            `Invalid target for field access: ${to_json(target)} at ${target.span}`,
         )
         const span = consume().span
         const value = parse_expression()
@@ -585,7 +585,7 @@ function parse(tokens: Token[]): AST {
         const block_type = consume()
         if (block_type.kind !== "simple" || !["=>", ":"].includes(block_type.value)) {
             throw new Error(
-                `Expected block start (':' or '=>') but got ${JSON.stringify(block_type)} at ${
+                `Expected block start (':' or '=>') but got ${to_json(block_type)} at ${
                     block_type.span
                 }`,
             )
@@ -955,7 +955,29 @@ function assert(condition: boolean, msg: string) {
 }
 
 function assert_never(x: never): any {
-    throw new Error(`Unexpected object ${JSON.stringify(x)} at ${(x as any).span}`)
+    throw new Error(`Unexpected object ${to_json(x)} at ${(x as any).span}`)
+}
+
+function to_json(obj: any, indent = 0) {
+    function break_cycles() {
+        const ancestors = []
+        return function (_, value) {
+            if (typeof value !== "object" || value === null) {
+                return value
+            }
+            // `this` is the object that value is contained in,
+            // i.e., its direct parent.
+            while (ancestors.length > 0 && ancestors.at(-1) !== this) {
+                ancestors.pop()
+            }
+            if (ancestors.includes(value)) {
+                return "[Circular]"
+            }
+            ancestors.push(value)
+            return value
+        }
+    }
+        return JSON.stringify(obj, break_cycles(), indent)
 }
 
 /**
@@ -978,12 +1000,12 @@ process.exit(main())
         const tokens = lexer(src)
         if (debug_tokens) {
             console.log("\nTOKENS:")
-            console.log(JSON.stringify(tokens, null, 2))
+            console.log(to_json(tokens, 2))
         }
         let ast = parse(tokens)
         if (debug_ast) {
             console.log("\nAST:")
-            console.log(JSON.stringify(ast, null, 2))
+            console.log(to_json(ast, 2))
         }
         ast = check(ast)
         transpiled = transpile(ast)

@@ -6,8 +6,7 @@ import {join} from "node:path"
 const test_dir = join(dir, "../tests/stage0")
 const build_dir = join(dir, "build")
 
-async function test_file(file: string, update = false) {
-    console.log("Running", file)
+async function test_file(file: string, update = false): Promise<boolean> {
     // compile
     const compiler = Bun.spawnSync(["bun", join(dir, "transpiler.ts"), join(test_dir, file)])
     const actual_compiler_output = compiler.stdout.toString() + compiler.stderr.toString().trim()
@@ -23,9 +22,7 @@ async function test_file(file: string, update = false) {
     const src = await Bun.file(join(test_dir, file)).text()
     if (update) {
         console.log("Updating", file)
-        const new_src = src.replace(
-            /--- expected[\s\S]*?\/expected ---/,
-            "").trim()
+        const new_src = src.replace(/--- expected[\s\S]*?\/expected ---/, "").trim()
         let result = ""
         result += "--- expected\n\n"
         result += "# compiler output:\n"
@@ -64,35 +61,45 @@ async function test_file(file: string, update = false) {
             console.error("Compiler output mismatch:")
             console.error("Expected:", expected_compiler_output)
             console.error("Got     :", actual_compiler_output)
-            process.exit(1)
+            return false
         }
         if (expected_exit_code !== actual_exit_code) {
             console.error("Exit code mismatch:")
             console.error("Expected:", expected_exit_code)
             console.error("Got     :", actual_exit_code)
-            process.exit(1)
+            return false
         }
         if (expected_stderr !== actual_stderr) {
             console.error("Stderr mismatch:")
             console.error("Expected:", expected_stderr)
             console.error("Got     :", actual_stderr)
-            process.exit(1)
+            return false
         }
         if (expected_stdout !== actual_stdout) {
             console.error("Stdout mismatch:")
             console.error("Expected:", expected_stdout)
             console.error("Got     :", actual_stdout)
-            process.exit(1)
+            return false
         }
     }
+    return true
 }
 
 async function cli() {
     const update = process.argv.includes("--update")
     const files = (await readdir(test_dir)).filter((x) => x.endsWith(".kl"))
+    let failed = false
     for (const file of files) {
-        await test_file(file, update)
+        console.log("Running", file)
+        if (!(await test_file(file, update))) {
+            failed = true
+        }
     }
+    if (failed) {
+        console.error("FAIL")
+        process.exit(1)
+    }
+    console.log("PASS")
 }
 
 cli()

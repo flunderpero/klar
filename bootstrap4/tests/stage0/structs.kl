@@ -1,3 +1,21 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+1
+2
+5
+6
+10
+11
+16
+17
+
+/expected ---
+
 struct Point:
     x i32
     y i32

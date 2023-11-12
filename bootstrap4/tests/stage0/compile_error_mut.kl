@@ -1,0 +1,15 @@
+--- expected
+
+# compiler output:
+Compile error: Cannot assign to immutable variable a at 13:5
+# exit code:
+# stderr:
+# stdout:
+
+/expected ---
+
+fn main():
+    let a = 1
+    a = 2 -- Should cause an error.
+    return 0
+end

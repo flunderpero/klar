@@ -1,3 +1,17 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+1
+2
+4
+5
+
+/expected ---
+
 fn main():
     mut i = 0
     loop:

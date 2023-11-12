@@ -1,3 +1,14 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+42
+
+/expected ---
+
 -- Some functions will end up in the prelude eventually.
 fn main():
     print(42)

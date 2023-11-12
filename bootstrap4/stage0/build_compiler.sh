@@ -1,1 +1,1 @@
-# Nothing to do. `interpreter.js` is the interpreter.
+# Nothing to do here.

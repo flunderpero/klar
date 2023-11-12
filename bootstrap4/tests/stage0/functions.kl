@@ -1,3 +1,17 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+1
+2
+3
+4
+
+/expected ---
+
 fn foo():
     print(1)
 end

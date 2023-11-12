@@ -2,6 +2,10 @@
  * Transpile Klar to JavaScript.
  */
 declare const Bun: any
+declare const process: any
+interface ObjectConstructor {
+    entries<T>(obj: Record<string, T>): [string, T][]
+}
 // @ts-ignore
 const dir = import.meta.dir
 
@@ -296,7 +300,7 @@ function lexer(src: string) {
         } else if (c.match(/[a-zA-Z_]/)) {
             let value = ""
             let start_span = span()
-            while (peek().match(/[a-zA-Z0-9_]/)) {
+            while (i < src.length && peek().match(/[a-zA-Z0-9_]/)) {
                 value += consume()
             }
             if (
@@ -565,6 +569,7 @@ function parse(tokens: Token[]): AST {
                 name,
                 type,
                 span,
+                mutable: false,
             })),
             block: {} as any,
             transpile: (_: FunctionCall, args: string[]) => `new ${name}(${args.join(",")})`,
@@ -761,6 +766,46 @@ function parse(tokens: Token[]): AST {
     return ast
 }
 
+function check(ast: AST) {
+    const visited = []
+    for (const expression of ast) {
+        apply_checks(expression)
+    }
+    function apply_checks(obj: any) {
+        if (visited.includes(obj)) {
+            return
+        }
+        visited.push(obj)
+        if (obj.kind) {
+            check_mutability(obj)
+        }
+        for (const key of Object.keys(obj)) {
+            const value = obj[key]
+            if (Array.isArray(value)) {
+                for (const child of value) {
+                    apply_checks(child)
+                }
+            } else {
+                apply_checks(value)
+            }
+        }
+    }
+    function check_mutability(expression: Expression) {
+        if (expression.kind === "assignment") {
+            const target = expression.target
+            if (target.kind === "variable") {
+                if (!target.mutable) {
+                    throw new Error(
+                        `Cannot assign to immutable variable ${target.name} at ${target.span}`,
+                    )
+                }
+            }
+            // fixme: check field access
+        }
+    }
+    return ast
+}
+
 /**
  * Transpile AST to JavaScript.
  */
@@ -883,17 +928,24 @@ process.exit(main())
     const debug_ast = Bun.argv.includes("--debug-ast") || debug
     const debug_transpiled = Bun.argv.includes("--debug-transpiled") || debug
     const src = await Bun.file(src_file).text()
-    const tokens = lexer(src)
-    if (debug_tokens) {
-        console.log("\nTOKENS:")
-        console.log(JSON.stringify(tokens, null, 2))
+    let transpiled
+    try {
+        const tokens = lexer(src)
+        if (debug_tokens) {
+            console.log("\nTOKENS:")
+            console.log(JSON.stringify(tokens, null, 2))
+        }
+        let ast = parse(tokens)
+        if (debug_ast) {
+            console.log("\nAST:")
+            console.log(JSON.stringify(ast, null, 2))
+        }
+        ast = check(ast)
+        transpiled = transpile(ast)
+    } catch (error) {
+        console.error(`Compile error: ${error.message}`)
+        process.exit(1)
     }
-    const ast = parse(tokens)
-    if (debug_ast) {
-        console.log("\nAST:")
-        console.log(JSON.stringify(ast, null, 2))
-    }
-    let transpiled = transpile(ast)
     if (prettify) {
         const proc = Bun.spawn(["prettier", "--stdin-filepath", "transpiled.js"], {stdin: "pipe"})
         proc.stdin.write(transpiled)

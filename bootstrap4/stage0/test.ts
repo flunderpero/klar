@@ -1,10 +1,6 @@
-declare const Bun: any
-declare const process: any
 // @ts-ignore
 const dir = import.meta.dir
-// @ts-ignore
 import {readdir} from "node:fs/promises"
-// @ts-ignore
 import {join} from "node:path"
 
 const test_dir = join(dir, "../tests/stage0")

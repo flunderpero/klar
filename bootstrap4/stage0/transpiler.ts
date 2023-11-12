@@ -1,11 +1,6 @@
 /**
  * Transpile Klar to JavaScript.
  */
-declare const Bun: any
-declare const process: any
-interface ObjectConstructor {
-    entries<T>(obj: Record<string, T>): [string, T][]
-}
 // @ts-ignore
 const dir = import.meta.dir
 

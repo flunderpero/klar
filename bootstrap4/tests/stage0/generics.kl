@@ -1,0 +1,43 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+1
+2
+10
+11
+
+/expected ---
+
+struct Num:
+    value i32
+end
+
+struct Container<T>:
+    value T
+
+end
+
+impl Container<T>:
+    fn get_value(self) T:
+        return self.value
+    end
+
+    fn set_value(mut self, value T):
+        self.value = value
+    end
+end
+
+fn main():
+    let c = Container<i32>{ value: 1 }
+    print(c.get_value())
+    c.set_value(c.get_value() + 1)
+    print(c.get_value())
+    let d = Container<Num>{ value: Num{ value: 10 } }
+    print(d.get_value().value)
+    d.set_value(Num{ value: d.get_value().value + 1 })
+    print(d.get_value().value)
+end

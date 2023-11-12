@@ -41,6 +41,8 @@ type SimpleToken = {
         | ")"
         | "{"
         | "}"
+        | "<"
+        | ">"
         | "."
         | ":"
         | "=>"
@@ -127,6 +129,7 @@ type FunctionCall = {
 
 type StructConstructCall = {
     kind: "struct_construct"
+    generic_types: Type[]
     target: TypeDefinition
     values: Record<string, Expression>
     span: Span
@@ -151,6 +154,7 @@ type Type = {
     transpile?: (value: any) => string
     span: Span
     members?: Record<string, Type>
+    is_generic: boolean
 }
 
 type TypeDefinition = {
@@ -158,6 +162,7 @@ type TypeDefinition = {
     name: string
     span: Span
     members: Record<string, Type>
+    generic_type_vars: string[]
     impls: Impl[]
 }
 
@@ -223,12 +228,14 @@ const builtin_types = {
         name: "i32",
         transpile: (value: any) => value,
         span: new Span(0, 0, ""),
+        is_generic: false,
     } as Type,
     unit_type: {
         kind: "type",
         name: "unit_type",
         transpile: () => "undefined",
         span: new Span(0, 0, ""),
+        is_generic: false,
     } as Type,
 }
 
@@ -311,7 +318,9 @@ function lexer(src: string) {
         } else if (c === "=" && peek(1) === ">") {
             tokens.push({kind: "simple", value: "=>", span: span()})
             skip(2)
-        } else if (["(", ")", "{", "}", ":", ".", ",", "=", "+", "-", "*", "/"].includes(c)) {
+        } else if (
+            ["(", ")", "{", "}", "<", ">", ":", ".", ",", "=", "+", "-", "*", "/"].includes(c)
+        ) {
             tokens.push({kind: "simple", value: c as any, span: span()})
             skip()
         } else if (c.match(/\s/)) {
@@ -419,6 +428,8 @@ function parse(tokens: Token[]): AST {
             | ")"
             | "{"
             | "}"
+            | "<"
+            | ">"
             | ":"
             | ","
             | "="
@@ -563,19 +574,39 @@ function parse(tokens: Token[]): AST {
             throw new Error(`Unknown type ${target} at ${span}`)
         }
         const target_type: Type = find_in_env("types", target.name)
+        const types = {}
+        if (simple_peek() === "<") {
+            consume()
+            const name = expect("identifier").value
+            types[name] = {kind: "type", name, is_generic: true, span: span}
+            expect(">")
+        }
         expect(":")
+        env = {
+            functions: {},
+            types,
+            variables: {},
+            type_definitions: {},
+            namespaces: {},
+            outer: env,
+        }
         const member_functions: FunctionDefinition[] = []
         const static_functions: FunctionDefinition[] = []
         while (i < tokens.length && simple_peek() !== "end") {
             const fn = parse_function_definition(target_type)
             if (fn.parameters[0].name !== "self") {
                 static_functions.push(fn)
-                env.namespaces[target.name].functions[fn.name] = fn
+                const namespace: Namespace = find_in_env("namespaces", target.name)
+                if (!namespace) {
+                    throw new Error(`Unknown namespace ${target.name} at ${target.span}`)
+                }
+                namespace.functions[fn.name] = fn
             } else {
                 member_functions.push(fn)
             }
         }
         const end_span = expect("end").span
+        env = env.outer
         target.impls.push({
             kind: "impl",
             member_functions,
@@ -588,18 +619,38 @@ function parse(tokens: Token[]): AST {
         const span = consume().span
         const name = expect("identifier").value
         const members: Record<string, Type> = {}
+        const generic_type_vars = []
+        if (simple_peek() === "<") {
+            consume()
+            const name = expect("identifier").value
+            generic_type_vars.push(name)
+            expect(">")
+        }
         expect(":")
         while (i < tokens.length && simple_peek() !== "end") {
             const name = expect("identifier").value
-            const type: Type = find_in_env("types", expect("identifier").value)
-            if (!type) {
-                throw new Error(`Unknown type ${name} at ${name.span}`)
+            const type_name = expect("identifier").value
+            let type: Type
+            if (generic_type_vars.includes(type_name)) {
+                type = {kind: "type", name: type_name, is_generic: true, span: span}
+            } else {
+                type = find_in_env("types", type_name)
+                if (!type) {
+                    throw new Error(`Unknown type ${name} at ${name.span}`)
+                }
             }
             members[name] = type
         }
         expect("end")
-        const type_def: TypeDefinition = {kind: "type_definition", name, impls: [], span, members}
-        env.types[name] = {kind: "type", name, span, members}
+        const type_def: TypeDefinition = {
+            kind: "type_definition",
+            name,
+            impls: [],
+            generic_type_vars,
+            span,
+            members,
+        }
+        env.types[name] = {kind: "type", name, span, members, is_generic: false}
         env.type_definitions[name] = type_def
         env.namespaces[name] = {type: "namespace", name, functions: {}}
         return type_def
@@ -776,11 +827,26 @@ function parse(tokens: Token[]): AST {
         return {kind: "namespace_access", namespace, span: token.span}
     }
     function parse_struct_constructor(token: Identifier): StructConstructCall | undefined {
+        let generic_types: Type[] = []
+        if (simple_peek() === "<") {
+            consume()
+            while (i < tokens.length && simple_peek() !== ">") {
+                if (generic_types.length > 0) {
+                    expect(",")
+                }
+                const type: Type = find_in_env("types", expect("identifier").value)
+                if (!type) {
+                    throw new Error(`Unknown type ${token.value} at ${token.span}`)
+                }
+                generic_types.push(type)
+            }
+            expect(">")
+        }
         if (simple_peek() !== "{") {
             return
         }
         consume()
-        const target: TypeDefinition = find_in_env("type_definitions", token.value)
+        let target: TypeDefinition = find_in_env("type_definitions", token.value)
         if (!target) {
             throw new Error(`Unknown type ${token.value} at ${token.span}`)
         }
@@ -794,8 +860,35 @@ function parse(tokens: Token[]): AST {
             const value = parse_expression()
             args[name] = value
         }
+        if (generic_types.length !== target.generic_type_vars.length) {
+            throw new Error(
+                `Expected ${target.generic_type_vars.length} generic types but got ${generic_types.length} at ${token.span}`,
+            )
+        }
+        if (generic_types.length > 0) {
+            // Create a new type with the generic types filled in.
+            target = {...target}
+            for (let i = 0; i < generic_types.length; i++) {
+                const type = generic_types[i]
+                if (type.is_generic) {
+                    target.members[target.generic_type_vars[i]] = type
+                    for (const impl of target.impls) {
+                        for (const fn of impl.member_functions) {
+                            for (const parameter of fn.parameters) {
+                                if (parameter.type.name === type.name) {
+                                    parameter.type = type
+                                }
+                            }
+                            if (fn.return_type.name === type.name) {
+                                fn.return_type = type
+                            }
+                        }
+                    }
+                }
+            }
+        }
         const span = Span.combine(expect("}").span, token.span)
-        return {kind: "struct_construct", target, values: args, span}
+        return {kind: "struct_construct", target, values: args, generic_types, span}
     }
     function parse_function_call(target_candidate: Expression | Token): FunctionCall | undefined {
         if (simple_peek() !== "(") {
@@ -899,6 +992,7 @@ function check(ast: AST) {
  */
 function transpile(ast: AST) {
     let res = ""
+    const generic_impls = {}
     for (const expression of ast) {
         res += transpile_expression(expression)
         res += "\n"

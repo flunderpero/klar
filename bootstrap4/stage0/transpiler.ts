@@ -44,6 +44,8 @@ type SimpleToken = {
     value:
         | "("
         | ")"
+        | "{"
+        | "}"
         | "."
         | ":"
         | "=>"
@@ -124,6 +126,13 @@ type FunctionCall = {
     kind: "call"
     target: FunctionDefinition | FieldAccess
     arguments: Expression[]
+    span: Span
+}
+
+type StructConstructCall = {
+    kind: "struct_construct"
+    target: TypeDefinition
+    values: Record<string, Expression>
     span: Span
 }
 
@@ -236,6 +245,7 @@ type Expression =
     | ReturnExpression
     | Number_
     | FunctionCall
+    | StructConstructCall
     | Variable
     | VariableDeclaration
     | BinaryExpression
@@ -299,7 +309,7 @@ function lexer(src: string) {
         } else if (c === "=" && peek(1) === ">") {
             tokens.push({kind: "simple", value: "=>", span: span()})
             skip(2)
-        } else if (["(", ")", ":", ".", ",", "=", "+", "-", "*", "/"].includes(c)) {
+        } else if (["(", ")", "{", "}", ":", ".", ",", "=", "+", "-", "*", "/"].includes(c)) {
             tokens.push({kind: "simple", value: c as any, span: span()})
             skip()
         } else if (c.match(/\s/)) {
@@ -404,6 +414,8 @@ function parse(tokens: Token[]): AST {
             | "identifier"
             | "("
             | ")"
+            | "{"
+            | "}"
             | ":"
             | ","
             | "="
@@ -490,7 +502,10 @@ function parse(tokens: Token[]): AST {
             expression = consume() as Number_
         } else if (token.kind === "identifier") {
             const token = expect("identifier")
-            expression = parse_function_call(token) || parse_variable(token)
+            expression =
+                parse_function_call(token) ||
+                parse_variable(token) ||
+                parse_struct_constructor(token)
             if (!expression) {
                 throw new Error(`Unknown identifier ${token.value} at ${token.span}`)
             }
@@ -567,29 +582,8 @@ function parse(tokens: Token[]): AST {
         }
         expect("end")
         const type_def: TypeDefinition = {kind: "type_definition", name, impls: [], span, members}
-        env.types[name] = {
-            kind: "type",
-            name,
-            span,
-            members,
-        }
+        env.types[name] = {kind: "type", name, span, members}
         env.type_definitions[name] = type_def
-        const constructor: FunctionDefinition = {
-            kind: "fn",
-            name,
-            parameters: Object.entries(members).map(([name, type]) => ({
-                kind: "parameter",
-                name,
-                type,
-                span,
-                mutable: false,
-            })),
-            return_type: builtin_types.unit_type,
-            block: {} as any,
-            transpile: (_: FunctionCall, args: string[]) => `new ${name}(${args.join(",")})`,
-            span,
-        }
-        env.functions[name] = constructor
         return type_def
     }
     function parse_block(if_else_mode?: "if_else_mode") {
@@ -749,11 +743,33 @@ function parse(tokens: Token[]): AST {
         const value = parse_expression()
         return {kind: "return", value, span: Span.combine(span, value.span)}
     }
+    function parse_struct_constructor(token: Identifier): StructConstructCall | undefined {
+        if (simple_peek() !== "{") {
+            return
+        }
+        consume()
+        const target: TypeDefinition = find_in_env("type_definitions", token.value)
+        if (!target) {
+            throw new Error(`Unknown type ${token.value} at ${token.span}`)
+        }
+        const args = {}
+        while (i < tokens.length && simple_peek() !== "}") {
+            if (Object.keys(args).length > 0) {
+                expect(",")
+            }
+            const name = expect("identifier").value
+            expect(":")
+            const value = parse_expression()
+            args[name] = value
+        }
+        const span = Span.combine(expect("}").span, token.span)
+        return {kind: "struct_construct", target, values: args, span}
+    }
     function parse_function_call(token: Identifier | FieldAccess): FunctionCall | undefined {
         if (simple_peek() !== "(") {
             return
         }
-        expect("(")
+        consume()
         let target: FunctionDefinition | FieldAccess
         if (token.kind === "identifier") {
             target = find_in_env("functions", token.value)
@@ -865,6 +881,12 @@ function transpile(ast: AST) {
                 const target = transpile_expression(expression.target)
                 return `${target}(${args.join(",")});`
             }
+        } else if (expression.kind === "struct_construct") {
+            const create_instance = `let _ = new ${expression.target.name}()`
+            const assign_members = Object.entries(expression.values).map(
+                ([name, value]) => `_.${name} = ${transpile_expression(value)};`,
+            )
+            return `(() => {${create_instance};${assign_members.join("\n")} return _})()`
         } else if (expression.kind === "var") {
             const kind = expression.mutable ? "let" : "const"
             const value = transpile_expression(expression.value)
@@ -938,7 +960,7 @@ function assert(condition: boolean, msg: string) {
 }
 
 function assert_never(x: never): any {
-    throw new Error(`Unexpected object ${JSON.stringify(x)}`)
+    throw new Error(`Unexpected object ${JSON.stringify(x)} at ${(x as any).span}`)
 }
 
 /**

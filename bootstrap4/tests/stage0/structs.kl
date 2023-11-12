@@ -38,12 +38,12 @@ struct Line:
 end
 
 fn simple():
-    let p = Point(1, 2)
+    let p = Point{ x: 1, y: 2 }
     p.print_members()
 end
 
 fn mutable():
-    mut mp = Point(3, 4)
+    mut mp = Point{ x: 3, y: 4 }
     mp.x = 5
     mp.add_to_y(2)
     print(mp.x)
@@ -51,7 +51,10 @@ fn mutable():
 end
 
 fn nested():
-    mut line = Line(Point(10, 11), Point(12, 13))
+    mut line = Line{ 
+        start: Point{ x: 10, y: 11 }, 
+        end_: Point{ x: 12, y: 13 } 
+    }
     line.end_.x = 16
     line.end_.y = line.end_.x + 1
     line.start.print_members()

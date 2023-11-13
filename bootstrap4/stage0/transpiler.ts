@@ -129,7 +129,7 @@ type Impl = {
 type Trait = {
     kind: "trait"
     name: string
-    generic_types: Record<string, Type>
+    type_parameters: Type[]
     member_function_signatures: FunctionSignature[]
     static_function_signatures: FunctionSignature[]
     member_function_default_impls: Record<string, FunctionDefinition>
@@ -163,7 +163,7 @@ type FunctionCall = {
 
 type StructConstructCall = {
     kind: "struct_construct"
-    generic_types: Type[]
+    type_arguments: Type[]
     target: TypeDefinition
     values: Record<string, Expression>
     span: Span
@@ -201,7 +201,8 @@ type Type = {
     transpile?: (value: any) => string
     span: Span
     members?: Record<string, Type>
-    is_generic: boolean
+    is_type_parameter: boolean
+    type_parameters: Type[]
 }
 
 type TypeDefinition = {
@@ -209,7 +210,7 @@ type TypeDefinition = {
     name: string
     span: Span
     members: Record<string, Type>
-    generic_type_vars: string[]
+    type_parameters: Type[]
     impls: Impl[]
     extern?: boolean
 }
@@ -270,28 +271,31 @@ type UnitTypeExpression = {
     span: Span
 }
 
-const builtin_types = {
+const builtin_types: Record<string, Type> = {
     i32: {
         kind: "type",
         name: "i32",
         transpile: (value: any) => value,
         span: new Span(0, 0, ""),
-        is_generic: false,
-    } as Type,
+        is_type_parameter: false,
+        type_parameters: [],
+    },
     bool: {
         kind: "type",
         name: "bool",
         transpile: (value: any) => value,
         span: new Span(0, 0, ""),
-        is_generic: false,
-    } as Type,
+        is_type_parameter: false,
+        type_parameters: [],
+    },
     unit_type: {
         kind: "type",
         name: "unit_type",
         transpile: () => "undefined",
         span: new Span(0, 0, ""),
-        is_generic: false,
-    } as Type,
+        is_type_parameter: false,
+        type_parameters: [],
+    },
 }
 
 type Variable = {
@@ -688,6 +692,44 @@ function parse(tokens: Token[]): AST {
         }
         return expression
     }
+    function parse_type(
+        treat_unknown_types_as_type_parameters?: "treat_unknown_types_as_type_parameters",
+    ): Type {
+        const token = expect("identifier")
+        let end_span = token.span
+        let base_type: Type = find_in_env("types", token.value)
+        if (!base_type) {
+            if (treat_unknown_types_as_type_parameters) {
+                base_type = {
+                    kind: "type",
+                    name: token.value,
+                    is_type_parameter: true,
+                    type_parameters: [],
+                    span: token.span,
+                }
+            } else {
+                throw new Error(`Unknown type ${token.value} at ${token.span}`)
+            }
+        }
+        const type_parameters: Type[] = []
+        if (simple_peek() === "<") {
+            consume()
+            while (i < tokens.length && simple_peek() !== ">") {
+                if (type_parameters.length > 0) {
+                    expect(",")
+                }
+                const type_argument = parse_type()
+                type_parameters.push(type_argument)
+            }
+            end_span = expect(">").span
+        }
+        return {
+            ...base_type,
+            name: token.value,
+            type_parameters,
+            span: Span.combine(token.span, end_span),
+        }
+    }
     function parse_extern_block(): UnitTypeExpression {
         const span = consume().span
         expect(":")
@@ -718,6 +760,23 @@ function parse(tokens: Token[]): AST {
     function parse_impl(signatures_only?: "signatures_only"): Impl {
         const span = consume().span
         const name_or_trait = expect("identifier").value
+        let type_parameters: Type[] = []
+        if (simple_peek() === "<") {
+            consume()
+            while (i < tokens.length && simple_peek() !== ">") {
+                if (type_parameters.length > 0) {
+                    expect(",")
+                }
+                const type_parameter = parse_type("treat_unknown_types_as_type_parameters")
+                if (!type_parameter.is_type_parameter) {
+                    throw new Error(
+                        `Expected type parameter at ${type_parameter.span} but got the concrete type ${type_parameter.name}`,
+                    )
+                }
+                type_parameters.push(type_parameter)
+            }
+            expect(">")
+        }
         let trait: Trait | undefined
         let target_name = name_or_trait
         if (simple_peek() === "for") {
@@ -727,19 +786,37 @@ function parse(tokens: Token[]): AST {
             if (!trait) {
                 throw new Error(`Unknown trait ${name_or_trait} at ${span}`)
             }
+            trait = {...trait, type_parameters: []}
+            type_parameters = []
+            if (simple_peek() === "<") {
+                consume()
+                while (i < tokens.length && simple_peek() !== ">") {
+                    if (type_parameters.length > 0) {
+                        expect(",")
+                    }
+                    const type_parameter = parse_type("treat_unknown_types_as_type_parameters")
+                    if (!type_parameter.is_type_parameter) {
+                        throw new Error(
+                            `Expected type parameter at ${type_parameter.span} but got the concrete type ${type_parameter.name}`,
+                        )
+                    }
+                    type_parameters.push(type_parameter)
+                }
+                expect(">")
+            }
         }
         const target: TypeDefinition = find_in_env("type_definitions", target_name)
         if (!target) {
-            throw new Error(`Unknown type ${target} at ${span}`)
+            throw new Error(`Unknown type ${target_name} at ${span}`)
         }
         const target_type: Type = find_in_env("types", target.name)
-        const types = {}
-        if (simple_peek() === "<") {
-            consume()
-            const name = expect("identifier").value
-            types[name] = {kind: "type", name, is_generic: true, span: span}
-            expect(">")
-        }
+        const types: Record<string, Type> = type_parameters.reduce(
+            (acc, type) => {
+                acc[type.name] = type
+                return acc
+            },
+            {} as Record<string, Type>,
+        )
         expect(":")
         env = {
             functions: {},
@@ -786,17 +863,33 @@ function parse(tokens: Token[]): AST {
     function parse_trait_definition(): Trait {
         const span = consume().span
         const name = expect("identifier").value
-        const generic_types = {}
+        const type_parameters: Type[] = []
         if (simple_peek() === "<") {
             consume()
-            const name = expect("identifier").value
-            generic_types[name] = {kind: "type", name, is_generic: true, span: span}
+            while (i < tokens.length && simple_peek() !== ">") {
+                if (type_parameters.length > 0) {
+                    expect(",")
+                }
+                const type_parameter = parse_type("treat_unknown_types_as_type_parameters")
+                if (!type_parameter.is_type_parameter) {
+                    throw new Error(
+                        `Expected type parameter at ${type_parameter.span} but got the concrete type ${type_parameter.name}`,
+                    )
+                }
+                type_parameters.push(type_parameter)
+            }
             expect(">")
         }
         expect(":")
         env = {
             functions: {},
-            types: generic_types,
+            types: type_parameters.reduce(
+                (acc, type) => {
+                    acc[type.name] = type
+                    return acc
+                },
+                {} as Record<string, Type>,
+            ),
             variables: {},
             type_definitions: {},
             traits: {},
@@ -806,7 +899,7 @@ function parse(tokens: Token[]): AST {
         const trait: Trait = {
             kind: "trait",
             name,
-            generic_types,
+            type_parameters,
             member_function_signatures: [],
             static_function_signatures: [],
             member_function_default_impls: {},
@@ -842,38 +935,62 @@ function parse(tokens: Token[]): AST {
         const span = consume().span
         const name = expect("identifier").value
         const members: Record<string, Type> = {}
-        const generic_type_vars = []
+        const type_parameters: Type[] = []
         if (simple_peek() === "<") {
             consume()
-            const name = expect("identifier").value
-            generic_type_vars.push(name)
+            while (i < tokens.length && simple_peek() !== ">") {
+                if (type_parameters.length > 0) {
+                    expect(",")
+                }
+                const type_parameter = parse_type("treat_unknown_types_as_type_parameters")
+                if (!type_parameter.is_type_parameter) {
+                    throw new Error(
+                        `Expected type parameter at ${type_parameter.span} but got the concrete type ${type_parameter.name}`,
+                    )
+                }
+                type_parameters.push(type_parameter)
+            }
             expect(">")
         }
         expect(":")
+        env = {
+            functions: {},
+            types: type_parameters.reduce(
+                (acc, type) => {
+                    acc[type.name] = type
+                    return acc
+                },
+                {} as Record<string, Type>,
+            ),
+            variables: {},
+            type_definitions: {},
+            traits: {},
+            namespaces: {},
+            outer: env,
+        }
         while (i < tokens.length && simple_peek() !== "end") {
             const name = expect("identifier").value
-            const type_name = expect("identifier").value
-            let type: Type
-            if (generic_type_vars.includes(type_name)) {
-                type = {kind: "type", name: type_name, is_generic: true, span: span}
-            } else {
-                type = find_in_env("types", type_name)
-                if (!type) {
-                    throw new Error(`Unknown type ${name} at ${name.span}`)
-                }
-            }
+            const type = parse_type()
             members[name] = type
         }
+        env = env.outer
         expect("end")
         const type_def: TypeDefinition = {
             kind: "type_definition",
             name,
             impls: [],
-            generic_type_vars,
+            type_parameters: type_parameters,
             span,
             members,
         }
-        env.types[name] = {kind: "type", name, span, members, is_generic: false}
+        env.types[name] = {
+            kind: "type",
+            name,
+            span,
+            members,
+            is_type_parameter: false,
+            type_parameters,
+        }
         env.type_definitions[name] = type_def
         env.namespaces[name] = {type: "namespace", name, functions: {}}
         return type_def
@@ -989,23 +1106,19 @@ function parse(tokens: Token[]): AST {
                     continue
                 }
             }
-            const type_token = expect("identifier")
+            const type = parse_type()
             parameters.push({
                 kind: "parameter",
                 name: name_token.value,
-                type: find_in_env("types", type_token.value),
-                span: Span.combine(name_token.span, type_token.span),
+                type,
+                span: Span.combine(name_token.span, type.span),
                 mutable,
             })
         }
         expect(")")
         let return_type = builtin_types.unit_type
         if (peek().kind === "identifier") {
-            const return_type_name = expect("identifier").value
-            return_type = find_in_env("types", return_type_name)
-            if (!return_type) {
-                throw new Error(`Unknown type ${return_type_name} at ${span}`)
-            }
+            return_type = parse_type()
         }
         return {kind: "fn_signature", name, parameters, return_type, span}
     }
@@ -1060,18 +1173,18 @@ function parse(tokens: Token[]): AST {
         return {kind: "namespace_access", namespace, span: token.span}
     }
     function parse_struct_constructor(token: Identifier): StructConstructCall | undefined {
-        let generic_types: Type[] = []
+        let type_arguments: Type[] = []
         if (simple_peek() === "<") {
             consume()
             while (i < tokens.length && simple_peek() !== ">") {
-                if (generic_types.length > 0) {
+                if (type_arguments.length > 0) {
                     expect(",")
                 }
-                const type: Type = find_in_env("types", expect("identifier").value)
+                const type: Type = parse_type()
                 if (!type) {
                     throw new Error(`Unknown type ${token.value} at ${token.span}`)
                 }
-                generic_types.push(type)
+                type_arguments.push(type)
             }
             expect(">")
         }
@@ -1093,18 +1206,18 @@ function parse(tokens: Token[]): AST {
             const value = parse_expression()
             args[name] = value
         }
-        if (generic_types.length !== target.generic_type_vars.length) {
+        if (type_arguments.length !== target.type_parameters.length) {
             throw new Error(
-                `Expected ${target.generic_type_vars.length} generic types but got ${generic_types.length} at ${token.span}`,
+                `Expected ${target.type_parameters.length} argument types but got ${type_arguments.length} at ${token.span}`,
             )
         }
-        if (generic_types.length > 0) {
-            // Create a new type with the generic types filled in.
+        if (type_arguments.length > 0) {
+            // Create a new type with the argument types filled in.
             target = {...target}
-            for (let i = 0; i < generic_types.length; i++) {
-                const type = generic_types[i]
-                if (type.is_generic) {
-                    target.members[target.generic_type_vars[i]] = type
+            for (let i = 0; i < type_arguments.length; i++) {
+                const type = type_arguments[i]
+                if (type.is_type_parameter) {
+                    target.members[target.type_parameters[i].name] = type
                     for (const impl of target.impls) {
                         for (const fn of impl.member_functions) {
                             for (const parameter of fn.signature.parameters) {
@@ -1121,7 +1234,13 @@ function parse(tokens: Token[]): AST {
             }
         }
         const span = Span.combine(expect("}").span, token.span)
-        return {kind: "struct_construct", target, values: args, generic_types, span}
+        return {
+            kind: "struct_construct",
+            target,
+            values: args,
+            type_arguments: type_arguments,
+            span,
+        }
     }
     function parse_function_call(target_candidate: Expression | Token): FunctionCall | undefined {
         if (simple_peek() !== "(") {
@@ -1250,7 +1369,6 @@ function check(ast: AST) {
  */
 function transpile(ast: AST) {
     let res = ""
-    const generic_impls = {}
     for (const expression of ast) {
         res += transpile_expression(expression)
         res += "\n"
@@ -1343,7 +1461,7 @@ function transpile(ast: AST) {
         } else if (expression.kind === "binary") {
             const lhs = transpile_expression(expression.left)
             const rhs = transpile_expression(expression.right)
-            let operator = expression.operator
+            let operator: string = expression.operator
             if (operator === "and") {
                 operator = "&&"
             } else if (operator === "or") {
@@ -1450,7 +1568,8 @@ process.exit(main())
     const res = prelude + transpiled
     const dst = `${dir}/build/${src_file.split("/").pop().split(".")[0]}`
     await Bun.write(dst, res)
-    Bun.spawnSync(["chmod", "+x", dst])
+    const proc = Bun.spawn(["chmod", "+x", dst])
+    await proc.exited
 }
 
 cli()

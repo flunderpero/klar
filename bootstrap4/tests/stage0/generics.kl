@@ -9,6 +9,10 @@
 2
 10
 11
+20
+21
+30
+31
 
 /expected ---
 
@@ -18,10 +22,14 @@ end
 
 struct Container<T>:
     value T
-
 end
 
 impl Container<T>:
+
+    fn new(value T) Container<T>:
+        return Container<T>{ value: value }
+    end
+
     fn get_value(self) T:
         return self.value
     end
@@ -31,13 +39,47 @@ impl Container<T>:
     end
 end
 
+struct MultiContainer<T, U>:
+    value T
+    other U
+end
+
+impl MultiContainer<T, U>:
+
+    fn new(value T, other U) MultiContainer<T, U>:
+        return MultiContainer<T, U>{ value: value, other: other }
+    end
+end
+
+trait ComplexTrait<T, U>:
+    fn get_value1(self) T
+    fn get_value2(self) U
+end
+
+impl ComplexTrait<T, U> for MultiContainer<T, U>:
+
+    fn get_value1(self) T:
+        return self.value
+    end
+
+    fn get_value2(self) U:
+        return self.other
+    end
+end
+
 fn main():
     let c = Container<i32>{ value: 1 }
     print(c.get_value())
     c.set_value(c.get_value() + 1)
     print(c.get_value())
-    let d = Container<Num>{ value: Num{ value: 10 } }
+    let d = Container<Num>.new(Num{ value: 10 })
     print(d.get_value().value)
     d.set_value(Num{ value: d.get_value().value + 1 })
     print(d.get_value().value)
+    let e = MultiContainer<i32, Container<Num>>{ value: 20, other: Container.new(Num{ value: 21 }) }
+    print(e.value)
+    print(e.other.get_value().value)
+    let f = MultiContainer<i32, Container<Num>>.new(30, Container.new(Num{ value: 31 }))
+    print(f.get_value1())
+    print(f.get_value2().get_value().value)
 end

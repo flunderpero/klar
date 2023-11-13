@@ -1,0 +1,27 @@
+--- expected
+
+# compiler output:
+Compile error: Missing implementation for function double of trait Doubler at 12:5
+# exit code:
+# stderr:
+# stdout:
+
+/expected ---
+
+trait Doubler<T>:
+    fn double(self) T
+end
+
+struct Num:
+    value i32
+end
+
+impl Doubler for Num:
+    -- Expect a compile error because `double` is not implemented.
+end
+
+fn main():
+    let num = Num { value: 5 }
+    let doubled = num.double()
+    print(doubled.value)
+end

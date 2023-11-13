@@ -7,7 +7,6 @@ const test_dir = join(dir, "../tests/stage0")
 const build_dir = join(dir, "build")
 
 async function test_file(file: string, update = false): Promise<boolean> {
-    // compile
     const compiler = Bun.spawnSync(["bun", join(dir, "transpiler.ts"), join(test_dir, file)])
     const actual_compiler_output = compiler.stdout.toString() + compiler.stderr.toString().trim()
     let actual_exit_code = ""
@@ -47,7 +46,7 @@ async function test_file(file: string, update = false): Promise<boolean> {
     } else {
         if (!src.includes("--- expected")) {
             console.error("No expected output in test file, use --update to create one")
-            process.exit(1)
+            return false
         }
         const expected = src.split("---")[1].replace("/expected", "").trim()
         const expected_compiler_output = expected

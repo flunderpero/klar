@@ -63,6 +63,8 @@ type SimpleToken = {
         | "break"
         | "continue"
         | "struct"
+        | "trait"
+        | "for"
         | "impl"
     span: Span
 }
@@ -87,13 +89,19 @@ type Block = {
     span: Span
 }
 
-type FunctionDefinition = {
-    kind: "fn"
+type FunctionSignature = {
+    kind: "fn_signature"
     name: string
     parameters: Parameter[]
+    return_type: Type
+    span: Span
+}
+
+type FunctionDefinition = {
+    kind: "fn"
+    signature: FunctionSignature
     block: Block
     transpile?: (fn: FunctionCall, args: string[]) => string
-    return_type: Type
     span: Span
 }
 
@@ -101,6 +109,18 @@ type Impl = {
     kind: "impl"
     member_functions: FunctionDefinition[]
     static_functions: FunctionDefinition[]
+    trait?: Trait
+    span: Span
+}
+
+type Trait = {
+    kind: "trait"
+    name: string
+    generic_types: Record<string, Type>
+    member_function_signatures: FunctionSignature[]
+    static_function_signatures: FunctionSignature[]
+    member_function_default_impls: Record<string, FunctionDefinition>
+    static_function_default_impls: Record<string, FunctionDefinition>
     span: Span
 }
 
@@ -274,6 +294,7 @@ type Environment = {
     variables: Record<string, Variable>
     types: Record<string, Type>
     type_definitions: Record<string, TypeDefinition>
+    traits: Record<string, Trait>
     namespaces: Record<string, Namespace>
     outer?: Environment
 }
@@ -344,6 +365,8 @@ function lexer(src: string) {
                     "break",
                     "continue",
                     "struct",
+                    "trait",
+                    "for",
                     "impl",
                 ].includes(value)
             ) {
@@ -386,17 +409,21 @@ function parse(tokens: Token[]): AST {
             // Built-in functions:
             print: {
                 kind: "fn",
-                name: "print",
-                parameters: [
-                    {
-                        kind: "parameter",
-                        name: "value",
-                        mutable: false,
-                        type: builtin_types.i32,
-                        span: new Span(0, 0, ""),
-                    },
-                ],
-                return_type: builtin_types.unit_type,
+                signature: {
+                    kind: "fn_signature",
+                    name: "print",
+                    parameters: [
+                        {
+                            kind: "parameter",
+                            name: "value",
+                            mutable: false,
+                            type: builtin_types.i32,
+                            span: new Span(0, 0, ""),
+                        },
+                    ],
+                    return_type: builtin_types.unit_type,
+                    span: new Span(0, 0, ""),
+                },
                 block: {} as any,
                 transpile: (_: FunctionCall, args: string[]) => `console.log(${args.join(",")});`,
                 span: new Span(0, 0, ""),
@@ -404,6 +431,7 @@ function parse(tokens: Token[]): AST {
         },
         types: {...builtin_types},
         type_definitions: {},
+        traits: {},
         variables: {},
         namespaces: {},
     }
@@ -508,6 +536,8 @@ function parse(tokens: Token[]): AST {
             expression = {kind: "continue", span: consume().span}
         } else if (simple_token === "struct") {
             expression = parse_type_definition()
+        } else if (simple_token === "trait") {
+            expression = parse_trait_definition()
         } else if (simple_token === "return") {
             expression = parse_return_expression()
         } else if (token.kind === "number") {
@@ -568,8 +598,18 @@ function parse(tokens: Token[]): AST {
     }
     function parse_impl(): UnitTypeExpression {
         const span = consume().span
-        const name = expect("identifier").value
-        const target: TypeDefinition = find_in_env("type_definitions", name)
+        const name_or_trait = expect("identifier").value
+        let trait: Trait | undefined
+        let target_name = name_or_trait
+        if (simple_peek() === "for") {
+            consume()
+            target_name = expect("identifier").value
+            trait = find_in_env("traits", name_or_trait)
+            if (!trait) {
+                throw new Error(`Unknown trait ${name_or_trait} at ${span}`)
+            }
+        }
+        const target: TypeDefinition = find_in_env("type_definitions", target_name)
         if (!target) {
             throw new Error(`Unknown type ${target} at ${span}`)
         }
@@ -587,6 +627,7 @@ function parse(tokens: Token[]): AST {
             types,
             variables: {},
             type_definitions: {},
+            traits: {},
             namespaces: {},
             outer: env,
         }
@@ -594,25 +635,81 @@ function parse(tokens: Token[]): AST {
         const static_functions: FunctionDefinition[] = []
         while (i < tokens.length && simple_peek() !== "end") {
             const fn = parse_function_definition(target_type)
-            if (fn.parameters[0].name !== "self") {
+            if (fn.signature.parameters[0].name !== "self") {
                 static_functions.push(fn)
                 const namespace: Namespace = find_in_env("namespaces", target.name)
                 if (!namespace) {
                     throw new Error(`Unknown namespace ${target.name} at ${target.span}`)
                 }
-                namespace.functions[fn.name] = fn
+                namespace.functions[fn.signature.name] = fn
             } else {
                 member_functions.push(fn)
             }
         }
         const end_span = expect("end").span
         env = env.outer
-        target.impls.push({
+        const impl: Impl = {
             kind: "impl",
             member_functions,
             static_functions,
+            trait,
             span: Span.combine(span, end_span),
-        })
+        }
+        target.impls.push(impl)
+        return {kind: "unit_type", span: Span.combine(span, end_span)}
+    }
+    function parse_trait_definition(): UnitTypeExpression {
+        const span = consume().span
+        const name = expect("identifier").value
+        const generic_types = {}
+        if (simple_peek() === "<") {
+            consume()
+            const name = expect("identifier").value
+            generic_types[name] = {kind: "type", name, is_generic: true, span: span}
+            expect(">")
+        }
+        expect(":")
+        env = {
+            functions: {},
+            types: generic_types,
+            variables: {},
+            type_definitions: {},
+            traits: {},
+            namespaces: {},
+            outer: env,
+        }
+        const res: Trait = {
+            kind: "trait",
+            name,
+            generic_types,
+            member_function_signatures: [],
+            static_function_signatures: [],
+            member_function_default_impls: {},
+            static_function_default_impls: {},
+            span,
+        }
+        while (i < tokens.length && simple_peek() !== "end") {
+            // We call this with a dummy type to enable the handling of `self` parameters.
+            const signature = parse_function_signature(builtin_types.unit_type)
+            if (![":", "=>"].includes(simple_peek())) {
+                // Ok, this is a signature only.
+                if (signature.parameters[0].name !== "self") {
+                    res.static_function_signatures.push(signature)
+                } else {
+                    res.member_function_signatures.push(signature)
+                }
+            } else {
+                const fn = parse_function_body(signature)
+                if (fn.signature.parameters[0].name !== "self") {
+                    res.static_function_default_impls[fn.signature.name] = fn
+                } else {
+                    res.member_function_default_impls[fn.signature.name] = fn
+                }
+            }
+        }
+        const end_span = expect("end").span
+        env = env.outer
+        env.traits[name] = res
         return {kind: "unit_type", span: Span.combine(span, end_span)}
     }
     function parse_type_definition(): TypeDefinition {
@@ -739,7 +836,7 @@ function parse(tokens: Token[]): AST {
         }
         return let_
     }
-    function parse_function_definition(impl_type?: Type): FunctionDefinition {
+    function parse_function_signature(impl_type?: Type): FunctionSignature {
         const span = expect("fn").span
         const name = expect("identifier").value
         expect("(")
@@ -778,41 +875,51 @@ function parse(tokens: Token[]): AST {
         expect(")")
         let return_type = builtin_types.unit_type
         if (peek().kind === "identifier") {
-            return_type = find_in_env("types", expect("identifier").value)
+            const return_type_name = expect("identifier").value
+            return_type = find_in_env("types", return_type_name)
             if (!return_type) {
-                throw new Error(`Unknown type ${return_type} at ${span}`)
+                throw new Error(`Unknown type ${return_type_name} at ${span}`)
             }
         }
+        return {kind: "fn_signature", name, parameters, return_type, span}
+    }
+    function parse_function_body(
+        signature: FunctionSignature,
+        impl_type?: Type,
+    ): FunctionDefinition {
         const fn_def: FunctionDefinition = {
             kind: "fn",
-            name,
-            parameters,
+            signature,
             block: {} as any,
-            return_type,
-            span,
+            span: signature.span,
         }
         env = {
             functions: {},
             types: {},
             variables: {},
             type_definitions: {},
+            traits: {},
             namespaces: {},
             outer: env,
         }
         if (!impl_type) {
-            env.outer.functions[name] = fn_def
-            env.functions[name] = fn_def
+            env.outer.functions[signature.name] = fn_def
+            env.functions[signature.name] = fn_def
         }
-        for (const parameter of fn_def.parameters) {
+        for (const parameter of fn_def.signature.parameters) {
             env.variables[parameter.name] = {
                 ...parameter,
                 kind: "variable",
             }
         }
         fn_def.block = parse_block()
-        fn_def.span = Span.combine(span, fn_def.block.span)
+        fn_def.span = Span.combine(signature.span, fn_def.block.span)
         env = env.outer
         return fn_def
+    }
+    function parse_function_definition(impl_type?: Type): FunctionDefinition {
+        const signature = parse_function_signature(impl_type)
+        return parse_function_body(signature, impl_type)
     }
     function parse_return_expression(): ReturnExpression {
         const span = expect("return").span
@@ -874,13 +981,13 @@ function parse(tokens: Token[]): AST {
                     target.members[target.generic_type_vars[i]] = type
                     for (const impl of target.impls) {
                         for (const fn of impl.member_functions) {
-                            for (const parameter of fn.parameters) {
+                            for (const parameter of fn.signature.parameters) {
                                 if (parameter.type.name === type.name) {
                                     parameter.type = type
                                 }
                             }
-                            if (fn.return_type.name === type.name) {
-                                fn.return_type = type
+                            if (fn.signature.return_type.name === type.name) {
+                                fn.signature.return_type = type
                             }
                         }
                     }
@@ -933,7 +1040,7 @@ function parse(tokens: Token[]): AST {
         }
     }
     function find_in_env<T>(
-        kind: "functions" | "variables" | "types" | "type_definitions" | "namespaces",
+        kind: "functions" | "variables" | "types" | "type_definitions" | "namespaces" | "traits",
         name: string,
     ): T | undefined {
         let value
@@ -953,12 +1060,16 @@ function check(ast: AST) {
         apply_checks(expression)
     }
     function apply_checks(obj: any) {
+        if (obj === undefined) {
+            return
+        }
         if (visited.includes(obj)) {
             return
         }
         visited.push(obj)
         if (obj.kind) {
             check_mutability(obj)
+            check_all_trait_functions_are_implemented(obj)
         }
         for (const key of Object.keys(obj)) {
             const value = obj[key]
@@ -984,6 +1095,27 @@ function check(ast: AST) {
             // fixme: check field access
         }
     }
+    function check_all_trait_functions_are_implemented(expression: Expression) {
+        if (expression.kind !== "type_definition") {
+            return
+        }
+        for (const impl of expression.impls) {
+            if (!impl.trait) {
+                continue
+            }
+            const all_signatures = impl.trait.member_function_signatures.concat(
+                impl.trait.static_function_signatures,
+            )
+            for (const signature of all_signatures) {
+                const fn = impl.member_functions.find((x) => x.signature.name === signature.name)
+                if (!fn) {
+                    throw new Error(
+                        `Missing implementation for function ${signature.name} of trait ${impl.trait.name} at ${signature.span}`,
+                    )
+                }
+            }
+        }
+    }
     return ast
 }
 
@@ -999,9 +1131,9 @@ function transpile(ast: AST) {
     }
     function transpile_expression(expression: Expression) {
         if (expression.kind === "fn") {
-            const parameters = expression.parameters.map((x) => x.name).join(",")
+            const parameters = expression.signature.parameters.map((x) => x.name).join(",")
             const block = transpile_expression(expression.block)
-            return `function ${expression.name}(${parameters})${block}`
+            return `function ${expression.signature.name}(${parameters})${block}`
         } else if (expression.kind === "return") {
             return `return ${transpile_expression(expression.value)};`
         } else if (expression.kind === "number") {
@@ -1014,7 +1146,7 @@ function transpile(ast: AST) {
                 if (expression.target.transpile) {
                     return expression.target.transpile(expression, args)
                 }
-                return `${expression.target.name}(${args.join(",")})\n`
+                return `${expression.target.signature.name}(${args.join(",")})\n`
             } else {
                 const target = transpile_expression(expression.target)
                 return `${target}(${args.join(",")})\n`
@@ -1056,12 +1188,12 @@ function transpile(ast: AST) {
 
             let impls = ""
             function transpile_impl_function(fn: FunctionDefinition, is_static) {
-                const parameters = fn.parameters
+                const parameters = fn.signature.parameters
                     .filter((x) => x.name !== "self")
                     .map((x) => x.name)
                     .join(",")
                 const block = transpile_expression(fn.block).replace("{", "{const self = this;")
-                impls += `${is_static ? "static " : ""}${fn.name}(${parameters})${block}`
+                impls += `${is_static ? "static " : ""}${fn.signature.name}(${parameters})${block}`
             }
             for (const impl of expression.impls) {
                 for (const fn of impl.member_functions) {

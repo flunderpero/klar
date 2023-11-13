@@ -1,0 +1,33 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+2
+4
+
+/expected ---
+
+trait Doubler<T>:
+    fn double(self) T
+end
+
+struct Point:
+    x i32
+    y i32
+end
+
+impl Doubler for Point:
+    fn double(self) Point:
+        return Point { x: self.x * 2, y: self.y * 2 }
+    end
+end
+
+fn main():
+    let p = Point { x: 1, y: 2 }
+    let p2 = p.double()
+    print(p2.x)
+    print(p2.y)
+end

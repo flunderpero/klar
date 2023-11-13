@@ -3,6 +3,11 @@
  */
 // @ts-ignore
 const dir = import.meta.dir
+const prettify = Bun.argv.includes("--pretty")
+const debug = Bun.argv.includes("--debug")
+const debug_tokens = Bun.argv.includes("--debug-tokens") || debug
+const debug_ast = Bun.argv.includes("--debug-ast") || debug
+const debug_transpiled = Bun.argv.includes("--debug-transpiled") || debug
 
 class Span {
     static combine(a: Span, b: Span) {
@@ -469,7 +474,7 @@ function lexer(src: string) {
 /**
  * Parse tokens into an AST.
  */
-function parse(tokens: Token[]): AST {
+function parse(tokens: Token[], env: Environment): AST {
     const binary_op_precedence = {
         or: 1,
         and: 2,
@@ -484,37 +489,6 @@ function parse(tokens: Token[]): AST {
         "*": 6,
         "/": 6,
         not: 7,
-    }
-    let env: Environment = {
-        functions: {
-            // Built-in functions:
-            print: {
-                kind: "fn",
-                signature: {
-                    kind: "fn_signature",
-                    name: "print",
-                    parameters: [
-                        {
-                            kind: "parameter",
-                            name: "value",
-                            mutable: false,
-                            type: builtin_types.i32,
-                            span: new Span(0, 0, ""),
-                        },
-                    ],
-                    return_type: builtin_types.unit_type,
-                    span: new Span(0, 0, ""),
-                },
-                block: {} as any,
-                transpile: (_: FunctionCall, args: string[]) => `console.log(${args.join(",")});`,
-                span: new Span(0, 0, ""),
-            },
-        },
-        types: {...builtin_types},
-        type_definitions: {},
-        traits: {},
-        variables: {},
-        namespaces: {},
     }
     const ast: AST = []
     let i = 0
@@ -1519,31 +1493,33 @@ function to_json(obj: any, indent = 0) {
     return JSON.stringify(obj, break_cycles(), indent)
 }
 
-/**
- * Main entry point.
- */
-async function cli() {
-    const prelude = `#!/usr/bin/env bun --silent
-process.exit(main())
-
-`
-    const src_file = Bun.argv[2]
-    const prettify = Bun.argv.includes("--pretty")
-    const debug = Bun.argv.includes("--debug")
-    const debug_tokens = Bun.argv.includes("--debug-tokens") || debug
-    const debug_ast = Bun.argv.includes("--debug-ast") || debug
-    const debug_transpiled = Bun.argv.includes("--debug-transpiled") || debug
-    const src = await Bun.file(src_file).text()
+async function compile({
+    file,
+    disable_debug,
+    env,
+}: {
+    file: string
+    env: Environment
+    disable_debug?: boolean
+}) {
+    let src: string
+    let log_prefix = `[${file.split("/").pop()}]`
+    try {
+        src = await Bun.file(file).text()
+    } catch (error) {
+        console.error(`${log_prefix} Error reading file: ${error.message}`)
+        process.exit(1)
+    }
     let transpiled
     try {
         const tokens = lexer(src)
-        if (debug_tokens) {
-            console.log("\nTOKENS:")
+        if (debug_tokens && !disable_debug) {
+            console.log(`\n${log_prefix} TOKENS`)
             console.log(to_json(tokens, 2))
         }
-        let ast = parse(tokens)
-        if (debug_ast) {
-            console.log("\nAST:")
+        let ast = parse(tokens, env)
+        if (debug_ast && !disable_debug) {
+            console.log(`\n${log_prefix} AST:`)
             console.log(to_json(ast, 2))
         }
         ast = check(ast)
@@ -1552,7 +1528,7 @@ process.exit(main())
         if (debug) {
             throw error
         }
-        console.error(`Compile error: ${error.message}`)
+        console.error(`${log_prefix} Compile error: ${error.message}`)
         process.exit(1)
     }
     if (prettify) {
@@ -1562,11 +1538,55 @@ process.exit(main())
         transpiled = await new Response(proc.stdout).text()
     }
     if (debug_transpiled) {
-        console.log("\nTRANSPILED:")
+        console.log(`\n${log_prefix} TRANSPILED:`)
         console.log(transpiled)
     }
+    return transpiled
+}
+
+/**
+ * Main entry point.
+ */
+async function cli() {
+    const prelude = `#!/usr/bin/env bun --silent
+process.exit(main())
+
+`
+    const env: Environment = {
+        functions: {
+            // Built-in functions:
+            print: {
+                kind: "fn",
+                signature: {
+                    kind: "fn_signature",
+                    name: "print",
+                    parameters: [
+                        {
+                            kind: "parameter",
+                            name: "value",
+                            mutable: false,
+                            type: builtin_types.i32,
+                            span: new Span(0, 0, ""),
+                        },
+                    ],
+                    return_type: builtin_types.unit_type,
+                    span: new Span(0, 0, ""),
+                },
+                block: {} as any,
+                transpile: (_: FunctionCall, args: string[]) => `console.log(${args.join(",")});`,
+                span: new Span(0, 0, ""),
+            },
+        },
+        types: {...builtin_types},
+        type_definitions: {},
+        traits: {},
+        variables: {},
+        namespaces: {},
+    }
+    const file = Bun.argv[2]
+    const transpiled = await compile({file: file, env})
     const res = prelude + transpiled
-    const dst = `${dir}/build/${src_file.split("/").pop().split(".")[0]}`
+    const dst = `${dir}/build/${file.split("/").pop().split(".")[0]}`
     await Bun.write(dst, res)
     const proc = Bun.spawn(["chmod", "+x", dst])
     await proc.exited

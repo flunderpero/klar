@@ -1,0 +1,23 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+
+/expected ---
+
+extern:
+    fn foo()
+    struct Foo:
+        num i32
+    end
+    impl Foo:
+        fn get() i32
+    end
+end
+
+fn main():
+    return 0
+end

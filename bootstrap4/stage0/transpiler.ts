@@ -65,6 +65,7 @@ type SimpleToken = {
         | "struct"
         | "trait"
         | "for"
+        | "extern"
         | "impl"
     span: Span
 }
@@ -102,6 +103,7 @@ type FunctionDefinition = {
     signature: FunctionSignature
     block: Block
     transpile?: (fn: FunctionCall, args: string[]) => string
+    extern?: boolean
     span: Span
 }
 
@@ -110,6 +112,7 @@ type Impl = {
     member_functions: FunctionDefinition[]
     static_functions: FunctionDefinition[]
     trait?: Trait
+    extern?: boolean
     span: Span
 }
 
@@ -121,6 +124,7 @@ type Trait = {
     static_function_signatures: FunctionSignature[]
     member_function_default_impls: Record<string, FunctionDefinition>
     static_function_default_impls: Record<string, FunctionDefinition>
+    extern?: boolean
     span: Span
 }
 
@@ -184,6 +188,7 @@ type TypeDefinition = {
     members: Record<string, Type>
     generic_type_vars: string[]
     impls: Impl[]
+    extern?: boolean
 }
 
 type Namespace = {
@@ -367,6 +372,7 @@ function lexer(src: string) {
                     "struct",
                     "trait",
                     "for",
+                    "extern",
                     "impl",
                 ].includes(value)
             ) {
@@ -534,10 +540,13 @@ function parse(tokens: Token[]): AST {
             expression = {kind: "break", span: consume().span}
         } else if (simple_token === "continue") {
             expression = {kind: "continue", span: consume().span}
+        } else if (simple_token === "extern") {
+            expression = parse_extern_block()
         } else if (simple_token === "struct") {
             expression = parse_type_definition()
         } else if (simple_token === "trait") {
-            expression = parse_trait_definition()
+            const trait = parse_trait_definition()
+            expression = {kind: "unit_type", span: trait.span}
         } else if (simple_token === "return") {
             expression = parse_return_expression()
         } else if (token.kind === "number") {
@@ -553,7 +562,8 @@ function parse(tokens: Token[]): AST {
                 throw new Error(`Unknown identifier ${token.value} at ${token.span}`)
             }
         } else if (simple_token === "impl") {
-            expression = parse_impl()
+            const impl = parse_impl()
+            expression = {kind: "unit_type", span: impl.span}
         }
         if (!expression) {
             throw new Error(`Unexpected token ${to_json(token)} at ${token.span} ${simple_token}`)
@@ -596,7 +606,34 @@ function parse(tokens: Token[]): AST {
         }
         return expression
     }
-    function parse_impl(): UnitTypeExpression {
+    function parse_extern_block(): UnitTypeExpression {
+        const span = consume().span
+        expect(":")
+        while (i < tokens.length && simple_peek() !== "end") {
+            const type = simple_peek()
+            if (type === "fn") {
+                const signature = parse_function_signature()
+                env.functions[signature.name] = {
+                    kind: "fn",
+                    signature,
+                    block: {} as any,
+                    extern: true,
+                    span: signature.span,
+                }
+            } else if (type === "struct") {
+                const struct = parse_type_definition()
+                struct.extern = true
+            } else if (type === "impl") {
+                const impl = parse_impl("signatures_only")
+                impl.extern = true
+            } else {
+                throw new Error(`Unknown extern type ${type} at ${span}`)
+            }
+        }
+        const end_span = expect("end").span
+        return {kind: "unit_type", span: Span.combine(span, end_span)}
+    }
+    function parse_impl(signatures_only?: "signatures_only"): Impl {
         const span = consume().span
         const name_or_trait = expect("identifier").value
         let trait: Trait | undefined
@@ -634,8 +671,14 @@ function parse(tokens: Token[]): AST {
         const member_functions: FunctionDefinition[] = []
         const static_functions: FunctionDefinition[] = []
         while (i < tokens.length && simple_peek() !== "end") {
-            const fn = parse_function_definition(target_type)
-            if (fn.signature.parameters[0].name !== "self") {
+            let fn: FunctionDefinition
+            if (signatures_only) {
+                const signature = parse_function_signature(target_type)
+                fn = {kind: "fn", signature, block: {} as any, span: signature.span}
+            } else {
+                fn = parse_function_definition(target_type)
+            }
+            if (fn.signature.parameters[0]?.name !== "self") {
                 static_functions.push(fn)
                 const namespace: Namespace = find_in_env("namespaces", target.name)
                 if (!namespace) {
@@ -656,9 +699,9 @@ function parse(tokens: Token[]): AST {
             span: Span.combine(span, end_span),
         }
         target.impls.push(impl)
-        return {kind: "unit_type", span: Span.combine(span, end_span)}
+        return impl
     }
-    function parse_trait_definition(): UnitTypeExpression {
+    function parse_trait_definition(): Trait {
         const span = consume().span
         const name = expect("identifier").value
         const generic_types = {}
@@ -678,7 +721,7 @@ function parse(tokens: Token[]): AST {
             namespaces: {},
             outer: env,
         }
-        const res: Trait = {
+        const trait: Trait = {
             kind: "trait",
             name,
             generic_types,
@@ -694,23 +737,24 @@ function parse(tokens: Token[]): AST {
             if (![":", "=>"].includes(simple_peek())) {
                 // Ok, this is a signature only.
                 if (signature.parameters[0].name !== "self") {
-                    res.static_function_signatures.push(signature)
+                    trait.static_function_signatures.push(signature)
                 } else {
-                    res.member_function_signatures.push(signature)
+                    trait.member_function_signatures.push(signature)
                 }
             } else {
                 const fn = parse_function_body(signature)
                 if (fn.signature.parameters[0].name !== "self") {
-                    res.static_function_default_impls[fn.signature.name] = fn
+                    trait.static_function_default_impls[fn.signature.name] = fn
                 } else {
-                    res.member_function_default_impls[fn.signature.name] = fn
+                    trait.member_function_default_impls[fn.signature.name] = fn
                 }
             }
         }
         const end_span = expect("end").span
+        trait.span = Span.combine(span, end_span)
         env = env.outer
-        env.traits[name] = res
-        return {kind: "unit_type", span: Span.combine(span, end_span)}
+        env.traits[name] = trait
+        return trait
     }
     function parse_type_definition(): TypeDefinition {
         const span = consume().span

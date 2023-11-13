@@ -48,6 +48,14 @@ type SimpleToken = {
         | "=>"
         | "="
         | "=="
+        | "!="
+        | ">"
+        | "<"
+        | ">="
+        | "<="
+        | "and"
+        | "or"
+        | "not"
         | "fn"
         | "end"
         | "return"
@@ -181,6 +189,12 @@ type Bool = {
     result_type: Type
 }
 
+type Not = {
+    kind: "not"
+    value: Expression
+    span: Span
+}
+
 type Type = {
     kind: "type"
     name: string
@@ -221,7 +235,7 @@ type NamespaceAccess = {
 
 type BinaryExpression = {
     kind: "binary"
-    operator: "+" | "-" | "*" | "/" | "=="
+    operator: "+" | "-" | "*" | "/" | "==" | "!=" | "<" | "<=" | ">" | ">=" | "and" | "or"
     left: Expression
     right: Expression
     span: Span
@@ -293,6 +307,7 @@ type Expression =
     | ReturnExpression
     | Number_
     | Bool
+    | Not
     | FunctionCall
     | StructConstructCall
     | Variable
@@ -358,11 +373,37 @@ function lexer(src: string) {
         } else if (c === "=" && peek(1) === "=") {
             tokens.push({kind: "simple", value: "==", span: span()})
             skip(2)
+        } else if (c === "!" && peek(1) === "=") {
+            tokens.push({kind: "simple", value: "!=", span: span()})
+            skip(2)
+        } else if (c === "<" && peek(1) === "=") {
+            tokens.push({kind: "simple", value: "<=", span: span()})
+            skip(2)
+        } else if (c === ">" && peek(1) === "=") {
+            tokens.push({kind: "simple", value: ">=", span: span()})
+            skip(2)
         } else if (c === "=" && peek(1) === ">") {
             tokens.push({kind: "simple", value: "=>", span: span()})
             skip(2)
         } else if (
-            ["(", ")", "{", "}", "<", ">", ":", ".", ",", "=", "+", "-", "*", "/"].includes(c)
+            [
+                "(",
+                ")",
+                "{",
+                "}",
+                "<",
+                ">",
+                ":",
+                ".",
+                ",",
+                "=",
+                "+",
+                "-",
+                "*",
+                "/",
+                ">",
+                "<",
+            ].includes(c)
         ) {
             tokens.push({kind: "simple", value: c as any, span: span()})
             skip()
@@ -393,6 +434,9 @@ function lexer(src: string) {
                     "impl",
                     "true",
                     "false",
+                    "and",
+                    "or",
+                    "not",
                 ].includes(value)
             ) {
                 tokens.push({kind: "simple", value: value as any, span: span(start_span)})
@@ -423,11 +467,19 @@ function lexer(src: string) {
  */
 function parse(tokens: Token[]): AST {
     const binary_op_precedence = {
-        "*": 3,
-        "/": 3,
-        "+": 2,
-        "-": 2,
-        "==": 1,
+        or: 1,
+        and: 2,
+        "==": 3,
+        "!=": 3,
+        "<": 4,
+        "<=": 4,
+        ">": 4,
+        ">=": 4,
+        "+": 5,
+        "-": 5,
+        "*": 6,
+        "/": 6,
+        not: 7,
     }
     let env: Environment = {
         functions: {
@@ -554,6 +606,10 @@ function parse(tokens: Token[]): AST {
                 span: consume().span,
                 result_type: builtin_types.bool,
             }
+        } else if (simple_token === "not") {
+            const span = consume().span
+            const value = parse_expression()
+            expression = {kind: "not", value, span: Span.combine(span, value.span)}
         } else if (simple_token === "if") {
             expression = parse_if()
         } else if (simple_token === "loop") {
@@ -1287,13 +1343,25 @@ function transpile(ast: AST) {
         } else if (expression.kind === "binary") {
             const lhs = transpile_expression(expression.left)
             const rhs = transpile_expression(expression.right)
-            const operator = expression.operator === "==" ? "===" : expression.operator
+            let operator = expression.operator
+            if (operator === "and") {
+                operator = "&&"
+            } else if (operator === "or") {
+                operator = "||"
+            } else if (operator === "==") {
+                operator = "==="
+            } else if (operator === "!=") {
+                operator = "!=="
+            }
             return `(${lhs} ${operator} ${rhs})`
         } else if (expression.kind === "field_access") {
             const object = transpile_expression(expression.object)
             return `${object}.${expression.field}`
         } else if (expression.kind === "namespace_access") {
             return expression.namespace.name
+        } else if (expression.kind === "not") {
+            const value = transpile_expression(expression.value)
+            return `!${value}`
         } else {
             assert_never(expression)
         }
@@ -1382,7 +1450,7 @@ process.exit(main())
     const res = prelude + transpiled
     const dst = `${dir}/build/${src_file.split("/").pop().split(".")[0]}`
     await Bun.write(dst, res)
-    await Bun.spawn(["chmod", "+x", dst])
+    Bun.spawnSync(["chmod", "+x", dst])
 }
 
 cli()

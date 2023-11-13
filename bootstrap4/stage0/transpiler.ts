@@ -67,6 +67,8 @@ type SimpleToken = {
         | "for"
         | "extern"
         | "impl"
+        | "true"
+        | "false"
     span: Span
 }
 
@@ -172,6 +174,13 @@ type Number_ = {
     result_type: Type
 }
 
+type Bool = {
+    kind: "bool"
+    value: boolean
+    span: Span
+    result_type: Type
+}
+
 type Type = {
     kind: "type"
     name: string
@@ -255,6 +264,13 @@ const builtin_types = {
         span: new Span(0, 0, ""),
         is_generic: false,
     } as Type,
+    bool: {
+        kind: "type",
+        name: "bool",
+        transpile: (value: any) => value,
+        span: new Span(0, 0, ""),
+        is_generic: false,
+    } as Type,
     unit_type: {
         kind: "type",
         name: "unit_type",
@@ -276,6 +292,7 @@ type Expression =
     | FunctionDefinition
     | ReturnExpression
     | Number_
+    | Bool
     | FunctionCall
     | StructConstructCall
     | Variable
@@ -374,6 +391,8 @@ function lexer(src: string) {
                     "for",
                     "extern",
                     "impl",
+                    "true",
+                    "false",
                 ].includes(value)
             ) {
                 tokens.push({kind: "simple", value: value as any, span: span(start_span)})
@@ -528,6 +547,13 @@ function parse(tokens: Token[]): AST {
             expression = parse_function_definition()
         } else if (simple_token === "let" || simple_token === "mut") {
             expression = parse_variable_declaration()
+        } else if (simple_token === "true" || simple_token === "false") {
+            expression = {
+                kind: "bool",
+                value: simple_token === "true",
+                span: consume().span,
+                result_type: builtin_types.bool,
+            }
         } else if (simple_token === "if") {
             expression = parse_if()
         } else if (simple_token === "loop") {
@@ -1180,7 +1206,7 @@ function transpile(ast: AST) {
             return `function ${expression.signature.name}(${parameters})${block}`
         } else if (expression.kind === "return") {
             return `return ${transpile_expression(expression.value)};`
-        } else if (expression.kind === "number") {
+        } else if (expression.kind === "number" || expression.kind === "bool") {
             return expression.value
         } else if (expression.kind === "variable") {
             return expression.name

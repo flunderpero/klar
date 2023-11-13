@@ -1,0 +1,17 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+1
+4
+
+/expected ---
+
+fn main():
+    let b = true
+    if b => print(1) else => print(2)
+    if false => print(3) else => print(4)
+end

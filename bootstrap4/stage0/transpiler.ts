@@ -17,7 +17,9 @@ class Span {
         if (b instanceof HasKindAndSpan) {
             b = b.span
         }
-        assert(a.file === b.file, "Cannot combine spans from different files")
+        if (a.file !== b.file) {
+            throw new Error("Cannot combine spans from different files")
+        }
         return new Span(a.start, b.end, a.file, a.src)
     }
 
@@ -49,10 +51,6 @@ class HasKindAndSpan {
     kind = "node"
     constructor(public span: Span) {}
 
-    to_json() {
-        return to_json(this)
-    }
-
     toString() {
         return `${this.kind} at ${this.span}`
     }
@@ -67,8 +65,8 @@ class Token extends HasKindAndSpan {
     }
 }
 
-class SimpleToken extends Token {
-    kind = "simple"
+class LexicalToken extends Token {
+    kind = "lexical"
     constructor(
         public value:
             | "("
@@ -116,6 +114,10 @@ class SimpleToken extends Token {
     ) {
         super(span)
     }
+
+    toString() {
+        return this.value
+    }
 }
 
 class NumberToken extends Token {
@@ -126,6 +128,10 @@ class NumberToken extends Token {
     ) {
         super(span)
     }
+
+    toString() {
+        return `${this.value} (number)`
+    }
 }
 
 class Identifier extends Token {
@@ -135,6 +141,10 @@ class Identifier extends Token {
         span: Span,
     ) {
         super(span)
+    }
+
+    toString() {
+        return `${this.value} (identifier)`
     }
 }
 
@@ -153,7 +163,7 @@ class TokenStream {
 
     consume() {
         if (this.at_end()) {
-            throw new Error(`Unexpected EOF`)
+            throw new ParseError("Unexpected EOF", this.tokens[this.index - 1]?.span)
         }
         return this.tokens[this.index++]
     }
@@ -161,28 +171,76 @@ class TokenStream {
     expect_identifier() {
         const token = this.peek()
         if (!token) {
-            throw new Error(`Expected identifier but got EOF`)
+            throw new ParseError(
+                "Expected identifier but got EOF",
+                this.tokens[this.index - 1]?.span,
+            )
         }
         if (!(token instanceof Identifier)) {
-            throw new Error(`Expected identifier at ${token.span}`)
+            throw new ParseError(
+                `Expected identifier but got ${quote(token.toString())}`,
+                token.span,
+            )
         }
         return this.consume() as Identifier
     }
 
-    expect(token_kind: typeof SimpleToken.prototype.value) {
+    expect(token_kind: typeof LexicalToken.prototype.value) {
         let actual = this.peek()
         if (!actual) {
-            throw new Error(`Expected token of kind ${token_kind} but EOF`)
+            throw new ParseError(
+                `Expected token ${quote(token_kind)} but got EOF`,
+                this.tokens[this.index - 1]?.span,
+            )
         }
-        if (!(actual instanceof SimpleToken) || actual.value !== token_kind) {
-            throw new Error(`Expected token of kind ${token_kind} but got ${actual.kind}`)
+        if (!(actual instanceof LexicalToken) || actual.value !== token_kind) {
+            throw new ParseError(
+                `Expected token ${quote(token_kind)} but got ${quote(actual.toString())}`,
+                actual.span,
+            )
         }
         return this.consume()
     }
 
     simple_peek() {
         const token = this.peek()
-        return token instanceof SimpleToken ? token.value : undefined
+        return token instanceof LexicalToken ? token.value : undefined
+    }
+}
+
+class LexerError extends Error {
+    constructor(
+        public error: string,
+        public span: Span,
+    ) {
+        super(`${error} at ${span}`)
+    }
+}
+
+class ParseError extends Error {
+    constructor(
+        public error: string,
+        public span: Span,
+    ) {
+        super(`${error} at ${span}`)
+    }
+}
+
+class SemanticAnalysisError extends Error {
+    constructor(
+        public error: string,
+        public span: Span,
+    ) {
+        super(`${error} at ${span}`)
+    }
+}
+
+class CodeGenError extends Error {
+    constructor(
+        public error: string,
+        public span: Span,
+    ) {
+        super(`${error} at ${span}`)
     }
 }
 
@@ -196,7 +254,7 @@ class Expression extends HasKindAndSpan {
 }
 
 class FunctionDefinition extends Expression {
-    kind = "function_definition"
+    kind = "function definition"
     signature: FunctionSignature
     block: Block
     extern?: boolean
@@ -214,10 +272,14 @@ class FunctionDefinition extends Expression {
         super(span)
         Object.assign(this as typeof data, data as typeof FunctionDefinition.prototype)
     }
+
+    to_signature_string() {
+        return this.signature.to_signature_string()
+    }
 }
 
 class TypeDefinition extends Expression {
-    kind = "type_definition"
+    kind = "type definition"
     name: string
     members: Record<string, Type>
     type_parameters: Type[]
@@ -236,6 +298,13 @@ class TypeDefinition extends Expression {
     ) {
         super(span)
         Object.assign(this as typeof data, data as typeof TypeDefinition.prototype)
+    }
+
+    to_signature_string() {
+        if (this.type_parameters.length === 0) {
+            return this.name
+        }
+        return `${this.name}<${this.type_parameters.map((t) => t.name).join(", ")}>`
     }
 }
 
@@ -279,7 +348,7 @@ class Not extends Expression {
 }
 
 class FunctionCall extends Expression {
-    kind = "call"
+    kind = "function call"
     target: Expression
     arguments: Expression[]
 
@@ -290,7 +359,7 @@ class FunctionCall extends Expression {
 }
 
 class StructInstantiation extends Expression {
-    kind = "struct_instantiation"
+    kind = "struct instantiation"
     type_arguments: Type[]
     target: TypeDefinition
     values: Record<string, Expression>
@@ -309,7 +378,7 @@ class StructInstantiation extends Expression {
 }
 
 class VariableDeclaration extends Expression {
-    kind = "variable_declaration"
+    kind = "variable declaration"
     name: string
     value: Expression
     type: Type
@@ -341,7 +410,7 @@ class Assignment extends Expression {
 }
 
 class FieldAccess extends Expression {
-    kind = "field_access"
+    kind = "field access"
     object: Expression
     field: string
 
@@ -352,7 +421,7 @@ class FieldAccess extends Expression {
 }
 
 class NamespaceAccess extends Expression {
-    kind = "namespace_access"
+    kind = "namespace access"
     namespace: Namespace
 
     constructor(data: {namespace: Namespace}, span: Span) {
@@ -428,7 +497,7 @@ class Continue extends Expression {
 }
 
 class UnitTypeExpression extends Expression {
-    kind = "unit_type"
+    kind = "unit-type"
 
     constructor(span: Span) {
         super(span)
@@ -458,7 +527,7 @@ class Block extends HasKindAndSpan {
 }
 
 class FunctionSignature extends HasKindAndSpan {
-    kind = "function_signature"
+    kind = "function signature"
     name: string
     parameters: Parameter[]
     return_type: Type
@@ -466,6 +535,12 @@ class FunctionSignature extends HasKindAndSpan {
     constructor(data: {name: string; parameters: Parameter[]; return_type: Type}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof FunctionSignature.prototype)
+    }
+
+    to_signature_string() {
+        return `${this.name}(${this.parameters
+            .map((p) => `${p.name}: ${p.type.to_signature_string()}`)
+            .join(", ")}): ${this.return_type.to_signature_string()}`
     }
 }
 
@@ -517,6 +592,15 @@ class TraitDefinition extends HasKindAndSpan {
         super(span)
         Object.assign(this as typeof data, data as typeof TraitDefinition.prototype)
     }
+
+    to_signature_string() {
+        if (this.type_parameters.length === 0) {
+            return this.name
+        }
+        return `${this.name}<${this.type_parameters
+            .map((t) => t.to_signature_string())
+            .join(", ")}>`
+    }
 }
 
 class Type extends HasKindAndSpan {
@@ -539,6 +623,15 @@ class Type extends HasKindAndSpan {
     ) {
         super(span)
         Object.assign(this as typeof data, data as typeof Type.prototype)
+    }
+
+    to_signature_string(): string {
+        if (this.type_parameters.length === 0) {
+            return this.name
+        }
+        return `${this.name}<${this.type_parameters
+            .map((t) => t.to_signature_string())
+            .join(", ")}>`
     }
 }
 
@@ -575,6 +668,15 @@ const builtin_types: Record<string, Type> = {
     unit_type: new Type(
         {
             name: "unit_type",
+            transpile: () => "undefined",
+            is_type_parameter: false,
+            type_parameters: [],
+        },
+        new Span(0, 0, "<builtin>", ""),
+    ),
+    Self: new Type(
+        {
+            name: "Self",
             transpile: () => "undefined",
             is_type_parameter: false,
             type_parameters: [],
@@ -633,7 +735,7 @@ class Environment {
     ): T {
         const value = this.find<T>(kind, name)
         if (!value) {
-            throw new Error(`Unknown ${kind} ${name} at ${span}`)
+            throw new ParseError(`Unknown ${kind.slice(0, -1)} ${quote(name)}`, span)
         }
         return value
     }
@@ -735,19 +837,19 @@ function lexer({file, src}: {file: string; src: string}): Token[] {
                 skip()
             }
         } else if (c === "=" && peek(1) === "=") {
-            tokens.push(new SimpleToken("==", span()))
+            tokens.push(new LexicalToken("==", span()))
             skip(2)
         } else if (c === "!" && peek(1) === "=") {
-            tokens.push(new SimpleToken("!=", span()))
+            tokens.push(new LexicalToken("!=", span()))
             skip(2)
         } else if (c === "<" && peek(1) === "=") {
-            tokens.push(new SimpleToken("<=", span()))
+            tokens.push(new LexicalToken("<=", span()))
             skip(2)
         } else if (c === ">" && peek(1) === "=") {
-            tokens.push(new SimpleToken(">=", span()))
+            tokens.push(new LexicalToken(">=", span()))
             skip(2)
         } else if (c === "=" && peek(1) === ">") {
-            tokens.push(new SimpleToken("=>", span()))
+            tokens.push(new LexicalToken("=>", span()))
             skip(2)
         } else if (
             [
@@ -769,7 +871,7 @@ function lexer({file, src}: {file: string; src: string}): Token[] {
                 "<",
             ].includes(c)
         ) {
-            tokens.push(new SimpleToken(c as any, span()))
+            tokens.push(new LexicalToken(c as any, span()))
             skip()
         } else if (c.match(/\s/)) {
             skip()
@@ -803,7 +905,7 @@ function lexer({file, src}: {file: string; src: string}): Token[] {
                     "not",
                 ].includes(value)
             ) {
-                tokens.push(new SimpleToken(value as any, span(start_span)))
+                tokens.push(new LexicalToken(value as any, span(start_span)))
             } else {
                 tokens.push(new Identifier(value, span(start_span)))
             }
@@ -815,7 +917,7 @@ function lexer({file, src}: {file: string; src: string}): Token[] {
             }
             tokens.push(new NumberToken(value, span(start_span)))
         } else {
-            throw new Error(`Unexpected character '${c}' at ${span()}`)
+            throw new LexerError(`Unexpected character ${quote(c)}`, span())
         }
     }
     return tokens
@@ -830,49 +932,56 @@ function parse(tokens: TokenStream, env: Environment): AST {
         new_env.outer = env
         env = new_env
         try {
-            return fn.call(env)
+            return fn()
         } finally {
             env = env.outer!
         }
     }
-
     const ast: AST = []
     while (!tokens.at_end()) {
         ast.push(parse_expression())
     }
+    /**
+     * Parse an expression and respect binary operator precedence.
+     */
     function parse_expression(): Expression {
-        return parse_binary_expression(1)
-    }
-    function parse_binary_expression(min_precedence: number) {
-        let lhs = parse_primary()
-        while (true) {
-            const op = tokens.simple_peek()
-            const op_precedence = BinaryExpression.precedence[op as BinaryOperator]
-            if (!op_precedence) {
-                if (op === "=") {
-                    return parse_assignment(lhs)
+        function parse_binary_expression(min_precedence: number) {
+            let lhs = parse_primary()
+            while (true) {
+                const op = tokens.simple_peek()
+                const op_precedence = BinaryExpression.precedence[op as BinaryOperator]
+                if (!op_precedence) {
+                    if (op === "=") {
+                        return parse_assignment(lhs)
+                    }
+                    return lhs
                 }
-                return lhs
-            }
-            if (op_precedence >= min_precedence) {
-                tokens.consume()
-                let rhs = parse_binary_expression(op_precedence + 1)
-                lhs = new BinaryExpression(
-                    {operator: op as BinaryOperator, lhs, rhs},
-                    Span.combine(lhs, rhs),
-                )
-            } else {
-                return lhs
+                if (op_precedence >= min_precedence) {
+                    tokens.consume()
+                    // Parse the right-hand side of the expression
+                    // with a higher precedence than this one.
+                    // This way, we can parse expressions like
+                    // `1 + 2 * 3` as `1 + (2 * 3)` instead of
+                    // `(1 + 2) * 3`.
+                    let rhs = parse_binary_expression(op_precedence + 1)
+                    lhs = new BinaryExpression(
+                        {operator: op as BinaryOperator, lhs, rhs},
+                        Span.combine(lhs, rhs),
+                    )
+                } else {
+                    return lhs
+                }
             }
         }
+        return parse_binary_expression(1)
     }
     function parse_primary(): Expression {
         const token = tokens.peek()
         if (!token) {
-            throw new Error(`Unexpected EOF`)
+            throw new ParseError(`Unexpected EOF`, tokens.tokens[tokens.index - 1]?.span)
         }
         let expression: Expression | undefined
-        if (token instanceof SimpleToken) {
+        if (token instanceof LexicalToken) {
             const simple_token = token.value
             if (simple_token === "fn") {
                 expression = parse_function_definition()
@@ -923,11 +1032,11 @@ function parse(tokens: TokenStream, env: Environment): AST {
                 try_parse_struct_initialization(token) ||
                 try_parse_namespace_access(token)
             if (!expression) {
-                throw new Error(`Unknown identifier ${token.value} at ${token.span}`)
+                throw new ParseError(`Unknown identifier ${quote(token.value)}`, token.span)
             }
         }
         if (!expression) {
-            throw new Error(`Unexpected token ${to_json(token)} at ${token.span}`)
+            throw new ParseError(`Unexpected token ${quote(token)}`, token.span)
         }
         while (true) {
             if (tokens.simple_peek() === "(") {
@@ -941,10 +1050,9 @@ function parse(tokens: TokenStream, env: Environment): AST {
         return expression
     }
     function parse_assignment(target: Expression): Assignment {
-        assert(
-            target instanceof Variable || target instanceof FieldAccess,
-            `Invalid target for field access: ${to_json(target)} at ${target.span}`,
-        )
+        if (!(target instanceof Variable || target instanceof FieldAccess)) {
+            throw new ParseError(`${quote(target.kind)} cannot be assigned a value`, target.span)
+        }
         const span = tokens.consume().span
         const value = parse_expression()
         return new Assignment({target, value}, Span.combine(span, value))
@@ -959,43 +1067,6 @@ function parse(tokens: TokenStream, env: Environment): AST {
             )
         }
         return target
-    }
-    function parse_type(
-        treat_unknown_types_as_type_parameters?: "treat_unknown_types_as_type_parameters",
-    ): Type {
-        const token = tokens.expect_identifier()
-        let end_span = token.span
-        let base_type = env.find_type(token.value)
-        if (treat_unknown_types_as_type_parameters) {
-            base_type =
-                env.find_type(token.value) ??
-                new Type(
-                    {name: token.value, is_type_parameter: true, type_parameters: []},
-                    token.span,
-                )
-        } else {
-            base_type = env.expect_type(token.value, token.span)
-        }
-        assert(!!base_type, `Unknown type ${token.value} at ${token.span}`)
-        const type_parameters: Type[] = []
-        if (tokens.simple_peek() === "<") {
-            tokens.consume()
-            while (!tokens.at_end() && tokens.simple_peek() !== ">") {
-                if (type_parameters.length > 0) {
-                    tokens.expect(",")
-                }
-                const type_argument = parse_type()
-                type_parameters.push(type_argument)
-            }
-            end_span = tokens.expect(">").span
-        }
-        return new Type(
-            {
-                ...base_type,
-                type_parameters,
-            },
-            Span.combine(token.span, end_span),
-        )
     }
     function parse_extern_block(): UnitTypeExpression {
         const span = tokens.consume().span
@@ -1019,7 +1090,7 @@ function parse(tokens: TokenStream, env: Environment): AST {
                 const impl = parse_impl("signatures_only")
                 impl.extern = true
             } else {
-                throw new Error(`Unknown extern type ${type} at ${span}`)
+                throw new ParseError(`Unknown ${quote("extern")} type ${quote(type)}`, span)
             }
         }
         const end_span = tokens.expect("end").span
@@ -1028,47 +1099,15 @@ function parse(tokens: TokenStream, env: Environment): AST {
     function parse_impl(signatures_only?: "signatures_only"): ImplDefinition {
         const span = tokens.consume().span
         const name_or_trait = tokens.expect_identifier().value
-        let type_parameters: Type[] = []
-        if (tokens.simple_peek() === "<") {
-            tokens.consume()
-            while (!tokens.at_end() && tokens.simple_peek() !== ">") {
-                if (type_parameters.length > 0) {
-                    tokens.expect(",")
-                }
-                const type_parameter = parse_type("treat_unknown_types_as_type_parameters")
-                if (!type_parameter.is_type_parameter) {
-                    throw new Error(
-                        `Expected type parameter at ${type_parameter.span} but got the concrete type ${type_parameter.name}`,
-                    )
-                }
-                type_parameters.push(type_parameter)
-            }
-            tokens.expect(">")
-        }
+        let type_parameters = try_parse_generic_type_parameters()
         let trait: TraitDefinition | undefined
         let target_name = name_or_trait
         if (tokens.simple_peek() === "for") {
             tokens.consume()
             target_name = tokens.expect_identifier().value
             trait = env.expect_trait(name_or_trait, span)
-            trait = new TraitDefinition({...trait, type_parameters: []}, trait.span)
-            type_parameters = []
-            if (tokens.simple_peek() === "<") {
-                tokens.consume()
-                while (!tokens.at_end() && tokens.simple_peek() !== ">") {
-                    if (type_parameters.length > 0) {
-                        tokens.expect(",")
-                    }
-                    const type_parameter = parse_type("treat_unknown_types_as_type_parameters")
-                    if (!type_parameter.is_type_parameter) {
-                        throw new Error(
-                            `Expected type parameter at ${type_parameter.span} but got the concrete type ${type_parameter.name}`,
-                        )
-                    }
-                    type_parameters.push(type_parameter)
-                }
-                tokens.expect(">")
-            }
+            trait = new TraitDefinition({...trait}, trait.span)
+            type_parameters = try_parse_generic_type_parameters()
         }
         const target = env.expect_type_definition(target_name, span)
         const target_type = env.expect_type(target_name, span)
@@ -1120,23 +1159,7 @@ function parse(tokens: TokenStream, env: Environment): AST {
     function parse_trait_definition(): TraitDefinition {
         const span = tokens.consume().span
         const name = tokens.expect_identifier().value
-        const type_parameters: Type[] = []
-        if (tokens.simple_peek() === "<") {
-            tokens.consume()
-            while (!tokens.at_end() && tokens.simple_peek() !== ">") {
-                if (type_parameters.length > 0) {
-                    tokens.expect(",")
-                }
-                const type_parameter = parse_type("treat_unknown_types_as_type_parameters")
-                if (!type_parameter.is_type_parameter) {
-                    throw new Error(
-                        `Expected type parameter at ${type_parameter.span} but got the concrete type ${type_parameter.name}`,
-                    )
-                }
-                type_parameters.push(type_parameter)
-            }
-            tokens.expect(">")
-        }
+        const type_parameters = try_parse_generic_type_parameters()
         tokens.expect(":")
         const trait = new TraitDefinition(
             {
@@ -1180,26 +1203,7 @@ function parse(tokens: TokenStream, env: Environment): AST {
         let span = tokens.consume().span
         const name = tokens.expect_identifier().value
         const members: Record<string, Type> = {}
-        const type_parameters: Type[] = []
-        if (tokens.simple_peek() === "<") {
-            tokens.consume()
-            while (!tokens.at_end() && tokens.simple_peek() !== ">") {
-                if (type_parameters.length > 0) {
-                    tokens.expect(",")
-                }
-                const type_parameter = parse_type("treat_unknown_types_as_type_parameters")
-                if (!type_parameter.is_type_parameter) {
-                    throw new Error(
-                        `Expected type parameter at ${
-                            type_parameter.span
-                        } but got the concrete type ${type_parameter.name} at ${tokens.peek()
-                            ?.span}`,
-                    )
-                }
-                type_parameters.push(type_parameter)
-            }
-            tokens.expect(">")
-        }
+        const type_parameters = try_parse_generic_type_parameters()
         span = Span.combine(span, tokens.expect(":").span)
         run_in_sub_env(() => {
             env.set_types(type_parameters)
@@ -1218,11 +1222,10 @@ function parse(tokens: TokenStream, env: Environment): AST {
     }
     function parse_block(if_else_mode?: "if_else_mode") {
         const block_type = tokens.consume()
-        if (!(block_type instanceof SimpleToken) || !["=>", ":"].includes(block_type.value)) {
-            throw new Error(
-                `Expected block start (':' or '=>') but got ${to_json(block_type)} at ${
-                    block_type.span
-                }`,
+        if (!(block_type instanceof LexicalToken) || !["=>", ":"].includes(block_type.value)) {
+            throw new ParseError(
+                `Expected start of a block (':' or '=>') but got ${quote(block_type.toString())}`,
+                block_type.span,
             )
         }
         const block: Block = new Block({body: []}, block_type.span)
@@ -1298,7 +1301,9 @@ function parse(tokens: TokenStream, env: Environment): AST {
             const name_token = tokens.expect_identifier()
             if (impl_type) {
                 if (name_token.value === "self") {
-                    parameters.push(new Parameter({name: "self", type: impl_type, mutable}, span))
+                    parameters.push(
+                        new Parameter({name: "self", type: builtin_types.Self, mutable}, span),
+                    )
                     continue
                 }
             }
@@ -1358,9 +1363,6 @@ function parse(tokens: TokenStream, env: Environment): AST {
                     tokens.expect(",")
                 }
                 const type: Type = parse_type()
-                if (!type) {
-                    throw new Error(`Unknown type ${token.value} at ${token.span}`)
-                }
                 type_arguments.push(type)
             }
             tokens.expect(">")
@@ -1381,8 +1383,11 @@ function parse(tokens: TokenStream, env: Environment): AST {
             args[name] = value
         }
         if (type_arguments.length !== target.type_parameters.length) {
-            throw new Error(
-                `Expected ${target.type_parameters.length} argument types but got ${type_arguments.length} at ${token.span}`,
+            throw new ParseError(
+                `Expected ${target.type_parameters.length} argument types but got ${
+                    type_arguments.length
+                } for type ${quote(target.to_signature_string())}`,
+                token.span,
             )
         }
         if (type_arguments.length > 0) {
@@ -1428,10 +1433,9 @@ function parse(tokens: TokenStream, env: Environment): AST {
                     target_candidate instanceof NamespaceAccess
                 )
             ) {
-                throw new Error(
-                    `Invalid target for function call: ${to_json(target_candidate)} at ${
-                        target_candidate.span
-                    }`,
+                throw new ParseError(
+                    `${quote(target_candidate.kind)} is not callable`,
+                    target_candidate.span,
                 )
             }
             target = target_candidate
@@ -1449,13 +1453,72 @@ function parse(tokens: TokenStream, env: Environment): AST {
         const span = Span.combine(tokens.expect(")").span, target_candidate.span)
         return new FunctionCall({target, arguments: args}, span)
     }
+    /**
+     * Try to parse `<T, U>` as a type parameter list.
+     * Return an empty array if there are no type parameters.
+     */
     function try_parse_variable(token: Identifier): Variable | undefined {
         return env.find_variable(token.value)
+    }
+    function try_parse_generic_type_parameters(): Type[] {
+        const type_parameters: Type[] = []
+        if (tokens.simple_peek() === "<") {
+            tokens.consume()
+            while (!tokens.at_end() && tokens.simple_peek() !== ">") {
+                if (type_parameters.length > 0) {
+                    tokens.expect(",")
+                }
+                const type_parameter = parse_type({expect_only_type_parameters: true})
+                type_parameters.push(type_parameter)
+            }
+            tokens.expect(">")
+        }
+        return type_parameters
+    }
+    function parse_type(opts: {expect_only_type_parameters?: boolean} = {}): Type {
+        const token = tokens.expect_identifier()
+        let end_span = token.span
+        let base_type = env.find_type(token.value)
+        if (opts.expect_only_type_parameters) {
+            base_type =
+                env.find_type(token.value) ??
+                new Type(
+                    {name: token.value, is_type_parameter: true, type_parameters: []},
+                    token.span,
+                )
+        } else {
+            base_type = env.expect_type(token.value, token.span)
+        }
+        const type_parameters: Type[] = []
+        if (tokens.simple_peek() === "<") {
+            tokens.consume()
+            while (!tokens.at_end() && tokens.simple_peek() !== ">") {
+                if (type_parameters.length > 0) {
+                    tokens.expect(",")
+                }
+                const type_argument = parse_type()
+                type_parameters.push(type_argument)
+            }
+            end_span = tokens.expect(">").span
+        }
+        if (opts.expect_only_type_parameters && !base_type.is_type_parameter) {
+            throw new ParseError(
+                `Expected type parameter but got the concrete type ${quote(base_type.name)}`,
+                token.span,
+            )
+        }
+        return new Type(
+            {
+                ...base_type,
+                type_parameters,
+            },
+            Span.combine(token.span, end_span),
+        )
     }
     return ast
 }
 
-function check(ast: AST) {
+function semantic_analysis(ast: AST) {
     const visited: any[] = []
     for (const expression of ast) {
         apply_checks(expression)
@@ -1488,8 +1551,9 @@ function check(ast: AST) {
             const target = expression.target
             if (target instanceof Variable) {
                 if (!target.mutable) {
-                    throw new Error(
-                        `Cannot assign to immutable variable ${target.name} at ${target.span}`,
+                    throw new SemanticAnalysisError(
+                        `Cannot assign to immutable variable ${quote(target.name)}`,
+                        expression.span,
                     )
                 }
             }
@@ -1504,14 +1568,25 @@ function check(ast: AST) {
             if (!impl.trait) {
                 continue
             }
-            const all_signatures = impl.trait.member_function_signatures.concat(
-                impl.trait.static_function_signatures,
-            )
-            for (const signature of all_signatures) {
+            for (const signature of impl.trait.member_function_signatures) {
                 const fn = impl.member_functions.find((x) => x.signature.name === signature.name)
                 if (!fn) {
-                    throw new Error(
-                        `Missing implementation for function ${signature.name} of trait ${impl.trait.name} at ${signature.span}`,
+                    throw new SemanticAnalysisError(
+                        `Missing implementation of function ${quote(
+                            signature.to_signature_string(),
+                        )} of trait ${quote(impl.trait.to_signature_string())}`,
+                        signature.span,
+                    )
+                }
+            }
+            for (const signature of impl.trait.static_function_signatures) {
+                const fn = impl.static_functions.find((x) => x.signature.name === signature.name)
+                if (!fn) {
+                    throw new SemanticAnalysisError(
+                        `Missing implementation of function ${quote(
+                            signature.to_signature_string(),
+                        )} of trait ${quote(impl.trait.to_signature_string())}`,
+                        signature.span,
                     )
                 }
             }
@@ -1523,7 +1598,7 @@ function check(ast: AST) {
 /**
  * Transpile AST to JavaScript.
  */
-function transpile(ast: AST) {
+function code_gen(ast: AST) {
     let res = ""
     for (const expression of ast) {
         res += transpile_expression(expression)
@@ -1637,16 +1712,10 @@ function transpile(ast: AST) {
             const value = transpile_expression(e.value)
             return `!${value}`
         } else {
-            throw new Error(`Unexpected expression ${to_json(e)} at ${e.span}`)
+            throw new CodeGenError(`Unexpected expression ${quote(e.kind)}`, e.span)
         }
     }
     return res
-}
-
-function assert(condition: boolean, msg: string): asserts condition {
-    if (!condition) {
-        throw new Error(msg)
-    }
 }
 
 function to_json(obj: any, indent = 0) {
@@ -1673,6 +1742,10 @@ function to_json(obj: any, indent = 0) {
         }
     }
     return JSON.stringify(obj, break_cycles(), indent)
+}
+
+function quote(s: any) {
+    return `\`${s}\``
 }
 
 async function compile({
@@ -1704,8 +1777,8 @@ async function compile({
             console.log(`\n${log_prefix} AST:`)
             console.log(to_json(ast, 2))
         }
-        ast = check(ast)
-        transpiled = transpile(ast)
+        ast = semantic_analysis(ast)
+        transpiled = code_gen(ast)
     } catch (error: any) {
         if (debug) {
             throw error

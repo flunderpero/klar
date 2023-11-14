@@ -1,7 +1,7 @@
 --- expected
 
 # compiler output:
-[compile_error_mut.kl] Compile error: Cannot assign to immutable variable a at compile_error_mut.kl:12:5
+[compile_error_mut.kl] Compile error: Cannot assign to immutable variable `a` at compile_error_mut.kl:13:7
 # exit code:
 # stderr:
 # stdout:

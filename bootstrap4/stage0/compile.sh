@@ -1,4 +1,4 @@
 #!/bin/sh
 set -e
 
-bun $(dirname $0)/transpiler.ts "$@"
+bun $(dirname $0)/compiler.ts "$@"

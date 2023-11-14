@@ -7,7 +7,7 @@ const test_dir = join(dir, "../tests/stage0")
 const build_dir = join(dir, "build")
 
 async function test_file(file: string, update = false): Promise<boolean> {
-    const compiler = Bun.spawnSync(["bun", join(dir, "transpiler.ts"), join(test_dir, file)])
+    const compiler = Bun.spawnSync(["bun", join(dir, "compiler.ts"), join(test_dir, file)])
     const actual_compiler_output = compiler.stdout.toString() + compiler.stderr.toString().trim()
     let actual_exit_code = ""
     let actual_stdout = ""

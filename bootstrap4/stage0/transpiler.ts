@@ -10,13 +10,21 @@ const debug_ast = Bun.argv.includes("--debug-ast") || debug
 const debug_transpiled = Bun.argv.includes("--debug-transpiled") || debug
 
 class Span {
-    static combine(a: Span, b: Span) {
-        return new Span(a.start, b.end, a.src)
+    static combine(a: Span | HasKindAndSpan, b: Span | HasKindAndSpan) {
+        if (a instanceof HasKindAndSpan) {
+            a = a.span
+        }
+        if (b instanceof HasKindAndSpan) {
+            b = b.span
+        }
+        assert(a.file === b.file, "Cannot combine spans from different files")
+        return new Span(a.start, b.end, a.file, a.src)
     }
 
     constructor(
         public start: number,
         public end: number,
+        public file: string,
         private src: string,
     ) {
         Object.defineProperty(this, "src", {enumerable: false})
@@ -33,329 +41,676 @@ class Span {
                 col++
             }
         }
-        return `${row}:${col}`
+        return `${this.file}:${row}:${col}`
     }
 }
 
-type Token = Identifier | Number_ | SimpleToken
+class HasKindAndSpan {
+    kind = "node"
+    constructor(public span: Span) {}
 
-type SimpleToken = {
-    kind: "simple"
-    value:
-        | "("
-        | ")"
-        | "{"
-        | "}"
-        | "<"
-        | ">"
-        | "."
-        | ":"
-        | "=>"
-        | "="
-        | "=="
-        | "!="
-        | ">"
-        | "<"
-        | ">="
-        | "<="
-        | "and"
-        | "or"
-        | "not"
-        | "fn"
-        | "end"
-        | "return"
-        | "+"
-        | "-"
-        | "*"
-        | "/"
-        | "let"
-        | "mut"
-        | "if"
-        | "else"
-        | "loop"
-        | "break"
-        | "continue"
-        | "struct"
-        | "trait"
-        | "for"
-        | "extern"
-        | "impl"
-        | "true"
-        | "false"
-    span: Span
+    to_json() {
+        return to_json(this)
+    }
+
+    toString() {
+        return `${this.kind} at ${this.span}`
+    }
 }
 
-type Identifier = {
-    kind: "identifier"
+// Tokenizer
+
+class Token extends HasKindAndSpan {
+    kind = "token"
+    constructor(span: Span) {
+        super(span)
+    }
+}
+
+class SimpleToken extends Token {
+    kind = "simple"
+    constructor(
+        public value:
+            | "("
+            | ")"
+            | "{"
+            | "}"
+            | "<"
+            | ">"
+            | "."
+            | ","
+            | ":"
+            | "=>"
+            | "="
+            | "=="
+            | "!="
+            | ">"
+            | "<"
+            | ">="
+            | "<="
+            | "and"
+            | "or"
+            | "not"
+            | "fn"
+            | "end"
+            | "return"
+            | "+"
+            | "-"
+            | "*"
+            | "/"
+            | "let"
+            | "mut"
+            | "if"
+            | "else"
+            | "loop"
+            | "break"
+            | "continue"
+            | "struct"
+            | "trait"
+            | "for"
+            | "extern"
+            | "impl"
+            | "true"
+            | "false",
+        span: Span,
+    ) {
+        super(span)
+    }
+}
+
+class NumberToken extends Token {
+    kind = "number"
+    constructor(
+        public value: string,
+        span: Span,
+    ) {
+        super(span)
+    }
+}
+
+class Identifier extends Token {
+    kind = "identifier"
+    constructor(
+        public value: string,
+        span: Span,
+    ) {
+        super(span)
+    }
+}
+
+class TokenStream {
+    index = 0
+
+    constructor(public tokens: Token[]) {}
+
+    at_end() {
+        return this.index >= this.tokens.length
+    }
+
+    peek(): Token | undefined {
+        return this.tokens[this.index]
+    }
+
+    consume() {
+        if (this.at_end()) {
+            throw new Error(`Unexpected EOF`)
+        }
+        return this.tokens[this.index++]
+    }
+
+    expect_identifier() {
+        const token = this.peek()
+        if (!token) {
+            throw new Error(`Expected identifier but got EOF`)
+        }
+        if (!(token instanceof Identifier)) {
+            throw new Error(`Expected identifier at ${token.span}`)
+        }
+        return this.consume() as Identifier
+    }
+
+    expect(token_kind: typeof SimpleToken.prototype.value) {
+        let actual = this.peek()
+        if (!actual) {
+            throw new Error(`Expected token of kind ${token_kind} but EOF`)
+        }
+        if (!(actual instanceof SimpleToken) || actual.value !== token_kind) {
+            throw new Error(`Expected token of kind ${token_kind} but got ${actual.kind}`)
+        }
+        return this.consume()
+    }
+
+    simple_peek() {
+        const token = this.peek()
+        return token instanceof SimpleToken ? token.value : undefined
+    }
+}
+
+// AST
+
+class Expression extends HasKindAndSpan {
+    kind = "expression"
+    constructor(span: Span) {
+        super(span)
+    }
+}
+
+class FunctionDefinition extends Expression {
+    kind = "function_definition"
+    signature: FunctionSignature
+    block: Block
+    extern?: boolean
+    transpile?: (fn: FunctionCall, args: string[]) => string
+
+    constructor(
+        data: {
+            signature: FunctionSignature
+            block: Block
+            transpile?: (fn: FunctionCall, args: string[]) => string
+            extern?: boolean
+        },
+        span: Span,
+    ) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof FunctionDefinition.prototype)
+    }
+}
+
+class TypeDefinition extends Expression {
+    kind = "type_definition"
+    name: string
+    members: Record<string, Type>
+    type_parameters: Type[]
+    impls: ImplDefinition[]
+    extern?: boolean
+
+    constructor(
+        data: {
+            name: string
+            members: Record<string, Type>
+            type_parameters: Type[]
+            impls: ImplDefinition[]
+            extern?: boolean
+        },
+        span: Span,
+    ) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof TypeDefinition.prototype)
+    }
+}
+
+class Return extends Expression {
+    kind = "return"
+    value: Expression
+
+    constructor(data: {value: Expression}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Return.prototype)
+    }
+}
+class Number_ extends Expression {
+    kind = "number"
     value: string
-    span: Span
+
+    constructor(data: {value: string}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Number_.prototype)
+    }
 }
 
-type Parameter = {
-    kind: "parameter"
+class Bool extends Expression {
+    kind = "bool"
+    value: boolean
+
+    constructor(data: {value: boolean}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Bool.prototype)
+    }
+}
+
+class Not extends Expression {
+    kind = "not"
+    value: Expression
+
+    constructor(data: {value: Expression}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Not.prototype)
+    }
+}
+
+class FunctionCall extends Expression {
+    kind = "call"
+    target: Expression
+    arguments: Expression[]
+
+    constructor(data: {target: Expression; arguments: Expression[]}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof FunctionCall.prototype)
+    }
+}
+
+class StructInstantiation extends Expression {
+    kind = "struct_instantiation"
+    type_arguments: Type[]
+    target: TypeDefinition
+    values: Record<string, Expression>
+
+    constructor(
+        data: {
+            type_arguments: Type[]
+            target: TypeDefinition
+            values: Record<string, Expression>
+        },
+        span: Span,
+    ) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof StructInstantiation.prototype)
+    }
+}
+
+class VariableDeclaration extends Expression {
+    kind = "variable_declaration"
+    name: string
+    value: Expression
+    type: Type
+    mutable: boolean
+
+    constructor(
+        data: {
+            name: string
+            value: Expression
+            type: Type
+            mutable: boolean
+        },
+        span: Span,
+    ) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof VariableDeclaration.prototype)
+    }
+}
+
+class Assignment extends Expression {
+    kind = "assignment"
+    target: Variable | FieldAccess
+    value: Expression
+
+    constructor(data: {target: Variable | FieldAccess; value: Expression}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Assignment.prototype)
+    }
+}
+
+class FieldAccess extends Expression {
+    kind = "field_access"
+    object: Expression
+    field: string
+
+    constructor(data: {object: Expression; field: string}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof FieldAccess.prototype)
+    }
+}
+
+class NamespaceAccess extends Expression {
+    kind = "namespace_access"
+    namespace: Namespace
+
+    constructor(data: {namespace: Namespace}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof NamespaceAccess.prototype)
+    }
+}
+
+type BinaryOperator = "+" | "-" | "*" | "/" | "==" | "!=" | "<" | "<=" | ">" | ">=" | "and" | "or"
+
+class BinaryExpression extends Expression {
+    static precedence: Record<BinaryOperator, number> = {
+        or: 1,
+        and: 2,
+        "==": 3,
+        "!=": 3,
+        "<": 4,
+        "<=": 4,
+        ">": 4,
+        ">=": 4,
+        "+": 5,
+        "-": 5,
+        "*": 6,
+        "/": 6,
+    }
+    kind = "binary"
+    operator: BinaryOperator
+    lhs: Expression
+    rhs: Expression
+
+    constructor(data: {operator: BinaryOperator; lhs: Expression; rhs: Expression}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof BinaryExpression.prototype)
+    }
+}
+
+class If extends Expression {
+    kind = "if"
+    condition: Expression
+    then_block: Block
+    else_block?: Block
+
+    constructor(data: {condition: Expression; then_block: Block; else_block?: Block}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof If.prototype)
+    }
+}
+
+class Loop extends Expression {
+    kind = "loop"
+    block: Block
+
+    constructor(data: {block: Block}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Loop.prototype)
+    }
+}
+
+class Break extends Expression {
+    kind = "break"
+
+    constructor(span: Span) {
+        super(span)
+    }
+}
+
+class Continue extends Expression {
+    kind = "continue"
+
+    constructor(span: Span) {
+        super(span)
+    }
+}
+
+class UnitTypeExpression extends Expression {
+    kind = "unit_type"
+
+    constructor(span: Span) {
+        super(span)
+    }
+}
+
+class Parameter extends HasKindAndSpan {
+    kind = "parameter"
     name: string
     type: Type
-    span: Span
     mutable: boolean
+
+    constructor(data: {name: string; type: Type; mutable: boolean}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Parameter.prototype)
+    }
 }
 
-type Block = {
-    kind: "block"
+class Block extends HasKindAndSpan {
+    kind = "block"
     body: Expression[]
-    span: Span
+
+    constructor(data: {body: Expression[]}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Block.prototype)
+    }
 }
 
-type FunctionSignature = {
-    kind: "fn_signature"
+class FunctionSignature extends HasKindAndSpan {
+    kind = "function_signature"
     name: string
     parameters: Parameter[]
     return_type: Type
-    span: Span
+
+    constructor(data: {name: string; parameters: Parameter[]; return_type: Type}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof FunctionSignature.prototype)
+    }
 }
 
-type FunctionDefinition = {
-    kind: "fn"
-    signature: FunctionSignature
-    block: Block
-    transpile?: (fn: FunctionCall, args: string[]) => string
-    extern?: boolean
-    span: Span
-}
-
-type Impl = {
-    kind: "impl"
+class ImplDefinition extends HasKindAndSpan {
+    kind = "impl_definition"
+    trait?: TraitDefinition
+    type: TypeDefinition
     member_functions: FunctionDefinition[]
     static_functions: FunctionDefinition[]
-    trait?: Trait
     extern?: boolean
-    span: Span
+
+    constructor(
+        data: {
+            trait?: TraitDefinition
+            type: TypeDefinition
+            member_functions: FunctionDefinition[]
+            static_functions: FunctionDefinition[]
+            extern?: boolean
+        },
+        span: Span,
+    ) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof ImplDefinition.prototype)
+    }
 }
 
-type Trait = {
-    kind: "trait"
+class TraitDefinition extends HasKindAndSpan {
+    kind = "trait_definition"
     name: string
-    type_parameters: Type[]
     member_function_signatures: FunctionSignature[]
     static_function_signatures: FunctionSignature[]
     member_function_default_impls: Record<string, FunctionDefinition>
     static_function_default_impls: Record<string, FunctionDefinition>
+    type_parameters: Type[]
     extern?: boolean
-    span: Span
+
+    constructor(
+        data: {
+            name: string
+            member_function_signatures: FunctionSignature[]
+            static_function_signatures: FunctionSignature[]
+            member_function_default_impls: Record<string, FunctionDefinition>
+            static_function_default_impls: Record<string, FunctionDefinition>
+            type_parameters: Type[]
+            extern?: boolean
+        },
+        span: Span,
+    ) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof TraitDefinition.prototype)
+    }
 }
 
-type VariableDeclaration = {
-    kind: "var"
-    name: string
-    value: Expression
-    type: Type
-    span: Span
-    mutable: boolean
-}
-
-type Assignment = {
-    kind: "assignment"
-    target: Variable | FieldAccess
-    value: Expression
-    span: Span
-}
-
-type FunctionCall = {
-    kind: "call"
-    target: FunctionDefinition | FieldAccess | NamespaceAccess
-    arguments: Expression[]
-    span: Span
-}
-
-type StructConstructCall = {
-    kind: "struct_construct"
-    type_arguments: Type[]
-    target: TypeDefinition
-    values: Record<string, Expression>
-    span: Span
-}
-
-type ReturnExpression = {
-    kind: "return"
-    value: Expression
-    span: Span
-}
-
-type Number_ = {
-    kind: "number"
-    value: string
-    span: Span
-    result_type: Type
-}
-
-type Bool = {
-    kind: "bool"
-    value: boolean
-    span: Span
-    result_type: Type
-}
-
-type Not = {
-    kind: "not"
-    value: Expression
-    span: Span
-}
-
-type Type = {
-    kind: "type"
+class Type extends HasKindAndSpan {
+    kind = "type"
     name: string
     transpile?: (value: any) => string
-    span: Span
     members?: Record<string, Type>
     is_type_parameter: boolean
     type_parameters: Type[]
+
+    constructor(
+        data: {
+            name: string
+            transpile?: (value: any) => string
+            members?: Record<string, Type>
+            is_type_parameter: boolean
+            type_parameters: Type[]
+        },
+        span: Span,
+    ) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Type.prototype)
+    }
 }
 
-type TypeDefinition = {
-    kind: "type_definition"
-    name: string
-    span: Span
-    members: Record<string, Type>
-    type_parameters: Type[]
-    impls: Impl[]
-    extern?: boolean
-}
-
-type Namespace = {
-    type: "namespace"
+class Namespace extends HasKindAndSpan {
+    kind = "namespace"
     name: string
     functions: Record<string, FunctionDefinition>
-}
 
-type FieldAccess = {
-    kind: "field_access"
-    object: Expression
-    field: string
-    span: Span
-}
-
-type NamespaceAccess = {
-    kind: "namespace_access"
-    namespace: Namespace
-    span: Span
-}
-
-type BinaryExpression = {
-    kind: "binary"
-    operator: "+" | "-" | "*" | "/" | "==" | "!=" | "<" | "<=" | ">" | ">=" | "and" | "or"
-    left: Expression
-    right: Expression
-    span: Span
-}
-
-type If = {
-    kind: "if"
-    condition: Expression
-    then_block: Block
-    else_block?: Block
-    span: Span
-}
-
-type Loop = {
-    kind: "loop"
-    block: Block
-    span: Span
-}
-
-type Break = {
-    kind: "break"
-    span: Span
-}
-
-type Continue = {
-    kind: "continue"
-    span: Span
-}
-
-type UnitTypeExpression = {
-    kind: "unit_type"
-    span: Span
+    constructor(data: {name: string; functions: Record<string, FunctionDefinition>}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Namespace.prototype)
+    }
 }
 
 const builtin_types: Record<string, Type> = {
-    i32: {
-        kind: "type",
-        name: "i32",
-        transpile: (value: any) => value,
-        span: new Span(0, 0, ""),
-        is_type_parameter: false,
-        type_parameters: [],
-    },
-    bool: {
-        kind: "type",
-        name: "bool",
-        transpile: (value: any) => value,
-        span: new Span(0, 0, ""),
-        is_type_parameter: false,
-        type_parameters: [],
-    },
-    unit_type: {
-        kind: "type",
-        name: "unit_type",
-        transpile: () => "undefined",
-        span: new Span(0, 0, ""),
-        is_type_parameter: false,
-        type_parameters: [],
-    },
+    i32: new Type(
+        {
+            name: "i32",
+            transpile: (value: any) => value,
+            is_type_parameter: false,
+            type_parameters: [],
+        },
+        new Span(0, 0, "<builtin>", ""),
+    ),
+    bool: new Type(
+        {
+            name: "bool",
+            transpile: (value: any) => value,
+            is_type_parameter: false,
+            type_parameters: [],
+        },
+        new Span(0, 0, "<builtin>", ""),
+    ),
+    unit_type: new Type(
+        {
+            name: "unit_type",
+            transpile: () => "undefined",
+            is_type_parameter: false,
+            type_parameters: [],
+        },
+        new Span(0, 0, "<builtin>", ""),
+    ),
 }
 
-type Variable = {
-    kind: "variable"
+// Environment
+
+class Variable extends HasKindAndSpan {
+    kind = "variable"
     name: string
     type: Type
-    span: Span
     mutable: boolean
+
+    constructor(
+        data: {
+            name: string
+            type: Type
+            mutable: boolean
+        },
+        span: Span,
+    ) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Variable.prototype)
+    }
 }
 
-type Expression =
-    | FunctionDefinition
-    | ReturnExpression
-    | Number_
-    | Bool
-    | Not
-    | FunctionCall
-    | StructConstructCall
-    | Variable
-    | VariableDeclaration
-    | BinaryExpression
-    | If
-    | Block
-    | Assignment
-    | Loop
-    | Break
-    | Continue
-    | TypeDefinition
-    | FieldAccess
-    | NamespaceAccess
-    | UnitTypeExpression
+class Environment {
+    functions: Record<string, FunctionDefinition> = {}
+    variables: Record<string, Variable> = {}
+    types: Record<string, Type> = {}
+    type_definitions: Record<string, TypeDefinition> = {}
+    traits: Record<string, TraitDefinition> = {}
+    namespaces: Record<string, Namespace> = {}
+    outer?: Environment
+
+    find<T extends HasKindAndSpan>(
+        kind: "functions" | "variables" | "types" | "type_definitions" | "traits" | "namespaces",
+        name: string,
+    ): T | undefined {
+        if (this[kind][name]) {
+            return this[kind][name] as any as T
+        }
+        if (this.outer) {
+            return this.outer.find(kind, name)
+        }
+        return undefined
+    }
+
+    expect<T extends HasKindAndSpan>(
+        kind: "functions" | "variables" | "types" | "type_definitions" | "traits" | "namespaces",
+        name: string,
+        span: Span,
+    ): T {
+        const value = this.find<T>(kind, name)
+        if (!value) {
+            throw new Error(`Unknown ${kind} ${name} at ${span}`)
+        }
+        return value
+    }
+
+    set_types(types: Record<string, Type> | Type[]) {
+        if (Array.isArray(types)) {
+            this.types = {}
+            for (const type of types) {
+                this.types[type.name] = type
+            }
+        } else {
+            this.types = types
+        }
+    }
+
+    find_function(name: string): FunctionDefinition | undefined {
+        return this.find<FunctionDefinition>("functions", name)
+    }
+
+    find_variable(name: string): Variable | undefined {
+        return this.find<Variable>("variables", name)
+    }
+
+    find_type(name: string): Type | undefined {
+        return this.find<Type>("types", name)
+    }
+
+    find_type_definition(name: string): TypeDefinition | undefined {
+        return this.find<TypeDefinition>("type_definitions", name)
+    }
+
+    find_trait(name: string): TraitDefinition | undefined {
+        return this.find<TraitDefinition>("traits", name)
+    }
+
+    find_namespace(name: string): Namespace | undefined {
+        return this.find<Namespace>("namespaces", name)
+    }
+
+    expect_function(name: string, span: Span): FunctionDefinition {
+        return this.expect<FunctionDefinition>("functions", name, span)
+    }
+
+    expect_variable(name: string, span: Span): Variable {
+        return this.expect<Variable>("variables", name, span)
+    }
+
+    expect_type(name: string, span: Span): Type {
+        return this.expect<Type>("types", name, span)
+    }
+
+    expect_type_definition(name: string, span: Span): TypeDefinition {
+        return this.expect<TypeDefinition>("type_definitions", name, span)
+    }
+
+    expect_trait(name: string, span: Span): TraitDefinition {
+        return this.expect<TraitDefinition>("traits", name, span)
+    }
+
+    expect_namespace(name: string, span: Span): Namespace {
+        return this.expect<Namespace>("namespaces", name, span)
+    }
+}
 
 type AST = Expression[]
-
-type Environment = {
-    functions: Record<string, FunctionDefinition>
-    variables: Record<string, Variable>
-    types: Record<string, Type>
-    type_definitions: Record<string, TypeDefinition>
-    traits: Record<string, Trait>
-    namespaces: Record<string, Namespace>
-    outer?: Environment
-}
 
 /**
  * Lex Klar source code into tokens.
  */
-function lexer(src: string) {
+function lexer({file, src}: {file: string; src: string}): Token[] {
     const tokens: Token[] = []
     let i = 0
     function span(relative_to?: Span): Span {
         if (relative_to) {
-            return new Span(relative_to.start, i, src)
+            return new Span(relative_to.start, i, file, src)
         }
-        return new Span(i, i, src)
+        return new Span(i, i, file, src)
     }
     function peek(ahead = 0) {
         return src[i + ahead]
@@ -380,19 +735,19 @@ function lexer(src: string) {
                 skip()
             }
         } else if (c === "=" && peek(1) === "=") {
-            tokens.push({kind: "simple", value: "==", span: span()})
+            tokens.push(new SimpleToken("==", span()))
             skip(2)
         } else if (c === "!" && peek(1) === "=") {
-            tokens.push({kind: "simple", value: "!=", span: span()})
+            tokens.push(new SimpleToken("!=", span()))
             skip(2)
         } else if (c === "<" && peek(1) === "=") {
-            tokens.push({kind: "simple", value: "<=", span: span()})
+            tokens.push(new SimpleToken("<=", span()))
             skip(2)
         } else if (c === ">" && peek(1) === "=") {
-            tokens.push({kind: "simple", value: ">=", span: span()})
+            tokens.push(new SimpleToken(">=", span()))
             skip(2)
         } else if (c === "=" && peek(1) === ">") {
-            tokens.push({kind: "simple", value: "=>", span: span()})
+            tokens.push(new SimpleToken("=>", span()))
             skip(2)
         } else if (
             [
@@ -414,7 +769,7 @@ function lexer(src: string) {
                 "<",
             ].includes(c)
         ) {
-            tokens.push({kind: "simple", value: c as any, span: span()})
+            tokens.push(new SimpleToken(c as any, span()))
             skip()
         } else if (c.match(/\s/)) {
             skip()
@@ -448,9 +803,9 @@ function lexer(src: string) {
                     "not",
                 ].includes(value)
             ) {
-                tokens.push({kind: "simple", value: value as any, span: span(start_span)})
+                tokens.push(new SimpleToken(value as any, span(start_span)))
             } else {
-                tokens.push({kind: "identifier", value, span: span(start_span)})
+                tokens.push(new Identifier(value, span(start_span)))
             }
         } else if (c.match(/[0-9]/)) {
             let value = ""
@@ -458,12 +813,7 @@ function lexer(src: string) {
             while (peek().match(/[0-9]/)) {
                 value += consume()
             }
-            tokens.push({
-                kind: "number",
-                value,
-                span: span(start_span),
-                result_type: builtin_types.i32,
-            })
+            tokens.push(new NumberToken(value, span(start_span)))
         } else {
             throw new Error(`Unexpected character '${c}' at ${span()}`)
         }
@@ -474,70 +824,20 @@ function lexer(src: string) {
 /**
  * Parse tokens into an AST.
  */
-function parse(tokens: Token[], env: Environment): AST {
-    const binary_op_precedence = {
-        or: 1,
-        and: 2,
-        "==": 3,
-        "!=": 3,
-        "<": 4,
-        "<=": 4,
-        ">": 4,
-        ">=": 4,
-        "+": 5,
-        "-": 5,
-        "*": 6,
-        "/": 6,
-        not: 7,
+function parse(tokens: TokenStream, env: Environment): AST {
+    function run_in_sub_env<T>(fn: () => T): T {
+        const new_env = new Environment()
+        new_env.outer = env
+        env = new_env
+        try {
+            return fn.call(env)
+        } finally {
+            env = env.outer!
+        }
     }
+
     const ast: AST = []
-    let i = 0
-    function peek(ahead = 0) {
-        return tokens[i + ahead] as Token & {kind?: any; value?: any}
-    }
-    function simple_peek(ahead = 0) {
-        const token = peek(ahead)
-        return token?.kind === "simple" ? token.value : undefined
-    }
-    function consume() {
-        const value = peek()
-        i++
-        return value as Token & {kind?: any; value?: any}
-    }
-    function expect(
-        token_kind:
-            | "identifier"
-            | "("
-            | ")"
-            | "{"
-            | "}"
-            | "<"
-            | ">"
-            | ":"
-            | ","
-            | "="
-            | "end"
-            | "return"
-            | "fn"
-            | "let"
-            | "mut"
-            | "if"
-            | "loop"
-            | "else",
-    ) {
-        let actual = peek() as any
-        let actual_kind = actual.kind
-        if (actual.kind === "simple") {
-            actual_kind = actual.value
-        }
-        if (actual_kind !== token_kind) {
-            throw new Error(
-                `Expected token of kind ${token_kind} but got ${to_json(actual)} at ${actual.span}`,
-            )
-        }
-        return consume() as Token & {kind?: any; value?: any}
-    }
-    while (i < tokens.length) {
+    while (!tokens.at_end()) {
         ast.push(parse_expression())
     }
     function parse_expression(): Expression {
@@ -546,92 +846,93 @@ function parse(tokens: Token[], env: Environment): AST {
     function parse_binary_expression(min_precedence: number) {
         let lhs = parse_primary()
         while (true) {
-            const op = simple_peek()
-            if (!binary_op_precedence[op]) {
+            const op = tokens.simple_peek()
+            const op_precedence = BinaryExpression.precedence[op as BinaryOperator]
+            if (!op_precedence) {
                 if (op === "=") {
                     return parse_assignment(lhs)
                 }
                 return lhs
             }
-            const op_precedence = binary_op_precedence[op]
             if (op_precedence >= min_precedence) {
-                consume() // consume the operator
+                tokens.consume()
                 let rhs = parse_binary_expression(op_precedence + 1)
-                lhs = {
-                    kind: "binary",
-                    operator: op,
-                    left: lhs,
-                    right: rhs,
-                    span: Span.combine(lhs.span, rhs.span),
-                }
+                lhs = new BinaryExpression(
+                    {operator: op as BinaryOperator, lhs, rhs},
+                    Span.combine(lhs, rhs),
+                )
             } else {
                 return lhs
             }
         }
     }
     function parse_primary(): Expression {
-        const token = peek()
-        const simple_token = token.kind === "simple" ? token.value : undefined
-        let expression: Expression
-        if (simple_token === "fn") {
-            expression = parse_function_definition()
-        } else if (simple_token === "let" || simple_token === "mut") {
-            expression = parse_variable_declaration()
-        } else if (simple_token === "true" || simple_token === "false") {
-            expression = {
-                kind: "bool",
-                value: simple_token === "true",
-                span: consume().span,
-                result_type: builtin_types.bool,
+        const token = tokens.peek()
+        if (!token) {
+            throw new Error(`Unexpected EOF`)
+        }
+        let expression: Expression | undefined
+        if (token instanceof SimpleToken) {
+            const simple_token = token.value
+            if (simple_token === "fn") {
+                expression = parse_function_definition()
+            } else if (simple_token === "let" || simple_token === "mut") {
+                expression = parse_variable_declaration()
+            } else if (simple_token === "true" || simple_token === "false") {
+                const span = tokens.consume().span
+                expression = new Bool({value: simple_token === "true"}, span)
+            } else if (simple_token === "not") {
+                const span = tokens.consume().span
+                const value = parse_expression()
+                expression = new Not({value}, Span.combine(span, value))
+            } else if (simple_token === "if") {
+                expression = parse_if()
+            } else if (simple_token === "loop") {
+                expression = parse_loop()
+            } else if (simple_token === "(") {
+                tokens.consume()
+                expression = parse_expression()
+                tokens.expect(")")
+            } else if (simple_token === "break") {
+                const span = tokens.consume().span
+                expression = new Break(span)
+            } else if (simple_token === "continue") {
+                const span = tokens.consume().span
+                expression = new Continue(span)
+            } else if (simple_token === "extern") {
+                expression = parse_extern_block()
+            } else if (simple_token === "struct") {
+                expression = parse_type_definition()
+            } else if (simple_token === "trait") {
+                const trait = parse_trait_definition()
+                expression = new UnitTypeExpression(trait.span)
+            } else if (simple_token === "impl") {
+                const impl = parse_impl()
+                expression = new UnitTypeExpression(impl.span)
+            } else if (simple_token === "return") {
+                expression = parse_return_expression()
             }
-        } else if (simple_token === "not") {
-            const span = consume().span
-            const value = parse_expression()
-            expression = {kind: "not", value, span: Span.combine(span, value.span)}
-        } else if (simple_token === "if") {
-            expression = parse_if()
-        } else if (simple_token === "loop") {
-            expression = parse_loop()
-        } else if (simple_token === "(") {
-            consume()
-            expression = parse_expression()
-            expect(")")
-        } else if (simple_token === "break") {
-            expression = {kind: "break", span: consume().span}
-        } else if (simple_token === "continue") {
-            expression = {kind: "continue", span: consume().span}
-        } else if (simple_token === "extern") {
-            expression = parse_extern_block()
-        } else if (simple_token === "struct") {
-            expression = parse_type_definition()
-        } else if (simple_token === "trait") {
-            const trait = parse_trait_definition()
-            expression = {kind: "unit_type", span: trait.span}
-        } else if (simple_token === "return") {
-            expression = parse_return_expression()
-        } else if (token.kind === "number") {
-            expression = consume() as Number_
-        } else if (token.kind === "identifier") {
-            const token = expect("identifier")
+        } else if (token instanceof NumberToken) {
+            tokens.consume()
+            expression = new Number_({value: token.value}, token.span)
+        } else if (token instanceof Identifier) {
+            const token = tokens.expect_identifier()
             expression =
-                parse_function_call(token) ||
-                parse_variable(token) ||
-                parse_struct_constructor(token) ||
-                parse_namespace_access(token)
+                try_parse_function_call(token) ||
+                try_parse_variable(token) ||
+                try_parse_struct_initialization(token) ||
+                try_parse_namespace_access(token)
             if (!expression) {
                 throw new Error(`Unknown identifier ${token.value} at ${token.span}`)
             }
-        } else if (simple_token === "impl") {
-            const impl = parse_impl()
-            expression = {kind: "unit_type", span: impl.span}
         }
         if (!expression) {
-            throw new Error(`Unexpected token ${to_json(token)} at ${token.span} ${simple_token}`)
+            throw new Error(`Unexpected token ${to_json(token)} at ${token.span}`)
         }
         while (true) {
-            if (simple_peek() === "(") {
-                expression = parse_function_call(expression) || expression
-            } else if (simple_peek() === ".") {
+            if (tokens.simple_peek() === "(") {
+                expression = try_parse_function_call(expression) || expression
+            } else if (tokens.simple_peek() === ".") {
                 expression = parse_field_access(expression)
             } else {
                 break
@@ -641,83 +942,76 @@ function parse(tokens: Token[], env: Environment): AST {
     }
     function parse_assignment(target: Expression): Assignment {
         assert(
-            target.kind === "variable" || target.kind === "field_access",
+            target instanceof Variable || target instanceof FieldAccess,
             `Invalid target for field access: ${to_json(target)} at ${target.span}`,
         )
-        const span = consume().span
+        const span = tokens.consume().span
         const value = parse_expression()
-        return {
-            kind: "assignment",
-            target: target as Variable | FieldAccess,
-            value,
-            span: Span.combine(span, value.span),
-        }
+        return new Assignment({target, value}, Span.combine(span, value))
     }
-    function parse_field_access(expression: Expression): Expression {
-        while (simple_peek() === ".") {
-            const span = consume().span
-            const field = expect("identifier")
-            expression = {
-                kind: "field_access",
-                object: expression,
-                field: field.value,
-                span: Span.combine(span, field.span),
-            }
+    function parse_field_access(target: Expression): Expression {
+        while (tokens.simple_peek() === ".") {
+            const span = tokens.consume().span
+            const field = tokens.expect_identifier()
+            target = new FieldAccess(
+                {object: target, field: field.value},
+                Span.combine(span, field),
+            )
         }
-        return expression
+        return target
     }
     function parse_type(
         treat_unknown_types_as_type_parameters?: "treat_unknown_types_as_type_parameters",
     ): Type {
-        const token = expect("identifier")
+        const token = tokens.expect_identifier()
         let end_span = token.span
-        let base_type: Type = find_in_env("types", token.value)
-        if (!base_type) {
-            if (treat_unknown_types_as_type_parameters) {
-                base_type = {
-                    kind: "type",
-                    name: token.value,
-                    is_type_parameter: true,
-                    type_parameters: [],
-                    span: token.span,
-                }
-            } else {
-                throw new Error(`Unknown type ${token.value} at ${token.span}`)
-            }
+        let base_type = env.find_type(token.value)
+        if (treat_unknown_types_as_type_parameters) {
+            base_type =
+                env.find_type(token.value) ??
+                new Type(
+                    {name: token.value, is_type_parameter: true, type_parameters: []},
+                    token.span,
+                )
+        } else {
+            base_type = env.expect_type(token.value, token.span)
         }
+        assert(!!base_type, `Unknown type ${token.value} at ${token.span}`)
         const type_parameters: Type[] = []
-        if (simple_peek() === "<") {
-            consume()
-            while (i < tokens.length && simple_peek() !== ">") {
+        if (tokens.simple_peek() === "<") {
+            tokens.consume()
+            while (!tokens.at_end() && tokens.simple_peek() !== ">") {
                 if (type_parameters.length > 0) {
-                    expect(",")
+                    tokens.expect(",")
                 }
                 const type_argument = parse_type()
                 type_parameters.push(type_argument)
             }
-            end_span = expect(">").span
+            end_span = tokens.expect(">").span
         }
-        return {
-            ...base_type,
-            name: token.value,
-            type_parameters,
-            span: Span.combine(token.span, end_span),
-        }
+        return new Type(
+            {
+                ...base_type,
+                type_parameters,
+            },
+            Span.combine(token.span, end_span),
+        )
     }
     function parse_extern_block(): UnitTypeExpression {
-        const span = consume().span
-        expect(":")
-        while (i < tokens.length && simple_peek() !== "end") {
-            const type = simple_peek()
+        const span = tokens.consume().span
+        tokens.expect(":")
+        while (!tokens.at_end() && tokens.simple_peek() !== "end") {
+            const type = tokens.simple_peek()
             if (type === "fn") {
                 const signature = parse_function_signature()
-                env.functions[signature.name] = {
-                    kind: "fn",
-                    signature,
-                    block: {} as any,
-                    extern: true,
-                    span: signature.span,
-                }
+                env.functions[signature.name] = new FunctionDefinition(
+                    {
+                        signature,
+                        block: new Block({body: []}, signature.span),
+                        extern: true,
+                    },
+                    signature.span,
+                )
             } else if (type === "struct") {
                 const struct = parse_type_definition()
                 struct.extern = true
@@ -728,18 +1022,18 @@ function parse(tokens: Token[], env: Environment): AST {
                 throw new Error(`Unknown extern type ${type} at ${span}`)
             }
         }
-        const end_span = expect("end").span
-        return {kind: "unit_type", span: Span.combine(span, end_span)}
+        const end_span = tokens.expect("end").span
+        return new UnitTypeExpression(Span.combine(span, end_span))
     }
-    function parse_impl(signatures_only?: "signatures_only"): Impl {
-        const span = consume().span
-        const name_or_trait = expect("identifier").value
+    function parse_impl(signatures_only?: "signatures_only"): ImplDefinition {
+        const span = tokens.consume().span
+        const name_or_trait = tokens.expect_identifier().value
         let type_parameters: Type[] = []
-        if (simple_peek() === "<") {
-            consume()
-            while (i < tokens.length && simple_peek() !== ">") {
+        if (tokens.simple_peek() === "<") {
+            tokens.consume()
+            while (!tokens.at_end() && tokens.simple_peek() !== ">") {
                 if (type_parameters.length > 0) {
-                    expect(",")
+                    tokens.expect(",")
                 }
                 const type_parameter = parse_type("treat_unknown_types_as_type_parameters")
                 if (!type_parameter.is_type_parameter) {
@@ -749,24 +1043,21 @@ function parse(tokens: Token[], env: Environment): AST {
                 }
                 type_parameters.push(type_parameter)
             }
-            expect(">")
+            tokens.expect(">")
         }
-        let trait: Trait | undefined
+        let trait: TraitDefinition | undefined
         let target_name = name_or_trait
-        if (simple_peek() === "for") {
-            consume()
-            target_name = expect("identifier").value
-            trait = find_in_env("traits", name_or_trait)
-            if (!trait) {
-                throw new Error(`Unknown trait ${name_or_trait} at ${span}`)
-            }
-            trait = {...trait, type_parameters: []}
+        if (tokens.simple_peek() === "for") {
+            tokens.consume()
+            target_name = tokens.expect_identifier().value
+            trait = env.expect_trait(name_or_trait, span)
+            trait = new TraitDefinition({...trait, type_parameters: []}, trait.span)
             type_parameters = []
-            if (simple_peek() === "<") {
-                consume()
-                while (i < tokens.length && simple_peek() !== ">") {
+            if (tokens.simple_peek() === "<") {
+                tokens.consume()
+                while (!tokens.at_end() && tokens.simple_peek() !== ">") {
                     if (type_parameters.length > 0) {
-                        expect(",")
+                        tokens.expect(",")
                     }
                     const type_parameter = parse_type("treat_unknown_types_as_type_parameters")
                     if (!type_parameter.is_type_parameter) {
@@ -776,14 +1067,11 @@ function parse(tokens: Token[], env: Environment): AST {
                     }
                     type_parameters.push(type_parameter)
                 }
-                expect(">")
+                tokens.expect(">")
             }
         }
-        const target: TypeDefinition = find_in_env("type_definitions", target_name)
-        if (!target) {
-            throw new Error(`Unknown type ${target_name} at ${span}`)
-        }
-        const target_type: Type = find_in_env("types", target.name)
+        const target = env.expect_type_definition(target_name, span)
+        const target_type = env.expect_type(target_name, span)
         const types: Record<string, Type> = type_parameters.reduce(
             (acc, type) => {
                 acc[type.name] = type
@@ -791,58 +1079,53 @@ function parse(tokens: Token[], env: Environment): AST {
             },
             {} as Record<string, Type>,
         )
-        expect(":")
-        env = {
-            functions: {},
-            types,
-            variables: {},
-            type_definitions: {},
-            traits: {},
-            namespaces: {},
-            outer: env,
-        }
+        tokens.expect(":")
         const member_functions: FunctionDefinition[] = []
         const static_functions: FunctionDefinition[] = []
-        while (i < tokens.length && simple_peek() !== "end") {
-            let fn: FunctionDefinition
-            if (signatures_only) {
-                const signature = parse_function_signature(target_type)
-                fn = {kind: "fn", signature, block: {} as any, span: signature.span}
-            } else {
-                fn = parse_function_definition(target_type)
-            }
-            if (fn.signature.parameters[0]?.name !== "self") {
-                static_functions.push(fn)
-                const namespace: Namespace = find_in_env("namespaces", target.name)
-                if (!namespace) {
-                    throw new Error(`Unknown namespace ${target.name} at ${target.span}`)
+        run_in_sub_env(() => {
+            env.types = types
+            while (!tokens.at_end() && tokens.simple_peek() !== "end") {
+                let fn: FunctionDefinition
+                if (signatures_only) {
+                    const signature = parse_function_signature(target_type)
+                    fn = new FunctionDefinition(
+                        {signature, block: new Block({body: []}, signature.span)},
+                        signature.span,
+                    )
+                } else {
+                    fn = parse_function_definition(target_type)
                 }
-                namespace.functions[fn.signature.name] = fn
-            } else {
-                member_functions.push(fn)
+                if (fn.signature.parameters[0]?.name !== "self") {
+                    static_functions.push(fn)
+                    const namespace = env.expect_namespace(target.name, target.span)
+                    namespace.functions[fn.signature.name] = fn
+                } else {
+                    member_functions.push(fn)
+                }
             }
-        }
-        const end_span = expect("end").span
-        env = env.outer
-        const impl: Impl = {
-            kind: "impl",
-            member_functions,
-            static_functions,
-            trait,
-            span: Span.combine(span, end_span),
-        }
+        })
+        const end_span = tokens.expect("end").span
+        const impl = new ImplDefinition(
+            {
+                trait,
+                type: target,
+                member_functions,
+                static_functions,
+            },
+            Span.combine(span, end_span),
+        )
         target.impls.push(impl)
         return impl
     }
-    function parse_trait_definition(): Trait {
-        const span = consume().span
-        const name = expect("identifier").value
+    function parse_trait_definition(): TraitDefinition {
+        const span = tokens.consume().span
+        const name = tokens.expect_identifier().value
         const type_parameters: Type[] = []
-        if (simple_peek() === "<") {
-            consume()
-            while (i < tokens.length && simple_peek() !== ">") {
+        if (tokens.simple_peek() === "<") {
+            tokens.consume()
+            while (!tokens.at_end() && tokens.simple_peek() !== ">") {
                 if (type_parameters.length > 0) {
-                    expect(",")
+                    tokens.expect(",")
                 }
                 const type_parameter = parse_type("treat_unknown_types_as_type_parameters")
                 if (!type_parameter.is_type_parameter) {
@@ -852,137 +1135,97 @@ function parse(tokens: Token[], env: Environment): AST {
                 }
                 type_parameters.push(type_parameter)
             }
-            expect(">")
+            tokens.expect(">")
         }
-        expect(":")
-        env = {
-            functions: {},
-            types: type_parameters.reduce(
-                (acc, type) => {
-                    acc[type.name] = type
-                    return acc
-                },
-                {} as Record<string, Type>,
-            ),
-            variables: {},
-            type_definitions: {},
-            traits: {},
-            namespaces: {},
-            outer: env,
-        }
-        const trait: Trait = {
-            kind: "trait",
-            name,
-            type_parameters,
-            member_function_signatures: [],
-            static_function_signatures: [],
-            member_function_default_impls: {},
-            static_function_default_impls: {},
+        tokens.expect(":")
+        const trait = new TraitDefinition(
+            {
+                name,
+                member_function_signatures: [],
+                static_function_signatures: [],
+                member_function_default_impls: {},
+                static_function_default_impls: {},
+                type_parameters,
+            },
             span,
-        }
-        while (i < tokens.length && simple_peek() !== "end") {
-            // We call this with a dummy type to enable the handling of `self` parameters.
-            const signature = parse_function_signature(builtin_types.unit_type)
-            if (![":", "=>"].includes(simple_peek())) {
-                // Ok, this is a signature only.
-                if (signature.parameters[0].name !== "self") {
-                    trait.static_function_signatures.push(signature)
+        )
+        run_in_sub_env(() => {
+            env.set_types(type_parameters)
+            while (!tokens.at_end() && tokens.simple_peek() !== "end") {
+                // We call this with a dummy type to enable the handling of `self` parameters.
+                const signature = parse_function_signature(builtin_types.unit_type)
+                if (![":", "=>"].includes(tokens.simple_peek() ?? "")) {
+                    // Ok, this is a signature only.
+                    if (signature.parameters[0].name !== "self") {
+                        trait.static_function_signatures.push(signature)
+                    } else {
+                        trait.member_function_signatures.push(signature)
+                    }
                 } else {
-                    trait.member_function_signatures.push(signature)
-                }
-            } else {
-                const fn = parse_function_body(signature)
-                if (fn.signature.parameters[0].name !== "self") {
-                    trait.static_function_default_impls[fn.signature.name] = fn
-                } else {
-                    trait.member_function_default_impls[fn.signature.name] = fn
+                    const fn = parse_function_body(signature)
+                    if (fn.signature.parameters[0].name !== "self") {
+                        trait.static_function_default_impls[fn.signature.name] = fn
+                    } else {
+                        trait.member_function_default_impls[fn.signature.name] = fn
+                    }
                 }
             }
-        }
-        const end_span = expect("end").span
+        })
+        const end_span = tokens.expect("end").span
         trait.span = Span.combine(span, end_span)
-        env = env.outer
         env.traits[name] = trait
         return trait
     }
     function parse_type_definition(): TypeDefinition {
-        const span = consume().span
-        const name = expect("identifier").value
+        let span = tokens.consume().span
+        const name = tokens.expect_identifier().value
         const members: Record<string, Type> = {}
         const type_parameters: Type[] = []
-        if (simple_peek() === "<") {
-            consume()
-            while (i < tokens.length && simple_peek() !== ">") {
+        if (tokens.simple_peek() === "<") {
+            tokens.consume()
+            while (!tokens.at_end() && tokens.simple_peek() !== ">") {
                 if (type_parameters.length > 0) {
-                    expect(",")
+                    tokens.expect(",")
                 }
                 const type_parameter = parse_type("treat_unknown_types_as_type_parameters")
                 if (!type_parameter.is_type_parameter) {
                     throw new Error(
-                        `Expected type parameter at ${type_parameter.span} but got the concrete type ${type_parameter.name}`,
+                        `Expected type parameter at ${
+                            type_parameter.span
+                        } but got the concrete type ${type_parameter.name} at ${tokens.peek()
+                            ?.span}`,
                     )
                 }
                 type_parameters.push(type_parameter)
             }
-            expect(">")
+            tokens.expect(">")
         }
-        expect(":")
-        env = {
-            functions: {},
-            types: type_parameters.reduce(
-                (acc, type) => {
-                    acc[type.name] = type
-                    return acc
-                },
-                {} as Record<string, Type>,
-            ),
-            variables: {},
-            type_definitions: {},
-            traits: {},
-            namespaces: {},
-            outer: env,
-        }
-        while (i < tokens.length && simple_peek() !== "end") {
-            const name = expect("identifier").value
-            const type = parse_type()
-            members[name] = type
-        }
-        env = env.outer
-        expect("end")
-        const type_def: TypeDefinition = {
-            kind: "type_definition",
-            name,
-            impls: [],
-            type_parameters: type_parameters,
-            span,
-            members,
-        }
-        env.types[name] = {
-            kind: "type",
-            name,
-            span,
-            members,
-            is_type_parameter: false,
-            type_parameters,
-        }
+        span = Span.combine(span, tokens.expect(":").span)
+        run_in_sub_env(() => {
+            env.set_types(type_parameters)
+            while (!tokens.at_end() && tokens.simple_peek() !== "end") {
+                const name = tokens.expect_identifier().value
+                const type = parse_type()
+                members[name] = type
+            }
+        })
+        tokens.expect("end")
+        const type_def = new TypeDefinition({name, members, type_parameters, impls: []}, span)
+        env.types[name] = new Type({name, members, is_type_parameter: false, type_parameters}, span)
         env.type_definitions[name] = type_def
-        env.namespaces[name] = {type: "namespace", name, functions: {}}
+        env.namespaces[name] = new Namespace({name, functions: {}}, span)
         return type_def
     }
     function parse_block(if_else_mode?: "if_else_mode") {
-        const block_type = consume()
-        if (block_type.kind !== "simple" || !["=>", ":"].includes(block_type.value)) {
+        const block_type = tokens.consume()
+        if (!(block_type instanceof SimpleToken) || !["=>", ":"].includes(block_type.value)) {
             throw new Error(
                 `Expected block start (':' or '=>') but got ${to_json(block_type)} at ${
                     block_type.span
                 }`,
             )
         }
-        const block: Block = {
-            kind: "block",
-            body: [],
-            span: block_type.span,
-        }
+        const block: Block = new Block({body: []}, block_type.span)
         if (block_type.value === "=>") {
             block.body.push(parse_expression())
         } else {
@@ -990,169 +1233,129 @@ function parse(tokens: Token[], env: Environment): AST {
             if (if_else_mode) {
                 end_tokens.push("else")
             }
-            while (i < tokens.length && !end_tokens.includes(simple_peek())) {
+            while (!tokens.at_end() && !end_tokens.includes(tokens.simple_peek() ?? "")) {
                 block.body.push(parse_expression())
             }
             if (!if_else_mode) {
-                expect("end")
+                tokens.expect("end")
             }
         }
         return block
     }
     function parse_loop(): Loop {
-        const span = expect("loop").span
+        const span = tokens.expect("loop").span
         const block = parse_block()
-        return {kind: "loop", block, span: Span.combine(span, block.span)}
+        return new Loop({block}, Span.combine(span, block.span))
     }
     function parse_if() {
-        const span = expect("if").span
+        const span = tokens.expect("if").span
         const condition = parse_expression()
-        const if_: If = {
-            kind: "if",
-            condition,
-            then_block: parse_block("if_else_mode"),
-            span: Span.combine(span, condition.span),
-        }
-        if (simple_peek() === "else") {
-            consume()
+        const if_ = new If(
+            {condition, then_block: parse_block("if_else_mode")},
+            Span.combine(span, condition.span),
+        )
+        if (tokens.simple_peek() === "else") {
+            tokens.consume()
             if_.else_block = parse_block()
-        } else if (simple_peek() === "end") {
-            consume()
+        } else if (tokens.simple_peek() === "end") {
+            tokens.consume()
         }
         return if_
     }
     function parse_variable_declaration() {
-        const mutable = simple_peek() === "mut"
-        const span = consume().span
-        const name = expect("identifier").value
-        const token = peek()
+        const mutable = tokens.simple_peek() === "mut"
+        const span = tokens.consume().span
+        const name = tokens.expect_identifier().value
+        const token = tokens.peek()
         let type = builtin_types.unit_type
-        if (token.kind === "identifier") {
-            type = find_in_env("types", token.value)
-            if (!type) {
-                throw new Error(`Unknown type ${token.value} at ${token.span}`)
-            }
-            consume()
+        if (token instanceof Identifier) {
+            type = env.expect_type(token.value, token.span)
+            tokens.consume()
         }
-        expect("=")
+        tokens.expect("=")
         const value = parse_expression()
-        const let_: VariableDeclaration = {
-            kind: "var",
-            name,
-            value,
-            type,
-            span: Span.combine(span, value.span),
-            mutable,
-        }
-        env.variables[name] = {
-            kind: "variable",
-            name,
-            type,
-            mutable,
-            span: Span.combine(span, value.span),
-        }
+        const let_ = new VariableDeclaration(
+            {name, value, type, mutable},
+            Span.combine(span, value.span),
+        )
+        env.variables[name] = new Variable({name, type, mutable}, Span.combine(span, value.span))
         return let_
     }
     function parse_function_signature(impl_type?: Type): FunctionSignature {
-        const span = expect("fn").span
-        const name = expect("identifier").value
-        expect("(")
-        const parameters = []
-        while (i < tokens.length && simple_peek() !== ")") {
+        const span = tokens.expect("fn").span
+        const name = tokens.expect_identifier().value
+        tokens.expect("(")
+        const parameters: Parameter[] = []
+        while (!tokens.at_end() && tokens.simple_peek() !== ")") {
             if (parameters.length > 0) {
-                expect(",")
+                tokens.expect(",")
             }
             let mutable = false
-            if (simple_peek() === "mut") {
+            if (tokens.simple_peek() === "mut") {
                 mutable = true
-                consume()
+                tokens.consume()
             }
-            const name_token = expect("identifier")
+            const name_token = tokens.expect_identifier()
             if (impl_type) {
                 if (name_token.value === "self") {
-                    parameters.push({
-                        kind: "parameter",
-                        name: name_token.value,
-                        type: impl_type,
-                        span: name_token.span,
-                        mutable,
-                    })
+                    parameters.push(new Parameter({name: "self", type: impl_type, mutable}, span))
                     continue
                 }
             }
             const type = parse_type()
-            parameters.push({
-                kind: "parameter",
-                name: name_token.value,
-                type,
-                span: Span.combine(name_token.span, type.span),
-                mutable,
-            })
+            parameters.push(new Parameter({name: name_token.value, type, mutable}, name_token.span))
         }
-        expect(")")
+        tokens.expect(")")
         let return_type = builtin_types.unit_type
-        if (peek().kind === "identifier") {
+        if (tokens.peek() instanceof Identifier) {
             return_type = parse_type()
         }
-        return {kind: "fn_signature", name, parameters, return_type, span}
+        return new FunctionSignature({name, parameters, return_type}, span)
     }
     function parse_function_body(
         signature: FunctionSignature,
         impl_type?: Type,
     ): FunctionDefinition {
-        const fn_def: FunctionDefinition = {
-            kind: "fn",
-            signature,
-            block: {} as any,
-            span: signature.span,
-        }
-        env = {
-            functions: {},
-            types: {},
-            variables: {},
-            type_definitions: {},
-            traits: {},
-            namespaces: {},
-            outer: env,
-        }
-        if (!impl_type) {
-            env.outer.functions[signature.name] = fn_def
-            env.functions[signature.name] = fn_def
-        }
-        for (const parameter of fn_def.signature.parameters) {
-            env.variables[parameter.name] = {
-                ...parameter,
-                kind: "variable",
+        const fn_def = new FunctionDefinition(
+            {signature, block: new Block({body: []}, signature.span)},
+            signature.span,
+        )
+        run_in_sub_env(() => {
+            if (!impl_type) {
+                env.outer!.functions[signature.name] = fn_def
+                env.functions[signature.name] = fn_def
             }
-        }
-        fn_def.block = parse_block()
-        fn_def.span = Span.combine(signature.span, fn_def.block.span)
-        env = env.outer
+            for (const parameter of fn_def.signature.parameters) {
+                env.variables[parameter.name] = new Variable({...parameter}, parameter.span)
+            }
+            fn_def.block = parse_block()
+            fn_def.span = Span.combine(signature.span, fn_def.block.span)
+        })
         return fn_def
     }
     function parse_function_definition(impl_type?: Type): FunctionDefinition {
         const signature = parse_function_signature(impl_type)
         return parse_function_body(signature, impl_type)
     }
-    function parse_return_expression(): ReturnExpression {
-        const span = expect("return").span
+    function parse_return_expression(): Return {
+        const span = tokens.expect("return").span
         const value = parse_expression()
-        return {kind: "return", value, span: Span.combine(span, value.span)}
+        return new Return({value}, Span.combine(span, value.span))
     }
-    function parse_namespace_access(token: Identifier): Expression | undefined {
-        const namespace: Namespace = find_in_env("namespaces", token.value)
+    function try_parse_namespace_access(token: Identifier): NamespaceAccess | undefined {
+        const namespace = env.find_namespace(token.value)
         if (!namespace) {
             return
         }
-        return {kind: "namespace_access", namespace, span: token.span}
+        return new NamespaceAccess({namespace}, token.span)
     }
-    function parse_struct_constructor(token: Identifier): StructConstructCall | undefined {
+    function try_parse_struct_initialization(token: Identifier): StructInstantiation | undefined {
         let type_arguments: Type[] = []
-        if (simple_peek() === "<") {
-            consume()
-            while (i < tokens.length && simple_peek() !== ">") {
+        if (tokens.simple_peek() === "<") {
+            tokens.consume()
+            while (!tokens.at_end() && tokens.simple_peek() !== ">") {
                 if (type_arguments.length > 0) {
-                    expect(",")
+                    tokens.expect(",")
                 }
                 const type: Type = parse_type()
                 if (!type) {
@@ -1160,23 +1363,20 @@ function parse(tokens: Token[], env: Environment): AST {
                 }
                 type_arguments.push(type)
             }
-            expect(">")
+            tokens.expect(">")
         }
-        if (simple_peek() !== "{") {
+        if (tokens.simple_peek() !== "{") {
             return
         }
-        consume()
-        let target: TypeDefinition = find_in_env("type_definitions", token.value)
-        if (!target) {
-            throw new Error(`Unknown type ${token.value} at ${token.span}`)
-        }
-        const args = {}
-        while (i < tokens.length && simple_peek() !== "}") {
+        tokens.consume()
+        let target = env.expect_type_definition(token.value, token.span)
+        const args: Record<string, Expression> = {}
+        while (!tokens.at_end() && tokens.simple_peek() !== "}") {
             if (Object.keys(args).length > 0) {
-                expect(",")
+                tokens.expect(",")
             }
-            const name = expect("identifier").value
-            expect(":")
+            const name = tokens.expect_identifier().value
+            tokens.expect(":")
             const value = parse_expression()
             args[name] = value
         }
@@ -1187,7 +1387,7 @@ function parse(tokens: Token[], env: Environment): AST {
         }
         if (type_arguments.length > 0) {
             // Create a new type with the argument types filled in.
-            target = {...target}
+            target = new TypeDefinition({...target}, target.span)
             for (let i = 0; i < type_arguments.length; i++) {
                 const type = type_arguments[i]
                 if (type.is_type_parameter) {
@@ -1207,28 +1407,26 @@ function parse(tokens: Token[], env: Environment): AST {
                 }
             }
         }
-        const span = Span.combine(expect("}").span, token.span)
-        return {
-            kind: "struct_construct",
-            target,
-            values: args,
-            type_arguments: type_arguments,
-            span,
-        }
+        const span = Span.combine(tokens.expect("}").span, token.span)
+        return new StructInstantiation({target, values: args, type_arguments}, span)
     }
-    function parse_function_call(target_candidate: Expression | Token): FunctionCall | undefined {
-        if (simple_peek() !== "(") {
+    function try_parse_function_call(
+        target_candidate: Expression | Token,
+    ): FunctionCall | undefined {
+        if (tokens.simple_peek() !== "(") {
             return
         }
-        consume()
+        tokens.consume()
         let target: FunctionDefinition | FieldAccess | NamespaceAccess | undefined
-        if (target_candidate.kind === "identifier") {
+        if (target_candidate instanceof Identifier) {
             target_candidate
-            target = find_in_env("functions", target_candidate.value)
+            target = env.find_function(target_candidate.value)
         } else {
             if (
-                target_candidate.kind !== "field_access" &&
-                target_candidate.kind !== "namespace_access"
+                !(
+                    target_candidate instanceof FieldAccess ||
+                    target_candidate instanceof NamespaceAccess
+                )
             ) {
                 throw new Error(
                     `Invalid target for function call: ${to_json(target_candidate)} at ${
@@ -1242,39 +1440,23 @@ function parse(tokens: Token[], env: Environment): AST {
             return
         }
         const args = []
-        while (i < tokens.length && simple_peek() !== ")") {
+        while (!tokens.at_end() && tokens.simple_peek() !== ")") {
             if (args.length > 0) {
-                expect(",")
+                tokens.expect(",")
             }
             args.push(parse_expression())
         }
-        const span = Span.combine(expect(")").span, target_candidate.span)
-        return {kind: "call", target, arguments: args, span}
+        const span = Span.combine(tokens.expect(")").span, target_candidate.span)
+        return new FunctionCall({target, arguments: args}, span)
     }
-    function parse_variable(token: Identifier): Variable | undefined {
-        const name = token.value
-        const variable: Variable | undefined = find_in_env("variables", name)
-        if (variable) {
-            return {...variable, span: token.span}
-        }
-    }
-    function find_in_env<T>(
-        kind: "functions" | "variables" | "types" | "type_definitions" | "namespaces" | "traits",
-        name: string,
-    ): T | undefined {
-        let value
-        let search_env = env
-        while (!value && search_env) {
-            value = search_env[kind][name]
-            search_env = search_env.outer
-        }
-        return value
+    function try_parse_variable(token: Identifier): Variable | undefined {
+        return env.find_variable(token.value)
     }
     return ast
 }
 
 function check(ast: AST) {
-    const visited = []
+    const visited: any[] = []
     for (const expression of ast) {
         apply_checks(expression)
     }
@@ -1302,9 +1484,9 @@ function check(ast: AST) {
         }
     }
     function check_mutability(expression: Expression) {
-        if (expression.kind === "assignment") {
+        if (expression instanceof Assignment) {
             const target = expression.target
-            if (target.kind === "variable") {
+            if (target instanceof Variable) {
                 if (!target.mutable) {
                     throw new Error(
                         `Cannot assign to immutable variable ${target.name} at ${target.span}`,
@@ -1315,7 +1497,7 @@ function check(ast: AST) {
         }
     }
     function check_all_trait_functions_are_implemented(expression: Expression) {
-        if (expression.kind !== "type_definition") {
+        if (!(expression instanceof TypeDefinition)) {
             return
         }
         for (const impl of expression.impls) {
@@ -1347,65 +1529,65 @@ function transpile(ast: AST) {
         res += transpile_expression(expression)
         res += "\n"
     }
-    function transpile_expression(expression: Expression) {
-        if (expression.kind === "fn") {
-            const parameters = expression.signature.parameters.map((x) => x.name).join(",")
-            const block = transpile_expression(expression.block)
-            return `function ${expression.signature.name}(${parameters})${block}`
-        } else if (expression.kind === "return") {
-            return `return ${transpile_expression(expression.value)};`
-        } else if (expression.kind === "number" || expression.kind === "bool") {
-            return expression.value
-        } else if (expression.kind === "variable") {
-            return expression.name
-        } else if (expression.kind === "call") {
-            const args = expression.arguments.map(transpile_expression)
-            if (expression.target.kind === "fn") {
-                if (expression.target.transpile) {
-                    return expression.target.transpile(expression, args)
+    function transpile_expression(e: Expression): string {
+        if (e instanceof FunctionDefinition) {
+            const parameters = e.signature.parameters.map((x) => x.name).join(",")
+            const block = transpile_expression(e.block)
+            return `function ${e.signature.name}(${parameters})${block}`
+        } else if (e instanceof Return) {
+            return `return ${transpile_expression(e.value)};`
+        } else if (e instanceof Bool || e instanceof Number_) {
+            return `${e.value}`
+        } else if (e instanceof Variable) {
+            return e.name
+        } else if (e instanceof FunctionCall) {
+            const args = e.arguments.map(transpile_expression)
+            if (e.target instanceof FunctionDefinition) {
+                if (e.target.transpile) {
+                    return e.target.transpile(e, args)
                 }
-                return `${expression.target.signature.name}(${args.join(",")})\n`
+                return `${e.target.signature.name}(${args.join(",")})\n`
             } else {
-                const target = transpile_expression(expression.target)
+                const target = transpile_expression(e.target)
                 return `${target}(${args.join(",")})\n`
             }
-        } else if (expression.kind === "struct_construct") {
-            const create_instance = `let _ = new ${expression.target.name}()`
-            const assign_members = Object.entries(expression.values).map(
+        } else if (e instanceof StructInstantiation) {
+            const create_instance = `let _ = new ${e.target.name}()`
+            const assign_members = Object.entries(e.values).map(
                 ([name, value]) => `_.${name} = ${transpile_expression(value)};`,
             )
             return `(() => {${create_instance};${assign_members.join("\n")} return _})()`
-        } else if (expression.kind === "var") {
-            const kind = expression.mutable ? "let" : "const"
-            const value = transpile_expression(expression.value)
-            return `${kind} ${expression.name} = ${value};`
-        } else if (expression.kind === "assignment") {
-            const target = transpile_expression(expression.target)
-            const value = transpile_expression(expression.value)
+        } else if (e instanceof VariableDeclaration) {
+            const kind = e.mutable ? "let" : "const"
+            const value = transpile_expression(e.value)
+            return `${kind} ${e.name} = ${value};`
+        } else if (e instanceof Assignment) {
+            const target = transpile_expression(e.target)
+            const value = transpile_expression(e.value)
             return `${target} = ${value};`
-        } else if (expression.kind === "block") {
-            const body = expression.body.map(transpile_expression).join("")
+        } else if (e instanceof Block) {
+            const body = e.body.map(transpile_expression).join("")
             return `{${body}}`
-        } else if (expression.kind === "if") {
-            const condition = transpile_expression(expression.condition)
-            const then = transpile_expression(expression.then_block)
+        } else if (e instanceof If) {
+            const condition = transpile_expression(e.condition)
+            const then = transpile_expression(e.then_block)
             let s = `if (${condition}) ${then}`
-            if (expression.else_block) {
-                const else_ = transpile_expression(expression.else_block)
+            if (e.else_block) {
+                const else_ = transpile_expression(e.else_block)
                 s += ` else ${else_}`
             }
             return s
-        } else if (expression.kind === "type_definition") {
-            const members = Object.keys(expression.members).join(";")
-            const parameters = Object.keys(expression.members)
+        } else if (e instanceof TypeDefinition) {
+            const members = Object.keys(e.members).join(";")
+            const parameters = Object.keys(e.members)
                 .map((x) => `${x}`)
                 .join(",")
-            const constructor_body = Object.keys(expression.members)
+            const constructor_body = Object.keys(e.members)
                 .map((x) => `this.${x} = ${x};`)
                 .join("")
 
             let impls = ""
-            function transpile_impl_function(fn: FunctionDefinition, is_static) {
+            function transpile_impl_function(fn: FunctionDefinition, is_static: boolean) {
                 const parameters = fn.signature.parameters
                     .filter((x) => x.name !== "self")
                     .map((x) => x.name)
@@ -1413,7 +1595,7 @@ function transpile(ast: AST) {
                 const block = transpile_expression(fn.block).replace("{", "{const self = this;")
                 impls += `${is_static ? "static " : ""}${fn.signature.name}(${parameters})${block}`
             }
-            for (const impl of expression.impls) {
+            for (const impl of e.impls) {
                 for (const fn of impl.member_functions) {
                     transpile_impl_function(fn, false)
                 }
@@ -1422,20 +1604,20 @@ function transpile(ast: AST) {
                 }
             }
             const constructor = `constructor (${parameters}) {${constructor_body}}`
-            return `class ${expression.name} {${members}\n${constructor}\n${impls}}`
-        } else if (expression.kind === "unit_type") {
+            return `class ${e.name} {${members}\n${constructor}\n${impls}}`
+        } else if (e instanceof UnitTypeExpression) {
             return "undefined"
-        } else if (expression.kind === "loop") {
-            const block = transpile_expression(expression.block)
+        } else if (e instanceof Loop) {
+            const block = transpile_expression(e.block)
             return `while (true) ${block}`
-        } else if (expression.kind === "break") {
+        } else if (e instanceof Break) {
             return "break;"
-        } else if (expression.kind === "continue") {
+        } else if (e instanceof Continue) {
             return "continue;"
-        } else if (expression.kind === "binary") {
-            const lhs = transpile_expression(expression.left)
-            const rhs = transpile_expression(expression.right)
-            let operator: string = expression.operator
+        } else if (e instanceof BinaryExpression) {
+            const lhs = transpile_expression(e.lhs)
+            const rhs = transpile_expression(e.rhs)
+            let operator: string = e.operator
             if (operator === "and") {
                 operator = "&&"
             } else if (operator === "or") {
@@ -1446,40 +1628,40 @@ function transpile(ast: AST) {
                 operator = "!=="
             }
             return `(${lhs} ${operator} ${rhs})`
-        } else if (expression.kind === "field_access") {
-            const object = transpile_expression(expression.object)
-            return `${object}.${expression.field}`
-        } else if (expression.kind === "namespace_access") {
-            return expression.namespace.name
-        } else if (expression.kind === "not") {
-            const value = transpile_expression(expression.value)
+        } else if (e instanceof FieldAccess) {
+            const object = transpile_expression(e.object)
+            return `${object}.${e.field}`
+        } else if (e instanceof NamespaceAccess) {
+            return e.namespace.name
+        } else if (e instanceof Not) {
+            const value = transpile_expression(e.value)
             return `!${value}`
         } else {
-            assert_never(expression)
+            throw new Error(`Unexpected expression ${to_json(e)} at ${e.span}`)
         }
     }
     return res
 }
 
-function assert(condition: boolean, msg: string) {
+function assert(condition: boolean, msg: string): asserts condition {
     if (!condition) {
         throw new Error(msg)
     }
 }
 
-function assert_never(x: never): any {
-    throw new Error(`Unexpected object ${to_json(x)} at ${(x as any).span}`)
-}
-
 function to_json(obj: any, indent = 0) {
     function break_cycles() {
-        const ancestors = []
-        return function (_, value) {
+        const ancestors: any = []
+        return function (_: any, value: any) {
             if (typeof value !== "object" || value === null) {
                 return value
             }
+            if (value instanceof Span) {
+                return value.toString()
+            }
             // `this` is the object that value is contained in,
             // i.e., its direct parent.
+            // @ts-ignore
             while (ancestors.length > 0 && ancestors.at(-1) !== this) {
                 ancestors.pop()
             }
@@ -1506,25 +1688,25 @@ async function compile({
     let log_prefix = `[${file.split("/").pop()}]`
     try {
         src = await Bun.file(file).text()
-    } catch (error) {
+    } catch (error: any) {
         console.error(`${log_prefix} Error reading file: ${error.message}`)
         process.exit(1)
     }
     let transpiled
     try {
-        const tokens = lexer(src)
+        const tokens = lexer({file: file.split("/").pop() ?? file, src})
         if (debug_tokens && !disable_debug) {
             console.log(`\n${log_prefix} TOKENS`)
             console.log(to_json(tokens, 2))
         }
-        let ast = parse(tokens, env)
+        let ast = parse(new TokenStream(tokens), env)
         if (debug_ast && !disable_debug) {
             console.log(`\n${log_prefix} AST:`)
             console.log(to_json(ast, 2))
         }
         ast = check(ast)
         transpiled = transpile(ast)
-    } catch (error) {
+    } catch (error: any) {
         if (debug) {
             throw error
         }
@@ -1552,41 +1734,32 @@ async function cli() {
 process.exit(main())
 
 `
-    const env: Environment = {
-        functions: {
-            // Built-in functions:
-            print: {
-                kind: "fn",
-                signature: {
-                    kind: "fn_signature",
+    const env = new Environment()
+    env.functions["print"] = new FunctionDefinition(
+        {
+            signature: new FunctionSignature(
+                {
                     name: "print",
                     parameters: [
-                        {
-                            kind: "parameter",
-                            name: "value",
-                            mutable: false,
-                            type: builtin_types.i32,
-                            span: new Span(0, 0, ""),
-                        },
+                        new Parameter(
+                            {name: "value", mutable: false, type: builtin_types.i32},
+                            new Span(0, 0, "<builtin>", ""),
+                        ),
                     ],
                     return_type: builtin_types.unit_type,
-                    span: new Span(0, 0, ""),
                 },
-                block: {} as any,
-                transpile: (_: FunctionCall, args: string[]) => `console.log(${args.join(",")});`,
-                span: new Span(0, 0, ""),
-            },
+                new Span(0, 0, "<builtin>", ""),
+            ),
+            block: new Block({body: []}, new Span(0, 0, "<builtin>", "")),
+            transpile: (_: FunctionCall, args: string[]) => `console.log(${args.join(",")});`,
         },
-        types: {...builtin_types},
-        type_definitions: {},
-        traits: {},
-        variables: {},
-        namespaces: {},
-    }
+        new Span(0, 0, "<builtin>", ""),
+    )
+    env.types = {...builtin_types}
     const file = Bun.argv[2]
     const transpiled = await compile({file: file, env})
     const res = prelude + transpiled
-    const dst = `${dir}/build/${file.split("/").pop().split(".")[0]}`
+    const dst = `${dir}/build/${(file.split("/")?.pop() ?? file).split(".")[0]}`
     await Bun.write(dst, res)
     const proc = Bun.spawn(["chmod", "+x", dst])
     await proc.exited

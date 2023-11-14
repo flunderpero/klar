@@ -1,7 +1,7 @@
 --- expected
 
 # compiler output:
-[compile_error_traits.kl] Compile error: Missing implementation for function double of trait Doubler at 12:5
+[compile_error_traits.kl] Compile error: Missing implementation for function double of trait Doubler at compile_error_traits.kl:12:5
 # exit code:
 # stderr:
 # stdout:

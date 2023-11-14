@@ -5,6 +5,18 @@
     "module": "esnext",
     "target": "esnext",
     "noEmit": true,
-    "moduleDetection": "force"
+    "moduleDetection": "force",
+    "strictPropertyInitialization": false,
+    "strictNullChecks": true,
+    "strictBindCallApply": true,
+    "strictFunctionTypes": true,
+    "noImplicitAny": true,
+    "noImplicitThis": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true
   }
 }

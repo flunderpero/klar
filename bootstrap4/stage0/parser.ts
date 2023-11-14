@@ -132,6 +132,34 @@ export class TypeDefinition extends Expression {
     }
 }
 
+export class Type extends HasKindAndSpan {
+    kind = "type"
+    name: string
+    transpile?: (value: any) => string
+    is_type_parameter: boolean
+    // The type parameters can differ from this.definition.type_parameters.
+    type_parameters: Type[]
+    definition: TypeDefinition
+
+    constructor(
+        data: {
+            name: string
+            transpile?: (value: any) => string
+            is_type_parameter: boolean
+            type_parameters: Type[]
+            definition: TypeDefinition
+        },
+        span: Span,
+    ) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Type.prototype)
+    }
+
+    to_signature_string(): string {
+        return this.definition.to_signature_string()
+    }
+}
+
 export class Return extends Expression {
     kind = "return"
     value: Expression
@@ -427,38 +455,6 @@ export class TraitDefinition extends HasKindAndSpan {
     }
 }
 
-export class Type extends HasKindAndSpan {
-    kind = "type"
-    name: string
-    transpile?: (value: any) => string
-    members?: Record<string, Type>
-    is_type_parameter: boolean
-    type_parameters: Type[]
-
-    constructor(
-        data: {
-            name: string
-            transpile?: (value: any) => string
-            members?: Record<string, Type>
-            is_type_parameter: boolean
-            type_parameters: Type[]
-        },
-        span: Span,
-    ) {
-        super(span)
-        Object.assign(this as typeof data, data as typeof Type.prototype)
-    }
-
-    to_signature_string(): string {
-        if (this.type_parameters.length === 0) {
-            return this.name
-        }
-        return `${this.name}<${this.type_parameters
-            .map((t) => t.to_signature_string())
-            .join(", ")}>`
-    }
-}
-
 export class Namespace extends HasKindAndSpan {
     kind = "namespace"
     name: string
@@ -477,6 +473,10 @@ export const builtin_types: Record<string, Type> = {
             transpile: (value: any) => value,
             is_type_parameter: false,
             type_parameters: [],
+            definition: new TypeDefinition(
+                {name: "i32", members: {}, type_parameters: [], impls: []},
+                new Span(0, 0, "<builtin>", ""),
+            ),
         },
         new Span(0, 0, "<builtin>", ""),
     ),
@@ -486,6 +486,10 @@ export const builtin_types: Record<string, Type> = {
             transpile: (value: any) => value,
             is_type_parameter: false,
             type_parameters: [],
+            definition: new TypeDefinition(
+                {name: "bool", members: {}, type_parameters: [], impls: []},
+                new Span(0, 0, "<builtin>", ""),
+            ),
         },
         new Span(0, 0, "<builtin>", ""),
     ),
@@ -495,6 +499,10 @@ export const builtin_types: Record<string, Type> = {
             transpile: () => "undefined",
             is_type_parameter: false,
             type_parameters: [],
+            definition: new TypeDefinition(
+                {name: "()", members: {}, type_parameters: [], impls: []},
+                new Span(0, 0, "<builtin>", ""),
+            ),
         },
         new Span(0, 0, "<builtin>", ""),
     ),
@@ -504,6 +512,10 @@ export const builtin_types: Record<string, Type> = {
             transpile: () => "undefined",
             is_type_parameter: false,
             type_parameters: [],
+            definition: new TypeDefinition(
+                {name: "Self", members: {}, type_parameters: [], impls: []},
+                new Span(0, 0, "<builtin>", ""),
+            ),
         },
         new Span(0, 0, "<builtin>", ""),
     ),
@@ -534,13 +546,12 @@ export class Environment {
     functions: Record<string, FunctionDefinition> = {}
     variables: Record<string, Variable> = {}
     types: Record<string, Type> = {}
-    type_definitions: Record<string, TypeDefinition> = {}
     traits: Record<string, TraitDefinition> = {}
     namespaces: Record<string, Namespace> = {}
     outer?: Environment
 
     find<T extends HasKindAndSpan>(
-        kind: "functions" | "variables" | "types" | "type_definitions" | "traits" | "namespaces",
+        kind: "functions" | "variables" | "types" | "traits" | "namespaces",
         name: string,
     ): T | undefined {
         if (this[kind][name]) {
@@ -553,7 +564,7 @@ export class Environment {
     }
 
     expect<T extends HasKindAndSpan>(
-        kind: "functions" | "variables" | "types" | "type_definitions" | "traits" | "namespaces",
+        kind: "functions" | "variables" | "types" | "traits" | "namespaces",
         name: string,
         span: Span,
     ): T {
@@ -587,10 +598,6 @@ export class Environment {
         return this.find<Type>("types", name)
     }
 
-    find_type_definition(name: string): TypeDefinition | undefined {
-        return this.find<TypeDefinition>("type_definitions", name)
-    }
-
     find_trait(name: string): TraitDefinition | undefined {
         return this.find<TraitDefinition>("traits", name)
     }
@@ -609,10 +616,6 @@ export class Environment {
 
     expect_type(name: string, span: Span): Type {
         return this.expect<Type>("types", name, span)
-    }
-
-    expect_type_definition(name: string, span: Span): TypeDefinition {
-        return this.expect<TypeDefinition>("type_definitions", name, span)
     }
 
     expect_trait(name: string, span: Span): TraitDefinition {
@@ -821,8 +824,8 @@ function parse_impl(mode: "signatures_only" | "all", ctx: Ctx): ImplDefinition {
         trait = new TraitDefinition({...trait}, trait.span)
         type_parameters = try_parse_generic_type_parameters(ctx)
     }
-    const target = ctx.env.expect_type_definition(target_name, span)
     const target_type = ctx.env.expect_type(target_name, span)
+    const target = target_type.definition
     const types: Record<string, Type> = type_parameters.reduce(
         (acc, type) => {
             acc[type.name] = type
@@ -928,11 +931,13 @@ function parse_type_definition(ctx: Ctx): TypeDefinition {
         }
     })
     ctx.tokens.expect("end")
-    const type_def = new TypeDefinition({name, members, type_parameters, impls: []}, span)
-    ctx.env.types[name] = new Type({name, members, is_type_parameter: false, type_parameters}, span)
-    ctx.env.type_definitions[name] = type_def
+    const definition = new TypeDefinition({name, members, type_parameters, impls: []}, span)
+    ctx.env.types[name] = new Type(
+        {name, definition, is_type_parameter: false, type_parameters},
+        span,
+    )
     ctx.env.namespaces[name] = new Namespace({name, functions: {}}, span)
-    return type_def
+    return definition
 }
 
 function parse_block(mode: "normal" | "if_else", ctx: Ctx) {
@@ -1099,7 +1104,7 @@ function try_parse_struct_initialization(
         return
     }
     ctx.tokens.consume()
-    let target = ctx.env.expect_type_definition(token.value, token.span)
+    let target = ctx.env.expect_type(token.value, token.span).definition
     const args: Record<string, Expression> = {}
     while (!ctx.tokens.at_end() && ctx.tokens.simple_peek() !== "}") {
         if (Object.keys(args).length > 0) {
@@ -1215,7 +1220,18 @@ function parse_type(opts: {expect_only_type_parameters?: boolean}, ctx: Ctx): Ty
     if (opts.expect_only_type_parameters) {
         base_type =
             ctx.env.find_type(token.value) ??
-            new Type({name: token.value, is_type_parameter: true, type_parameters: []}, token.span)
+            new Type(
+                {
+                    name: token.value,
+                    is_type_parameter: true,
+                    type_parameters: [],
+                    definition: new TypeDefinition(
+                        {name: token.value, members: {}, type_parameters: [], impls: []},
+                        token.span,
+                    ),
+                },
+                token.span,
+            )
     } else {
         base_type = ctx.env.expect_type(token.value, token.span)
     }
@@ -1237,6 +1253,7 @@ function parse_type(opts: {expect_only_type_parameters?: boolean}, ctx: Ctx): Ty
             token.span,
         )
     }
+    // fixme: do we really need to always create a new type.
     return new Type(
         {
             ...base_type,

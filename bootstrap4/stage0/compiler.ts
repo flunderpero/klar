@@ -75,7 +75,7 @@ function semantic_analysis({ast}: {ast: AST.AST}) {
         }
     }
     function check_all_trait_functions_are_implemented(expression: AST.Expression) {
-        if (!(expression instanceof AST.TypeDefinition)) {
+        if (!(expression instanceof AST.StructDefinition)) {
             return
         }
         for (const impl of expression.impls) {
@@ -163,7 +163,7 @@ function code_gen(ast: AST.AST) {
                 s += ` else ${else_}`
             }
             return s
-        } else if (e instanceof AST.TypeDefinition) {
+        } else if (e instanceof AST.StructDefinition) {
             const members = Object.keys(e.members).join(";")
             const parameters = Object.keys(e.members)
                 .map((x) => `${x}`)

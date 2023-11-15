@@ -100,7 +100,7 @@ export class FunctionDefinition extends Expression {
     }
 }
 
-export class TypeDefinition extends Expression {
+export class StructDefinition extends Expression {
     kind = "type definition"
     name: string
     members: Record<string, Type>
@@ -119,7 +119,7 @@ export class TypeDefinition extends Expression {
         span: Span,
     ) {
         super(span)
-        Object.assign(this as typeof data, data as typeof TypeDefinition.prototype)
+        Object.assign(this as typeof data, data as typeof StructDefinition.prototype)
     }
 
     to_signature_string() {
@@ -136,14 +136,14 @@ export class Type extends HasKindAndSpan {
     is_type_parameter: boolean
     // The type parameters can differ from this.definition.type_parameters.
     type_parameters: Type[]
-    definition: TypeDefinition
+    definition: StructDefinition
 
     constructor(
         data: {
             name: string
             is_type_parameter: boolean
             type_parameters: Type[]
-            definition: TypeDefinition
+            definition: StructDefinition
         },
         span: Span,
     ) {
@@ -209,13 +209,13 @@ export class FunctionCall extends Expression {
 export class StructInstantiation extends Expression {
     kind = "struct instantiation"
     type_arguments: Type[]
-    target: TypeDefinition
+    target: StructDefinition
     values: Record<string, Expression>
 
     constructor(
         data: {
             type_arguments: Type[]
-            target: TypeDefinition
+            target: StructDefinition
             values: Record<string, Expression>
         },
         span: Span,
@@ -395,7 +395,7 @@ export class FunctionSignature extends HasKindAndSpan {
 export class ImplDefinition extends HasKindAndSpan {
     kind = "impl_definition"
     trait?: TraitDefinition
-    type: TypeDefinition
+    type: StructDefinition
     member_functions: FunctionDefinition[]
     static_functions: FunctionDefinition[]
     extern?: boolean
@@ -403,7 +403,7 @@ export class ImplDefinition extends HasKindAndSpan {
     constructor(
         data: {
             trait?: TraitDefinition
-            type: TypeDefinition
+            type: StructDefinition
             member_functions: FunctionDefinition[]
             static_functions: FunctionDefinition[]
             extern?: boolean
@@ -468,7 +468,7 @@ export const builtin_types: Record<string, Type> = {
             name: "i32",
             is_type_parameter: false,
             type_parameters: [],
-            definition: new TypeDefinition(
+            definition: new StructDefinition(
                 {name: "i32", members: {}, type_parameters: [], impls: []},
                 new Span(0, 0, "<builtin>", ""),
             ),
@@ -480,7 +480,7 @@ export const builtin_types: Record<string, Type> = {
             name: "bool",
             is_type_parameter: false,
             type_parameters: [],
-            definition: new TypeDefinition(
+            definition: new StructDefinition(
                 {name: "bool", members: {}, type_parameters: [], impls: []},
                 new Span(0, 0, "<builtin>", ""),
             ),
@@ -492,7 +492,7 @@ export const builtin_types: Record<string, Type> = {
             name: "unit_type",
             is_type_parameter: false,
             type_parameters: [],
-            definition: new TypeDefinition(
+            definition: new StructDefinition(
                 {name: "()", members: {}, type_parameters: [], impls: []},
                 new Span(0, 0, "<builtin>", ""),
             ),
@@ -504,7 +504,7 @@ export const builtin_types: Record<string, Type> = {
             name: "Self",
             is_type_parameter: false,
             type_parameters: [],
-            definition: new TypeDefinition(
+            definition: new StructDefinition(
                 {name: "Self", members: {}, type_parameters: [], impls: []},
                 new Span(0, 0, "<builtin>", ""),
             ),
@@ -717,7 +717,7 @@ function parse_primary(ctx: Ctx): Expression {
         } else if (simple_token === "extern") {
             expression = parse_extern_block(ctx)
         } else if (simple_token === "struct") {
-            expression = parse_type_definition(ctx)
+            expression = parse_struct_definition(ctx)
         } else if (simple_token === "trait") {
             const trait = parse_trait_definition(ctx)
             expression = new UnitTypeExpression(trait.span)
@@ -790,7 +790,7 @@ function parse_extern_block(ctx: Ctx): UnitTypeExpression {
                 signature.span,
             )
         } else if (type === "struct") {
-            const struct = parse_type_definition(ctx)
+            const struct = parse_struct_definition(ctx)
             struct.extern = true
         } else if (type === "impl") {
             const impl = parse_impl("signatures_only", ctx)
@@ -908,7 +908,7 @@ function parse_trait_definition(ctx: Ctx): TraitDefinition {
     return trait
 }
 
-function parse_type_definition(ctx: Ctx): TypeDefinition {
+function parse_struct_definition(ctx: Ctx): StructDefinition {
     let span = ctx.tokens.consume().span
     const name = ctx.tokens.expect_identifier().value
     const members: Record<string, Type> = {}
@@ -923,7 +923,7 @@ function parse_type_definition(ctx: Ctx): TypeDefinition {
         }
     })
     ctx.tokens.expect("end")
-    const definition = new TypeDefinition({name, members, type_parameters, impls: []}, span)
+    const definition = new StructDefinition({name, members, type_parameters, impls: []}, span)
     ctx.env.types[name] = new Type(
         {name, definition, is_type_parameter: false, type_parameters},
         span,
@@ -1117,7 +1117,7 @@ function try_parse_struct_initialization(
     }
     if (type_arguments.length > 0) {
         // Create a new type with the argument types filled in.
-        target = new TypeDefinition({...target}, target.span)
+        target = new StructDefinition({...target}, target.span)
         for (let i = 0; i < type_arguments.length; i++) {
             const type = type_arguments[i]
             if (type.is_type_parameter) {
@@ -1217,7 +1217,7 @@ function parse_type(opts: {expect_only_type_parameters?: boolean}, ctx: Ctx): Ty
                     name: token.value,
                     is_type_parameter: true,
                     type_parameters: [],
-                    definition: new TypeDefinition(
+                    definition: new StructDefinition(
                         {name: token.value, members: {}, type_parameters: [], impls: []},
                         token.span,
                     ),

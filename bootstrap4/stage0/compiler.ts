@@ -132,9 +132,6 @@ function code_gen(ast: AST.AST) {
         } else if (e instanceof AST.FunctionCall) {
             const args = e.arguments.map(transpile_expression)
             if (e.target instanceof AST.FunctionDefinition) {
-                if (e.target.transpile) {
-                    return e.target.transpile(e, args)
-                }
                 return `${e.target.signature.name}(${args.join(",")})\n`
             } else {
                 const target = transpile_expression(e.target)
@@ -316,6 +313,10 @@ async function cli() {
     const prelude = `#!/usr/bin/env bun --silent
 process.exit(main())
 
+    function print(value) {
+        console.log(value)
+    }
+
 `
     const env = new AST.Environment()
     env.functions["print"] = new AST.FunctionDefinition(
@@ -334,7 +335,6 @@ process.exit(main())
                 new Span(0, 0, "<builtin>", ""),
             ),
             block: new AST.Block({body: []}, new Span(0, 0, "<builtin>", "")),
-            transpile: (_: AST.FunctionCall, args: string[]) => `console.log(${args.join(",")});`,
         },
         new Span(0, 0, "<builtin>", ""),
     )

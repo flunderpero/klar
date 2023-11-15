@@ -82,13 +82,11 @@ export class FunctionDefinition extends Expression {
     signature: FunctionSignature
     block: Block
     extern?: boolean
-    transpile?: (fn: FunctionCall, args: string[]) => string
 
     constructor(
         data: {
             signature: FunctionSignature
             block: Block
-            transpile?: (fn: FunctionCall, args: string[]) => string
             extern?: boolean
         },
         span: Span,
@@ -135,7 +133,6 @@ export class TypeDefinition extends Expression {
 export class Type extends HasKindAndSpan {
     kind = "type"
     name: string
-    transpile?: (value: any) => string
     is_type_parameter: boolean
     // The type parameters can differ from this.definition.type_parameters.
     type_parameters: Type[]
@@ -144,7 +141,6 @@ export class Type extends HasKindAndSpan {
     constructor(
         data: {
             name: string
-            transpile?: (value: any) => string
             is_type_parameter: boolean
             type_parameters: Type[]
             definition: TypeDefinition
@@ -470,7 +466,6 @@ export const builtin_types: Record<string, Type> = {
     i32: new Type(
         {
             name: "i32",
-            transpile: (value: any) => value,
             is_type_parameter: false,
             type_parameters: [],
             definition: new TypeDefinition(
@@ -483,7 +478,6 @@ export const builtin_types: Record<string, Type> = {
     bool: new Type(
         {
             name: "bool",
-            transpile: (value: any) => value,
             is_type_parameter: false,
             type_parameters: [],
             definition: new TypeDefinition(
@@ -496,7 +490,6 @@ export const builtin_types: Record<string, Type> = {
     unit_type: new Type(
         {
             name: "unit_type",
-            transpile: () => "undefined",
             is_type_parameter: false,
             type_parameters: [],
             definition: new TypeDefinition(
@@ -509,7 +502,6 @@ export const builtin_types: Record<string, Type> = {
     Self: new Type(
         {
             name: "Self",
-            transpile: () => "undefined",
             is_type_parameter: false,
             type_parameters: [],
             definition: new TypeDefinition(

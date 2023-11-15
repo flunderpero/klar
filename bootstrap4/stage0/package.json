@@ -2,5 +2,13 @@
   "dependencies": {},
   "devDependencies": {
     "bun-types": "^1.0.11"
+  },
+  "scripts": {
+    "lint:tsc": "tsc --noEmit --pretty",
+    "lint:prettier": "prettier --check .",
+    "lint": "bun run lint:tsc && bun run lint:prettier",
+    "prettier": "prettier --write .",
+    "test": "bun test.ts",
+    "pre_commit": "bun run prettier && bun run lint && bun run test"
   }
 }

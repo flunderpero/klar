@@ -1,0 +1,39 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+1
+2
+
+/expected ---
+
+fn main():
+    print(the_answer())
+    let person = Person { age: 2 }
+    print(person.get_age())
+end
+
+impl Age for Person:
+    fn get_age(self) i32:
+        return self.age
+    end
+end
+
+trait Age:
+    fn get_age(self) i32
+end
+
+struct Person:
+    age i32
+end
+
+fn the_answer() i32:
+    -- This should be skipped by `parse_scope_declaration`.
+    fn sub_function() i32: 
+        return 42
+    end
+    return 1
+end

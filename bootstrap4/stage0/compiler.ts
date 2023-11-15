@@ -34,7 +34,7 @@ class CodeGenError extends Error {
 
 function semantic_analysis({ast}: {ast: AST.AST}) {
     const visited: any[] = []
-    for (const expression of ast) {
+    for (const expression of ast.body) {
         apply_checks(expression)
     }
     function apply_checks(obj: any) {
@@ -62,47 +62,37 @@ function semantic_analysis({ast}: {ast: AST.AST}) {
     }
     function check_mutability(expression: AST.Expression) {
         if (expression instanceof AST.Assignment) {
-            const target = expression.target
-            if (target instanceof AST.Variable) {
-                if (!target.mutable) {
-                    throw new SemanticAnalysisError(
-                        `Cannot assign to immutable variable ${quote(target.name)}`,
-                        expression.span,
-                    )
-                }
-            }
-            // fixme: check field access
+            // fixme: we first have to resolve all types.
         }
     }
-    function check_all_trait_functions_are_implemented(expression: AST.Expression) {
-        if (!(expression instanceof AST.StructDefinition)) {
+    function check_all_trait_functions_are_implemented(impl: AST.Expression) {
+        if (!(impl instanceof AST.ImplDefinition)) {
             return
         }
-        for (const impl of expression.impls) {
-            if (!impl.trait) {
-                continue
+        if (!impl.trait_name) {
+            return
+        }
+        const trait = impl.resolved_trait!
+        for (const signature of trait.member_function_signatures) {
+            const fn = impl.member_functions.find((x) => x.signature.name === signature.name)
+            if (!fn) {
+                throw new SemanticAnalysisError(
+                    `Missing implementation of function ${quote(
+                        signature.to_signature_string(),
+                    )} of trait ${quote(trait.to_signature_string())}`,
+                    signature.span,
+                )
             }
-            for (const signature of impl.trait.member_function_signatures) {
-                const fn = impl.member_functions.find((x) => x.signature.name === signature.name)
-                if (!fn) {
-                    throw new SemanticAnalysisError(
-                        `Missing implementation of function ${quote(
-                            signature.to_signature_string(),
-                        )} of trait ${quote(impl.trait.to_signature_string())}`,
-                        signature.span,
-                    )
-                }
-            }
-            for (const signature of impl.trait.static_function_signatures) {
-                const fn = impl.static_functions.find((x) => x.signature.name === signature.name)
-                if (!fn) {
-                    throw new SemanticAnalysisError(
-                        `Missing implementation of function ${quote(
-                            signature.to_signature_string(),
-                        )} of trait ${quote(impl.trait.to_signature_string())}`,
-                        signature.span,
-                    )
-                }
+        }
+        for (const signature of trait.static_function_signatures) {
+            const fn = impl.static_functions.find((x) => x.signature.name === signature.name)
+            if (!fn) {
+                throw new SemanticAnalysisError(
+                    `Missing implementation of function ${quote(
+                        signature.to_signature_string(),
+                    )} of trait ${quote(trait.to_signature_string())}`,
+                    signature.span,
+                )
             }
         }
     }
@@ -114,7 +104,7 @@ function semantic_analysis({ast}: {ast: AST.AST}) {
  */
 function code_gen(ast: AST.AST) {
     let res = ""
-    for (const expression of ast) {
+    for (const expression of ast.body) {
         res += transpile_expression(expression)
         res += "\n"
     }
@@ -127,8 +117,6 @@ function code_gen(ast: AST.AST) {
             return `return ${transpile_expression(e.value)};`
         } else if (e instanceof AST.Bool || e instanceof AST.Number_) {
             return `${e.value}`
-        } else if (e instanceof AST.Variable) {
-            return e.name
         } else if (e instanceof AST.FunctionCall) {
             const args = e.arguments.map(transpile_expression)
             if (e.target instanceof AST.FunctionDefinition) {
@@ -138,15 +126,19 @@ function code_gen(ast: AST.AST) {
                 return `${target}(${args.join(",")})\n`
             }
         } else if (e instanceof AST.StructInstantiation) {
-            const create_instance = `let _ = new ${e.target.name}()`
+            const create_instance = `let _ = new ${e.target_struct_name}()`
             const assign_members = Object.entries(e.values).map(
                 ([name, value]) => `_.${name} = ${transpile_expression(value)};`,
             )
             return `(() => {${create_instance};${assign_members.join("\n")} return _})()`
         } else if (e instanceof AST.VariableDeclaration) {
             const kind = e.mutable ? "let" : "const"
-            const value = transpile_expression(e.value)
-            return `${kind} ${e.name} = ${value};`
+            if (e.value) {
+                const value = transpile_expression(e.value)
+                return `${kind} ${e.name} = ${value};`
+            } else {
+                return `${kind} ${e.name};`
+            }
         } else if (e instanceof AST.Assignment) {
             const target = transpile_expression(e.target)
             const value = transpile_expression(e.value)
@@ -163,7 +155,7 @@ function code_gen(ast: AST.AST) {
                 s += ` else ${else_}`
             }
             return s
-        } else if (e instanceof AST.StructDefinition) {
+        } else if (e instanceof AST.StructDeclaration) {
             const members = Object.keys(e.members).join(";")
             const parameters = Object.keys(e.members)
                 .map((x) => `${x}`)
@@ -191,8 +183,6 @@ function code_gen(ast: AST.AST) {
             }
             const constructor = `constructor (${parameters}) {${constructor_body}}`
             return `class ${e.name} {${members}\n${constructor}\n${impls}}`
-        } else if (e instanceof AST.UnitTypeExpression) {
-            return "undefined"
         } else if (e instanceof AST.Loop) {
             const block = transpile_expression(e.block)
             return `while (true) ${block}`
@@ -215,13 +205,19 @@ function code_gen(ast: AST.AST) {
             }
             return `(${lhs} ${operator} ${rhs})`
         } else if (e instanceof AST.FieldAccess) {
-            const object = transpile_expression(e.object)
+            const object = transpile_expression(e.target)
             return `${object}.${e.field}`
-        } else if (e instanceof AST.NamespaceAccess) {
-            return e.namespace.name
         } else if (e instanceof AST.Not) {
             const value = transpile_expression(e.value)
             return `!${value}`
+        } else if (e instanceof AST.IdentifierReference) {
+            return e.resolved!.name
+        } else if (e instanceof AST.ImplDefinition) {
+            return ""
+        } else if (e instanceof AST.TraitDeclaration) {
+            return ""
+        } else if (e instanceof AST.ExternBlock) {
+            return ""
         } else {
             throw new CodeGenError(`Unexpected expression ${quote(e.kind)}`, e.span)
         }
@@ -319,26 +315,31 @@ process.exit(main())
 
 `
     const env = new AST.Environment()
-    env.functions["print"] = new AST.FunctionDefinition(
-        {
-            signature: new AST.FunctionSignature(
-                {
-                    name: "print",
-                    parameters: [
-                        new AST.Parameter(
-                            {name: "value", mutable: false, type: AST.builtin_types.i32},
-                            new Span(0, 0, "<builtin>", ""),
-                        ),
-                    ],
-                    return_type: AST.builtin_types.unit_type,
-                },
-                new Span(0, 0, "<builtin>", ""),
-            ),
-            block: new AST.Block({body: []}, new Span(0, 0, "<builtin>", "")),
-        },
-        new Span(0, 0, "<builtin>", ""),
+    for (const [name, type] of Object.entries(AST.builtin_types)) {
+        env.add_resolved(name, type.resolved! as AST.BuiltInTypeDefinition)
+    }
+    env.add_resolved(
+        "print",
+        new AST.FunctionDefinition(
+            {
+                signature: new AST.FunctionSignature(
+                    {
+                        name: "print",
+                        parameters: [
+                            new AST.Parameter(
+                                {name: "value", type: AST.builtin_types.i32, mutable: false},
+                                new Span(0, 0, "<builtin>", ""),
+                            ),
+                        ],
+                        return_type: AST.builtin_types.unit_type,
+                    },
+                    new Span(0, 0, "<builtin>", ""),
+                ),
+                block: new AST.Block({body: []}, new Span(0, 0, "<builtin>", "")),
+            },
+            new Span(0, 0, "<builtin>", ""),
+        ),
     )
-    env.types = {...AST.builtin_types}
     const file = Bun.argv[2]
     const transpiled = await compile({file: file, env})
     const res = prelude + transpiled

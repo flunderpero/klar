@@ -305,40 +305,31 @@ async function compile({
 }
 
 /**
+    link` is a big word here, we just add the JS prelude. :)
+ */
+async function link({compiled, prelude}: {compiled: string; prelude: string}) {
+    return (await Bun.file(`${dir}/prelude_js.js`).text()) + prelude + compiled
+}
+
+async function compile_prelude(): Promise<{env: AST.Environment; prelude: string}> {
+    let captured_env: AST.Environment | undefined
+    const env = new AST.Environment(undefined, (x) => {
+        if (!captured_env) {
+            captured_env = x
+        }
+    })
+    const prelude = await compile({file: `${dir}/prelude_js.kl`, env})
+    return {env: captured_env!, prelude}
+}
+
+/**
  * Main entry point.
  */
 async function cli() {
-    const prelude = `#!/usr/bin/env bun --silent
-process.exit(main())
-
-    function print(value) {
-        console.log(value)
-    }
-
-`
-    const env = new AST.Environment()
-    for (const [name, type] of Object.entries(AST.builtin_types)) {
-        env.add_resolved(name, type.resolved! as AST.BuiltInTypeDefinition)
-    }
-    env.add_resolved(
-        "print",
-        new AST.FunctionDeclaration(
-            {
-                name: "print",
-                parameters: [
-                    new AST.Parameter(
-                        {name: "value", type: AST.builtin_types.i32, mutable: false},
-                        new Span(0, 0, "<builtin>", ""),
-                    ),
-                ],
-                return_type: AST.builtin_types.unit_type,
-            },
-            new Span(0, 0, "<builtin>", ""),
-        ),
-    )
+    const {env, prelude} = await compile_prelude()
     const file = Bun.argv[2]
-    const transpiled = await compile({file: file, env})
-    const res = prelude + transpiled
+    const compiled = await compile({file: file, env})
+    const res = await link({compiled, prelude})
     const dst = `${dir}/build/${(file.split("/")?.pop() ?? file).split(".")[0]}`
     await Bun.write(dst, res)
     const proc = Bun.spawn(["chmod", "+x", dst])

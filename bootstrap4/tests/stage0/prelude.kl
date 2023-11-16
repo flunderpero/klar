@@ -1,0 +1,16 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+true
+1
+
+/expected ---
+
+fn main():
+    print(true)
+    print(1)
+end

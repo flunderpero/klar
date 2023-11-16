@@ -1,0 +1,43 @@
+-- Built-in primitive types
+
+struct i32: 
+end
+
+struct bool:
+end
+
+trait ToStr:
+    fn to_str(self) Str
+end
+
+impl ToStr for i32:
+    fn to_str(self) Str:
+        stdlib_i32_to_str(self)
+    end
+end
+
+impl ToStr for bool:
+    fn to_str(self) Str:
+        stdlib_bool_to_str(self)
+    end
+end
+
+-- Provided by the compiler.
+
+extern:
+    -- Built-in functions
+
+    fn print(s ToStr)
+
+    -- Internal helper functions.
+
+    fn stdlib_i32_to_str(value i32) Str
+
+    fn stdlib_bool_to_str(value bool) Str
+end
+
+-- Built-in types 
+
+struct Str:
+end
+

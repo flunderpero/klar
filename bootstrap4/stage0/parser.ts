@@ -618,16 +618,23 @@ export class TraitDeclaration extends DeclarationOrDefinition {
     }
 }
 
+const self_type = new Type({name: "Self", type_parameters: []}, new Span(0, 0, "<builtin>", ""))
+
 // Environment
 
 export class Environment {
     outer?: Environment
     self_type: Type | undefined
-    private resolved_types = new Map<string, ResolvedType>()
-    private variables = new Map<string, VariableDeclaration>()
+    resolved_types = new Map<string, ResolvedType>()
+    variables = new Map<string, VariableDeclaration>()
+    on_scope_enter?: (env: Environment) => void
 
-    constructor(outer?: Environment) {
+    constructor(outer?: Environment, on_scope_enter?: (env: Environment) => void) {
         this.outer = outer
+        this.on_scope_enter = on_scope_enter || outer?.on_scope_enter
+        if (outer) {
+            this.on_scope_enter?.(this)
+        }
     }
 
     find_resolved_type(name: string): ResolvedType | undefined {
@@ -718,7 +725,7 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
                     }
                     if (
                         p.type.resolved &&
-                        p.type.resolved.name !== builtin_types.Self.name &&
+                        p.type.resolved.name !== self_type.name &&
                         p.type.resolved !== env.self_type
                     ) {
                         throw new ParseError(
@@ -743,7 +750,7 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
             env.resolve_type(e.return_type)
             for (const p of e.parameters) {
                 if (p.name === "self" && p.type == type_needs_to_be_inferred) {
-                    p.type = builtin_types.Self
+                    p.type = self_type
                 } else {
                     env.resolve_type(p.type)
                 }
@@ -1341,23 +1348,4 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         }
         return new Type({name, type_parameters}, Span.combine(token.span, end_span))
     }
-}
-
-export const builtin_types: Record<string, Type> = {
-    i32: new Type(
-        {name: "i32", type_parameters: [], resolved: new BuiltInTypeDefinition("i32")},
-        new Span(0, 0, "<builtin>", ""),
-    ),
-    bool: new Type(
-        {name: "bool", type_parameters: [], resolved: new BuiltInTypeDefinition("bool")},
-        new Span(0, 0, "<builtin>", ""),
-    ),
-    unit_type: new Type(
-        {name: "unit_type", type_parameters: [], resolved: new BuiltInTypeDefinition("()")},
-        new Span(0, 0, "<builtin>", ""),
-    ),
-    Self: new Type(
-        {name: "Self", type_parameters: [], resolved: new BuiltInTypeDefinition("Self")},
-        new Span(0, 0, "<builtin>", ""),
-    ),
 }

@@ -174,6 +174,50 @@ export class StructDeclaration extends DeclarationOrDefinition {
     }
 }
 
+export class EnumDeclaration extends DeclarationOrDefinition {
+    kind = "enum declaration"
+    name: string
+    variants: Record<string, EnumVariant>
+    type_parameters: Type[]
+    impls: ImplDefinition[] = []
+    extern?: boolean
+
+    constructor(
+        data: {
+            name: string
+            variants: Record<string, EnumVariant>
+            type_parameters: Type[]
+            extern?: boolean
+        },
+        span: Span,
+    ) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof EnumDeclaration.prototype)
+    }
+
+    to_signature_string() {
+        if (this.type_parameters.length === 0) {
+            return this.name
+        }
+        return `${this.name}<${this.type_parameters.map((t) => t.name).join(", ")}>`
+    }
+
+    contained_types() {
+        return this.type_parameters
+    }
+}
+
+class EnumVariant extends HasKindAndSpan {
+    kind = "enum variant"
+    name: string
+    members: Record<string, Type>
+
+    constructor(data: {name: string; members: Record<string, Type>}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof EnumVariant.prototype)
+    }
+}
+
 export class BuiltInTypeDefinition extends HasKindAndSpan {
     kind = "builtin type definition"
     name: string
@@ -193,6 +237,7 @@ type ResolvedType =
     | TraitDeclaration
     | FunctionDeclaration
     | BuiltInTypeDefinition
+    | EnumDeclaration
 
 export class Type extends HasKindAndSpan {
     kind = "type"
@@ -351,7 +396,7 @@ export class IdentifierReference extends Expression {
     kind = "identifier reference"
     name: string
     type_parameters: Type[]
-    resolved: VariableDeclaration | StructDeclaration | FunctionDeclaration
+    resolved: VariableDeclaration | StructDeclaration | FunctionDeclaration | EnumDeclaration
 
     constructor(data: {name: string; type_parameters: Type[]}, span: Span) {
         super(span)
@@ -547,8 +592,8 @@ export class ImplDefinition extends DeclarationOrDefinition {
     trait_name?: string
     type_parameters: Type[]
     resolved_trait?: TraitDeclaration
-    target_struct_name: string
-    resolved_target_struct: StructDeclaration
+    target_name: string
+    resolved_target: StructDeclaration | EnumDeclaration
     member_functions: FunctionDefinition[]
     static_functions: FunctionDefinition[]
 
@@ -556,7 +601,7 @@ export class ImplDefinition extends DeclarationOrDefinition {
         data: {
             trait_name?: string
             type_parameters: Type[]
-            target_struct_name: string
+            target_name: string
             member_functions: FunctionDefinition[]
             static_functions: FunctionDefinition[]
         },
@@ -761,7 +806,7 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
         } else if (e instanceof ImplDefinition) {
             const prev_self_type = env.self_type
             env.self_type = env.resolve_type(
-                new Type({name: e.target_struct_name, type_parameters: []}, e.span),
+                new Type({name: e.target_name, type_parameters: []}, e.span),
             )
             resolve_for_contained_types_and_nodes(e)
             env.self_type = prev_self_type
@@ -770,17 +815,15 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
             if (!resolved) {
                 throw new ParseError(`Identifier ${quote(e.name)} not found`, e.span)
             }
-            if (resolved instanceof VariableDeclaration) {
-                e.resolved = resolved
-            } else if (resolved instanceof StructDeclaration) {
-                e.resolved = resolved
-            } else if (resolved instanceof FunctionDeclaration) {
+            if (
+                resolved instanceof VariableDeclaration ||
+                resolved instanceof StructDeclaration ||
+                resolved instanceof EnumDeclaration ||
+                resolved instanceof FunctionDeclaration
+            ) {
                 e.resolved = resolved
             } else {
-                throw new ParseError(
-                    `Identifier ${quote(e.name)} is not a variable, function, or struct`,
-                    e.span,
-                )
+                throw new ParseError(`Identifier ${quote(e.name)} is not a known type`, e.span)
             }
         } else {
             resolve_for_contained_types_and_nodes(e)
@@ -808,6 +851,8 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
                 env.add_resolved(e.name, e)
             } else if (e instanceof TraitDeclaration) {
                 env.add_resolved(e.name, e)
+            } else if (e instanceof EnumDeclaration) {
+                env.add_resolved(e.name, e)
             } else if (e instanceof ImplDefinition) {
                 impls.push(e)
             } else if (e instanceof ExternBlock) {
@@ -822,19 +867,22 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
                 }
             }
         }
-        // FEAT: This allows `impl` blocks to be defined before the structs and traits.
+        // FEAT: This allows `impl` blocks to be defined before the structs, enums and traits.
         for (const impl of impls) {
-            const struct = env.find_resolved_type(impl.target_struct_name)
-            if (!struct) {
+            const target = env.find_resolved_type(impl.target_name)
+            if (!target) {
                 throw new ParseError(
-                    `Struct ${quote(impl.target_struct_name)} not found`,
+                    `Struct or enum ${quote(impl.target_name)} not found`,
                     impl.span,
                 )
             }
-            if (!(struct instanceof StructDeclaration)) {
-                throw new ParseError(`${quote(impl.target_struct_name)} is not a struct`, impl.span)
+            if (!(target instanceof StructDeclaration || target instanceof EnumDeclaration)) {
+                throw new ParseError(
+                    `${quote(impl.target_name)} is not a struct or an enum`,
+                    impl.span,
+                )
             }
-            impl.resolved_target_struct = struct
+            impl.resolved_target = target
             if (impl.trait_name) {
                 const trait = env.find_resolved_type(impl.trait_name)
                 if (!trait) {
@@ -845,7 +893,7 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
                 }
                 impl.resolved_trait = trait
             }
-            struct.impls.push(impl)
+            target.impls.push(impl)
         }
     }
 }
@@ -939,6 +987,8 @@ function parse_ignoring_types(tokens: TokenStream): AST {
                 expression = parse_extern_block()
             } else if (simple_token === "struct") {
                 expression = parse_struct_definition()
+            } else if (simple_token === "enum") {
+                expression = parse_enum_declaration()
             } else if (simple_token === "trait") {
                 expression = parse_trait_definition()
             } else if (simple_token === "impl") {
@@ -1048,7 +1098,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         const end_span = tokens.expect("end").span
         const impl = new ImplDefinition(
             {
-                target_struct_name,
+                target_name: target_struct_name,
                 type_parameters,
                 trait_name,
                 member_functions,
@@ -1098,18 +1148,45 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         return trait
     }
 
+    function parse_enum_declaration(): EnumDeclaration {
+        let span = tokens.consume().span
+        const name = tokens.expect_identifier().value
+        const type_parameters = try_parse_generic_type_parameters()
+        tokens.expect(":")
+        const variants: Record<string, EnumVariant> = {}
+        while (!tokens.at_end() && tokens.simple_peek() !== "end") {
+            const name = tokens.expect_identifier().value
+            const members: Record<string, Type> = {}
+            if (tokens.simple_peek() === "(") {
+                tokens.consume()
+                while (!tokens.at_end() && tokens.simple_peek() !== ")") {
+                    if (Object.keys(members).length > 0) {
+                        tokens.expect(",")
+                    }
+                    const name = tokens.expect_identifier().value
+                    const type = parse_type()
+                    members[name] = type
+                }
+                tokens.expect(")")
+            }
+            variants[name] = new EnumVariant({name, members}, span)
+        }
+        span = Span.combine(span, tokens.expect("end").span)
+        return new EnumDeclaration({name, variants, type_parameters}, span)
+    }
+
     function parse_struct_definition(): StructDeclaration {
         let span = tokens.consume().span
         const name = tokens.expect_identifier().value
         const members: Record<string, Type> = {}
         const type_parameters = try_parse_generic_type_parameters()
-        span = Span.combine(span, tokens.expect(":").span)
+        tokens.expect(":")
         while (!tokens.at_end() && tokens.simple_peek() !== "end") {
             const name = tokens.expect_identifier().value
             const type = parse_type()
             members[name] = type
         }
-        tokens.expect("end")
+        span = Span.combine(span, tokens.expect("end").span)
         const definition = new StructDeclaration({name, members, type_parameters}, span)
         return definition
     }

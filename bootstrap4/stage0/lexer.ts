@@ -46,6 +46,7 @@ export class LexicalToken extends Token {
             | "break"
             | "continue"
             | "struct"
+            | "enum"
             | "trait"
             | "for"
             | "extern"
@@ -191,6 +192,7 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
                     "break",
                     "continue",
                     "struct",
+                    "enum",
                     "trait",
                     "for",
                     "extern",

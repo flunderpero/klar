@@ -1,0 +1,37 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+1
+2
+
+/expected ---
+
+enum Color:
+    Red
+    Green
+    Blue
+end
+
+impl ToStr for Color:
+    fn to_str(self) str:
+        -- We currently cannot match, so this function is kinda useless.
+        -- But we want to demenstrate that traits can be implemented for enums.
+        return 1
+    end
+end
+
+impl Color:
+    fn some_function(self) i32:
+        return 2
+    end
+end
+
+fn main():
+    let c = Color.Red
+    print(c.to_str())
+    print(c.some_function())
+end

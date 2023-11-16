@@ -32,6 +32,11 @@ class CodeGenError extends Error {
     }
 }
 
+/**
+ * TODO: Implement these checks
+ * - all trait functions are implemented with the correct signature
+ * - an enum variant cannot be used in a binary expression
+ */
 function semantic_analysis({ast}: {ast: AST.AST}) {
     const visited: any[] = []
     for (const expression of ast.body) {
@@ -157,34 +162,18 @@ function code_gen(ast: AST.AST) {
             return s
         } else if (e instanceof AST.StructDeclaration) {
             const members = Object.keys(e.members).join(";")
-            const parameters = Object.keys(e.members)
-                .map((x) => `${x}`)
-                .join(",")
-            const constructor_body = Object.keys(e.members)
-                .map((x) => `this.${x} = ${x};`)
-                .join("")
-
-            let impls = ""
-            function transpile_impl_function(fn: AST.FunctionDefinition, is_static: boolean) {
-                const parameters = fn.declaration.parameters
-                    .filter((x) => x.name !== "self")
-                    .map((x) => x.name)
-                    .join(",")
-                const block = transpile_expression(fn.block).replace("{", "{const self = this;")
-                impls += `${is_static ? "static " : ""}${
-                    fn.declaration.name
-                }(${parameters})${block}`
+            const impls = transpile_impl_definitions(e)
+            return `class ${e.name} {${members}\n${impls}}`
+        } else if (e instanceof AST.EnumDeclaration) {
+            let variants = ""
+            for (const variant of Object.values(e.variants)) {
+                const members = Object.keys(variant.members).join(";")
+                const variant_class_name = `${e.name}_${variant.name}`
+                variants += `class ${variant_class_name} extends ${e.name} {${members}};`
             }
-            for (const impl of e.impls) {
-                for (const fn of impl.member_functions) {
-                    transpile_impl_function(fn, false)
-                }
-                for (const fn of impl.static_functions) {
-                    transpile_impl_function(fn, true)
-                }
-            }
-            const constructor = `constructor (${parameters}) {${constructor_body}}`
-            return `class ${e.name} {${members}\n${constructor}\n${impls}}`
+            const impls = transpile_impl_definitions(e)
+            const base_class = `class ${e.name} {${impls}}`
+            return `${base_class}${variants}`
         } else if (e instanceof AST.Loop) {
             const block = transpile_expression(e.block)
             return `while (true) ${block}`
@@ -207,8 +196,14 @@ function code_gen(ast: AST.AST) {
             }
             return `(${lhs} ${operator} ${rhs})`
         } else if (e instanceof AST.FieldAccess) {
-            const object = transpile_expression(e.target)
-            return `${object}.${e.field}`
+            if (
+                e.target instanceof AST.IdentifierReference &&
+                e.target.resolved instanceof AST.EnumDeclaration
+            ) {
+                return `(new ${e.target.name}_${e.field}())`
+            }
+            const target = transpile_expression(e.target)
+            return `${target}.${e.field}`
         } else if (e instanceof AST.Not) {
             const value = transpile_expression(e.value)
             return `!${value}`
@@ -223,6 +218,26 @@ function code_gen(ast: AST.AST) {
         } else {
             throw new CodeGenError(`Unexpected expression ${quote(e.kind)}`, e.span)
         }
+    }
+    function transpile_impl_definitions(e: AST.StructDeclaration | AST.EnumDeclaration) {
+        let impls = ""
+        function transpile_impl_function(fn: AST.FunctionDefinition, is_static: boolean) {
+            const parameters = fn.declaration.parameters
+                .filter((x) => x.name !== "self")
+                .map((x) => x.name)
+                .join(",")
+            const block = transpile_expression(fn.block).replace("{", "{const self = this;")
+            impls += `${is_static ? "static " : ""}${fn.declaration.name}(${parameters})${block}`
+        }
+        for (const impl of e.impls) {
+            for (const fn of impl.member_functions) {
+                transpile_impl_function(fn, false)
+            }
+            for (const fn of impl.static_functions) {
+                transpile_impl_function(fn, true)
+            }
+        }
+        return impls
     }
     return res
 }
@@ -305,10 +320,15 @@ async function compile({
 }
 
 /**
-    link` is a big word here, we just add the JS prelude. :)
+    link` is a big word here, we just add the JS prelude and epilogue. :)
  */
 async function link({compiled, prelude}: {compiled: string; prelude: string}) {
-    return (await Bun.file(`${dir}/prelude_js.js`).text()) + prelude + compiled
+    return (
+        (await Bun.file(`${dir}/prelude_js.js`).text()) +
+        prelude +
+        compiled +
+        (await Bun.file(`${dir}/epilogue_js.js`).text())
+    )
 }
 
 async function compile_prelude(): Promise<{env: AST.Environment; prelude: string}> {

@@ -73,8 +73,8 @@ function semantic_analysis({ast}: {ast: AST.AST}) {
             return
         }
         const trait = impl.resolved_trait!
-        for (const signature of trait.member_function_signatures) {
-            const fn = impl.member_functions.find((x) => x.signature.name === signature.name)
+        for (const signature of trait.member_function_declarations) {
+            const fn = impl.member_functions.find((x) => x.declaration.name === signature.name)
             if (!fn) {
                 throw new SemanticAnalysisError(
                     `Missing implementation of function ${quote(
@@ -84,8 +84,8 @@ function semantic_analysis({ast}: {ast: AST.AST}) {
                 )
             }
         }
-        for (const signature of trait.static_function_signatures) {
-            const fn = impl.static_functions.find((x) => x.signature.name === signature.name)
+        for (const signature of trait.static_function_declarations) {
+            const fn = impl.static_functions.find((x) => x.declaration.name === signature.name)
             if (!fn) {
                 throw new SemanticAnalysisError(
                     `Missing implementation of function ${quote(
@@ -110,9 +110,9 @@ function code_gen(ast: AST.AST) {
     }
     function transpile_expression(e: AST.Expression): string {
         if (e instanceof AST.FunctionDefinition) {
-            const parameters = e.signature.parameters.map((x) => x.name).join(",")
+            const parameters = e.declaration.parameters.map((x) => x.name).join(",")
             const block = transpile_expression(e.block)
-            return `function ${e.signature.name}(${parameters})${block}`
+            return `function ${e.declaration.name}(${parameters})${block}`
         } else if (e instanceof AST.Return) {
             return `return ${transpile_expression(e.value)};`
         } else if (e instanceof AST.Bool || e instanceof AST.Number_) {
@@ -120,7 +120,7 @@ function code_gen(ast: AST.AST) {
         } else if (e instanceof AST.FunctionCall) {
             const args = e.arguments.map(transpile_expression)
             if (e.target instanceof AST.FunctionDefinition) {
-                return `${e.target.signature.name}(${args.join(",")})\n`
+                return `${e.target.declaration.name}(${args.join(",")})\n`
             } else {
                 const target = transpile_expression(e.target)
                 return `${target}(${args.join(",")})\n`
@@ -166,12 +166,14 @@ function code_gen(ast: AST.AST) {
 
             let impls = ""
             function transpile_impl_function(fn: AST.FunctionDefinition, is_static: boolean) {
-                const parameters = fn.signature.parameters
+                const parameters = fn.declaration.parameters
                     .filter((x) => x.name !== "self")
                     .map((x) => x.name)
                     .join(",")
                 const block = transpile_expression(fn.block).replace("{", "{const self = this;")
-                impls += `${is_static ? "static " : ""}${fn.signature.name}(${parameters})${block}`
+                impls += `${is_static ? "static " : ""}${
+                    fn.declaration.name
+                }(${parameters})${block}`
             }
             for (const impl of e.impls) {
                 for (const fn of impl.member_functions) {
@@ -320,22 +322,16 @@ process.exit(main())
     }
     env.add_resolved(
         "print",
-        new AST.FunctionDefinition(
+        new AST.FunctionDeclaration(
             {
-                signature: new AST.FunctionSignature(
-                    {
-                        name: "print",
-                        parameters: [
-                            new AST.Parameter(
-                                {name: "value", type: AST.builtin_types.i32, mutable: false},
-                                new Span(0, 0, "<builtin>", ""),
-                            ),
-                        ],
-                        return_type: AST.builtin_types.unit_type,
-                    },
-                    new Span(0, 0, "<builtin>", ""),
-                ),
-                block: new AST.Block({body: []}, new Span(0, 0, "<builtin>", "")),
+                name: "print",
+                parameters: [
+                    new AST.Parameter(
+                        {name: "value", type: AST.builtin_types.i32, mutable: false},
+                        new Span(0, 0, "<builtin>", ""),
+                    ),
+                ],
+                return_type: AST.builtin_types.unit_type,
             },
             new Span(0, 0, "<builtin>", ""),
         ),

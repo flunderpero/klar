@@ -105,13 +105,13 @@ export abstract class Expression extends ASTNode {
 
 export class FunctionDefinition extends Expression {
     kind = "function definition"
-    signature: FunctionSignature
+    declaration: FunctionDeclaration
     block: Block
     extern?: boolean
 
     constructor(
         data: {
-            signature: FunctionSignature
+            declaration: FunctionDeclaration
             block: Block
             extern?: boolean
         },
@@ -122,11 +122,11 @@ export class FunctionDefinition extends Expression {
     }
 
     get name() {
-        return this.signature.name
+        return this.declaration.name
     }
 
     to_signature_string() {
-        return this.signature.to_signature_string()
+        return this.declaration.to_signature_string()
     }
 
     contained_nodes() {
@@ -134,14 +134,14 @@ export class FunctionDefinition extends Expression {
     }
 }
 
-abstract class DeclarationOrDefinitionBlock extends ASTNode {
+abstract class DeclarationOrDefinition extends ASTNode {
     kind = "declaration block"
-    contained_declarations(): DeclarationOrDefinitionBlock[] {
+    contained_declarations(): DeclarationOrDefinition[] {
         return []
     }
 }
 
-export class StructDeclaration extends DeclarationOrDefinitionBlock {
+export class StructDeclaration extends DeclarationOrDefinition {
     kind = "type declaration"
     name: string
     members: Record<string, Type>
@@ -191,7 +191,7 @@ export class BuiltInTypeDefinition extends HasKindAndSpan {
 type ResolvedType =
     | StructDeclaration
     | TraitDeclaration
-    | FunctionDefinition
+    | FunctionDeclaration
     | BuiltInTypeDefinition
 
 export class Type extends HasKindAndSpan {
@@ -351,7 +351,7 @@ export class IdentifierReference extends Expression {
     kind = "identifier reference"
     name: string
     type_parameters: Type[]
-    resolved: VariableDeclaration | StructDeclaration | FunctionDefinition
+    resolved: VariableDeclaration | StructDeclaration | FunctionDeclaration
 
     constructor(data: {name: string; type_parameters: Type[]}, span: Span) {
         super(span)
@@ -491,7 +491,7 @@ export class Parameter extends HasKindAndSpan {
     }
 }
 
-export class Block extends DeclarationOrDefinitionBlock {
+export class Block extends DeclarationOrDefinition {
     kind = "block"
     body: ASTNode[]
 
@@ -505,15 +505,15 @@ export class Block extends DeclarationOrDefinitionBlock {
     }
 }
 
-export class FunctionSignature extends DeclarationOrDefinitionBlock {
-    kind = "function signature"
+export class FunctionDeclaration extends DeclarationOrDefinition {
+    kind = "function declaration"
     name: string
     parameters: Parameter[]
     return_type: Type
 
     constructor(data: {name: string; parameters: Parameter[]; return_type: Type}, span: Span) {
         super(span)
-        Object.assign(this as typeof data, data as typeof FunctionSignature.prototype)
+        Object.assign(this as typeof data, data as typeof FunctionDeclaration.prototype)
     }
 
     to_signature_string() {
@@ -527,9 +527,9 @@ export class FunctionSignature extends DeclarationOrDefinitionBlock {
     }
 }
 
-export class ExternBlock extends DeclarationOrDefinitionBlock {
+export class ExternBlock extends DeclarationOrDefinition {
     kind = "extern block"
-    functions: FunctionSignature[] = []
+    functions: FunctionDeclaration[] = []
     structs: StructDeclaration[] = []
     impls: ImplDefinition[] = []
 
@@ -538,11 +538,11 @@ export class ExternBlock extends DeclarationOrDefinitionBlock {
     }
 
     contained_declarations() {
-        return [...this.functions, ...this.structs, ...this.impls] as DeclarationOrDefinitionBlock[]
+        return [...this.functions, ...this.structs, ...this.impls] as DeclarationOrDefinition[]
     }
 }
 
-export class ImplDefinition extends DeclarationOrDefinitionBlock {
+export class ImplDefinition extends DeclarationOrDefinition {
     kind = "impl_definition"
     trait_name?: string
     type_parameters: Type[]
@@ -575,11 +575,11 @@ export class ImplDefinition extends DeclarationOrDefinitionBlock {
     }
 }
 
-export class TraitDeclaration extends DeclarationOrDefinitionBlock {
+export class TraitDeclaration extends DeclarationOrDefinition {
     kind = "trait declaration"
     name: string
-    member_function_signatures: FunctionSignature[]
-    static_function_signatures: FunctionSignature[]
+    member_function_declarations: FunctionDeclaration[]
+    static_function_declarations: FunctionDeclaration[]
     member_function_default_impls: Record<string, FunctionDefinition>
     static_function_default_impls: Record<string, FunctionDefinition>
     type_parameters: Type[]
@@ -587,8 +587,8 @@ export class TraitDeclaration extends DeclarationOrDefinitionBlock {
     constructor(
         data: {
             name: string
-            member_function_signatures: FunctionSignature[]
-            static_function_signatures: FunctionSignature[]
+            member_function_declarations: FunctionDeclaration[]
+            static_function_declarations: FunctionDeclaration[]
             member_function_default_impls: Record<string, FunctionDefinition>
             static_function_default_impls: Record<string, FunctionDefinition>
             type_parameters: Type[]
@@ -610,8 +610,8 @@ export class TraitDeclaration extends DeclarationOrDefinitionBlock {
 
     contained_nodes(): ASTNode[] {
         return [
-            ...this.member_function_signatures,
-            ...this.static_function_signatures,
+            ...this.member_function_declarations,
+            ...this.static_function_declarations,
             ...Object.values(this.member_function_default_impls),
             ...Object.values(this.static_function_default_impls),
         ]
@@ -705,13 +705,13 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
     }
     return block
 
-    function resolve_for_node(e: ASTNode | DeclarationOrDefinitionBlock) {
+    function resolve_for_node(e: ASTNode | DeclarationOrDefinition) {
         if (e instanceof Block) {
             resolve_types_and_identifier_references(e, new Environment(env))
         } else if (e instanceof FunctionDefinition) {
-            resolve_for_node(e.signature)
+            resolve_for_node(e.declaration)
             const fn_env = new Environment(env)
-            for (const p of e.signature.parameters) {
+            for (const p of e.declaration.parameters) {
                 if (p.name === "self") {
                     if (!env.self_type) {
                         throw new ParseError(`${quote("self")} is not defined`, p.span)
@@ -739,7 +739,7 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
                 )
             }
             resolve_types_and_identifier_references(e.block, fn_env)
-        } else if (e instanceof FunctionSignature) {
+        } else if (e instanceof FunctionDeclaration) {
             env.resolve_type(e.return_type)
             for (const p of e.parameters) {
                 if (p.name === "self" && p.type == type_needs_to_be_inferred) {
@@ -767,11 +767,11 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
                 e.resolved = resolved
             } else if (resolved instanceof StructDeclaration) {
                 e.resolved = resolved
-            } else if (resolved instanceof FunctionDefinition) {
+            } else if (resolved instanceof FunctionDeclaration) {
                 e.resolved = resolved
             } else {
                 throw new ParseError(
-                    `Identifier ${quote(e.name)} is not a variable or struct`,
+                    `Identifier ${quote(e.name)} is not a variable, function, or struct`,
                     e.span,
                 )
             }
@@ -793,14 +793,26 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
         env = new Environment(env)
         const impls: ImplDefinition[] = []
         for (const e of expressions) {
-            if (e instanceof FunctionDefinition) {
-                env.add_resolved(e.signature.name, e)
+            if (e instanceof FunctionDeclaration) {
+                env.add_resolved(e.name, e)
+            } else if (e instanceof FunctionDefinition) {
+                env.add_resolved(e.declaration.name, e.declaration)
             } else if (e instanceof StructDeclaration) {
                 env.add_resolved(e.name, e)
             } else if (e instanceof TraitDeclaration) {
                 env.add_resolved(e.name, e)
             } else if (e instanceof ImplDefinition) {
                 impls.push(e)
+            } else if (e instanceof ExternBlock) {
+                for (const x of e.functions) {
+                    env.add_resolved(x.name, x)
+                }
+                for (const x of e.structs) {
+                    env.add_resolved(x.name, x)
+                }
+                for (const x of e.impls) {
+                    impls.push(x)
+                }
             }
         }
         // FEAT: This allows `impl` blocks to be defined before the structs and traits.
@@ -977,13 +989,13 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         while (!tokens.at_end() && tokens.simple_peek() !== "end") {
             const type = tokens.simple_peek()
             if (type === "fn") {
-                const signature = parse_function_signature()
-                res.functions.push(signature)
+                const declaration = parse_function_declaration()
+                res.functions.push(declaration)
             } else if (type === "struct") {
                 const struct = parse_struct_definition()
                 res.structs.push(struct)
             } else if (type === "impl") {
-                const impl = parse_impl("signatures_only")
+                const impl = parse_impl("declarations_only")
                 res.impls.push(impl)
             } else {
                 throw new ParseError(`Unknown ${quote("extern")} type ${quote(type)}`, span)
@@ -994,7 +1006,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         return res
     }
 
-    function parse_impl(mode: "signatures_only" | "all"): ImplDefinition {
+    function parse_impl(mode: "declarations_only" | "all"): ImplDefinition {
         const span = tokens.consume().span
         const name_or_trait = tokens.expect_identifier().value
         let type_parameters = try_parse_generic_type_parameters()
@@ -1011,16 +1023,16 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         const static_functions: FunctionDefinition[] = []
         while (!tokens.at_end() && tokens.simple_peek() !== "end") {
             let fn: FunctionDefinition
-            if (mode === "signatures_only") {
-                const signature = parse_function_signature()
+            if (mode === "declarations_only") {
+                const declaration = parse_function_declaration()
                 fn = new FunctionDefinition(
-                    {signature, block: new Block({body: []}, signature.span)},
-                    signature.span,
+                    {declaration, block: new Block({body: []}, declaration.span)},
+                    declaration.span,
                 )
             } else {
                 fn = parse_function_definition()
             }
-            if (fn.signature.parameters[0]?.name !== "self") {
+            if (fn.declaration.parameters[0]?.name !== "self") {
                 static_functions.push(fn)
             } else {
                 member_functions.push(fn)
@@ -1048,8 +1060,8 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         const trait = new TraitDeclaration(
             {
                 name,
-                member_function_signatures: [],
-                static_function_signatures: [],
+                member_function_declarations: [],
+                static_function_declarations: [],
                 member_function_default_impls: {},
                 static_function_default_impls: {},
                 type_parameters,
@@ -1057,20 +1069,20 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             span,
         )
         while (!tokens.at_end() && tokens.simple_peek() !== "end") {
-            const signature = parse_function_signature()
+            const declaration = parse_function_declaration()
             if (![":", "=>"].includes(tokens.simple_peek() ?? "")) {
-                // Ok, this is a signature only.
-                if (signature.parameters[0]?.name !== "self") {
-                    trait.static_function_signatures.push(signature)
+                // Ok, this is a declaration only.
+                if (declaration.parameters[0]?.name !== "self") {
+                    trait.static_function_declarations.push(declaration)
                 } else {
-                    trait.member_function_signatures.push(signature)
+                    trait.member_function_declarations.push(declaration)
                 }
             } else {
-                const fn = parse_function_body(signature)
-                if (fn.signature.parameters[0].name !== "self") {
-                    trait.static_function_default_impls[fn.signature.name] = fn
+                const fn = parse_function_body(declaration)
+                if (fn.declaration.parameters[0].name !== "self") {
+                    trait.static_function_default_impls[fn.declaration.name] = fn
                 } else {
-                    trait.member_function_default_impls[fn.signature.name] = fn
+                    trait.member_function_default_impls[fn.declaration.name] = fn
                 }
             }
         }
@@ -1167,7 +1179,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         return let_
     }
 
-    function parse_function_signature(): FunctionSignature {
+    function parse_function_declaration(): FunctionDeclaration {
         const span = tokens.expect("fn").span
         const name = tokens.expect_identifier().value
         tokens.expect("(")
@@ -1190,22 +1202,22 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         if (tokens.peek() instanceof Identifier) {
             return_type = parse_type()
         }
-        return new FunctionSignature({name, parameters, return_type}, span)
+        return new FunctionDeclaration({name, parameters, return_type}, span)
     }
 
-    function parse_function_body(signature: FunctionSignature): FunctionDefinition {
+    function parse_function_body(declaration: FunctionDeclaration): FunctionDefinition {
         const fn_def = new FunctionDefinition(
-            {signature, block: new Block({body: []}, signature.span)},
-            signature.span,
+            {declaration, block: new Block({body: []}, declaration.span)},
+            declaration.span,
         )
         fn_def.block = parse_block("normal")
-        fn_def.span = Span.combine(signature.span, fn_def.block.span)
+        fn_def.span = Span.combine(declaration.span, fn_def.block.span)
         return fn_def
     }
 
     function parse_function_definition(): FunctionDefinition {
-        const signature = parse_function_signature()
-        return parse_function_body(signature)
+        const declaration = parse_function_declaration()
+        return parse_function_body(declaration)
     }
 
     function parse_return_expression(): Return {

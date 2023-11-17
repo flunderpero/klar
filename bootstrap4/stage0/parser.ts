@@ -571,6 +571,7 @@ export class MatchArm extends ASTNode {
 
 export abstract class MatchPattern extends ASTNode {
     kind = "match pattern"
+
     constructor(span: Span) {
         super(span)
     }
@@ -586,21 +587,21 @@ export class LiteralMatchPattern extends MatchPattern {
     }
 }
 
-export class LiteralBoolMatchPattern extends MatchPattern {
-    kind = "literal bool match pattern"
-    value: boolean
-
-    constructor(data: {value: boolean}, span: Span) {
-        super(span)
-        Object.assign(this as typeof data, data as typeof LiteralBoolMatchPattern.prototype)
-    }
-}
-
 export class WildcardMatchPattern extends MatchPattern {
     kind = "wildcard match pattern"
 
     constructor(span: Span) {
         super(span)
+    }
+}
+
+export class CaptureMatchPattern extends MatchPattern {
+    kind = "capture match pattern"
+    name: string
+
+    constructor(data: {name: string}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof CaptureMatchPattern.prototype)
     }
 }
 
@@ -989,6 +990,56 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
             } else {
                 throw new ParseError(`Identifier ${quote(e.name)} is not a known type`, e.span)
             }
+        } else if (e instanceof MatchArm) {
+            const match_arm_env = new Environment(env)
+            function resolve_captures_and_add_to_env(pattern: MatchPattern) {
+                if (pattern instanceof StructuredMatchPattern) {
+                    if (
+                        pattern.type_expression instanceof IdentifierReference &&
+                        !env.find_resolved_type(pattern.type_expression.name)
+                    ) {
+                        // This should be a capture.
+                        pattern = new CaptureMatchPattern(
+                            {name: pattern.type_expression.name},
+                            pattern.span,
+                        )
+                    } else {
+                        for (const name of Object.keys(pattern.fields)) {
+                            pattern.fields[name] = resolve_captures_and_add_to_env(
+                                pattern.fields[name],
+                            )
+                        }
+                    }
+                } else if (pattern instanceof TupleMatchPattern) {
+                    for (let i = 0; i < pattern.values.length; i++) {
+                        let value = pattern.values[i]
+                        if (
+                            value instanceof IdentifierReference &&
+                            !env.find_resolved_type(value.name)
+                        ) {
+                            // This should be a capture.
+                            pattern.values[i] = new CaptureMatchPattern(
+                                {name: value.name},
+                                value.span,
+                            )
+                        }
+                        pattern.values[i] = resolve_captures_and_add_to_env(pattern.values[i])
+                    }
+                }
+                if (pattern instanceof CaptureMatchPattern) {
+                    match_arm_env.add_variable(
+                        pattern.name,
+                        new VariableDeclaration(
+                            {name: pattern.name, type: type_needs_to_be_inferred, mutable: false},
+                            pattern.span,
+                        ),
+                    )
+                }
+                return pattern
+            }
+            e.pattern = resolve_captures_and_add_to_env(e.pattern)
+            resolve_for_node(e.pattern)
+            resolve_types_and_identifier_references(e.block, match_arm_env)
         } else {
             resolve_for_contained_types_and_nodes(e)
         }
@@ -1427,7 +1478,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             return new LiteralMatchPattern({value: parseInt(token.value)}, token.span)
         } else if (token instanceof LexicalToken && ["true", "false"].includes(token.value)) {
             tokens.consume()
-            return new LiteralBoolMatchPattern({value: token.value === "true"}, token.span)
+            return new LiteralMatchPattern({value: token.value === "true"}, token.span)
         } else if (token instanceof LexicalToken && token.value === "_") {
             tokens.consume()
             return new WildcardMatchPattern(token.span)
@@ -1465,9 +1516,13 @@ function parse_ignoring_types(tokens: TokenStream): AST {
                         tokens.expect(",")
                     }
                     const name = tokens.expect_identifier().value
-                    tokens.expect(":")
-                    const value = parse_match_pattern()
-                    fields[name] = value
+                    if (tokens.simple_peek() === ":") {
+                        tokens.expect(":")
+                        const value = parse_match_pattern()
+                        fields[name] = value
+                    } else {
+                        fields[name] = new CaptureMatchPattern({name}, token.span)
+                    }
                 }
                 end_span = tokens.expect("}").span
             }

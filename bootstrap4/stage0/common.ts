@@ -48,3 +48,29 @@ export class HasKindAndSpan {
 export function quote(s: any) {
     return `\`${s}\``
 }
+
+export function to_json(obj: any, indent = 0) {
+    function break_cycles() {
+        const ancestors: any = []
+        return function (_: any, value: any) {
+            if (typeof value !== "object" || value === null) {
+                return value
+            }
+            if (value instanceof Span) {
+                return value.toString()
+            }
+            // `this` is the object that value is contained in,
+            // i.e., its direct parent.
+            // @ts-ignore
+            while (ancestors.length > 0 && ancestors.at(-1) !== this) {
+                ancestors.pop()
+            }
+            if (ancestors.includes(value)) {
+                return "[Circular]"
+            }
+            ancestors.push(value)
+            return value
+        }
+    }
+    return JSON.stringify(obj, break_cycles(), indent)
+}

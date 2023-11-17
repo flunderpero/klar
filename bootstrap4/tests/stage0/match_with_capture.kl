@@ -1,0 +1,54 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+1
+2
+3
+10
+20
+21
+22
+
+/expected ---
+
+struct RGB:
+    red i32
+    green i32
+    blue i32
+end
+
+enum Color:
+    Red
+    Green
+    Blue
+    Gray(i32)
+    RGB(RGB)
+end
+
+impl Color:
+    fn print(self):
+        match self:
+            Color.Red => print(1)
+            Color.Green => print(2)
+            Color.Blue => print(3)
+            Color.Gray(x) => print(x)
+            Color.RGB(RGB { red, green, blue}):
+                print(red)
+                print(green)
+                print(blue)
+            end
+        end
+    end
+end
+
+fn main():
+    Color.Red.print()
+    Color.Green.print()
+    Color.Blue.print()
+    Color.Gray(10).print()
+    Color.RGB(RGB{ red: 20, green: 21, blue: 22 }).print()
+end

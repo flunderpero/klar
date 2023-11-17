@@ -2,7 +2,7 @@
  * Transpile Klar to JavaScript.
  */
 
-import {quote, Span} from "./common"
+import {quote, Span, to_json} from "./common"
 import * as Lexer from "./lexer"
 import * as AST from "./parser"
 
@@ -272,6 +272,9 @@ function code_gen(ast: AST.AST) {
     }
     function transpile_match(e: AST.Match) {
         let s = "(function() { let __match_result;"
+        for (const arm of e.arms) {
+            s += declare_captured_variables(arm.pattern)
+        }
         const match_expression = transpile_expression(e.value)
         for (const [index, arm] of e.arms.entries()) {
             s += `if (${transpile_match_pattern_to_condition(match_expression, arm.pattern)}) `
@@ -289,6 +292,27 @@ function code_gen(ast: AST.AST) {
         s += "return __match_result;})()"
         return s
     }
+    function declare_captured_variables(pattern: AST.MatchPattern) {
+        if (pattern instanceof AST.CaptureMatchPattern) {
+            return `let ${pattern.name};`
+        } else if (pattern instanceof AST.StructuredMatchPattern) {
+            const {fields} = pattern
+            let s = ""
+            for (const field_pattern of Object.values(fields)) {
+                s += declare_captured_variables(field_pattern)
+            }
+            return s
+        } else if (pattern instanceof AST.TupleMatchPattern) {
+            const {values} = pattern
+            let s = ""
+            for (const value of values) {
+                s += declare_captured_variables(value)
+            }
+            return s
+        } else {
+            return ""
+        }
+    }
     function transpile_match_pattern_to_condition(
         match_expression: string,
         pattern: AST.MatchPattern,
@@ -297,6 +321,8 @@ function code_gen(ast: AST.AST) {
             return `(${match_expression} === ${pattern.value})`
         } else if (pattern instanceof AST.WildcardMatchPattern) {
             return "true"
+        } else if (pattern instanceof AST.CaptureMatchPattern) {
+            return `(${pattern.name} = ${match_expression})`
         } else if (
             pattern instanceof AST.StructuredMatchPattern ||
             pattern instanceof AST.TupleMatchPattern
@@ -345,32 +371,6 @@ function code_gen(ast: AST.AST) {
         }
     }
     return res
-}
-
-function to_json(obj: any, indent = 0) {
-    function break_cycles() {
-        const ancestors: any = []
-        return function (_: any, value: any) {
-            if (typeof value !== "object" || value === null) {
-                return value
-            }
-            if (value instanceof Span) {
-                return value.toString()
-            }
-            // `this` is the object that value is contained in,
-            // i.e., its direct parent.
-            // @ts-ignore
-            while (ancestors.length > 0 && ancestors.at(-1) !== this) {
-                ancestors.pop()
-            }
-            if (ancestors.includes(value)) {
-                return "[Circular]"
-            }
-            ancestors.push(value)
-            return value
-        }
-    }
-    return JSON.stringify(obj, break_cycles(), indent)
 }
 
 async function compile({

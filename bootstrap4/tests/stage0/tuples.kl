@@ -1,0 +1,30 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+3
+2
+1
+20
+
+/expected ---
+
+fn print_first_element(tuple (i32, i32, i32)):
+    print(tuple.0)
+end
+
+struct Color:
+    rgb (i32, i32, i32)
+end
+
+fn main():
+    let tuple = (1, 2, 3)
+    print(tuple.2)
+    print(tuple.1)
+    print_first_element(tuple)
+    let color = Color { rgb: (10, 20, 30) }
+    print(color.rgb.1)
+end

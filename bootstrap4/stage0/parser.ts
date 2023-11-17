@@ -174,6 +174,56 @@ export class StructDeclaration extends DeclarationOrDefinition {
     }
 }
 
+export class TupleDeclaration extends DeclarationOrDefinition {
+    kind = "tuple declaration"
+    members: Type[]
+
+    constructor(data: {members: Type[]}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof TupleDeclaration.prototype)
+    }
+
+    get name() {
+        return ""
+    }
+
+    contained_types() {
+        return this.members
+    }
+
+    to_signature_string() {
+        return `(${this.members.map((t) => t.to_signature_string()).join(", ")})`
+    }
+}
+
+export class Tuple extends Expression {
+    kind = "tuple"
+    values: Expression[]
+
+    constructor(data: {values: Expression[]}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Tuple.prototype)
+    }
+
+    contained_nodes() {
+        return this.values
+    }
+}
+
+export class ParenthesizedExpression extends Expression {
+    kind = "parenthesized expression"
+    expression: Expression
+
+    constructor(data: {expression: Expression}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof ParenthesizedExpression.prototype)
+    }
+
+    contained_nodes() {
+        return [this.expression]
+    }
+}
+
 export class EnumDeclaration extends DeclarationOrDefinition {
     kind = "enum declaration"
     name: string
@@ -238,6 +288,7 @@ type ResolvedType =
     | FunctionDeclaration
     | BuiltInTypeDefinition
     | EnumDeclaration
+    | TupleDeclaration
 
 export class Type extends HasKindAndSpan {
     kind = "type"
@@ -427,9 +478,9 @@ export class Assignment extends Expression {
 export class FieldAccess extends Expression {
     kind = "field access"
     target: Expression
-    field: string
+    field: string | number
 
-    constructor(data: {target: Expression; field: string}, span: Span) {
+    constructor(data: {target: Expression; field: string | number}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof FieldAccess.prototype)
     }
@@ -1078,9 +1129,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             } else if (simple_token === "loop") {
                 expression = parse_loop()
             } else if (simple_token === "(") {
-                tokens.consume()
-                expression = parse_expression()
-                tokens.expect(")")
+                expression = parse_parenthesized_expression_or_tuple()
             } else if (simple_token === "break") {
                 const span = tokens.consume().span
                 expression = new Break(span)
@@ -1139,8 +1188,16 @@ function parse_ignoring_types(tokens: TokenStream): AST {
     function parse_field_access(target: Expression): Expression {
         while (tokens.simple_peek() === ".") {
             const span = tokens.consume().span
-            const field = tokens.expect_identifier()
-            target = new FieldAccess({target, field: field.value}, Span.combine(span, field))
+            const field_token = tokens.consume()
+            let field: string | number
+            if (field_token instanceof Identifier) {
+                field = field_token.value
+            } else if (field_token instanceof NumberToken) {
+                field = parseInt(field_token.value)
+            } else {
+                throw new ParseError(`Expected identifier or number`, field_token.span)
+            }
+            target = new FieldAccess({target, field}, Span.combine(span, field_token))
         }
         return target
     }
@@ -1321,6 +1378,22 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             }
         }
         return block
+    }
+
+    function parse_parenthesized_expression_or_tuple(): Expression {
+        let span = tokens.consume().span
+        const expression = parse_expression()
+        if (tokens.simple_peek() === ",") {
+            const values = [expression]
+            while (!tokens.at_end() && tokens.simple_peek() !== ")") {
+                tokens.expect(",")
+                values.push(parse_expression())
+            }
+            span = Span.combine(tokens.expect(")").span, span)
+            return new Tuple({values}, span)
+        }
+        span = Span.combine(tokens.expect(")").span, span)
+        return new ParenthesizedExpression({expression}, span)
     }
 
     function parse_match_expression(): Match {
@@ -1573,13 +1646,16 @@ function parse_ignoring_types(tokens: TokenStream): AST {
     }
 
     function try_parse_type(): Type | undefined {
-        if (tokens.peek() instanceof Identifier) {
+        if (tokens.peek() instanceof Identifier || tokens.simple_peek() === "(") {
             return parse_type()
         }
         return undefined
     }
 
     function parse_type(): Type {
+        if (tokens.simple_peek() === "(") {
+            return parse_tuple_type()
+        }
         const token = tokens.expect_identifier()
         let end_span = token.span
         let name = token.value
@@ -1596,5 +1672,21 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             end_span = tokens.expect(">").span
         }
         return new Type({name, type_parameters}, Span.combine(token.span, end_span))
+    }
+
+    function parse_tuple_type(): Type {
+        const span = tokens.consume().span
+        const types: Type[] = []
+        while (!tokens.at_end() && tokens.simple_peek() !== ")") {
+            if (types.length > 0) {
+                tokens.expect(",")
+            }
+            const type = parse_type()
+            types.push(type)
+        }
+        const end_span = tokens.expect(")").span
+        const resolved = new TupleDeclaration({members: types}, Span.combine(span, end_span))
+        const name = `(${types.map((t) => t.to_signature_string()).join(", ")})`
+        return new Type({name, type_parameters: types, resolved}, Span.combine(span, end_span))
     }
 }

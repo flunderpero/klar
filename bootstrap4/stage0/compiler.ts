@@ -204,10 +204,19 @@ function code_gen(ast: AST.AST) {
                 return `(new ${e.target.name}_${e.field}())`
             }
             const target = transpile_expression(e.target)
+            if (typeof e.field === "number") {
+                return `${target}[${e.field}]`
+            }
             return `${target}.${e.field}`
         } else if (e instanceof AST.Not) {
             const value = transpile_expression(e.value)
             return `!${value}`
+        } else if (e instanceof AST.ParenthesizedExpression) {
+            const value = transpile_expression(e.expression)
+            return `(${value})`
+        } else if (e instanceof AST.Tuple) {
+            const values = e.values.map(transpile_expression).join(",")
+            return `[${values}]`
         } else if (e instanceof AST.IdentifierReference) {
             return e.resolved!.name
         } else if (e instanceof AST.ImplDefinition) {

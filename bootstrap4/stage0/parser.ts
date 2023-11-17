@@ -244,6 +244,7 @@ export class Type extends HasKindAndSpan {
     name: string
     type_parameters: Type[]
     resolved: ResolvedType
+    is_type_parameter?: boolean
 
     constructor(
         data: {
@@ -755,6 +756,7 @@ export class Environment {
     outer?: Environment
     self_type: Type | undefined
     resolved_types = new Map<string, ResolvedType>()
+    type_parameters = new Map<string, Type>()
     variables = new Map<string, VariableDeclaration>()
     on_scope_enter?: (env: Environment) => void
 
@@ -766,8 +768,16 @@ export class Environment {
         }
     }
 
+    add_type_parameter(type_parameter: Type) {
+        this.type_parameters.set(type_parameter.name, type_parameter)
+    }
+
     find_resolved_type(name: string): ResolvedType | undefined {
         return this.resolved_types.get(name) ?? this.outer?.find_resolved_type(name)
+    }
+
+    find_type_parameter(name: string): Type | undefined {
+        return this.type_parameters.get(name) ?? this.outer?.find_type_parameter(name)
     }
 
     add_resolved(name: string, resolved: ResolvedType) {
@@ -784,7 +794,11 @@ export class Environment {
     }
 
     resolve_type(type: Type): Type {
-        if (!type.resolved || type == type_needs_to_be_inferred) {
+        if (type.resolved || type == type_needs_to_be_inferred) {
+            return type
+        }
+        if (this.find_type_parameter(type.name)) {
+            type.is_type_parameter = true
             return type
         }
         const resolved = this.find_resolved_type(type.name)
@@ -931,12 +945,15 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
                 env.add_resolved(e.name, e)
             } else if (e instanceof FunctionDefinition) {
                 env.add_resolved(e.declaration.name, e.declaration)
-            } else if (e instanceof StructDeclaration) {
+            } else if (
+                e instanceof StructDeclaration ||
+                e instanceof TraitDeclaration ||
+                e instanceof EnumDeclaration
+            ) {
                 env.add_resolved(e.name, e)
-            } else if (e instanceof TraitDeclaration) {
-                env.add_resolved(e.name, e)
-            } else if (e instanceof EnumDeclaration) {
-                env.add_resolved(e.name, e)
+                for (const x of e.type_parameters) {
+                    env.add_type_parameter(x)
+                }
             } else if (e instanceof ImplDefinition) {
                 impls.push(e)
             } else if (e instanceof ExternBlock) {
@@ -965,6 +982,9 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
                     `${quote(impl.target_name)} is not a struct or an enum`,
                     impl.span,
                 )
+            }
+            for (const x of impl.type_parameters) {
+                env.add_type_parameter(x)
             }
             impl.resolved_target = target
             if (impl.trait_name) {
@@ -1544,6 +1564,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
                     tokens.expect(",")
                 }
                 const type_parameter = parse_type()
+                type_parameter.is_type_parameter = true
                 type_parameters.push(type_parameter)
             }
             tokens.expect(">")

@@ -1,0 +1,54 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+5
+6
+7
+8
+
+/expected ---
+
+struct HSL:
+    h i32
+    s i32
+    l i32
+end
+
+enum Color:
+    -- No values:
+    Red
+    Green
+    Blue
+    -- Unnamed values:
+    Gray(i32)
+    RGB(i32, i32, i32)  -- This is basically a tuple
+    -- Struct as value:
+    HSL(HSL)
+end
+
+impl ToStr for Color:
+    fn to_str(self) i32:
+        return match self:
+            Color.Red => 1
+            Color.Green => 2
+            Color.Blue => 3
+            Color.Gray(_) => 4
+            Color.RGB(1, _, _) => 5
+            Color.RGB(_, _, _) => 6
+            Color.HSL(HSL{ h: 10, s: _, l: _ }) => 7
+            Color.HSL(_) => 8
+        end
+    end
+end
+
+fn main():
+    let c = Color.RGB(1, 2, 3)
+    print(c.to_str())
+    print(Color.RGB(4, 5, 6).to_str())
+    print(Color.HSL(HSL{ h: 10, s: 20, l: 30 }).to_str())
+    print(Color.HSL(HSL{ h: 11, s: 21, l: 31 }).to_str())
+end

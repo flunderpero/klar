@@ -260,9 +260,9 @@ export class EnumDeclaration extends DeclarationOrDefinition {
 class EnumVariant extends HasKindAndSpan {
     kind = "enum variant"
     name: string
-    members: Record<string, Type>
+    values: TupleDeclaration
 
-    constructor(data: {name: string; members: Record<string, Type>}, span: Span) {
+    constructor(data: {name: string; values: TupleDeclaration}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof EnumVariant.prototype)
     }
@@ -619,6 +619,21 @@ export class StructuredMatchPattern extends MatchPattern {
 
     contained_nodes() {
         return [this.type_expression, ...Object.values(this.fields)]
+    }
+}
+
+export class TupleMatchPattern extends MatchPattern {
+    kind = "tuple match pattern"
+    type_expression: IdentifierReference | FieldAccess
+    values: MatchPattern[]
+
+    constructor(data: {type_expression: Expression; values: MatchPattern[]}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof TupleMatchPattern.prototype)
+    }
+
+    contained_nodes() {
+        return [this.type_expression, ...this.values]
     }
 }
 
@@ -1160,9 +1175,6 @@ function parse_ignoring_types(tokens: TokenStream): AST {
                 try_parse_function_call(token) ||
                 try_parse_struct_initialization(token) ||
                 parse_identifier_reference(token)
-            if (!expression) {
-                throw new ParseError(`Unexpected token ${quote(token)}`, token.span)
-            }
         }
         if (!expression) {
             throw new ParseError(`Unexpected token ${quote(token)}`, token.span)
@@ -1319,20 +1331,11 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         const variants: Record<string, EnumVariant> = {}
         while (!tokens.at_end() && tokens.simple_peek() !== "end") {
             const name = tokens.expect_identifier().value
-            const members: Record<string, Type> = {}
+            let values = new TupleDeclaration({members: []}, span)
             if (tokens.simple_peek() === "(") {
-                tokens.consume()
-                while (!tokens.at_end() && tokens.simple_peek() !== ")") {
-                    if (Object.keys(members).length > 0) {
-                        tokens.expect(",")
-                    }
-                    const name = tokens.expect_identifier().value
-                    const type = parse_type()
-                    members[name] = type
-                }
-                tokens.expect(")")
+                values = parse_tuple_declaration().resolved as TupleDeclaration
             }
-            variants[name] = new EnumVariant({name, members}, span)
+            variants[name] = new EnumVariant({name, values}, span)
         }
         span = Span.combine(span, tokens.expect("end").span)
         return new EnumDeclaration({name, variants, type_parameters}, span)
@@ -1436,6 +1439,22 @@ function parse_ignoring_types(tokens: TokenStream): AST {
                 tokens.consume()
                 const field = tokens.expect_identifier().value
                 type_expression = new FieldAccess({target: type_expression, field}, token.span)
+            }
+            if (tokens.simple_peek() === "(") {
+                // Tuples.
+                const values: MatchPattern[] = []
+                tokens.consume()
+                while (!tokens.at_end() && tokens.simple_peek() !== ")") {
+                    if (values.length > 0) {
+                        tokens.expect(",")
+                    }
+                    values.push(parse_match_pattern())
+                }
+                const end_span = tokens.expect(")").span
+                return new TupleMatchPattern(
+                    {type_expression, values},
+                    Span.combine(token.span, end_span),
+                )
             }
             const fields: Record<string, MatchPattern> = {}
             let end_span = token.span
@@ -1654,7 +1673,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
 
     function parse_type(): Type {
         if (tokens.simple_peek() === "(") {
-            return parse_tuple_type()
+            return parse_tuple_declaration()
         }
         const token = tokens.expect_identifier()
         let end_span = token.span
@@ -1674,7 +1693,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         return new Type({name, type_parameters}, Span.combine(token.span, end_span))
     }
 
-    function parse_tuple_type(): Type {
+    function parse_tuple_declaration(): Type {
         const span = tokens.consume().span
         const types: Type[] = []
         while (!tokens.at_end() && tokens.simple_peek() !== ")") {

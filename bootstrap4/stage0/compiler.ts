@@ -168,9 +168,10 @@ function code_gen(ast: AST.AST) {
         } else if (e instanceof AST.EnumDeclaration) {
             let variants = ""
             for (const variant of Object.values(e.variants)) {
-                const members = Object.keys(variant.members).join(";")
                 const variant_class_name = `${e.name}_${variant.name}`
-                variants += `class ${variant_class_name} extends ${e.name} {${members}};`
+                const constructor =
+                    "constructor(...values) {super();values.forEach((x, i) => {this[i] = x;});}"
+                variants += `class ${variant_class_name} extends ${e.name} {\n${constructor}};`
             }
             const impls = transpile_impl_definitions(e)
             const base_class = `class ${e.name} {${impls}}`
@@ -201,7 +202,11 @@ function code_gen(ast: AST.AST) {
                 e.target instanceof AST.IdentifierReference &&
                 e.target.resolved instanceof AST.EnumDeclaration
             ) {
-                return `(new ${e.target.name}_${e.field}())`
+                const variant = e.target.resolved.variants[e.field]
+                if (variant.values.members.length === 0) {
+                    return `new ${e.target.name}_${e.field}()`
+                }
+                return `new ${e.target.name}_${e.field}`
             }
             const target = transpile_expression(e.target)
             if (typeof e.field === "number") {
@@ -292,8 +297,11 @@ function code_gen(ast: AST.AST) {
             return `(${match_expression} === ${pattern.value})`
         } else if (pattern instanceof AST.WildcardMatchPattern) {
             return "true"
-        } else if (pattern instanceof AST.StructuredMatchPattern) {
-            const {type_expression, fields} = pattern
+        } else if (
+            pattern instanceof AST.StructuredMatchPattern ||
+            pattern instanceof AST.TupleMatchPattern
+        ) {
+            const {type_expression} = pattern
             let target_name
             if (type_expression instanceof AST.IdentifierReference) {
                 target_name = type_expression.name
@@ -304,13 +312,24 @@ function code_gen(ast: AST.AST) {
             ) {
                 target_name = `${type_expression.target.name}_${type_expression.field}`
             }
+            let s = `(${match_expression} instanceof ${target_name})`
+            if (pattern instanceof AST.TupleMatchPattern) {
+                const values = pattern.values.map((x, i) =>
+                    transpile_match_pattern_to_condition(`${match_expression}[${i}]`, x),
+                )
+                s += ` && ${values.join(" && ")}`
+                return s
+            }
+            const {fields} = pattern
             if (Object.keys(fields).length === 0) {
-                // Make an instanceof check.
-                return `(${match_expression} instanceof ${target_name})`
+                return s
             } else {
-                let s = ""
+                s += " && "
+                let is_first = true
                 for (const [field_name, field_pattern] of Object.entries(fields)) {
-                    if (s !== "") {
+                    if (is_first) {
+                        is_first = false
+                    } else {
                         s += " && "
                     }
                     const field_condition = transpile_match_pattern_to_condition(

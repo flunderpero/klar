@@ -74,9 +74,9 @@ export class TokenStream {
 export class ParseError extends Error {
     constructor(
         public error: string,
-        public span: Span,
+        public span: Span | undefined,
     ) {
-        super(`${error} at ${span}`)
+        super(`${error} at ${span ?? "EOF"}`)
     }
 }
 
@@ -483,6 +483,90 @@ export class If extends Expression {
 
     contained_nodes() {
         return [this.condition, this.then_block, ...(this.else_block ? [this.else_block] : [])]
+    }
+}
+
+export class Match extends Expression {
+    kind = "match"
+    value: Expression
+    arms: MatchArm[]
+    wildcard_block?: Block
+
+    constructor(data: {value: Expression; arms: MatchArm[]; wildcard_block?: Block}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Match.prototype)
+    }
+
+    contained_nodes() {
+        return [this.value, ...this.arms, ...(this.wildcard_block ? [this.wildcard_block] : [])]
+    }
+}
+
+export class MatchArm extends ASTNode {
+    kind = "match arm"
+    pattern: MatchPattern
+    block: Block
+
+    constructor(data: {pattern: MatchPattern; block: Block}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof MatchArm.prototype)
+    }
+
+    contained_nodes() {
+        return [this.pattern, this.block]
+    }
+}
+
+export abstract class MatchPattern extends ASTNode {
+    kind = "match pattern"
+    constructor(span: Span) {
+        super(span)
+    }
+}
+
+export class LiteralMatchPattern extends MatchPattern {
+    kind = "literal number match pattern"
+    value: number | boolean
+
+    constructor(data: {value: number | boolean}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof LiteralMatchPattern.prototype)
+    }
+}
+
+export class LiteralBoolMatchPattern extends MatchPattern {
+    kind = "literal bool match pattern"
+    value: boolean
+
+    constructor(data: {value: boolean}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof LiteralBoolMatchPattern.prototype)
+    }
+}
+
+export class WildcardMatchPattern extends MatchPattern {
+    kind = "wildcard match pattern"
+
+    constructor(span: Span) {
+        super(span)
+    }
+}
+
+export class StructuredMatchPattern extends MatchPattern {
+    kind = "structured match pattern"
+    type_expression: IdentifierReference | FieldAccess
+    fields: Record<string, MatchPattern>
+
+    constructor(
+        data: {type_expression: Expression; fields: Record<string, MatchPattern>},
+        span: Span,
+    ) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof StructuredMatchPattern.prototype)
+    }
+
+    contained_nodes() {
+        return [this.type_expression, ...Object.values(this.fields)]
     }
 }
 
@@ -995,6 +1079,8 @@ function parse_ignoring_types(tokens: TokenStream): AST {
                 expression = parse_impl("all")
             } else if (simple_token === "return") {
                 expression = parse_return_expression()
+            } else if (simple_token === "match") {
+                expression = parse_match_expression()
             }
         } else if (token instanceof NumberToken) {
             tokens.consume()
@@ -1004,7 +1090,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             expression =
                 try_parse_function_call(token) ||
                 try_parse_struct_initialization(token) ||
-                try_parse_identifier_reference(token)
+                parse_identifier_reference(token)
             if (!expression) {
                 throw new ParseError(`Unexpected token ${quote(token)}`, token.span)
             }
@@ -1217,6 +1303,71 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         return block
     }
 
+    function parse_match_expression(): Match {
+        const span = tokens.consume().span
+        const value = parse_expression()
+        const arms: MatchArm[] = []
+        let wildcard_block: Block | undefined
+        tokens.expect(":")
+        while (!tokens.at_end() && tokens.simple_peek() !== "end") {
+            if (tokens.simple_peek() === "else") {
+                tokens.consume()
+                wildcard_block = parse_block("normal")
+                // Wildcard arm is always last.
+                break
+            }
+            const pattern = parse_match_pattern()
+            const block = parse_block("normal")
+            arms.push(new MatchArm({pattern, block}, Span.combine(pattern, block.span)))
+        }
+        const end_span = tokens.expect("end").span
+        return new Match({value, arms, wildcard_block}, Span.combine(span, end_span))
+    }
+
+    function parse_match_pattern(): MatchPattern {
+        const token = tokens.peek()
+        if (token instanceof NumberToken) {
+            tokens.consume()
+            return new LiteralMatchPattern({value: parseInt(token.value)}, token.span)
+        } else if (token instanceof LexicalToken && ["true", "false"].includes(token.value)) {
+            tokens.consume()
+            return new LiteralBoolMatchPattern({value: token.value === "true"}, token.span)
+        } else if (token instanceof LexicalToken && token.value === "_") {
+            tokens.consume()
+            return new WildcardMatchPattern(token.span)
+        } else if (token instanceof Identifier) {
+            let type_expression: IdentifierReference | FieldAccess =
+                parse_identifier_reference(token)
+            tokens.consume()
+            if (tokens.simple_peek() === ".") {
+                tokens.consume()
+                const field = tokens.expect_identifier().value
+                type_expression = new FieldAccess({target: type_expression, field}, token.span)
+            }
+            const fields: Record<string, MatchPattern> = {}
+            let end_span = token.span
+            if (tokens.simple_peek() === "{") {
+                tokens.consume()
+                while (!tokens.at_end() && tokens.simple_peek() !== "}") {
+                    if (Object.keys(fields).length > 0) {
+                        tokens.expect(",")
+                    }
+                    const name = tokens.expect_identifier().value
+                    tokens.expect(":")
+                    const value = parse_match_pattern()
+                    fields[name] = value
+                }
+                end_span = tokens.expect("}").span
+            }
+            return new StructuredMatchPattern(
+                {type_expression, fields},
+                Span.combine(token.span, end_span),
+            )
+        } else {
+            throw new ParseError(`Unexpected token ${quote(token)}`, token?.span)
+        }
+    }
+
     function parse_loop(): Loop {
         const span = tokens.expect("loop").span
         const block = parse_block("normal")
@@ -1310,7 +1461,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         return new Return({value}, Span.combine(span, value.span))
     }
 
-    function try_parse_identifier_reference(token: Identifier): IdentifierReference | undefined {
+    function parse_identifier_reference(token: Identifier): IdentifierReference {
         const type_arguments = try_parse_generic_type_parameters()
         const span = token.span
         return new IdentifierReference({name: token.value, type_parameters: type_arguments}, span)

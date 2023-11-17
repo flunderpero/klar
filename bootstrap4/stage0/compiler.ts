@@ -36,6 +36,8 @@ class CodeGenError extends Error {
  * TODO: Implement these checks
  * - all trait functions are implemented with the correct signature
  * - an enum variant cannot be used in a binary expression
+ * - matches are exhaustive
+ * - match arms are exhaustive (i.e. all fields of a struct/enum are matched)
  */
 function semantic_analysis({ast}: {ast: AST.AST}) {
     const visited: any[] = []
@@ -116,7 +118,7 @@ function code_gen(ast: AST.AST) {
     function transpile_expression(e: AST.Expression): string {
         if (e instanceof AST.FunctionDefinition) {
             const parameters = e.declaration.parameters.map((x) => x.name).join(",")
-            const block = transpile_expression(e.block)
+            const block = transpile_block(e.block)
             return `function ${e.declaration.name}(${parameters})${block}`
         } else if (e instanceof AST.Return) {
             return `return ${transpile_expression(e.value)};`
@@ -149,14 +151,13 @@ function code_gen(ast: AST.AST) {
             const value = transpile_expression(e.value)
             return `${target} = ${value};`
         } else if (e instanceof AST.Block) {
-            const body = e.body.map(transpile_expression).join("")
-            return `{${body}}`
+            return transpile_block(e)
         } else if (e instanceof AST.If) {
             const condition = transpile_expression(e.condition)
-            const then = transpile_expression(e.then_block)
+            const then = transpile_block(e.then_block)
             let s = `if (${condition}) ${then}`
             if (e.else_block) {
-                const else_ = transpile_expression(e.else_block)
+                const else_ = transpile_block(e.else_block)
                 s += ` else ${else_}`
             }
             return s
@@ -175,7 +176,7 @@ function code_gen(ast: AST.AST) {
             const base_class = `class ${e.name} {${impls}}`
             return `${base_class}${variants}`
         } else if (e instanceof AST.Loop) {
-            const block = transpile_expression(e.block)
+            const block = transpile_block(e.block)
             return `while (true) ${block}`
         } else if (e instanceof AST.Break) {
             return "break;"
@@ -215,9 +216,25 @@ function code_gen(ast: AST.AST) {
             return ""
         } else if (e instanceof AST.ExternBlock) {
             return ""
+        } else if (e instanceof AST.Match) {
+            return transpile_match(e)
         } else {
             throw new CodeGenError(`Unexpected expression ${quote(e.kind)}`, e.span)
         }
+    }
+    function transpile_block(block: AST.Block, assign_last_expression_to?: string) {
+        if (assign_last_expression_to) {
+            if (block.body.length === 0) {
+                return `{${assign_last_expression_to} = undefined;)`
+            }
+            const last_expression = block.body.at(-1)!
+            const body = block.body.slice(0, -1).map(transpile_expression).join("\n")
+            return `{${body};${assign_last_expression_to} = ${transpile_expression(
+                last_expression,
+            )}}`
+        }
+        const body = block.body.map(transpile_expression).join("\n")
+        return `{${body}}`
     }
     function transpile_impl_definitions(e: AST.StructDeclaration | AST.EnumDeclaration) {
         let impls = ""
@@ -238,6 +255,66 @@ function code_gen(ast: AST.AST) {
             }
         }
         return impls
+    }
+    function transpile_match(e: AST.Match) {
+        let s = "(function() { let __match_result;"
+        const match_expression = transpile_expression(e.value)
+        for (const [index, arm] of e.arms.entries()) {
+            s += `if (${transpile_match_pattern_to_condition(match_expression, arm.pattern)}) `
+            s += transpile_block(arm.block, "__match_result")
+            if (index < e.arms.length - 1) {
+                s += " else "
+            }
+        }
+        if (e.wildcard_block) {
+            if (e.arms.length > 0) {
+                s += " else "
+            }
+            s += transpile_block(e.wildcard_block, "__match_result")
+        }
+        s += "return __match_result;})()"
+        return s
+    }
+    function transpile_match_pattern_to_condition(
+        match_expression: string,
+        pattern: AST.MatchPattern,
+    ) {
+        if (pattern instanceof AST.LiteralMatchPattern) {
+            return `(${match_expression} === ${pattern.value})`
+        } else if (pattern instanceof AST.WildcardMatchPattern) {
+            return "true"
+        } else if (pattern instanceof AST.StructuredMatchPattern) {
+            const {type_expression, fields} = pattern
+            let target_name
+            if (type_expression instanceof AST.IdentifierReference) {
+                target_name = type_expression.name
+            } else if (
+                type_expression instanceof AST.FieldAccess &&
+                type_expression.target instanceof AST.IdentifierReference &&
+                type_expression.target.resolved instanceof AST.EnumDeclaration
+            ) {
+                target_name = `${type_expression.target.name}_${type_expression.field}`
+            }
+            if (Object.keys(fields).length === 0) {
+                // Make an instanceof check.
+                return `(${match_expression} instanceof ${target_name})`
+            } else {
+                let s = ""
+                for (const [field_name, field_pattern] of Object.entries(fields)) {
+                    if (s !== "") {
+                        s += " && "
+                    }
+                    const field_condition = transpile_match_pattern_to_condition(
+                        `${match_expression}.${field_name}`,
+                        field_pattern,
+                    )
+                    s += field_condition
+                }
+                return s
+            }
+        } else {
+            throw new CodeGenError(`Unexpected pattern ${quote(pattern.kind)}`, pattern.span)
+        }
     }
     return res
 }

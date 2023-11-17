@@ -20,6 +20,7 @@ export class LexicalToken extends Token {
             | "."
             | ","
             | ":"
+            | "_"
             | "=>"
             | "="
             | "=="
@@ -34,6 +35,7 @@ export class LexicalToken extends Token {
             | "fn"
             | "end"
             | "return"
+            | "match"
             | "+"
             | "-"
             | "*"
@@ -167,6 +169,7 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
                 "/",
                 ">",
                 "<",
+                "_",
             ].includes(c)
         ) {
             tokens.push(new LexicalToken(c as any, span()))
@@ -193,6 +196,7 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
                     "continue",
                     "struct",
                     "enum",
+                    "match",
                     "trait",
                     "for",
                     "extern",

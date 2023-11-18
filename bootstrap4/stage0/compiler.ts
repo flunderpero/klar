@@ -124,6 +124,19 @@ function code_gen(ast: AST.AST) {
             return `return ${transpile_expression(e.value)};`
         } else if (e instanceof AST.Bool || e instanceof AST.Number_) {
             return `${e.value}`
+        } else if (e instanceof AST.String_) {
+            let value = e.value.replace(/\\/g, "\\\\")
+            value = value.replace(/\n/g, "\\n")
+            value = value.replace(/\t/g, "\\t")
+            value = value.replace(/"/g, "\\`")
+            if (e.is_multiline) {
+                value = value.replace(/`/g, "\\`")
+                return `\`${value}\``
+            }
+            return `"${value}"`
+        } else if (e instanceof AST.InterpolatedString) {
+            const parts = e.expressions.map((x) => `(${transpile_expression(x)})`)
+            return `(${parts.join("+")})`
         } else if (e instanceof AST.FunctionCall) {
             const args = e.arguments.map(transpile_expression)
             if (e.target instanceof AST.FunctionDefinition) {

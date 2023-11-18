@@ -1,5 +1,14 @@
 import {HasKindAndSpan, quote, Span} from "./common"
-import {Identifier, LexicalToken, NumberToken, Token} from "./lexer"
+import {
+    Identifier,
+    InterpolatedStringPartExpression,
+    InterpolatedStringPartLiteral,
+    InterpolatedStringToken,
+    LexicalToken,
+    NumberToken,
+    StringToken,
+    Token,
+} from "./lexer"
 
 type Mark = number
 
@@ -346,6 +355,32 @@ export class Number_ extends Expression {
     constructor(data: {value: string}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Number_.prototype)
+    }
+}
+
+export class String_ extends Expression {
+    kind = "string"
+    value: string
+    is_multiline: boolean
+
+    constructor(data: {value: string; is_multiline: boolean}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof String_.prototype)
+    }
+}
+
+export class InterpolatedString extends Expression {
+    kind = "interpolated string"
+    expressions: Expression[]
+    is_multiline: boolean
+
+    constructor(data: {expressions: Expression[]; is_multiline: boolean}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof InterpolatedString.prototype)
+    }
+
+    contained_nodes() {
+        return this.expressions
     }
 }
 
@@ -1220,6 +1255,15 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         } else if (token instanceof NumberToken) {
             tokens.consume()
             expression = new Number_({value: token.value}, token.span)
+        } else if (token instanceof StringToken) {
+            tokens.consume()
+            expression = new String_(
+                {value: token.value, is_multiline: token.is_multiline},
+                token.span,
+            )
+        } else if (token instanceof InterpolatedStringToken) {
+            tokens.consume()
+            expression = parse_interpolated_string(token)
         } else if (token instanceof Identifier) {
             const token = tokens.expect_identifier()
             expression =
@@ -1762,5 +1806,32 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         const resolved = new TupleDeclaration({members: types}, Span.combine(span, end_span))
         const name = `(${types.map((t) => t.to_signature_string()).join(", ")})`
         return new Type({name, type_parameters: types, resolved}, Span.combine(span, end_span))
+    }
+
+    function parse_interpolated_string(token: InterpolatedStringToken): InterpolatedString {
+        let span = token.span
+        const expressions: Expression[] = []
+        for (const part of token.parts) {
+            if (part instanceof InterpolatedStringPartLiteral) {
+                expressions.push(
+                    new String_({value: part.value, is_multiline: part.is_multiline}, span),
+                )
+            } else if (part instanceof InterpolatedStringPartExpression) {
+                const ast = parse_ignoring_types(new TokenStream(part.tokens))
+                if (ast.body.length !== 1) {
+                    throw new ParseError(
+                        `Expected exactly one expression but got ${ast.body.length}`,
+                        span,
+                    )
+                }
+                expressions.push(ast.body[0])
+            } else {
+                throw new ParseError(`Unknown interpolated string part: ${part}`, part.span)
+            }
+        }
+        if (expressions.length > 0) {
+            span = Span.combine(expressions[0].span, expressions.at(-1)!.span)
+        }
+        return new InterpolatedString({expressions, is_multiline: token.is_multiline}, span)
     }
 }

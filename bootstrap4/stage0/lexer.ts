@@ -79,6 +79,76 @@ export class NumberToken extends Token {
     }
 }
 
+export class StringToken extends Token {
+    kind = "string"
+
+    constructor(
+        public value: string,
+        public is_multiline: boolean,
+        span: Span,
+    ) {
+        super(span)
+    }
+
+    toString() {
+        return `${this.value.replaceAll("\n", "\\n")} (string)`
+    }
+}
+
+export class InterpolatedStringToken extends Token {
+    kind = "interpolated_string"
+
+    constructor(
+        public parts: InterpolatedStringPart[],
+        public is_multiline: boolean,
+        span: Span,
+    ) {
+        super(span)
+    }
+
+    toString() {
+        return `${this.parts.map((p) => `\`${p.toString()}\``).join(" + ")} (interpolated string)`
+    }
+}
+
+export abstract class InterpolatedStringPart extends HasKindAndSpan {
+    kind = "interpolated_part"
+}
+
+export class InterpolatedStringPartExpression extends InterpolatedStringPart {
+    kind = "interpolated_string_expression"
+
+    constructor(
+        public tokens: Token[],
+        span: Span,
+    ) {
+        super(span)
+    }
+
+    toString() {
+        return `${this.tokens
+            .map((t) => t.toString())
+            .join(", ")
+            .replaceAll("\n", "\\n")} (interpolated string expression)`
+    }
+}
+
+export class InterpolatedStringPartLiteral extends InterpolatedStringPart {
+    kind = "interpolated_string_literal"
+
+    constructor(
+        public value: string,
+        public is_multiline: boolean,
+        span: Span,
+    ) {
+        super(span)
+    }
+
+    toString() {
+        return `${this.value} (interpolated string literal)`
+    }
+}
+
 export class Identifier extends Token {
     kind = "identifier"
     constructor(
@@ -124,6 +194,12 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
         i += num
     }
     while (i < src.length) {
+        const token = parse_token()
+        if (token) {
+            tokens.push(token)
+        }
+    }
+    function parse_token(): Token | undefined {
         const c = peek()
         if (c === "-" && peek(1) === "-" && peek(2) === "-") {
             skip(3)
@@ -131,27 +207,153 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
                 skip()
             }
             skip(3)
-        } else if (c === "-" && peek(1) === "-") {
+            return undefined
+        }
+        if (c === "-" && peek(1) === "-") {
             skip(2)
             while (i < src.length - 1 && peek() !== "\n") {
                 skip()
             }
-        } else if (c === "=" && peek(1) === "=") {
-            tokens.push(new LexicalToken("==", span()))
+            return undefined
+        }
+        if (c === "f" && peek(1) === '"' && peek(2) === '"' && peek(3) === '"') {
+            const start_span = span()
+            skip(4)
+            const interpolations: InterpolatedStringPart[] = []
+            let value = ""
+            while (i < src.length && !(peek() === '"' && peek(1) === '"' && peek(2) === '"')) {
+                const c = consume()
+                if (c === "\\") {
+                    value += parse_string_escape_sequence()
+                } else if (c === "{") {
+                    if (value) {
+                        interpolations.push(
+                            new InterpolatedStringPartLiteral(
+                                value,
+                                value.includes("\n"),
+                                span(start_span),
+                            ),
+                        )
+                        value = ""
+                    }
+                    interpolations.push(parse_interpolated_string_expression())
+                } else {
+                    value += c
+                }
+            }
+            skip(3)
+            if (i >= src.length) {
+                throw new LexerError(`Unterminated string`, span(start_span))
+            }
+            if (value) {
+                interpolations.push(
+                    new InterpolatedStringPartLiteral(
+                        value,
+                        value.includes("\n"),
+                        span(start_span),
+                    ),
+                )
+            }
+            return new InterpolatedStringToken(interpolations, true, span(start_span))
+        }
+        if (c === "f" && peek(1) === '"') {
+            const start_span = span()
             skip(2)
-        } else if (c === "!" && peek(1) === "=") {
-            tokens.push(new LexicalToken("!=", span()))
+            const interpolations: InterpolatedStringPart[] = []
+            let value = ""
+            while (i < src.length && peek() !== '"') {
+                const c = consume()
+                if (c === "\\") {
+                    value += parse_string_escape_sequence()
+                } else if (c === "\n") {
+                    throw new LexerError(`Unexpected newline in string`, span())
+                } else if (c === "{") {
+                    if (value) {
+                        interpolations.push(
+                            new InterpolatedStringPartLiteral(value, false, span(start_span)),
+                        )
+                        value = ""
+                    }
+                    interpolations.push(parse_interpolated_string_expression())
+                } else {
+                    value += c
+                }
+            }
+            skip()
+            if (i >= src.length) {
+                throw new LexerError(`Unterminated string`, span(start_span))
+            }
+            if (value) {
+                interpolations.push(
+                    new InterpolatedStringPartLiteral(value, false, span(start_span)),
+                )
+            }
+            return new InterpolatedStringToken(interpolations, false, span(start_span))
+        }
+        if (c === '"' && peek(1) === '"' && peek(2) === '"') {
+            const start_span = span()
+            skip(3)
+            let value = ""
+            while (i < src.length && !(peek() === '"' && peek(1) === '"' && peek(2) === '"')) {
+                const ch = consume()
+                if (ch === "\\") {
+                    value += parse_string_escape_sequence()
+                } else {
+                    value += ch
+                }
+            }
+            skip(3)
+            if (i >= src.length) {
+                throw new LexerError(`Unterminated string`, span(start_span))
+            }
+            return new StringToken(value, true, span(start_span))
+        }
+        if (c === '"') {
+            const start_span = span()
+            skip()
+            let value = ""
+            while (i < src.length && peek() !== '"') {
+                const ch = consume()
+                if (ch === "\\") {
+                    value += parse_string_escape_sequence()
+                } else if (ch === "\n") {
+                    throw new LexerError(`Unexpected newline in string`, span())
+                } else {
+                    value += ch
+                }
+            }
+            skip()
+            if (i >= src.length) {
+                throw new LexerError(`Unterminated string`, span(start_span))
+            }
+            return new StringToken(value, false, span(start_span))
+        }
+        if (c === "=" && peek(1) === "=") {
+            const token = new LexicalToken("==", span())
             skip(2)
-        } else if (c === "<" && peek(1) === "=") {
-            tokens.push(new LexicalToken("<=", span()))
+            return token
+        }
+        if (c === "!" && peek(1) === "=") {
+            const token = new LexicalToken("!=", span())
             skip(2)
-        } else if (c === ">" && peek(1) === "=") {
-            tokens.push(new LexicalToken(">=", span()))
+            return token
+        }
+        if (c === "<" && peek(1) === "=") {
+            const token = new LexicalToken("<=", span())
             skip(2)
-        } else if (c === "=" && peek(1) === ">") {
-            tokens.push(new LexicalToken("=>", span()))
+            return token
+        }
+        if (c === ">" && peek(1) === "=") {
+            const token = new LexicalToken(">=", span())
             skip(2)
-        } else if (
+            return token
+        }
+        if (c === "=" && peek(1) === ">") {
+            const token = new LexicalToken("=>", span())
+            skip(2)
+            return token
+        }
+        if (
             [
                 "(",
                 ")",
@@ -172,11 +374,15 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
                 "_",
             ].includes(c)
         ) {
-            tokens.push(new LexicalToken(c as any, span()))
+            const token = new LexicalToken(c as any, span())
             skip()
-        } else if (c.match(/\s/)) {
+            return token
+        }
+        if (c.match(/\s/)) {
             skip()
-        } else if (c.match(/[a-zA-Z_]/)) {
+            return undefined
+        }
+        if (c.match(/[a-zA-Z_]/)) {
             let value = ""
             let start_span = span()
             while (i < src.length && peek().match(/[a-zA-Z0-9_]/)) {
@@ -208,20 +414,51 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
                     "not",
                 ].includes(value)
             ) {
-                tokens.push(new LexicalToken(value as any, span(start_span)))
-            } else {
-                tokens.push(new Identifier(value, span(start_span)))
+                return new LexicalToken(value as any, span(start_span))
             }
-        } else if (c.match(/[0-9]/)) {
+            return new Identifier(value, span(start_span))
+        }
+        if (c.match(/[0-9]/)) {
             let value = ""
             const start_span = span()
             while (peek().match(/[0-9]/)) {
                 value += consume()
             }
-            tokens.push(new NumberToken(value, span(start_span)))
-        } else {
-            throw new LexerError(`Unexpected character ${quote(c)}`, span())
+            return new NumberToken(value, span(start_span))
         }
+        throw new LexerError(`Unexpected character ${quote(c)}`, span())
+    }
+    function parse_string_escape_sequence() {
+        const c = consume()
+        if (c === "n") {
+            return "\n"
+        } else if (c === "t") {
+            return "\t"
+        } else if (c === "\\") {
+            return "\\"
+        } else if (c === '"') {
+            return '"'
+        } else {
+            throw new LexerError(`Invalid escape sequence ${quote(c)}`, span())
+        }
+    }
+    function parse_interpolated_string_expression(): InterpolatedStringPartExpression {
+        const start_span = span()
+        const tokens: Token[] = []
+        while (i < src.length && peek() !== "}") {
+            const token = parse_token()
+            if (token) {
+                tokens.push(token)
+            }
+        }
+        skip()
+        if (i >= src.length) {
+            throw new LexerError(`Unterminated interpolated string expression`, span(start_span))
+        }
+        if (tokens.length === 0) {
+            throw new LexerError(`Empty interpolated string expression`, span(start_span))
+        }
+        return new InterpolatedStringPartExpression(tokens, span(start_span))
     }
     return tokens
 }

@@ -1,0 +1,32 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+This is a string literal
+With `quotes`, newline
+and a tab	character
+This is a multiline
+string literal
+String interpolation: 1, 2, test, true
+Multiline string interpolation:
+1
+2
+
+/expected ---
+
+fn main():
+    print("This is a string literal")
+    print("With \"quotes\", newline\nand a tab\tcharacter")
+    print("""This is a multiline
+string literal""")
+    let a = 1
+    let b = "test"
+    let c = true
+    print(f"String interpolation: {a}, {a + 1}, {b}, {c}")
+    print(f"""Multiline string interpolation:
+{a}
+{a + 1}""")
+end

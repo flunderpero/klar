@@ -1,0 +1,21 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+2
+10
+world
+
+/expected ---
+
+fn main():
+    mut numbers = [1, 2, 3]
+    print(numbers[1])
+    numbers[1] = 10
+    print(numbers[1])
+    mut strings = ["hello", "world"]
+    print(strings[1])
+end

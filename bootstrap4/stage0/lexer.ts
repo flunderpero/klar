@@ -15,6 +15,8 @@ export class LexicalToken extends Token {
             | ")"
             | "{"
             | "}"
+            | "["
+            | "]"
             | "<"
             | ">"
             | "."
@@ -357,6 +359,8 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
             [
                 "(",
                 ")",
+                "[",
+                "]",
                 "{",
                 "}",
                 "<",

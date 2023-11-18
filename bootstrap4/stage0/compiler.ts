@@ -174,9 +174,17 @@ function code_gen(ast: AST.AST) {
                 return `${kind} ${e.name};`
             }
         } else if (e instanceof AST.Assignment) {
-            const target = transpile_expression(e.target)
             const value = transpile_expression(e.value)
+            if (e.target instanceof AST.IndexedAccess) {
+                return `${transpile_expression(e.target.target)}.set(${transpile_expression(
+                    e.target.index,
+                )}, ${value});`
+            }
+            const target = transpile_expression(e.target)
             return `${target} = ${value};`
+        } else if (e instanceof AST.ArrayLiteral) {
+            const values = e.values.map((x) => `_.push(${transpile_expression(x)});`).join("")
+            return `(function () { const _ = Vector.new(); ${values} return _; })()`
         } else if (e instanceof AST.Block) {
             return transpile_block(e)
         } else if (e instanceof AST.If) {
@@ -239,6 +247,10 @@ function code_gen(ast: AST.AST) {
                 return `${target}[${e.field}]`
             }
             return `${target}.${e.field}`
+        } else if (e instanceof AST.IndexedAccess) {
+            const target = transpile_expression(e.target)
+            const index = transpile_expression(e.index)
+            return `${target}.get(${index})`
         } else if (e instanceof AST.Not) {
             const value = transpile_expression(e.value)
             return `!${value}`
@@ -431,7 +443,7 @@ async function compile({
         ast = semantic_analysis({ast})
         transpiled = code_gen(ast)
     } catch (error: any) {
-        if (debug) {
+        if (debug || debug_ast || debug_tokens || debug_transpiled) {
             throw error
         }
         console.error(`${log_prefix} Compile error: ${error.message}`)

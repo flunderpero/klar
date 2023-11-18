@@ -525,6 +525,35 @@ export class FieldAccess extends Expression {
     }
 }
 
+export class IndexedAccess extends Expression {
+    kind = "indexed access"
+    target: Expression
+    index: Expression
+
+    constructor(data: {target: Expression; index: Expression}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof IndexedAccess.prototype)
+    }
+
+    contained_nodes() {
+        return [this.target, this.index]
+    }
+}
+
+export class ArrayLiteral extends Expression {
+    kind = "array literal"
+    values: Expression[]
+
+    constructor(data: {values: Expression[]}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof ArrayLiteral.prototype)
+    }
+
+    contained_nodes() {
+        return this.values
+    }
+}
+
 type BinaryOperator = "+" | "-" | "*" | "/" | "==" | "!=" | "<" | "<=" | ">" | ">=" | "and" | "or"
 
 export class BinaryExpression extends Expression {
@@ -1256,6 +1285,8 @@ function parse_ignoring_types(tokens: TokenStream): AST {
                 expression = parse_return_expression()
             } else if (simple_token === "match") {
                 expression = parse_match_expression()
+            } else if (simple_token === "[") {
+                expression = parse_array_literal()
             }
         } else if (token instanceof NumberToken) {
             tokens.consume()
@@ -1284,6 +1315,8 @@ function parse_ignoring_types(tokens: TokenStream): AST {
                 expression = try_parse_function_call(expression) || expression
             } else if (tokens.simple_peek() === ".") {
                 expression = parse_field_access(expression)
+            } else if (tokens.simple_peek() === "[") {
+                expression = parse_indexed_access(expression)
             } else {
                 break
             }
@@ -1497,6 +1530,26 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         }
         span = Span.combine(tokens.expect(")").span, span)
         return new ParenthesizedExpression({expression}, span)
+    }
+
+    function parse_indexed_access(target: Expression): Expression {
+        const span = tokens.consume().span
+        const index = parse_expression()
+        const end_span = tokens.expect("]").span
+        return new IndexedAccess({target, index}, Span.combine(span, end_span))
+    }
+
+    function parse_array_literal(): ArrayLiteral {
+        const span = tokens.consume().span
+        const values: Expression[] = []
+        while (!tokens.at_end() && tokens.simple_peek() !== "]") {
+            if (values.length > 0) {
+                tokens.expect(",")
+            }
+            values.push(parse_expression())
+        }
+        const end_span = tokens.expect("]").span
+        return new ArrayLiteral({values}, Span.combine(span, end_span))
     }
 
     function parse_match_expression(): Match {

@@ -36,6 +36,14 @@ trait PartialOrd:
     fn ge(self, rhs Self) bool
 end
 
+trait IndexedGet<T>:
+    fn get(self, i i32) T
+end
+
+trait IndexedSet<T>:
+    fn set(mut self, i i32, v T)
+end
+
 -- This is just a marker trait. `PartialOrd` must be implemented.
 trait Ord:
 end
@@ -177,12 +185,18 @@ impl Vector<T>:
     fn push(mut self, s T):
         self.data.push(s)
     end
+end
+
+impl IndexedGet<T> for Vector<T>:
     fn get(self, i i32) T:
         if i >= self.len():
             panic("Vector index out of bounds")
         end
         return self.data.get(i)
     end
+end
+
+impl IndexedSet<T> for Vector<T>:
     fn set(mut self, i i32, v T):
         if i >= self.len():
             panic("Vector index out of bounds")

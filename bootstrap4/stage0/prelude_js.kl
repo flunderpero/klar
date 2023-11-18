@@ -7,17 +7,17 @@ struct bool:
 end
 
 trait ToStr:
-    fn to_str(self) Str
+    fn to_str(self) str
 end
 
 impl ToStr for i32:
-    fn to_str(self) Str:
+    fn to_str(self) str:
         stdlib_i32_to_str(self)
     end
 end
 
 impl ToStr for bool:
-    fn to_str(self) Str:
+    fn to_str(self) str:
         stdlib_bool_to_str(self)
     end
 end
@@ -31,13 +31,13 @@ extern:
 
     -- Internal helper functions.
 
-    fn stdlib_i32_to_str(value i32) Str
+    fn stdlib_i32_to_str(value i32) str
 
-    fn stdlib_bool_to_str(value bool) Str
+    fn stdlib_bool_to_str(value bool) str
 end
 
 -- Built-in types 
 
-struct Str:
+struct str:
 end
 

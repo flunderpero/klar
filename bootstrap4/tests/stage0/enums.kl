@@ -17,7 +17,7 @@ enum Color:
 end
 
 impl ToStr for Color:
-    fn to_str(self) Str:
+    fn to_str(self) str:
         -- We currently cannot match, so this function is kinda useless.
         -- But we want to demenstrate that traits can be implemented for enums.
         return 1

@@ -1010,6 +1010,11 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
             )
             resolve_for_contained_types_and_nodes(e)
             env.self_type = prev_self_type
+        } else if (e instanceof TraitDeclaration) {
+            env = new Environment(env, env.on_scope_enter)
+            env.add_resolved("Self", self_type)
+            resolve_for_contained_types_and_nodes(e)
+            env = env.outer!
         } else if (e instanceof IdentifierReference) {
             const resolved = env.find_variable(e.name) ?? env.find_resolved_type(e.name)
             if (!resolved) {

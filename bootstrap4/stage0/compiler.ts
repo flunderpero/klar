@@ -87,7 +87,7 @@ function semantic_analysis({ast}: {ast: AST.AST}) {
                     `Missing implementation of function ${quote(
                         signature.to_signature_string(),
                     )} of trait ${quote(trait.to_signature_string())}`,
-                    signature.span,
+                    impl.span,
                 )
             }
         }
@@ -98,7 +98,7 @@ function semantic_analysis({ast}: {ast: AST.AST}) {
                     `Missing implementation of function ${quote(
                         signature.to_signature_string(),
                     )} of trait ${quote(trait.to_signature_string())}`,
-                    signature.span,
+                    impl.span,
                 )
             }
         }
@@ -110,6 +110,18 @@ function semantic_analysis({ast}: {ast: AST.AST}) {
  * Transpile AST to JavaScript.
  */
 function code_gen(ast: AST.AST) {
+    const binary_op_functions = {
+        "==": "eq",
+        "!=": "ne",
+        "<": "lt",
+        "<=": "le",
+        ">": "gt",
+        ">=": "ge",
+        "+": "add",
+        "-": "sub",
+        "*": "mul",
+        "/": "div",
+    }
     let res = ""
     for (const expression of ast.body) {
         res += transpile_expression(expression)
@@ -122,8 +134,10 @@ function code_gen(ast: AST.AST) {
             return `function ${e.declaration.name}(${parameters})${block}`
         } else if (e instanceof AST.Return) {
             return `return ${transpile_expression(e.value)};`
+        } else if (e instanceof AST.Number_) {
+            return `new i32(${e.value})`
         } else if (e instanceof AST.Bool || e instanceof AST.Number_) {
-            return `${e.value}`
+            return `new bool(${e.value})`
         } else if (e instanceof AST.String_) {
             let value = e.value.replace(/\\/g, "\\\\")
             value = value.replace(/\n/g, "\\n")
@@ -131,12 +145,12 @@ function code_gen(ast: AST.AST) {
             value = value.replace(/"/g, "\\`")
             if (e.is_multiline) {
                 value = value.replace(/`/g, "\\`")
-                return `\`${value}\``
+                return `new str(\`${value}\`)`
             }
-            return `"${value}"`
+            return `new str("${value}")`
         } else if (e instanceof AST.InterpolatedString) {
-            const parts = e.expressions.map((x) => `(${transpile_expression(x)})`)
-            return `(${parts.join("+")})`
+            const parts = e.expressions.map((x) => `_.push(${transpile_expression(x)}.to_str());`)
+            return `(function () { const _ = new str(""); ${parts.join("")}; return _; })()`
         } else if (e instanceof AST.FunctionCall) {
             const args = e.arguments.map(transpile_expression)
             if (e.target instanceof AST.FunctionDefinition) {
@@ -168,7 +182,7 @@ function code_gen(ast: AST.AST) {
         } else if (e instanceof AST.If) {
             const condition = transpile_expression(e.condition)
             const then = transpile_block(e.then_block)
-            let s = `if (${condition}) ${then}`
+            let s = `if (${condition}.value) ${then}`
             if (e.else_block) {
                 const else_ = transpile_block(e.else_block)
                 s += ` else ${else_}`
@@ -199,17 +213,16 @@ function code_gen(ast: AST.AST) {
         } else if (e instanceof AST.BinaryExpression) {
             const lhs = transpile_expression(e.lhs)
             const rhs = transpile_expression(e.rhs)
-            let operator: string = e.operator
-            if (operator === "and") {
-                operator = "&&"
-            } else if (operator === "or") {
-                operator = "||"
-            } else if (operator === "==") {
-                operator = "==="
-            } else if (operator === "!=") {
-                operator = "!=="
+            if (e.operator === "and") {
+                return `new bool(${lhs}.value && ${rhs}.value)`
+            } else if (e.operator === "or") {
+                return `new bool(${lhs}.value || ${rhs}.value)`
             }
-            return `(${lhs} ${operator} ${rhs})`
+            const function_name = binary_op_functions[e.operator]
+            if (!function_name) {
+                throw new CodeGenError(`Unexpected operator ${quote(e.operator)}`, e.span)
+            }
+            return `(${lhs}.${function_name}(${rhs}))`
         } else if (e instanceof AST.FieldAccess) {
             if (
                 e.target instanceof AST.IdentifierReference &&
@@ -331,7 +344,7 @@ function code_gen(ast: AST.AST) {
         pattern: AST.MatchPattern,
     ) {
         if (pattern instanceof AST.LiteralMatchPattern) {
-            return `(${match_expression} === ${pattern.value})`
+            return `(${match_expression}.value === ${pattern.value})`
         } else if (pattern instanceof AST.WildcardMatchPattern) {
             return "true"
         } else if (pattern instanceof AST.CaptureMatchPattern) {
@@ -456,7 +469,7 @@ async function compile_prelude(): Promise<{env: AST.Environment; prelude: string
             captured_env = x
         }
     })
-    const prelude = await compile({file: `${dir}/prelude_js.kl`, env})
+    const prelude = await compile({file: `${dir}/prelude_js.kl`, env, disable_debug: true})
     return {env: captured_env!, prelude}
 }
 

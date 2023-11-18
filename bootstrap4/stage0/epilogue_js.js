@@ -1,1 +1,1 @@
-process.exit(main())
+process.exit(main()?.value ?? 0)

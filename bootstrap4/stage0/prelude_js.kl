@@ -1,43 +1,147 @@
--- Built-in primitive types
-
-struct i32: 
-end
-
-struct bool:
-end
+-- Built-in traits
 
 trait ToStr:
     fn to_str(self) str
 end
 
-impl ToStr for i32:
-    fn to_str(self) str:
-        stdlib_i32_to_str(self)
-    end
+trait Add:
+    fn add(self, rhs Self) Self
 end
 
-impl ToStr for bool:
-    fn to_str(self) str:
-        stdlib_bool_to_str(self)
-    end
+trait Sub:
+    fn sub(self, rhs Self) Self
 end
 
--- Provided by the compiler.
+trait Mul:
+    fn mul(self, rhs Self) Self
+end
+
+trait Div:
+    fn div(self, rhs Self) Self
+end
+
+trait PartialEq:
+    fn eq(self, rhs Self) bool
+    fn ne(self, rhs Self) bool
+end
+
+-- This is just a marker trait. `PartialEq` must be implemented.
+trait Eq:
+end
+
+trait PartialOrd:
+    fn lt(self, rhs Self) bool
+    fn le(self, rhs Self) bool
+    fn gt(self, rhs Self) bool
+    fn ge(self, rhs Self) bool
+end
+
+-- This is just a marker trait. `PartialOrd` must be implemented.
+trait Ord:
+end
 
 extern:
-    -- Built-in functions
 
     fn print(s ToStr)
 
-    -- Internal helper functions.
+    -- i32
 
-    fn stdlib_i32_to_str(value i32) str
+    struct i32: 
+    end
 
-    fn stdlib_bool_to_str(value bool) str
+    impl ToStr for i32:
+        fn to_str(self) str
+    end
+
+    impl Add for i32:
+        fn add(self, rhs Self) Self
+    end
+
+    impl Sub for i32:
+        fn sub(self, rhs Self) Self
+    end
+
+    impl Mul for i32:
+        fn mul(self, rhs Self) Self
+    end
+    
+    impl Div for i32:
+        fn div(self, rhs Self) Self
+    end
+
+    impl PartialEq for i32:
+        fn eq(self, rhs Self) bool
+        fn ne(self, rhs Self) bool
+    end
+
+    impl Eq for i32:
+        fn eq(self, rhs Self) bool
+        fn ne(self, rhs Self) bool
+    end
+
+    impl PartialOrd for i32:
+        fn lt(self, rhs Self) bool
+        fn le(self, rhs Self) bool
+        fn gt(self, rhs Self) bool
+        fn ge(self, rhs Self) bool
+    end
+
+    impl Ord for i32:
+    end
+
+    -- bool
+
+    struct bool:
+    end
+
+    impl ToStr for bool:
+        fn to_str(self) str
+    end
+
+    impl PartialEq for bool:
+        fn eq(self, rhs Self) bool
+        fn ne(self, rhs Self) bool
+    end
+
+    impl PartialOrd for bool:
+        fn lt(self, rhs Self) bool
+        fn le(self, rhs Self) bool
+        fn gt(self, rhs Self) bool
+        fn ge(self, rhs Self) bool
+    end
+
+    impl Ord for bool:
+    end
+
+    -- str
+
+    struct str:
+    end
+
+    impl str:
+        fn len(self) usize
+        fn push(mut self, s str) str
+    end
+
+    impl ToStr for str:
+        fn to_str(self) str
+    end
+
+    impl PartialEq for str:
+        fn eq(self, rhs Self) bool
+        fn ne(self, rhs Self) bool
+    end
+
+    impl Eq for str:
+    end
+
+    impl PartialOrd for str:
+        fn lt(self, rhs Self) bool
+        fn le(self, rhs Self) bool
+        fn gt(self, rhs Self) bool
+        fn ge(self, rhs Self) bool
+    end
+
+    impl Ord for str:
+    end
 end
-
--- Built-in types 
-
-struct str:
-end
-

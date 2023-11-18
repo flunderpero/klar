@@ -1,0 +1,32 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+1
+0
+
+/expected ---
+
+enum MayHaveValue<T>:
+    Some(T)
+    None
+end
+
+impl MayHaveValue<T>:
+    fn print(self):
+        match self:
+            MayHaveValue.Some(x) => print(x)
+            MayHaveValue.None => print(0)
+        end
+    end
+end
+
+fn main():
+    let some = MayHaveValue.Some(1)
+    some.print()
+    let none = MayHaveValue.None
+    none.print()
+end

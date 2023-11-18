@@ -1,0 +1,27 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+1
+2
+3
+
+/expected ---
+
+fn main():
+    mut v = Vector<i32>.new()
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    mut i = 0
+    loop:
+        if i >= v.len():
+            break
+        end
+        print(v.get(i))
+        i = i + 1
+    end
+end

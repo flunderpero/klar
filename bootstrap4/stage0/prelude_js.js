@@ -4,6 +4,13 @@ function print(value) {
     console.log(value.to_str().value)
 }
 
+// For compiler debugging purposes only.
+const jsprint = console.log
+
+function panic(value) {
+    throw new Error(value.to_str().value)
+}
+
 class i32 {
     constructor(value) {
         this.value = value
@@ -130,5 +137,23 @@ class str {
 
     len() {
         return new usize(this.value.length)
+    }
+}
+
+class JSArray extends Array {
+    static new() {
+        return new JSArray()
+    }
+
+    len() {
+        return new i32(this.length)
+    }
+
+    get(index) {
+        return this[index.value]
+    }
+
+    set(index, value) {
+        this[index.value] = value
     }
 }

@@ -1831,45 +1831,64 @@ function parse_ignoring_types(tokens: TokenStream): AST {
     }
 
     function parse_identifier_reference(token: Identifier): IdentifierReference {
-        const type_arguments = try_parse_generic_type_parameters()
+        let type_arguments: Type[]
+        // TODO: We should try to make this work without backtracking.
+        //       For now we have to because we may parse a less-than operator
+        //       as a type argument list. We will try to parse `a < b` as a type argument
+        //       list, but we should only parse `a` as an identifier reference.
+        const mark = tokens.mark()
+        try {
+            type_arguments = try_parse_generic_type_parameters()
+        } catch (e) {
+            tokens.reset(mark)
+            type_arguments = []
+        }
         const span = token.span
         return new IdentifierReference({name: token.value, type_parameters: type_arguments}, span)
     }
 
     function try_parse_struct_initialization(token: Identifier): StructInstantiation | undefined {
-        let type_arguments: Type[] = []
+        // TODO: We should try to make this work without backtracking.
+        //       For now we have to because we may parse a less-than operator.
         const mark = tokens.mark()
-        if (tokens.simple_peek() === "<") {
+        try {
+            let type_arguments: Type[] = []
+            const mark = tokens.mark()
+            if (tokens.simple_peek() === "<") {
+                tokens.consume()
+                while (!tokens.at_end() && tokens.simple_peek() !== ">") {
+                    if (type_arguments.length > 0) {
+                        tokens.expect(",")
+                    }
+                    const type: Type = parse_type()
+                    type_arguments.push(type)
+                }
+                tokens.expect(">")
+            }
+            if (tokens.simple_peek() !== "{") {
+                tokens.reset(mark)
+                return
+            }
             tokens.consume()
-            while (!tokens.at_end() && tokens.simple_peek() !== ">") {
-                if (type_arguments.length > 0) {
+            const args: Record<string, Expression> = {}
+            while (!tokens.at_end() && tokens.simple_peek() !== "}") {
+                if (Object.keys(args).length > 0) {
                     tokens.expect(",")
                 }
-                const type: Type = parse_type()
-                type_arguments.push(type)
+                const name = tokens.expect_identifier().value
+                tokens.expect(":")
+                const value = parse_expression()
+                args[name] = value
             }
-            tokens.expect(">")
-        }
-        if (tokens.simple_peek() !== "{") {
+            const span = Span.combine(tokens.expect("}").span, token.span)
+            return new StructInstantiation(
+                {target_struct_name: token.value, values: args, type_arguments},
+                span,
+            )
+        } catch (e) {
             tokens.reset(mark)
-            return
+            return undefined
         }
-        tokens.consume()
-        const args: Record<string, Expression> = {}
-        while (!tokens.at_end() && tokens.simple_peek() !== "}") {
-            if (Object.keys(args).length > 0) {
-                tokens.expect(",")
-            }
-            const name = tokens.expect_identifier().value
-            tokens.expect(":")
-            const value = parse_expression()
-            args[name] = value
-        }
-        const span = Span.combine(tokens.expect("}").span, token.span)
-        return new StructInstantiation(
-            {target_struct_name: token.value, values: args, type_arguments},
-            span,
-        )
     }
 
     function try_parse_function_call(

@@ -81,6 +81,10 @@ trait Iterator<T>:
     end
 end
 
+trait Len:
+    fn len(self) i32
+end
+
 extern:
 
     fn print(s ToStr)
@@ -202,6 +206,64 @@ extern:
     end
 end
 
+-- Fixed size array
+-- This is an internal data structure used by the compiler. 
+-- TODO: Don't expose this to the user.
+
+struct array<T>:
+    data JSArray<T>
+end
+
+impl array<T>:
+    fn new(size i32) array<T>:
+        return array { data: JSArray<T>.new(size) }
+    end
+
+    fn iter(self) ArrayIter<T>:
+        return ArrayIter<T> { arr: self, index: 0 }
+    end
+end
+
+impl Len for array<T>:
+    fn len(self) i32:
+        return self.data.len()
+    end
+end
+
+impl IndexedGet<T> for array<T>:
+    fn get(self, i i32) T:
+        if i >= self.len():
+            panic("Array index out of bounds")
+        end
+        return self.data.get(i)
+    end
+end
+
+impl IndexedSet<T> for array<T>:
+    fn set(mut self, i i32, v T):
+        if i >= self.len():
+            panic("Array index out of bounds")
+        end
+        self.data.set(i, v)
+    end
+end
+
+struct ArrayIter<T>:
+    arr array<T>
+    index i32
+end
+
+impl Iterator<T> for ArrayIter<T>:
+    fn next(mut self) Option<T>:
+        if self.index >= self.arr.len():
+            return Option.None
+        end
+        let value = self.arr.get(self.index)
+        self.index = self.index + 1
+        return Option.Some(value)
+    end
+end
+
 -- Vector
 
 struct Vector<T>:
@@ -210,10 +272,7 @@ end
 
 impl Vector<T>:
     fn new() Vector<T>:
-        return Vector { data: JSArray<T>.new() }
-    end
-    fn len(self) i32:
-        return self.data.len()
+        return Vector { data: JSArray<T>.new(0) }
     end
 
     fn push(mut self, s T):
@@ -222,6 +281,12 @@ impl Vector<T>:
 
     fn iter(self) VectorIter<T>:
         return VectorIter<T> { vec: self, index: 0 }
+    end
+end
+
+impl Len for Vector<T>:
+    fn len(self) i32:
+        return self.data.len()
     end
 end
 

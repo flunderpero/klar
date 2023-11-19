@@ -55,6 +55,7 @@ function semantic_analysis({ast}: {ast: AST.AST}) {
         if (obj.kind) {
             check_mutability(obj)
             check_all_trait_functions_are_implemented(obj)
+            check_field_access(obj)
         }
         for (const key of Object.keys(obj)) {
             const value = obj[key]
@@ -70,6 +71,29 @@ function semantic_analysis({ast}: {ast: AST.AST}) {
     function check_mutability(expression: AST.Expression) {
         if (expression instanceof AST.Assignment) {
             // fixme: we first have to resolve all types.
+        }
+    }
+    function check_field_access(e: AST.Expression) {
+        if (!(e instanceof AST.FieldAccess)) {
+            return
+        }
+        if (e.target instanceof AST.IdentifierReference) {
+            if (e.target.resolved instanceof AST.StructDeclaration) {
+                const struct = e.target.resolved
+                if (
+                    !struct.members[e.field] &&
+                    !struct.impls.find(
+                        (impl) =>
+                            impl.member_functions.some((fn) => fn.declaration.name === e.field) ||
+                            impl.static_functions.some((fn) => fn.declaration.name === e.field),
+                    )
+                ) {
+                    throw new SemanticAnalysisError(
+                        `Struct ${quote(e.target.name)} has no field or function ${quote(e.field)}`,
+                        e.span,
+                    )
+                }
+            }
         }
     }
     function check_all_trait_functions_are_implemented(impl: AST.Expression) {

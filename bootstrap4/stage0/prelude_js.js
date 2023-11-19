@@ -141,8 +141,8 @@ class str {
 }
 
 class JSArray extends Array {
-    static new() {
-        return new JSArray()
+    static new(size) {
+        return new JSArray(size.value)
     }
 
     len() {

@@ -131,7 +131,15 @@ function code_gen(ast: AST.AST) {
         if (e instanceof AST.FunctionDefinition) {
             const parameters = e.declaration.parameters.map((x) => x.name).join(",")
             const block = transpile_block(e.block)
+            // fixme: Use a try / catch to be able to break out of contained a match
+            // expression with a `return` statement.
             return `function ${e.declaration.name}(${parameters})${block}`
+        } else if (e instanceof AST.ClosureDefinition) {
+            const parameters = e.parameters.map((x) => x.name).join(",")
+            const block = transpile_block(e.block)
+            // fixme: Use a try / catch to be able to break out of contained a match
+            // expression with a `return` statement.
+            return `function (${parameters})${block}`
         } else if (e instanceof AST.Return) {
             return `return ${transpile_expression(e.value)};`
         } else if (e instanceof AST.Number_) {
@@ -213,7 +221,13 @@ function code_gen(ast: AST.AST) {
             return `${base_class}${variants}`
         } else if (e instanceof AST.Loop) {
             const block = transpile_block(e.block)
-            return `while (true) ${block}`
+            // The `try / catch` is a bit of a hack to be able to break out of a match
+            // expression.
+            return `while (true) try { ${block} } catch (e) {
+                if (e.message.startsWith("break")) break;
+                if (e.message.startsWith("continue")) continue;
+                throw e;
+            }`
         } else if (e instanceof AST.Break) {
             return "break;"
         } else if (e instanceof AST.Continue) {
@@ -274,6 +288,11 @@ function code_gen(ast: AST.AST) {
             throw new CodeGenError(`Unexpected expression ${quote(e.kind)}`, e.span)
         }
     }
+    /**
+     * When `assign_last_expression_to` is set, the last expression of the block
+     * is assigned to the given variable. If the last expression affects the control flow
+     * (i.e. return, break, continue), an error with the expression is thrown.
+     */
     function transpile_block(block: AST.Block, assign_last_expression_to?: string) {
         if (assign_last_expression_to) {
             if (block.body.length === 0) {
@@ -281,9 +300,15 @@ function code_gen(ast: AST.AST) {
             }
             const last_expression = block.body.at(-1)!
             const body = block.body.slice(0, -1).map(transpile_expression).join("\n")
-            return `{${body};${assign_last_expression_to} = ${transpile_expression(
-                last_expression,
-            )}}`
+            const last_expression_code = transpile_expression(last_expression)
+            if (
+                block.body.at(-1) instanceof AST.Return ||
+                block.body.at(-1) instanceof AST.Break ||
+                block.body.at(-1) instanceof AST.Continue
+            ) {
+                return `{${body};throw new Error("${last_expression_code}")}`
+            }
+            return `{${body};${assign_last_expression_to} = ${last_expression_code};}`
         }
         const body = block.body.map(transpile_expression).join("\n")
         return `{${body}}`
@@ -304,6 +329,20 @@ function code_gen(ast: AST.AST) {
             }
             for (const fn of impl.static_functions) {
                 transpile_impl_function(fn, true)
+            }
+            if (impl.resolved_trait) {
+                for (const fn of impl.resolved_trait.member_function_default_impls) {
+                    if (impl.member_functions.find((x) => x.declaration.name === fn.name)) {
+                        continue
+                    }
+                    transpile_impl_function(fn, false)
+                }
+                for (const fn of impl.resolved_trait.static_function_default_impls) {
+                    if (impl.static_functions.find((x) => x.declaration.name === fn.name)) {
+                        continue
+                    }
+                    transpile_impl_function(fn, false)
+                }
             }
         }
         return impls
@@ -327,7 +366,7 @@ function code_gen(ast: AST.AST) {
             }
             s += transpile_block(e.wildcard_block, "__match_result")
         }
-        s += "return __match_result;})()"
+        s += `return __match_result;})()`
         return s
     }
     function declare_captured_variables(pattern: AST.MatchPattern) {
@@ -450,10 +489,16 @@ async function compile({
         process.exit(1)
     }
     if (prettify) {
-        const proc = Bun.spawn(["prettier", "--stdin-filepath", "transpiled.js"], {stdin: "pipe"})
-        proc.stdin.write(transpiled)
-        proc.stdin.end()
-        transpiled = await new Response(proc.stdout).text()
+        try {
+            const proc = Bun.spawn(["prettier", "--stdin-filepath", "transpiled.js"], {
+                stdin: "pipe",
+            })
+            proc.stdin.write(transpiled)
+            proc.stdin.end()
+            transpiled = await new Response(proc.stdout).text()
+        } catch (error: any) {
+            console.error(`${log_prefix} Error running prettier: ${error.message}`)
+        }
     }
     if (debug_transpiled) {
         console.log(`\n${log_prefix} TRANSPILED:`)

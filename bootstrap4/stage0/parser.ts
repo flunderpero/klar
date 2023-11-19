@@ -21,8 +21,8 @@ export class TokenStream {
         return this.index >= this.tokens.length
     }
 
-    peek(): Token | undefined {
-        return this.tokens[this.index]
+    peek(ahead = 0): Token | undefined {
+        return this.tokens[this.index + ahead]
     }
 
     consume() {
@@ -66,8 +66,8 @@ export class TokenStream {
         return this.consume()
     }
 
-    simple_peek() {
-        const token = this.peek()
+    simple_peek(ahead = 0) {
+        const token = this.peek(ahead)
         return token instanceof LexicalToken ? token.value : undefined
     }
 
@@ -788,6 +788,26 @@ export class FunctionDeclaration extends DeclarationOrDefinition {
     }
 }
 
+export class ClosureDefinition extends Expression {
+    kind = "closure definition"
+    parameters: Parameter[]
+    return_type: Type
+    block: Block
+
+    constructor(data: {parameters: Parameter[]; return_type: Type; block: Block}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof ClosureDefinition.prototype)
+    }
+
+    contained_nodes() {
+        return [this.block]
+    }
+
+    contained_types() {
+        return [this.return_type, ...this.parameters.map((p) => p.type)]
+    }
+}
+
 export class ExternBlock extends DeclarationOrDefinition {
     kind = "extern block"
     functions: FunctionDeclaration[] = []
@@ -841,8 +861,8 @@ export class TraitDeclaration extends DeclarationOrDefinition {
     name: string
     member_function_declarations: FunctionDeclaration[]
     static_function_declarations: FunctionDeclaration[]
-    member_function_default_impls: Record<string, FunctionDefinition>
-    static_function_default_impls: Record<string, FunctionDefinition>
+    member_function_default_impls: FunctionDefinition[]
+    static_function_default_impls: FunctionDefinition[]
     type_parameters: Type[]
 
     constructor(
@@ -850,8 +870,8 @@ export class TraitDeclaration extends DeclarationOrDefinition {
             name: string
             member_function_declarations: FunctionDeclaration[]
             static_function_declarations: FunctionDeclaration[]
-            member_function_default_impls: Record<string, FunctionDefinition>
-            static_function_default_impls: Record<string, FunctionDefinition>
+            member_function_default_impls: FunctionDefinition[]
+            static_function_default_impls: FunctionDefinition[]
             type_parameters: Type[]
         },
         span: Span,
@@ -880,6 +900,15 @@ export class TraitDeclaration extends DeclarationOrDefinition {
 }
 
 const self_type = new Type({name: "Self", type_parameters: []}, new Span(0, 0, "<builtin>", ""))
+
+const unit_type = new Type(
+    {
+        name: "()",
+        type_parameters: [],
+        resolved: new TupleDeclaration({members: []}, new Span(0, 0, "<builtin>", "")),
+    },
+    new Span(0, 0, "<builtin>", ""),
+)
 
 // Environment
 
@@ -1020,6 +1049,21 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
                 )
             }
             resolve_types_and_identifier_references(e.block, fn_env)
+        } else if (e instanceof ClosureDefinition) {
+            for (const x of e.contained_types()) {
+                env.resolve_type(x)
+            }
+            const fn_env = new Environment(env)
+            for (const p of e.parameters) {
+                fn_env.add_variable(
+                    p.name,
+                    new VariableDeclaration(
+                        {name: p.name, type: p.type, mutable: p.mutable},
+                        p.span,
+                    ),
+                )
+            }
+            resolve_types_and_identifier_references(e.block, fn_env)
         } else if (e instanceof FunctionDeclaration) {
             env.resolve_type(e.return_type)
             for (const p of e.parameters) {
@@ -1042,6 +1086,7 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
         } else if (e instanceof TraitDeclaration) {
             env = new Environment(env, env.on_scope_enter)
             env.add_resolved("Self", self_type)
+            env.self_type = env.resolve_type(new Type({name: e.name, type_parameters: []}, e.span))
             resolve_for_contained_types_and_nodes(e)
             env = env.outer!
         } else if (e instanceof IdentifierReference) {
@@ -1249,7 +1294,11 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         if (token instanceof LexicalToken) {
             const simple_token = token.value
             if (simple_token === "fn") {
-                expression = parse_function_definition()
+                if (tokens.simple_peek(2) === "(") {
+                    expression = parse_function_definition()
+                } else {
+                    expression = parse_closure()
+                }
             } else if (simple_token === "let" || simple_token === "mut") {
                 expression = parse_variable_declaration()
             } else if (simple_token === "true" || simple_token === "false") {
@@ -1427,8 +1476,8 @@ function parse_ignoring_types(tokens: TokenStream): AST {
                 name,
                 member_function_declarations: [],
                 static_function_declarations: [],
-                member_function_default_impls: {},
-                static_function_default_impls: {},
+                member_function_default_impls: [],
+                static_function_default_impls: [],
                 type_parameters,
             },
             span,
@@ -1445,9 +1494,9 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             } else {
                 const fn = parse_function_body(declaration)
                 if (fn.declaration.parameters[0].name !== "self") {
-                    trait.static_function_default_impls[fn.declaration.name] = fn
+                    trait.static_function_default_impls.push(fn)
                 } else {
-                    trait.member_function_default_impls[fn.declaration.name] = fn
+                    trait.member_function_default_impls.push(fn)
                 }
             }
         }
@@ -1709,6 +1758,31 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         return new FunctionDeclaration({name, parameters, return_type}, span)
     }
 
+    function parse_function_type(): Type {
+        const span = tokens.consume().span
+        tokens.expect("(")
+        const parameter_types: Type[] = []
+        while (!tokens.at_end() && tokens.simple_peek() !== ")") {
+            if (parameter_types.length > 0) {
+                tokens.expect(",")
+            }
+            parameter_types.push(parse_type())
+        }
+        tokens.expect(")")
+        const return_type = try_parse_type() || unit_type
+        const declaration = new FunctionDeclaration(
+            {
+                name: "",
+                parameters: parameter_types.map(
+                    (t) => new Parameter({name: "", type: t, mutable: false}, span),
+                ),
+                return_type,
+            },
+            span,
+        )
+        return new Type({name: "<anonymous>", type_parameters: [], resolved: declaration}, span)
+    }
+
     function parse_function_body(declaration: FunctionDeclaration): FunctionDefinition {
         const fn_def = new FunctionDefinition(
             {declaration, block: new Block({body: []}, declaration.span)},
@@ -1722,6 +1796,32 @@ function parse_ignoring_types(tokens: TokenStream): AST {
     function parse_function_definition(): FunctionDefinition {
         const declaration = parse_function_declaration()
         return parse_function_body(declaration)
+    }
+
+    function parse_closure(): ClosureDefinition {
+        const span = tokens.expect("fn").span
+        tokens.expect("(")
+        const parameters: Parameter[] = []
+        while (!tokens.at_end() && tokens.simple_peek() !== ")") {
+            if (parameters.length > 0) {
+                tokens.expect(",")
+            }
+            const name_token = tokens.expect_identifier()
+            const type = try_parse_type() || type_needs_to_be_inferred
+            parameters.push(
+                new Parameter({name: name_token.value, type, mutable: false}, name_token.span),
+            )
+        }
+        tokens.expect(")")
+        let return_type = type_needs_to_be_inferred
+        if (tokens.peek() instanceof Identifier) {
+            return_type = parse_type()
+        }
+        const block = parse_block("normal")
+        return new ClosureDefinition(
+            {parameters, return_type, block},
+            Span.combine(span, block.span),
+        )
     }
 
     function parse_return_expression(): Return {
@@ -1822,7 +1922,11 @@ function parse_ignoring_types(tokens: TokenStream): AST {
     }
 
     function try_parse_type(): Type | undefined {
-        if (tokens.peek() instanceof Identifier || tokens.simple_peek() === "(") {
+        if (
+            tokens.peek() instanceof Identifier ||
+            tokens.simple_peek() === "(" ||
+            tokens.simple_peek() === "fn"
+        ) {
             return parse_type()
         }
         return undefined
@@ -1831,6 +1935,9 @@ function parse_ignoring_types(tokens: TokenStream): AST {
     function parse_type(): Type {
         if (tokens.simple_peek() === "(") {
             return parse_tuple_declaration()
+        }
+        if (tokens.simple_peek() === "fn") {
+            return parse_function_type()
         }
         const token = tokens.expect_identifier()
         let end_span = token.span

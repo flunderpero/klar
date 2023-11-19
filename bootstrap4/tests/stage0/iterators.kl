@@ -1,0 +1,27 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+2
+3
+2
+1
+2
+
+/expected ---
+
+fn main():
+    let v = [1, 2, 3]
+    v.iter()
+        .filter(fn(x) => return x > 1)
+        .for_each(fn(x) => print(x))
+    let new_v = v.iter()
+        .filter(fn(x) => return x <= 2)
+        .collect()
+    print(new_v.len())
+    print(new_v[0])
+    print(new_v[1])
+end

@@ -1,4 +1,9 @@
--- Built-in traits
+-- Built-in structs, enum, and traits
+
+enum Option<T>:
+    None
+    Some(T)
+end
 
 trait ToStr:
     fn to_str(self) str
@@ -36,6 +41,10 @@ trait PartialOrd:
     fn ge(self, rhs Self) bool
 end
 
+-- This is just a marker trait. `PartialOrd` must be implemented.
+trait Ord:
+end
+
 trait IndexedGet<T>:
     fn get(self, i i32) T
 end
@@ -44,8 +53,32 @@ trait IndexedSet<T>:
     fn set(mut self, i i32, v T)
 end
 
--- This is just a marker trait. `PartialOrd` must be implemented.
-trait Ord:
+trait Iterator<T>:
+    fn next(self) T
+
+    fn for_each(self, f fn(T)):
+        loop:
+            let next = self.next()
+            match next:
+                Option.None :
+                    break
+                end
+                Option.Some(value) => f(value)
+            end
+        end
+    end
+
+    fn filter(self, f fn(T) bool) Self:
+        let vec = Vector<T>.new()
+        self.for_each(fn(value) => if f(value) => vec.push(value))
+        return vec.iter()
+    end
+
+    fn collect(self) Vector<T>:
+        let vec = Vector<T>.new()
+        self.for_each(fn(value) => vec.push(value))
+        return vec
+    end
 end
 
 extern:
@@ -182,8 +215,13 @@ impl Vector<T>:
     fn len(self) i32:
         return self.data.len()
     end
+
     fn push(mut self, s T):
         self.data.push(s)
+    end
+
+    fn iter(self) VectorIter<T>:
+        return VectorIter<T> { vec: self, index: 0 }
     end
 end
 
@@ -204,4 +242,21 @@ impl IndexedSet<T> for Vector<T>:
         self.data.set(i, v)
     end
 end
+
+struct VectorIter<T>:
+    vec Vector<T>
+    index i32
+end
+
+impl Iterator<T> for VectorIter<T>:
+    fn next(mut self) Option<T>:
+        if self.index >= self.vec.len():
+            return Option.None
+        end
+        let value = self.vec.get(self.index)
+        self.index = self.index + 1
+        return Option.Some(value)
+    end
+end
+
 

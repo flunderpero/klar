@@ -130,10 +130,6 @@ export class FunctionDefinition extends Expression {
         Object.assign(this as typeof data, data as typeof FunctionDefinition.prototype)
     }
 
-    get name() {
-        return this.declaration.name
-    }
-
     to_signature_string() {
         return this.declaration.to_signature_string()
     }
@@ -236,7 +232,7 @@ export class ParenthesizedExpression extends Expression {
 export class EnumDeclaration extends DeclarationOrDefinition {
     kind = "enum declaration"
     name: string
-    variants: Record<string, EnumVariant>
+    variants: EnumVariant[]
     type_parameters: Type[]
     impls: ImplDefinition[] = []
     extern?: boolean
@@ -244,7 +240,7 @@ export class EnumDeclaration extends DeclarationOrDefinition {
     constructor(
         data: {
             name: string
-            variants: Record<string, EnumVariant>
+            variants: EnumVariant[]
             type_parameters: Type[]
             extern?: boolean
         },
@@ -252,6 +248,10 @@ export class EnumDeclaration extends DeclarationOrDefinition {
     ) {
         super(span)
         Object.assign(this as typeof data, data as typeof EnumDeclaration.prototype)
+    }
+
+    get_variant(name: string): EnumVariant | undefined {
+        return this.variants.find((v) => v.name === name)
     }
 
     to_signature_string() {
@@ -1510,14 +1510,14 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         const name = tokens.expect_identifier().value
         const type_parameters = try_parse_generic_type_parameters()
         tokens.expect(":")
-        const variants: Record<string, EnumVariant> = {}
+        const variants = []
         while (!tokens.at_end() && tokens.simple_peek() !== "end") {
             const name = tokens.expect_identifier().value
             let values = new TupleDeclaration({members: []}, span)
             if (tokens.simple_peek() === "(") {
                 values = parse_tuple_declaration().resolved as TupleDeclaration
             }
-            variants[name] = new EnumVariant({name, values}, span)
+            variants.push(new EnumVariant({name, values}, span))
         }
         span = Span.combine(span, tokens.expect("end").span)
         return new EnumDeclaration({name, variants, type_parameters}, span)

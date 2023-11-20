@@ -2,6 +2,7 @@
  * Transpile Klar to JavaScript.
  */
 
+import assert from "assert"
 import {quote, Span, to_json} from "./common"
 import * as Lexer from "./lexer"
 import * as AST from "./parser"
@@ -32,19 +33,12 @@ class CodeGenError extends Error {
     }
 }
 
-/**
- * TODO: Implement these checks
- * - all trait functions are implemented with the correct signature
- * - an enum variant cannot be used in a binary expression
- * - matches are exhaustive
- * - match arms are exhaustive (i.e. all fields of a struct/enum are matched)
- */
-function semantic_analysis({ast}: {ast: AST.AST}) {
+function traverse_ast(ast: AST.AST, f: (e: AST.Expression, parent: any) => void) {
     const visited: any[] = []
     for (const expression of ast.body) {
-        apply_checks(expression)
+        traverse(expression, ast.body)
     }
-    function apply_checks(obj: any) {
+    function traverse(obj: any, parent: any) {
         if (obj === undefined) {
             return
         }
@@ -53,21 +47,34 @@ function semantic_analysis({ast}: {ast: AST.AST}) {
         }
         visited.push(obj)
         if (obj.kind) {
-            check_mutability(obj)
-            check_all_trait_functions_are_implemented(obj)
-            check_field_access(obj)
+            f(obj, parent)
         }
         for (const key of Object.keys(obj)) {
             const value = obj[key]
             if (Array.isArray(value)) {
                 for (const child of value) {
-                    apply_checks(child)
+                    traverse(child, obj)
                 }
             } else {
-                apply_checks(value)
+                traverse(value, obj)
             }
         }
     }
+}
+
+/**
+ * TODO: Implement these checks
+ * - all trait functions are implemented with the correct signature
+ * - an enum variant cannot be used in a binary expression
+ * - matches are exhaustive
+ * - match arms are exhaustive (i.e. all fields of a struct/enum are matched)
+ */
+function semantic_analysis({ast}: {ast: AST.AST}) {
+    traverse_ast(ast, (e) => {
+        check_mutability(e)
+        check_field_access(e)
+        check_all_trait_functions_are_implemented(e)
+    })
     function check_mutability(expression: AST.Expression) {
         if (expression instanceof AST.Assignment) {
             // fixme: we first have to resolve all types.
@@ -130,10 +137,44 @@ function semantic_analysis({ast}: {ast: AST.AST}) {
     return ast
 }
 
+function mangle_names(ast: AST.AST) {
+    function mangle(name: string) {
+        if (name.startsWith("klar_")) {
+            return name
+        }
+        return `klar_${name}`
+    }
+    traverse_ast(ast, (e: any, parent: any) => {
+        if (
+            e instanceof AST.FunctionDefinition &&
+            !(parent instanceof AST.ImplDefinition || parent instanceof AST.TraitDeclaration)
+        ) {
+            e.declaration.name = mangle(e.declaration.name)
+        } else if (e instanceof AST.StructDeclaration) {
+            e.name = mangle(e.name)
+        } else if (e instanceof AST.EnumDeclaration) {
+            e.name = mangle(e.name)
+        } else if (e instanceof AST.StructInstantiation) {
+            e.target_struct_name = mangle(e.target_struct_name)
+        } else if (e instanceof AST.VariableDeclaration) {
+            if (e.name !== "self") {
+                e.name = mangle(e.name)
+            }
+        } else if (e instanceof AST.Parameter) {
+            if (e.name !== "self") {
+                e.name = mangle(e.name)
+            }
+        } else if (e instanceof AST.CaptureMatchPattern) {
+            e.name = mangle(e.name)
+        }
+    })
+}
+
 /**
  * Transpile AST to JavaScript.
  */
 function code_gen(ast: AST.AST) {
+    mangle_names(ast)
     const binary_op_functions = {
         "==": "eq",
         "!=": "ne",
@@ -216,7 +257,7 @@ function code_gen(ast: AST.AST) {
             return `${target} = ${value};`
         } else if (e instanceof AST.ArrayLiteral) {
             const values = e.values.map((x) => `_.push(${transpile_expression(x)});`).join("")
-            return `(function () { const _ = Vector.new(); ${values} return _; })()`
+            return `(function () { const _ = klar_Vector.new(); ${values} return _; })()`
         } else if (e instanceof AST.Block) {
             return transpile_block(e)
         } else if (e instanceof AST.If) {
@@ -234,7 +275,7 @@ function code_gen(ast: AST.AST) {
             return `class ${e.name} {${members}\n${impls}}`
         } else if (e instanceof AST.EnumDeclaration) {
             let variants = ""
-            for (const variant of Object.values(e.variants)) {
+            for (const variant of e.variants) {
                 const variant_class_name = `${e.name}_${variant.name}`
                 const constructor =
                     "constructor(...values) {super();values.forEach((x, i) => {this[i] = x;});}"
@@ -274,11 +315,13 @@ function code_gen(ast: AST.AST) {
                 e.target instanceof AST.IdentifierReference &&
                 e.target.resolved instanceof AST.EnumDeclaration
             ) {
-                const variant = e.target.resolved.variants[e.field]
+                assert(typeof e.field === "string")
+                const variant = e.target.resolved.get_variant(e.field)
+                assert(variant)
                 if (variant.values.members.length === 0) {
-                    return `new ${e.target.name}_${e.field}()`
+                    return `new ${e.target.resolved.name}_${e.field}()`
                 }
-                return `new ${e.target.name}_${e.field}`
+                return `new ${e.target.resolved.name}_${e.field}`
             }
             const target = transpile_expression(e.target)
             if (typeof e.field === "number") {
@@ -356,13 +399,21 @@ function code_gen(ast: AST.AST) {
             }
             if (impl.resolved_trait) {
                 for (const fn of impl.resolved_trait.member_function_default_impls) {
-                    if (impl.member_functions.find((x) => x.declaration.name === fn.name)) {
+                    if (
+                        impl.member_functions.find(
+                            (x) => x.declaration.name === fn.declaration.name,
+                        )
+                    ) {
                         continue
                     }
                     transpile_impl_function(fn, false)
                 }
                 for (const fn of impl.resolved_trait.static_function_default_impls) {
-                    if (impl.static_functions.find((x) => x.declaration.name === fn.name)) {
+                    if (
+                        impl.static_functions.find(
+                            (x) => x.declaration.name === fn.declaration.name,
+                        )
+                    ) {
                         continue
                     }
                     transpile_impl_function(fn, false)
@@ -431,13 +482,13 @@ function code_gen(ast: AST.AST) {
             const {type_expression} = pattern
             let target_name
             if (type_expression instanceof AST.IdentifierReference) {
-                target_name = type_expression.name
+                target_name = type_expression.resolved.name
             } else if (
                 type_expression instanceof AST.FieldAccess &&
                 type_expression.target instanceof AST.IdentifierReference &&
                 type_expression.target.resolved instanceof AST.EnumDeclaration
             ) {
-                target_name = `${type_expression.target.name}_${type_expression.field}`
+                target_name = `${type_expression.target.resolved.name}_${type_expression.field}`
             }
             let s = `(${match_expression} instanceof ${target_name})`
             if (pattern instanceof AST.TupleMatchPattern) {

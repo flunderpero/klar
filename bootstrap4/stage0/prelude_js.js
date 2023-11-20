@@ -140,9 +140,9 @@ class str {
     }
 }
 
-class JSArray extends Array {
+class klar_JSArray extends Array {
     static new(size) {
-        return new JSArray(size.value)
+        return new klar_JSArray(size.value)
     }
 
     len() {

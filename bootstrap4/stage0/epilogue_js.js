@@ -1,1 +1,1 @@
-process.exit(main()?.value ?? 0)
+process.exit(klar_main()?.value ?? 0)

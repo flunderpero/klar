@@ -525,44 +525,30 @@ function code_gen(ast: AST.AST) {
     return res
 }
 
-async function compile({
+export async function compile({
     file,
+    src,
     disable_debug,
     env,
 }: {
     file: string
+    src: string
     env: AST.Environment
     disable_debug?: boolean
 }) {
-    let src: string
-    let log_prefix = `[${file.split("/").pop()}]`
-    try {
-        src = await Bun.file(file).text()
-    } catch (error: any) {
-        console.error(`${log_prefix} Error reading file: ${error.message}`)
-        process.exit(1)
+    const log_prefix = `[${file.split("/").pop()}]`
+    const tokens = Lexer.lexer({file: file.split("/").pop() ?? file, src})
+    if (debug_tokens && !disable_debug) {
+        console.log(`\n${log_prefix} TOKENS`)
+        console.log(to_json(tokens, 2))
     }
-    let transpiled
-    try {
-        const tokens = Lexer.lexer({file: file.split("/").pop() ?? file, src})
-        if (debug_tokens && !disable_debug) {
-            console.log(`\n${log_prefix} TOKENS`)
-            console.log(to_json(tokens, 2))
-        }
-        let ast = AST.parse(new AST.TokenStream(tokens), env)
-        if (debug_ast && !disable_debug) {
-            console.log(`\n${log_prefix} AST:`)
-            console.log(to_json(ast, 2))
-        }
-        ast = semantic_analysis({ast})
-        transpiled = code_gen(ast)
-    } catch (error: any) {
-        if (debug || debug_ast || debug_tokens || debug_transpiled) {
-            throw error
-        }
-        console.error(`${log_prefix} Compile error: ${error.message}`)
-        process.exit(1)
+    let ast = AST.parse(new AST.TokenStream(tokens), env)
+    if (debug_ast && !disable_debug) {
+        console.log(`\n${log_prefix} AST:`)
+        console.log(to_json(ast, 2))
     }
+    ast = semantic_analysis({ast})
+    let transpiled = code_gen(ast)
     if (prettify) {
         try {
             const proc = Bun.spawn(["prettier", "--stdin-filepath", "transpiled.js"], {
@@ -585,23 +571,31 @@ async function compile({
 /**
     link` is a big word here, we just add the JS prelude and epilogue. :)
  */
-async function link({compiled, prelude}: {compiled: string; prelude: string}) {
-    return (
-        (await Bun.file(`${dir}/prelude_js.js`).text()) +
-        prelude +
-        compiled +
-        (await Bun.file(`${dir}/epilogue_js.js`).text())
-    )
+export async function link({
+    compiled,
+    prelude,
+    epilogue,
+}: {
+    compiled: string
+    prelude: string
+    epilogue: string
+}) {
+    return (await Bun.file(`${dir}/prelude_js.js`).text()) + prelude + compiled + epilogue
 }
 
-async function compile_prelude(): Promise<{env: AST.Environment; prelude: string}> {
+export async function compile_prelude(
+    file: string,
+    env: AST.Environment,
+): Promise<{env: AST.Environment; prelude: string}> {
     let captured_env: AST.Environment | undefined
-    const env = new AST.Environment(undefined, (x) => {
-        if (!captured_env) {
+    let capture_at = 1
+    env = new AST.Environment(env, (x) => {
+        if (capture_at-- == 0) {
             captured_env = x
         }
     })
-    const prelude = await compile({file: `${dir}/prelude_js.kl`, env, disable_debug: true})
+    const src = await Bun.file(file).text()
+    const prelude = await compile({file, src, env, disable_debug: true})
     return {env: captured_env!, prelude}
 }
 
@@ -609,14 +603,35 @@ async function compile_prelude(): Promise<{env: AST.Environment; prelude: string
  * Main entry point.
  */
 async function cli() {
-    const {env, prelude} = await compile_prelude()
-    const file = Bun.argv[2]
-    const compiled = await compile({file: file, env})
-    const res = await link({compiled, prelude})
-    const dst = `${dir}/build/${(file.split("/")?.pop() ?? file).split(".")[0]}`
-    await Bun.write(dst, res)
-    const proc = Bun.spawn(["chmod", "+x", dst])
-    await proc.exited
+    try {
+        const {env, prelude} = await compile_prelude(`${dir}/prelude_js.kl`, new AST.Environment())
+        const file = Bun.argv[2]
+        let src: string
+        try {
+            src = await Bun.file(file).text()
+        } catch (error: any) {
+            console.error(`Error reading file: ${error.message}`)
+            process.exit(1)
+        }
+        const compiled = await compile({file, src, env})
+        const res = await link({
+            compiled,
+            prelude,
+            epilogue: await Bun.file(`${dir}/epilogue_js.js`).text(),
+        })
+        const dst = `${dir}/build/${(file.split("/")?.pop() ?? file).split(".")[0]}`
+        await Bun.write(dst, res)
+        const proc = Bun.spawn(["chmod", "+x", dst])
+        await proc.exited
+    } catch (error: any) {
+        if (debug || debug_ast || debug_tokens || debug_transpiled) {
+            throw error
+        }
+        console.error(`Compile error: ${error.message}`)
+        process.exit(1)
+    }
 }
 
-cli()
+if (Bun.argv[1].endsWith("compiler.ts")) {
+    cli()
+}

@@ -923,9 +923,7 @@ export class Environment {
     constructor(outer?: Environment, on_scope_enter?: (env: Environment) => void) {
         this.outer = outer
         this.on_scope_enter = on_scope_enter || outer?.on_scope_enter
-        if (outer) {
-            this.on_scope_enter?.(this)
-        }
+        this.on_scope_enter?.(this)
     }
 
     add_type_parameter(type_parameter: Type) {
@@ -1712,12 +1710,11 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         const mutable = tokens.simple_peek() === "mut"
         const span = tokens.consume().span
         const name = tokens.expect_identifier().value
-        const token = tokens.peek()
         let type = type_needs_to_be_inferred
         let end_span = span
-        if (token instanceof Identifier) {
+        if (tokens.peek() instanceof Identifier) {
             type = parse_type()
-            end_span = tokens.consume().span
+            end_span = type.span
         }
         let value: Expression | undefined
         if (tokens.simple_peek() === "=") {

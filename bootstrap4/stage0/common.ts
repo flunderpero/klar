@@ -21,18 +21,23 @@ export class Span {
         Object.defineProperty(this, "src", {enumerable: false})
     }
 
-    toString() {
-        let row = 1
+    get pos() {
+        let line = 1
         let col = 1
         for (let i = 0; i < this.start; i++) {
             if (this.src[i] === "\n") {
-                row++
+                line++
                 col = 1
             } else {
                 col++
             }
         }
-        return `${this.file}:${row}:${col}`
+        return {line, col}
+    }
+
+    toString() {
+        const {line, col} = this.pos
+        return `${this.file}:${line}:${col}`
     }
 }
 

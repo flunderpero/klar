@@ -423,11 +423,11 @@ function code_gen(ast: AST.AST) {
         return impls
     }
     function transpile_match(e: AST.Match) {
-        let s = ";(function() { let __match_result;"
+        let s = "(function() { let __match_result;"
+        s += `let __match_expression = ${transpile_expression(e.value)};`
         for (const arm of e.arms) {
             s += declare_captured_variables(arm.pattern)
         }
-        s += `const __match_expression = ${transpile_expression(e.value)};`
         for (const [index, arm] of e.arms.entries()) {
             s += `if (${transpile_match_pattern_to_condition("__match_expression", arm.pattern)}) `
             s += transpile_block(arm.block, "__match_result")
@@ -441,7 +441,7 @@ function code_gen(ast: AST.AST) {
             }
             s += transpile_block(e.wildcard_block, "__match_result")
         }
-        s += `return __match_result;})()`
+        s += `return __match_result;})()\n`
         return s
     }
     function declare_captured_variables(pattern: AST.MatchPattern) {

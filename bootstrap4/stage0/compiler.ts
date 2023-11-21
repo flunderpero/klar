@@ -317,7 +317,7 @@ function code_gen(ast: AST.AST) {
             ) {
                 assert(typeof e.field === "string")
                 const variant = e.target.resolved.get_variant(e.field)
-                assert(variant)
+                assert(variant, `Enum ${e.target.resolved.name} has no variant ${e.field}`)
                 if (variant.values.members.length === 0) {
                     return `new ${e.target.resolved.name}_${e.field}()`
                 }
@@ -423,13 +423,13 @@ function code_gen(ast: AST.AST) {
         return impls
     }
     function transpile_match(e: AST.Match) {
-        let s = "(function() { let __match_result;"
+        let s = ";(function() { let __match_result;"
         for (const arm of e.arms) {
             s += declare_captured_variables(arm.pattern)
         }
-        const match_expression = transpile_expression(e.value)
+        s += `const __match_expression = ${transpile_expression(e.value)};`
         for (const [index, arm] of e.arms.entries()) {
-            s += `if (${transpile_match_pattern_to_condition(match_expression, arm.pattern)}) `
+            s += `if (${transpile_match_pattern_to_condition("__match_expression", arm.pattern)}) `
             s += transpile_block(arm.block, "__match_result")
             if (index < e.arms.length - 1) {
                 s += " else "

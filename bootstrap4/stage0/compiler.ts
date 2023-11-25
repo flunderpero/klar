@@ -1,7 +1,6 @@
 /**
  * Transpile Klar to JavaScript.
  */
-
 import assert from "assert"
 import {quote, Span, to_json} from "./common"
 import * as Lexer from "./lexer"
@@ -33,7 +32,7 @@ class CodeGenError extends Error {
     }
 }
 
-function traverse_ast(ast: AST.AST, f: (e: AST.Expression, parent: any) => void) {
+function traverse_ast(ast: AST.AST, f: (e: AST.ASTNode, parent: AST.ASTNode) => void) {
     const visited: any[] = []
     for (const expression of ast.body) {
         traverse(expression, ast.body)
@@ -46,7 +45,7 @@ function traverse_ast(ast: AST.AST, f: (e: AST.Expression, parent: any) => void)
             return
         }
         visited.push(obj)
-        if (obj.kind) {
+        if (obj instanceof AST.ASTNode) {
             f(obj, parent)
         }
         for (const key of Object.keys(obj)) {
@@ -69,7 +68,7 @@ function traverse_ast(ast: AST.AST, f: (e: AST.Expression, parent: any) => void)
  * - matches are exhaustive
  * - match arms are exhaustive (i.e. all fields of a struct/enum are matched)
  */
-function semantic_analysis({ast}: {ast: AST.AST}) {
+function semantic_analysis(ast: AST.AST) {
     traverse_ast(ast, (e) => {
         check_mutability(e)
         check_field_access(e)
@@ -80,7 +79,7 @@ function semantic_analysis({ast}: {ast: AST.AST}) {
             // fixme: we first have to resolve all types.
         }
     }
-    function check_field_access(e: AST.Expression) {
+    function check_field_access(e: AST.ASTNode) {
         if (!(e instanceof AST.FieldAccess)) {
             return
         }
@@ -103,7 +102,7 @@ function semantic_analysis({ast}: {ast: AST.AST}) {
             }
         }
     }
-    function check_all_trait_functions_are_implemented(impl: AST.Expression) {
+    function check_all_trait_functions_are_implemented(impl: AST.ASTNode) {
         if (!(impl instanceof AST.ImplDefinition)) {
             return
         }
@@ -206,6 +205,9 @@ function code_gen(ast: AST.AST) {
             // expression with a `return` statement.
             return `function (${parameters})${block}`
         } else if (e instanceof AST.Return) {
+            if (!e.value) {
+                return "return;"
+            }
             return `return ${transpile_expression(e.value)};`
         } else if (e instanceof AST.Number_) {
             return `new i32(${e.value})`
@@ -547,7 +549,7 @@ export async function compile({
         console.log(`\n${log_prefix} AST:`)
         console.log(to_json(ast, 2))
     }
-    ast = semantic_analysis({ast})
+    ast = semantic_analysis(ast)
     let transpiled = code_gen(ast)
     if (prettify) {
         try {
@@ -585,18 +587,12 @@ export async function link({
 
 export async function compile_prelude(
     file: string,
-    env: AST.Environment,
+    env?: AST.Environment,
 ): Promise<{env: AST.Environment; prelude: string}> {
-    let captured_env: AST.Environment | undefined
-    let capture_at = 1
-    env = new AST.Environment(env, (x) => {
-        if (capture_at-- == 0) {
-            captured_env = x
-        }
-    })
+    env = env || new AST.Environment()
     const src = await Bun.file(file).text()
     const prelude = await compile({file, src, env, disable_debug: true})
-    return {env: captured_env!, prelude}
+    return {env, prelude}
 }
 
 /**
@@ -604,7 +600,7 @@ export async function compile_prelude(
  */
 async function cli() {
     try {
-        const {env, prelude} = await compile_prelude(`${dir}/prelude_js.kl`, new AST.Environment())
+        const {env, prelude} = await compile_prelude(`${dir}/prelude_js.kl`)
         const file = Bun.argv[2]
         let src: string
         try {

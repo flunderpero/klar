@@ -2,7 +2,6 @@
  * This runs all tests found in `the_book.md`.
  */
 import {compile, link, compile_prelude} from "./compiler"
-import * as AST from "./parser"
 import fs from "node:fs"
 import {Span} from "./common"
 
@@ -33,7 +32,7 @@ async function run_test(test: Test): Promise<boolean> {
         }
         pos += line.length + 1
     }
-    const default_prelude = await compile_prelude(`${dir}/prelude_js.kl`, new AST.Environment())
+    const default_prelude = await compile_prelude(`${dir}/prelude_js.kl`)
     const the_book_prelude = await compile_prelude(
         `${dir}/../the_book_prelude_js.kl`,
         default_prelude.env,

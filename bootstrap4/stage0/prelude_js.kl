@@ -167,8 +167,11 @@ extern:
     end
 
     impl str:
-        fn len(self) usize
         fn push(mut self, s str) str
+    end
+
+    impl Len for str:
+        fn len(self) i32
     end
 
     impl ToStr for str:
@@ -273,6 +276,19 @@ end
 impl Vector<T>:
     fn new() Vector<T>:
         return Vector { data: JSArray<T>.new(0) }
+    end
+
+    fn from(arr array<T>) Vector<T>:
+        let vec = Vector<T>.new()
+        mut i = 0
+        loop:
+            if i >= arr.len():
+                break
+            end
+            vec.push(arr.get(i))
+            i = i + 1
+        end
+        return vec
     end
 
     fn push(mut self, s T):

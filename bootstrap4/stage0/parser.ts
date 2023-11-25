@@ -112,7 +112,11 @@ export abstract class Expression extends ASTNode {
     }
 }
 
-export class FunctionDefinition extends Expression {
+abstract class DeclarationOrDefinition extends ASTNode {
+    kind = "declaration block"
+}
+
+export class FunctionDefinition extends DeclarationOrDefinition {
     kind = "function definition"
     declaration: FunctionDeclaration
     block: Block
@@ -139,15 +143,8 @@ export class FunctionDefinition extends Expression {
     }
 }
 
-abstract class DeclarationOrDefinition extends ASTNode {
-    kind = "declaration block"
-    contained_declarations(): DeclarationOrDefinition[] {
-        return []
-    }
-}
-
 export class StructDeclaration extends DeclarationOrDefinition {
-    kind = "type declaration"
+    kind = "struct declaration"
     name: string
     members: Record<string, Type>
     type_parameters: Type[]
@@ -176,6 +173,20 @@ export class StructDeclaration extends DeclarationOrDefinition {
 
     contained_types() {
         return Object.values(this.members).concat(this.type_parameters)
+    }
+
+    find_declared_function(name: string): FunctionDeclaration | undefined {
+        for (const impl of this.impls) {
+            let f = impl.find_declared_function(name)
+            if (f) {
+                return f
+            }
+            f = impl.resolved_trait?.find_declared_function(name)
+            if (f) {
+                return f
+            }
+        }
+        return undefined
     }
 }
 
@@ -277,27 +288,13 @@ class EnumVariant extends HasKindAndSpan {
     }
 }
 
-export class BuiltInTypeDefinition extends HasKindAndSpan {
-    kind = "builtin type definition"
-    name: string
-
-    constructor(name: string) {
-        super(new Span(0, 0, "<builtin>", ""))
-        this.name = name
-    }
-
-    to_signature_string() {
-        return this.name
-    }
-}
-
-type ResolvedType =
+export type ResolvedType =
     | StructDeclaration
     | TraitDeclaration
     | FunctionDeclaration
-    | BuiltInTypeDefinition
     | EnumDeclaration
     | TupleDeclaration
+    | ArrayLiteral
 
 export class Type extends HasKindAndSpan {
     kind = "type"
@@ -305,6 +302,7 @@ export class Type extends HasKindAndSpan {
     type_parameters: Type[]
     resolved: ResolvedType
     is_type_parameter?: boolean
+    type_argument_src?: ResolvedType
 
     constructor(
         data: {
@@ -327,6 +325,21 @@ export class Type extends HasKindAndSpan {
                 .join(", ")}>`
         }
     }
+
+    equals(other: Type): boolean {
+        if (this.name !== other.name) {
+            return false
+        }
+        if (this.type_parameters.length !== other.type_parameters.length) {
+            return false
+        }
+        for (let i = 0; i < this.type_parameters.length; i++) {
+            if (!this.type_parameters[i].equals(other.type_parameters[i])) {
+                return false
+            }
+        }
+        return true
+    }
 }
 
 export const type_needs_to_be_inferred = new Type(
@@ -336,15 +349,15 @@ export const type_needs_to_be_inferred = new Type(
 
 export class Return extends Expression {
     kind = "return"
-    value: Expression
+    value?: Expression
 
-    constructor(data: {value: Expression}, span: Span) {
+    constructor(data: {value?: Expression}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Return.prototype)
     }
 
     contained_nodes(): ASTNode[] {
-        return [this.value]
+        return this.value ? [this.value] : []
     }
 }
 
@@ -427,6 +440,7 @@ export class StructInstantiation extends Expression {
     kind = "struct instantiation"
     type_arguments: Type[]
     target_struct_name: string
+    resolved_target: StructDeclaration
     values: Record<string, Expression>
 
     constructor(
@@ -483,7 +497,12 @@ export class IdentifierReference extends Expression {
     kind = "identifier reference"
     name: string
     type_parameters: Type[]
-    resolved: VariableDeclaration | StructDeclaration | FunctionDeclaration | EnumDeclaration
+    resolved:
+        | VariableDeclaration
+        | StructDeclaration
+        | FunctionDeclaration
+        | EnumDeclaration
+        | ArrayLiteral
 
     constructor(data: {name: string; type_parameters: Type[]}, span: Span) {
         super(span)
@@ -543,6 +562,7 @@ export class IndexedAccess extends Expression {
 export class ArrayLiteral extends Expression {
     kind = "array literal"
     values: Expression[]
+    name = ""
 
     constructor(data: {values: Expression[]}, span: Span) {
         super(span)
@@ -551,6 +571,10 @@ export class ArrayLiteral extends Expression {
 
     contained_nodes() {
         return this.values
+    }
+
+    to_signature_string() {
+        return `[ArrayLiteral]`
     }
 }
 
@@ -732,7 +756,7 @@ export class Continue extends Expression {
     }
 }
 
-export class Parameter extends HasKindAndSpan {
+export class Parameter extends ASTNode {
     kind = "parameter"
     name: string
     type: Type
@@ -818,8 +842,8 @@ export class ExternBlock extends DeclarationOrDefinition {
         super(span)
     }
 
-    contained_declarations() {
-        return [...this.functions, ...this.structs, ...this.impls] as DeclarationOrDefinition[]
+    contained_nodes(): ASTNode[] {
+        return [...this.functions, ...this.structs, ...this.impls]
     }
 }
 
@@ -853,6 +877,13 @@ export class ImplDefinition extends DeclarationOrDefinition {
 
     contained_types(): Type[] {
         return this.type_parameters
+    }
+
+    find_declared_function(name: string): FunctionDeclaration | undefined {
+        return (
+            this.member_functions.find((f) => f.declaration.name === name)?.declaration ||
+            this.static_functions.find((f) => f.declaration.name === name)?.declaration
+        )
     }
 }
 
@@ -897,11 +928,21 @@ export class TraitDeclaration extends DeclarationOrDefinition {
             ...Object.values(this.static_function_default_impls),
         ]
     }
+
+    find_declared_function(name: string): FunctionDeclaration | undefined {
+        return (
+            this.member_function_declarations.find((f) => f.name === name) ||
+            this.static_function_declarations.find((f) => f.name === name) ||
+            this.member_function_default_impls.find((f) => f.declaration.name === name)
+                ?.declaration ||
+            this.static_function_default_impls.find((f) => f.declaration.name === name)?.declaration
+        )
+    }
 }
 
 const self_type = new Type({name: "Self", type_parameters: []}, new Span(0, 0, "<builtin>", ""))
 
-const unit_type = new Type(
+export const unit_type = new Type(
     {
         name: "()",
         type_parameters: [],
@@ -916,25 +957,22 @@ export class Environment {
     outer?: Environment
     self_type: Type | undefined
     resolved_types = new Map<string, ResolvedType>()
-    type_parameters = new Map<string, Type>()
+    type_parameters = new Map<string, {src: ResolvedType; type_parameter: Type}>()
     variables = new Map<string, VariableDeclaration>()
-    on_scope_enter?: (env: Environment) => void
 
-    constructor(outer?: Environment, on_scope_enter?: (env: Environment) => void) {
+    constructor(outer?: Environment) {
         this.outer = outer
-        this.on_scope_enter = on_scope_enter || outer?.on_scope_enter
-        this.on_scope_enter?.(this)
     }
 
-    add_type_parameter(type_parameter: Type) {
-        this.type_parameters.set(type_parameter.name, type_parameter)
+    add_type_parameter(src: ResolvedType, type_parameter: Type) {
+        this.type_parameters.set(type_parameter.name, {src, type_parameter})
     }
 
     find_resolved_type(name: string): ResolvedType | undefined {
         return this.resolved_types.get(name) ?? this.outer?.find_resolved_type(name)
     }
 
-    find_type_parameter(name: string): Type | undefined {
+    find_type_parameter(name: string): {src: ResolvedType; type_parameter: Type} | undefined {
         return this.type_parameters.get(name) ?? this.outer?.find_type_parameter(name)
     }
 
@@ -955,8 +993,10 @@ export class Environment {
         if (type.resolved || type == type_needs_to_be_inferred) {
             return type
         }
-        if (this.find_type_parameter(type.name)) {
+        const type_parameter = this.find_type_parameter(type.name)
+        if (type_parameter) {
             type.is_type_parameter = true
+            type.type_argument_src = type_parameter.src
             return type
         }
         const resolved = this.find_resolved_type(type.name)
@@ -1024,27 +1064,13 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
                     if (!env.self_type) {
                         throw new ParseError(`${quote("self")} is not defined`, p.span)
                     }
-                    if (
-                        p.type.resolved &&
-                        p.type.resolved.name !== self_type.name &&
-                        p.type.resolved !== env.self_type
-                    ) {
-                        throw new ParseError(
-                            `${quote("self")} has type ${quote(
-                                p.type.to_signature_string(),
-                            )} but expected ${quote(env.self_type.to_signature_string())}`,
-                            p.span,
-                        )
-                    }
                     p.type = env.self_type
                 }
-                fn_env.add_variable(
-                    p.name,
-                    new VariableDeclaration(
-                        {name: p.name, type: p.type, mutable: p.mutable},
-                        p.span,
-                    ),
+                const var_declaration = new VariableDeclaration(
+                    {name: p.name, type: p.type, mutable: p.mutable},
+                    p.span,
                 )
+                fn_env.add_variable(p.name, var_declaration)
             }
             resolve_types_and_identifier_references(e.block, fn_env)
         } else if (e instanceof ClosureDefinition) {
@@ -1053,13 +1079,11 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
             }
             const fn_env = new Environment(env)
             for (const p of e.parameters) {
-                fn_env.add_variable(
-                    p.name,
-                    new VariableDeclaration(
-                        {name: p.name, type: p.type, mutable: p.mutable},
-                        p.span,
-                    ),
+                const var_declaration = new VariableDeclaration(
+                    {name: p.name, type: p.type, mutable: p.mutable},
+                    p.span,
                 )
+                fn_env.add_variable(p.name, var_declaration)
             }
             resolve_types_and_identifier_references(e.block, fn_env)
         } else if (e instanceof FunctionDeclaration) {
@@ -1075,16 +1099,17 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
             resolve_for_contained_types_and_nodes(e)
             env.add_variable(e.name, e)
         } else if (e instanceof ImplDefinition) {
-            const prev_self_type = env.self_type
+            env = new Environment(env)
             env.self_type = env.resolve_type(
                 new Type({name: e.target_name, type_parameters: []}, e.span),
             )
+            env.add_resolved("Self", env.self_type.resolved)
             resolve_for_contained_types_and_nodes(e)
-            env.self_type = prev_self_type
+            env = env.outer!
         } else if (e instanceof TraitDeclaration) {
-            env = new Environment(env, env.on_scope_enter)
-            env.add_resolved("Self", self_type)
+            env = new Environment(env)
             env.self_type = env.resolve_type(new Type({name: e.name, type_parameters: []}, e.span))
+            env.add_resolved("Self", env.self_type.resolved)
             resolve_for_contained_types_and_nodes(e)
             env = env.outer!
         } else if (e instanceof IdentifierReference) {
@@ -1096,12 +1121,19 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
                 resolved instanceof VariableDeclaration ||
                 resolved instanceof StructDeclaration ||
                 resolved instanceof EnumDeclaration ||
-                resolved instanceof FunctionDeclaration
+                resolved instanceof FunctionDeclaration ||
+                resolved instanceof ArrayLiteral
             ) {
                 e.resolved = resolved
             } else {
                 throw new ParseError(`Identifier ${quote(e.name)} is not a known type`, e.span)
             }
+        } else if (e instanceof StructInstantiation) {
+            e.resolved_target = env.find_resolved_type(e.target_struct_name) as StructDeclaration
+            if (!(e.resolved_target instanceof StructDeclaration)) {
+                throw new ParseError(`${quote(e.target_struct_name)} is not a struct`, e.span)
+            }
+            resolve_for_contained_types_and_nodes(e)
         } else if (e instanceof MatchArm) {
             const match_arm_env = new Environment(env)
             function resolve_captures_and_add_to_env(pattern: MatchPattern) {
@@ -1139,13 +1171,11 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
                     }
                 }
                 if (pattern instanceof CaptureMatchPattern) {
-                    match_arm_env.add_variable(
-                        pattern.name,
-                        new VariableDeclaration(
-                            {name: pattern.name, type: type_needs_to_be_inferred, mutable: false},
-                            pattern.span,
-                        ),
+                    const var_declaration = new VariableDeclaration(
+                        {name: pattern.name, type: type_needs_to_be_inferred, mutable: false},
+                        pattern.span,
                     )
+                    match_arm_env.add_variable(pattern.name, var_declaration)
                 }
                 return pattern
             }
@@ -1167,7 +1197,6 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
     }
 
     function forward_parse_declarations(expressions: Expression[]) {
-        env = new Environment(env)
         const impls: ImplDefinition[] = []
         for (const e of expressions) {
             if (e instanceof FunctionDeclaration) {
@@ -1181,7 +1210,7 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
             ) {
                 env.add_resolved(e.name, e)
                 for (const x of e.type_parameters) {
-                    env.add_type_parameter(x)
+                    env.add_type_parameter(e, x)
                 }
             } else if (e instanceof ImplDefinition) {
                 impls.push(e)
@@ -1213,7 +1242,7 @@ function resolve_types_and_identifier_references(block: Block, env: Environment)
                 )
             }
             for (const x of impl.type_parameters) {
-                env.add_type_parameter(x)
+                env.add_type_parameter(target, x)
             }
             impl.resolved_target = target
             if (impl.trait_name) {

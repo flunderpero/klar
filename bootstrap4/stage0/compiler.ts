@@ -326,7 +326,7 @@ function code_gen(ast: AST.AST) {
                 return `new ${e.target.resolved.name}_${e.field}`
             }
             const target = transpile_expression(e.target)
-            if (typeof e.field === "number") {
+            if (parseInt(e.field).toString() === e.field) {
                 return `${target}[${e.field}]`
             }
             return `${target}.${e.field}`
@@ -340,7 +340,7 @@ function code_gen(ast: AST.AST) {
         } else if (e instanceof AST.ParenthesizedExpression) {
             const value = transpile_expression(e.expression)
             return `(${value})`
-        } else if (e instanceof AST.Tuple) {
+        } else if (e instanceof AST.TupleInstantiation) {
             const values = e.values.map(transpile_expression).join(",")
             return `[${values}]`
         } else if (e instanceof AST.IdentifierReference) {

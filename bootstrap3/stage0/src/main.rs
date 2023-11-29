@@ -2,6 +2,41 @@ use std::{env, fs, path::Path, process::Command};
 
 use stage0::{ast, codegen, lexer, transform_ast};
 
+struct MultiContainer<T, U> {
+    first: T,
+    second: U,
+}
+
+trait ComplexTrait<T, U> {
+    fn get_first(&self) -> &T;
+    fn get_second(&self) -> &U;
+}
+
+impl<T, U> ComplexTrait<T, U> for MultiContainer<T, U> {
+    fn get_first(&self) -> &T {
+        &self.first
+    }
+    fn get_second(&self) -> &U {
+        &self.second
+    }
+}
+
+trait Doubler<T> {
+    fn double(&self) -> Self;
+}
+
+struct Value {
+    value: i32,
+}
+
+impl Doubler<Value> for Value {
+    fn double(&self) -> Self {
+        Value {
+            value: self.value * 2,
+        }
+    }
+}
+
 fn main() -> Result<(), String> {
     unsafe {
         backtrace_on_stack_overflow::enable();

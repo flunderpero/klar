@@ -76,6 +76,8 @@ fn main():
     print(d.get_value().value)
     d.set_value(Num{ value: d.get_value().value + 1 })
     print(d.get_value().value)
+    -- let e = MultiContainer<i32, i32>{ value: 20, other: 21 }
+    -- print(e.value)
     let e = MultiContainer<i32, Container<Num>>{ value: 20, other: Container.new(Num{ value: 21 }) }
     print(e.value)
     print(e.other.get_value().value)

@@ -98,5 +98,4 @@ fn main():
     nested()
     chained_field_access()
     static_method()
-    return 0
 end

@@ -94,68 +94,71 @@ extern:
 
     -- i32
 
-    struct i32: 
-    end
-
     impl ToStr for i32:
-        fn to_str(self) str
     end
 
     impl Add for i32:
-        fn add(self, rhs Self) Self
     end
 
     impl Sub for i32:
-        fn sub(self, rhs Self) Self
     end
 
     impl Mul for i32:
-        fn mul(self, rhs Self) Self
     end
     
     impl Div for i32:
-        fn div(self, rhs Self) Self
     end
 
     impl PartialEq for i32:
-        fn eq(self, rhs Self) bool
-        fn ne(self, rhs Self) bool
     end
 
     impl Eq for i32:
-        fn eq(self, rhs Self) bool
-        fn ne(self, rhs Self) bool
     end
 
     impl PartialOrd for i32:
-        fn lt(self, rhs Self) bool
-        fn le(self, rhs Self) bool
-        fn gt(self, rhs Self) bool
-        fn ge(self, rhs Self) bool
     end
 
     impl Ord for i32:
     end
 
-    -- bool
+    -- usize
 
-    struct bool:
+    impl ToStr for usize:
     end
 
+    impl Add for usize:
+    end
+
+    impl Sub for usize:
+    end
+
+    impl Mul for usize:
+    end
+    
+    impl Div for usize:
+    end
+
+    impl PartialEq for usize:
+    end
+
+    impl Eq for usize:
+    end
+
+    impl PartialOrd for usize:
+    end
+
+    impl Ord for usize:
+    end
+
+    -- bool
+
     impl ToStr for bool:
-        fn to_str(self) str
     end
 
     impl PartialEq for bool:
-        fn eq(self, rhs Self) bool
-        fn ne(self, rhs Self) bool
     end
 
     impl PartialOrd for bool:
-        fn lt(self, rhs Self) bool
-        fn le(self, rhs Self) bool
-        fn gt(self, rhs Self) bool
-        fn ge(self, rhs Self) bool
     end
 
     impl Ord for bool:
@@ -167,30 +170,21 @@ extern:
     end
 
     impl str:
-        fn push(mut self, s str) str
     end
 
     impl Len for str:
-        fn len(self) i32
     end
 
     impl ToStr for str:
-        fn to_str(self) str
     end
 
     impl PartialEq for str:
-        fn eq(self, rhs Self) bool
-        fn ne(self, rhs Self) bool
     end
 
     impl Eq for str:
     end
 
     impl PartialOrd for str:
-        fn lt(self, rhs Self) bool
-        fn le(self, rhs Self) bool
-        fn gt(self, rhs Self) bool
-        fn ge(self, rhs Self) bool
     end
 
     impl Ord for str:

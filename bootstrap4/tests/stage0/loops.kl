@@ -25,5 +25,4 @@ fn main():
         if i == 6 => break
         print(i)
     end
-    return 0
 end

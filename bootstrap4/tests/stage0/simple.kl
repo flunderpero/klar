@@ -9,7 +9,7 @@
 /expected ---
 
 -- This is a comment.
-fn main():
+fn main() i32:
     -- This is a comment.
     ---
        This is a block comment.

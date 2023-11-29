@@ -19,7 +19,7 @@ struct Point:
     y i32
 end
 
-impl Doubler for Point:
+impl Doubler<Point> for Point:
     fn double(self) Point:
         return Point { x: self.x * 2, y: self.y * 2 }
     end

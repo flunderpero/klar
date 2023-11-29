@@ -1,13 +1,13 @@
 #!/usr/bin/env bun --silent
 
-function print(value) {
+function klar_print(value) {
     console.log(value.to_str().value)
 }
 
 // For compiler debugging purposes only.
-const jsprint = console.log
+const klar_jsprint = console.log
 
-function panic(value) {
+function klar_panic(value) {
     throw new Error(value.to_str().value)
 }
 

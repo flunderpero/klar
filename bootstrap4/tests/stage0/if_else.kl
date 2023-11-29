@@ -20,5 +20,4 @@ fn main():
     else:
         print(5)
     end
-    return 0
 end

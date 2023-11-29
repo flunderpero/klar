@@ -89,8 +89,20 @@ export class ParseError extends Error {
     }
 }
 
+type TypeInterface = {
+    name: string
+    declaration?: DeclarationOrDefinition
+}
+
+type ASTNodeAttributes = {
+    type?: TypeInterface
+    target_type?: TypeInterface
+}
+
 export abstract class ASTNode extends HasKindAndSpan {
     kind = "ast node"
+
+    attributes: ASTNodeAttributes = {}
 
     constructor(span: Span) {
         super(span)
@@ -107,28 +119,16 @@ export abstract class ASTNode extends HasKindAndSpan {
 
 // Type
 
-export type ResolvedType =
-    | VariableDeclaration
-    | StructDeclaration
-    | TraitDeclaration
-    | FunctionDeclaration
-    | EnumDeclaration
-    | TupleDeclaration
-    | ArrayLiteral
-
 export class TypeDeclaration extends HasKindAndSpan {
     kind = "type"
     name: string
     type_parameters: TypeDeclaration[]
-    resolved: ResolvedType
     is_type_parameter?: boolean
-    type_argument_src?: ResolvedType
 
     constructor(
         data: {
             name: string
             type_parameters: TypeDeclaration[]
-            resolved?: ResolvedType
         },
         span: Span,
     ) {
@@ -162,14 +162,54 @@ export class TypeDeclaration extends HasKindAndSpan {
     }
 }
 
-export const type_needs_to_be_inferred = new TypeDeclaration(
-    {name: "<needs-to-be-inferred>", type_parameters: []},
-    new Span(0, 0, "<unknown>", ""),
-)
+export class TupleTypeDeclaration extends TypeDeclaration {
+    kind = "tuple type"
+    fields: TypeDeclaration[]
+
+    constructor(data: {fields: TypeDeclaration[]}, span: Span) {
+        super({name: "", type_parameters: []}, span)
+        Object.assign(this as typeof data, data as typeof TupleTypeDeclaration.prototype)
+    }
+
+    to_signature_string(): string {
+        return `(${this.fields.map((t) => t.to_signature_string()).join(", ")})`
+    }
+
+    contained_types(): TypeDeclaration[] {
+        return this.fields
+    }
+}
+
+export class FunctionTypeDeclaration extends TypeDeclaration {
+    kind = "function type"
+    arg_types: TypeDeclaration[]
+    return_type: TypeDeclaration
+
+    constructor(
+        data: {
+            arg_types: TypeDeclaration[]
+            return_type: TypeDeclaration
+        },
+        span: Span,
+    ) {
+        super({name: "", type_parameters: []}, span)
+        Object.assign(this as typeof data, data as typeof FunctionTypeDeclaration.prototype)
+    }
+
+    to_signature_string(): string {
+        return `(${this.arg_types
+            .map((t) => t.to_signature_string())
+            .join(", ")}) => ${this.return_type.to_signature_string()}`
+    }
+
+    contained_types(): TypeDeclaration[] {
+        return [...this.arg_types, this.return_type]
+    }
+}
 
 // Declarations and definitions
 
-abstract class DeclarationOrDefinition extends ASTNode {
+export abstract class DeclarationOrDefinition extends ASTNode {
     kind = "declaration block"
 }
 
@@ -189,32 +229,60 @@ export class FunctionDeclaration extends DeclarationOrDefinition {
 
     to_signature_string() {
         return `${this.name}(${this.parameters
-            .map((p) => `${p.name}: ${p.type.to_signature_string()}`)
+            .map((p) => p.to_signature_string())
             .join(", ")}): ${this.return_type.to_signature_string()}`
     }
 
     contained_types() {
-        return [this.return_type, ...this.parameters.map((p) => p.type)]
+        return [this.return_type, ...this.parameters.map((p) => p.type_declaration)].filter(
+            (x) => !!x,
+        ) as TypeDeclaration[]
     }
 }
 
 export class Parameter extends ASTNode {
     kind = "parameter"
     name: string
-    type: TypeDeclaration
+    type_declaration: TypeDeclaration
     mutable: boolean
 
-    constructor(data: {name: string; type: TypeDeclaration; mutable: boolean}, span: Span) {
+    constructor(
+        data: {name: string; type_declaration: TypeDeclaration; mutable: boolean},
+        span: Span,
+    ) {
         super(span)
         Object.assign(this as typeof data, data as typeof Parameter.prototype)
     }
 
     to_signature_string() {
-        return `${this.name} ${this.type.to_signature_string()}`
+        return `${this.name} ${this.type_declaration.to_signature_string()}`
     }
 
     contained_types() {
-        return [this.type]
+        return [this.type_declaration]
+    }
+}
+
+export class ClosureParameter extends ASTNode {
+    kind = "closure parameter"
+    name: string
+    type_declaration?: TypeDeclaration
+    mutable: boolean
+
+    constructor(
+        data: {name: string; type_declaration?: TypeDeclaration; mutable: boolean},
+        span: Span,
+    ) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Parameter.prototype)
+    }
+
+    to_signature_string() {
+        return `${this.name} ${this.type_declaration?.to_signature_string() ?? "<unknown>"}`
+    }
+
+    contained_types() {
+        return this.type_declaration ? [this.type_declaration] : []
     }
 }
 
@@ -222,18 +290,20 @@ export class FunctionDefinition extends DeclarationOrDefinition {
     kind = "function definition"
     declaration: FunctionDeclaration
     block: Block
-    extern?: boolean
 
     constructor(
         data: {
             declaration: FunctionDeclaration
             block: Block
-            extern?: boolean
         },
         span: Span,
     ) {
         super(span)
         Object.assign(this as typeof data, data as typeof FunctionDefinition.prototype)
+    }
+
+    get name() {
+        return this.declaration.name
     }
 
     to_signature_string() {
@@ -249,14 +319,14 @@ export class VariableDeclaration extends DeclarationOrDefinition {
     kind = "variable declaration"
     name: string
     value?: Expression
-    type: TypeDeclaration
+    type?: TypeDeclaration
     mutable: boolean
 
     constructor(
         data: {
             name: string
             value?: Expression
-            type: TypeDeclaration
+            type?: TypeDeclaration
             mutable: boolean
         },
         span: Span,
@@ -266,7 +336,7 @@ export class VariableDeclaration extends DeclarationOrDefinition {
     }
 
     contained_types() {
-        return [this.type]
+        return this.type ? [this.type] : []
     }
 
     contained_nodes() {
@@ -274,22 +344,21 @@ export class VariableDeclaration extends DeclarationOrDefinition {
     }
 
     to_signature_string() {
-        return `${this.name}: ${this.type.to_signature_string()}`
+        return `${this.name}: ${this.type?.to_signature_string() ?? "<unknown>"}`
     }
 }
 
 export class StructDeclaration extends DeclarationOrDefinition {
     kind = "struct declaration"
     name: string
-    members: Record<string, TypeDeclaration>
+    fields: Record<string, TypeDeclaration>
     type_parameters: TypeDeclaration[]
-    impls: ImplDefinition[] = []
-    extern?: boolean
+    attributes: ASTNodeAttributes & {impls: ImplDefinition[]} = {impls: []}
 
     constructor(
         data: {
             name: string
-            members: Record<string, TypeDeclaration>
+            fields: Record<string, TypeDeclaration>
             type_parameters: TypeDeclaration[]
             extern?: boolean
         },
@@ -307,43 +376,7 @@ export class StructDeclaration extends DeclarationOrDefinition {
     }
 
     contained_types() {
-        return Object.values(this.members).concat(this.type_parameters)
-    }
-
-    find_declared_function(name: string): FunctionDeclaration | undefined {
-        for (const impl of this.impls) {
-            let f = impl.find_declared_function(name)
-            if (f) {
-                return f
-            }
-            f = impl.resolved_trait?.find_declared_function(name)
-            if (f) {
-                return f
-            }
-        }
-        return undefined
-    }
-}
-
-export class TupleDeclaration extends DeclarationOrDefinition {
-    kind = "tuple declaration"
-    members: TypeDeclaration[]
-
-    constructor(data: {members: TypeDeclaration[]}, span: Span) {
-        super(span)
-        Object.assign(this as typeof data, data as typeof TupleDeclaration.prototype)
-    }
-
-    get name() {
-        return ""
-    }
-
-    contained_types() {
-        return this.members
-    }
-
-    to_signature_string() {
-        return `(${this.members.map((t) => t.to_signature_string()).join(", ")})`
+        return Object.values(this.fields).concat(this.type_parameters)
     }
 }
 
@@ -352,8 +385,7 @@ export class EnumDeclaration extends DeclarationOrDefinition {
     name: string
     variants: EnumVariant[]
     type_parameters: TypeDeclaration[]
-    impls: ImplDefinition[] = []
-    extern?: boolean
+    attributes: ASTNodeAttributes & {impls: ImplDefinition[]} = {impls: []}
 
     constructor(
         data: {
@@ -387,9 +419,9 @@ export class EnumDeclaration extends DeclarationOrDefinition {
 class EnumVariant extends HasKindAndSpan {
     kind = "enum variant"
     name: string
-    values: TupleDeclaration
+    fields: TupleTypeDeclaration
 
-    constructor(data: {name: string; values: TupleDeclaration}, span: Span) {
+    constructor(data: {name: string; fields: TupleTypeDeclaration}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof EnumVariant.prototype)
     }
@@ -414,19 +446,18 @@ export class ImplDefinition extends DeclarationOrDefinition {
     kind = "impl_definition"
     trait_name?: string
     type_parameters: TypeDeclaration[]
-    resolved_trait?: TraitDeclaration
+    trait_type_parameters: TypeDeclaration[]
     target_name: string
-    resolved_target: StructDeclaration | EnumDeclaration
-    member_functions: FunctionDefinition[]
-    static_functions: FunctionDefinition[]
+    functions: FunctionDefinition[]
+    attributes: ASTNodeAttributes & {trait_declaration?: TraitDeclaration} = {}
 
     constructor(
         data: {
             trait_name?: string
+            trait_type_parameters: TypeDeclaration[]
             type_parameters: TypeDeclaration[]
             target_name: string
-            member_functions: FunctionDefinition[]
-            static_functions: FunctionDefinition[]
+            functions: FunctionDefinition[]
         },
         span: Span,
     ) {
@@ -435,37 +466,24 @@ export class ImplDefinition extends DeclarationOrDefinition {
     }
 
     contained_nodes(): ASTNode[] {
-        return [...this.member_functions, ...this.static_functions]
+        return this.functions
     }
 
     contained_types(): TypeDeclaration[] {
         return this.type_parameters
-    }
-
-    find_declared_function(name: string): FunctionDeclaration | undefined {
-        return (
-            this.member_functions.find((f) => f.declaration.name === name)?.declaration ||
-            this.static_functions.find((f) => f.declaration.name === name)?.declaration
-        )
     }
 }
 
 export class TraitDeclaration extends DeclarationOrDefinition {
     kind = "trait declaration"
     name: string
-    member_function_declarations: FunctionDeclaration[]
-    static_function_declarations: FunctionDeclaration[]
-    member_function_default_impls: FunctionDefinition[]
-    static_function_default_impls: FunctionDefinition[]
+    functions: (FunctionDeclaration | FunctionDefinition)[]
     type_parameters: TypeDeclaration[]
 
     constructor(
         data: {
             name: string
-            member_function_declarations: FunctionDeclaration[]
-            static_function_declarations: FunctionDeclaration[]
-            member_function_default_impls: FunctionDefinition[]
-            static_function_default_impls: FunctionDefinition[]
+            functions: (FunctionDeclaration | FunctionDefinition)[]
             type_parameters: TypeDeclaration[]
         },
         span: Span,
@@ -484,22 +502,7 @@ export class TraitDeclaration extends DeclarationOrDefinition {
     }
 
     contained_nodes(): ASTNode[] {
-        return [
-            ...this.member_function_declarations,
-            ...this.static_function_declarations,
-            ...Object.values(this.member_function_default_impls),
-            ...Object.values(this.static_function_default_impls),
-        ]
-    }
-
-    find_declared_function(name: string): FunctionDeclaration | undefined {
-        return (
-            this.member_function_declarations.find((f) => f.name === name) ||
-            this.static_function_declarations.find((f) => f.name === name) ||
-            this.member_function_default_impls.find((f) => f.declaration.name === name)
-                ?.declaration ||
-            this.static_function_default_impls.find((f) => f.declaration.name === name)?.declaration
-        )
+        return this.functions
     }
 }
 
@@ -553,15 +556,15 @@ export abstract class Expression extends ASTNode {
 
 export class TupleInstantiation extends Expression {
     kind = "tuple"
-    values: Expression[]
+    elements: Expression[]
 
-    constructor(data: {values: Expression[]}, span: Span) {
+    constructor(data: {elements: Expression[]}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof TupleInstantiation.prototype)
     }
 
     contained_nodes() {
-        return this.values
+        return this.elements
     }
 }
 
@@ -627,30 +630,30 @@ export class Bool extends Expression {
 
 export class Not extends Expression {
     kind = "not"
-    value: Expression
+    expression: Expression
 
-    constructor(data: {value: Expression}, span: Span) {
+    constructor(data: {expression: Expression}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Not.prototype)
     }
 
     contained_nodes(): ASTNode[] {
-        return [this.value]
+        return [this.expression]
     }
 }
 
 export class FunctionCall extends Expression {
     kind = "function call"
     target: Expression
-    arguments: Expression[]
+    args: Expression[]
 
-    constructor(data: {target: Expression; arguments: Expression[]}, span: Span) {
+    constructor(data: {target: Expression; args: Expression[]}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof FunctionCall.prototype)
     }
 
     contained_nodes() {
-        return [this.target, ...this.arguments]
+        return [this.target, ...this.args]
     }
 }
 
@@ -658,14 +661,13 @@ export class StructInstantiation extends Expression {
     kind = "struct instantiation"
     type_arguments: TypeDeclaration[]
     target_struct_name: string
-    resolved_target: StructDeclaration
-    values: Record<string, Expression>
+    fields: Record<string, Expression>
 
     constructor(
         data: {
             type_arguments: TypeDeclaration[]
             target_struct_name: string
-            values: Record<string, Expression>
+            fields: Record<string, Expression>
         },
         span: Span,
     ) {
@@ -678,7 +680,7 @@ export class StructInstantiation extends Expression {
     }
 
     contained_nodes() {
-        return Object.values(this.values)
+        return Object.values(this.fields)
     }
 }
 
@@ -686,7 +688,6 @@ export class IdentifierReference extends Expression {
     kind = "identifier reference"
     name: string
     type_parameters: TypeDeclaration[]
-    resolved: ResolvedType
 
     constructor(data: {name: string; type_parameters: TypeDeclaration[]}, span: Span) {
         super(span)
@@ -732,8 +733,9 @@ export class IndexedAccess extends Expression {
     kind = "indexed access"
     target: Expression
     index: Expression
+    is_write: boolean
 
-    constructor(data: {target: Expression; index: Expression}, span: Span) {
+    constructor(data: {target: Expression; index: Expression; is_write: boolean}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof IndexedAccess.prototype)
     }
@@ -745,16 +747,16 @@ export class IndexedAccess extends Expression {
 
 export class ArrayLiteral extends Expression {
     kind = "array literal"
-    values: Expression[]
+    elements: Expression[]
     name = ""
 
-    constructor(data: {values: Expression[]}, span: Span) {
+    constructor(data: {elements: Expression[]}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof ArrayLiteral.prototype)
     }
 
     contained_nodes() {
-        return this.values
+        return this.elements
     }
 
     to_signature_string() {
@@ -814,15 +816,15 @@ export class Match extends Expression {
     kind = "match"
     value: Expression
     arms: MatchArm[]
-    wildcard_block?: Block
+    else_block?: Block
 
-    constructor(data: {value: Expression; arms: MatchArm[]; wildcard_block?: Block}, span: Span) {
+    constructor(data: {value: Expression; arms: MatchArm[]; else_block?: Block}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Match.prototype)
     }
 
     contained_nodes() {
-        return [this.value, ...this.arms, ...(this.wildcard_block ? [this.wildcard_block] : [])]
+        return [this.value, ...this.arms, ...(this.else_block ? [this.else_block] : [])]
     }
 }
 
@@ -940,12 +942,12 @@ export class Block extends Expression {
 
 export class ClosureDefinition extends Expression {
     kind = "closure definition"
-    parameters: Parameter[]
-    return_type: TypeDeclaration
+    parameters: ClosureParameter[]
+    return_type?: TypeDeclaration
     block: Block
 
     constructor(
-        data: {parameters: Parameter[]; return_type: TypeDeclaration; block: Block},
+        data: {parameters: ClosureParameter[]; return_type?: TypeDeclaration; block: Block},
         span: Span,
     ) {
         super(span)
@@ -957,7 +959,9 @@ export class ClosureDefinition extends Expression {
     }
 
     contained_types() {
-        return [this.return_type, ...this.parameters.map((p) => p.type)]
+        return [this.return_type, ...this.parameters.map((p) => p.type_declaration)].filter(
+            (x) => !!x,
+        ) as TypeDeclaration[]
     }
 }
 
@@ -967,333 +971,18 @@ const self_type = new TypeDeclaration(
 )
 
 export const unit_type = new TypeDeclaration(
-    {
-        name: "()",
-        type_parameters: [],
-        resolved: new TupleDeclaration({members: []}, new Span(0, 0, "<builtin>", "")),
-    },
+    {name: "()", type_parameters: []},
     new Span(0, 0, "<builtin>", ""),
 )
 
-// Environment
-
-export class Environment {
-    outer?: Environment
-    self_type: TypeDeclaration | undefined
-    resolved_types = new Map<string, ResolvedType>()
-    type_parameters = new Map<string, {src: ResolvedType; type_parameter: TypeDeclaration}>()
-    variables = new Map<string, VariableDeclaration>()
-
-    constructor(outer?: Environment) {
-        this.outer = outer
-    }
-
-    add_type_parameter(src: ResolvedType, type_parameter: TypeDeclaration) {
-        this.type_parameters.set(type_parameter.name, {src, type_parameter})
-    }
-
-    find_resolved_type(name: string): ResolvedType | undefined {
-        return this.resolved_types.get(name) ?? this.outer?.find_resolved_type(name)
-    }
-
-    find_type_parameter(
-        name: string,
-    ): {src: ResolvedType; type_parameter: TypeDeclaration} | undefined {
-        return this.type_parameters.get(name) ?? this.outer?.find_type_parameter(name)
-    }
-
-    add_resolved(name: string, resolved: ResolvedType) {
-        const existing = this.resolved_types.get(name)
-        if (existing) {
-            throw new ParseError(
-                `${quote(name)} is already defined here: ${quote(
-                    existing.to_signature_string(),
-                )})} at ${existing.span}`,
-                resolved.span,
-            )
-        }
-        this.resolved_types.set(name, resolved)
-    }
-
-    resolve_type(type: TypeDeclaration): TypeDeclaration {
-        if (type.resolved || type == type_needs_to_be_inferred) {
-            return type
-        }
-        const type_parameter = this.find_type_parameter(type.name)
-        if (type_parameter) {
-            type.is_type_parameter = true
-            type.type_argument_src = type_parameter.src
-            return type
-        }
-        const resolved = this.find_resolved_type(type.name)
-        if (!resolved) {
-            throw new ParseError(`Type ${quote(type.name)} not found`, type.span)
-        }
-        type.resolved = resolved
-        return type
-    }
-
-    find_variable(name: string): VariableDeclaration | undefined {
-        return this.variables.get(name) ?? this.outer?.find_variable(name)
-    }
-
-    add_variable(name: string, variable: VariableDeclaration) {
-        this.assert_name_is_not_already_defined(name, variable.span)
-        this.variables.set(name, variable)
-    }
-
-    private assert_name_is_not_already_defined(name: string, span: Span) {
-        const existing = this.find_variable(name) || this.find_resolved_type(name)
-        if (existing) {
-            const name =
-                existing instanceof VariableDeclaration
-                    ? existing.name
-                    : existing.to_signature_string()
-            throw new ParseError(
-                `${quote(name)} is already defined here: ${quote(name)} at ${existing.span}`,
-                span,
-            )
-        }
-    }
-}
-
 export type AST = Block
-
-/**
- * Parse tokens into an AST.
- */
-export function parse(tokens: TokenStream, env: Environment): AST {
-    const ast = parse_ignoring_types(tokens)
-    return resolve_types_and_identifier_references(ast, env)
-}
-
-/**
- * Modify the AST to resolve all types.
- *
- * FEAT: All types explicitly specified in the source code are resolved.
- */
-function resolve_types_and_identifier_references(block: Block, env: Environment) {
-    forward_parse_declarations(block.body)
-    for (const e of block.body) {
-        resolve_for_node(e)
-    }
-    return block
-
-    function resolve_for_node(e: ASTNode | DeclarationOrDefinition) {
-        if (e instanceof Block) {
-            resolve_types_and_identifier_references(e, new Environment(env))
-        } else if (e instanceof FunctionDefinition) {
-            resolve_for_node(e.declaration)
-            const fn_env = new Environment(env)
-            for (const p of e.declaration.parameters) {
-                if (p.name === "self") {
-                    if (!env.self_type) {
-                        throw new ParseError(`${quote("self")} is not defined`, p.span)
-                    }
-                    p.type = env.self_type
-                }
-                const var_declaration = new VariableDeclaration(
-                    {name: p.name, type: p.type, mutable: p.mutable},
-                    p.span,
-                )
-                fn_env.add_variable(p.name, var_declaration)
-            }
-            resolve_types_and_identifier_references(e.block, fn_env)
-        } else if (e instanceof ClosureDefinition) {
-            for (const x of e.contained_types()) {
-                env.resolve_type(x)
-            }
-            const fn_env = new Environment(env)
-            for (const p of e.parameters) {
-                const var_declaration = new VariableDeclaration(
-                    {name: p.name, type: p.type, mutable: p.mutable},
-                    p.span,
-                )
-                fn_env.add_variable(p.name, var_declaration)
-            }
-            resolve_types_and_identifier_references(e.block, fn_env)
-        } else if (e instanceof FunctionDeclaration) {
-            env.resolve_type(e.return_type)
-            for (const p of e.parameters) {
-                if (p.name === "self" && p.type == type_needs_to_be_inferred) {
-                    p.type = self_type
-                } else {
-                    env.resolve_type(p.type)
-                }
-            }
-        } else if (e instanceof VariableDeclaration) {
-            resolve_for_contained_types_and_nodes(e)
-            env.add_variable(e.name, e)
-        } else if (e instanceof ImplDefinition) {
-            env = new Environment(env)
-            env.self_type = env.resolve_type(
-                new TypeDeclaration({name: e.target_name, type_parameters: []}, e.span),
-            )
-            env.add_resolved("Self", env.self_type.resolved)
-            resolve_for_contained_types_and_nodes(e)
-            env = env.outer!
-        } else if (e instanceof TraitDeclaration) {
-            env = new Environment(env)
-            env.self_type = env.resolve_type(
-                new TypeDeclaration({name: e.name, type_parameters: []}, e.span),
-            )
-            env.add_resolved("Self", env.self_type.resolved)
-            resolve_for_contained_types_and_nodes(e)
-            env = env.outer!
-        } else if (e instanceof IdentifierReference) {
-            const resolved = env.find_variable(e.name) ?? env.find_resolved_type(e.name)
-            if (!resolved) {
-                throw new ParseError(`Identifier ${quote(e.name)} not found`, e.span)
-            }
-            if (
-                resolved instanceof VariableDeclaration ||
-                resolved instanceof StructDeclaration ||
-                resolved instanceof EnumDeclaration ||
-                resolved instanceof FunctionDeclaration ||
-                resolved instanceof ArrayLiteral
-            ) {
-                e.resolved = resolved
-            } else {
-                throw new ParseError(`Identifier ${quote(e.name)} is not a known type`, e.span)
-            }
-        } else if (e instanceof StructInstantiation) {
-            e.resolved_target = env.find_resolved_type(e.target_struct_name) as StructDeclaration
-            if (!(e.resolved_target instanceof StructDeclaration)) {
-                throw new ParseError(`${quote(e.target_struct_name)} is not a struct`, e.span)
-            }
-            resolve_for_contained_types_and_nodes(e)
-        } else if (e instanceof MatchArm) {
-            const match_arm_env = new Environment(env)
-            function resolve_captures_and_add_to_env(pattern: MatchPattern) {
-                if (pattern instanceof StructuredMatchPattern) {
-                    if (
-                        pattern.type_expression instanceof IdentifierReference &&
-                        !env.find_resolved_type(pattern.type_expression.name)
-                    ) {
-                        // This should be a capture.
-                        pattern = new CaptureMatchPattern(
-                            {name: pattern.type_expression.name},
-                            pattern.span,
-                        )
-                    } else {
-                        for (const name of Object.keys(pattern.fields)) {
-                            pattern.fields[name] = resolve_captures_and_add_to_env(
-                                pattern.fields[name],
-                            )
-                        }
-                    }
-                } else if (pattern instanceof TupleMatchPattern) {
-                    for (let i = 0; i < pattern.values.length; i++) {
-                        let value = pattern.values[i]
-                        if (
-                            value instanceof IdentifierReference &&
-                            !env.find_resolved_type(value.name)
-                        ) {
-                            // This should be a capture.
-                            pattern.values[i] = new CaptureMatchPattern(
-                                {name: value.name},
-                                value.span,
-                            )
-                        }
-                        pattern.values[i] = resolve_captures_and_add_to_env(pattern.values[i])
-                    }
-                }
-                if (pattern instanceof CaptureMatchPattern) {
-                    const var_declaration = new VariableDeclaration(
-                        {name: pattern.name, type: type_needs_to_be_inferred, mutable: false},
-                        pattern.span,
-                    )
-                    match_arm_env.add_variable(pattern.name, var_declaration)
-                }
-                return pattern
-            }
-            e.pattern = resolve_captures_and_add_to_env(e.pattern)
-            resolve_for_node(e.pattern)
-            resolve_types_and_identifier_references(e.block, match_arm_env)
-        } else {
-            resolve_for_contained_types_and_nodes(e)
-        }
-    }
-
-    function resolve_for_contained_types_and_nodes(e: ASTNode) {
-        for (const x of e.contained_types()) {
-            env.resolve_type(x)
-        }
-        for (const x of e.contained_nodes()) {
-            resolve_for_node(x)
-        }
-    }
-
-    function forward_parse_declarations(expressions: Expression[]) {
-        const impls: ImplDefinition[] = []
-        for (const e of expressions) {
-            if (e instanceof FunctionDeclaration) {
-                env.add_resolved(e.name, e)
-            } else if (e instanceof FunctionDefinition) {
-                env.add_resolved(e.declaration.name, e.declaration)
-            } else if (
-                e instanceof StructDeclaration ||
-                e instanceof TraitDeclaration ||
-                e instanceof EnumDeclaration
-            ) {
-                env.add_resolved(e.name, e)
-                for (const x of e.type_parameters) {
-                    env.add_type_parameter(e, x)
-                }
-            } else if (e instanceof ImplDefinition) {
-                impls.push(e)
-            } else if (e instanceof ExternBlock) {
-                for (const x of e.functions) {
-                    env.add_resolved(x.name, x)
-                }
-                for (const x of e.structs) {
-                    env.add_resolved(x.name, x)
-                }
-                for (const x of e.impls) {
-                    impls.push(x)
-                }
-            }
-        }
-        // FEAT: This allows `impl` blocks to be defined before the structs, enums and traits.
-        for (const impl of impls) {
-            const target = env.find_resolved_type(impl.target_name)
-            if (!target) {
-                throw new ParseError(
-                    `Struct or enum ${quote(impl.target_name)} not found`,
-                    impl.span,
-                )
-            }
-            if (!(target instanceof StructDeclaration || target instanceof EnumDeclaration)) {
-                throw new ParseError(
-                    `${quote(impl.target_name)} is not a struct or an enum`,
-                    impl.span,
-                )
-            }
-            for (const x of impl.type_parameters) {
-                env.add_type_parameter(target, x)
-            }
-            impl.resolved_target = target
-            if (impl.trait_name) {
-                const trait = env.find_resolved_type(impl.trait_name)
-                if (!trait) {
-                    throw new ParseError(`Trait ${quote(impl.trait_name)} not found`, impl.span)
-                }
-                if (!(trait instanceof TraitDeclaration)) {
-                    throw new ParseError(`${quote(impl.trait_name)} is not a trait`, impl.span)
-                }
-                impl.resolved_trait = trait
-            }
-            target.impls.push(impl)
-        }
-    }
-}
 
 /**
  * Parse tokens into an AST.
  *
  * FEAT: The syntax is correct.
  */
-function parse_ignoring_types(tokens: TokenStream): AST {
+export function parse(tokens: TokenStream): AST {
     if (tokens.at_end()) {
         return new Block({body: []}, new Span(0, 0, "<unknown>", ""))
     }
@@ -1362,7 +1051,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             } else if (simple_token === "not") {
                 const span = tokens.consume().span
                 const value = parse_expression()
-                expression = new Not({value}, Span.combine(span, value))
+                expression = new Not({expression: value}, Span.combine(span, value))
             } else if (simple_token === "if") {
                 expression = parse_if()
             } else if (simple_token === "loop") {
@@ -1431,6 +1120,9 @@ function parse_ignoring_types(tokens: TokenStream): AST {
     function parse_assignment(target: Expression): Assignment {
         const span = tokens.consume().span
         const value = parse_expression()
+        if (value instanceof IndexedAccess) {
+            value.is_write = true
+        }
         return new Assignment({target, value}, Span.combine(span, value))
     }
 
@@ -1477,17 +1169,18 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         const span = tokens.consume().span
         const name_or_trait = tokens.expect_identifier().value
         let type_parameters = try_parse_generic_type_parameters()
+        let trait_type_parameters: TypeDeclaration[] = []
         let trait_name: string | undefined
         let target_struct_name = name_or_trait
         if (tokens.simple_peek() === "for") {
             tokens.consume()
             trait_name = name_or_trait
             target_struct_name = tokens.expect_identifier().value
+            trait_type_parameters = type_parameters
             type_parameters = try_parse_generic_type_parameters()
         }
         tokens.expect(":")
-        const member_functions: FunctionDefinition[] = []
-        const static_functions: FunctionDefinition[] = []
+        const functions: FunctionDefinition[] = []
         while (!tokens.at_end() && tokens.simple_peek() !== "end") {
             let fn: FunctionDefinition
             if (mode === "declarations_only") {
@@ -1499,11 +1192,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             } else {
                 fn = parse_function_definition()
             }
-            if (fn.declaration.parameters[0]?.name !== "self") {
-                static_functions.push(fn)
-            } else {
-                member_functions.push(fn)
-            }
+            functions.push(fn)
         }
         const end_span = tokens.expect("end").span
         const impl = new ImplDefinition(
@@ -1511,8 +1200,8 @@ function parse_ignoring_types(tokens: TokenStream): AST {
                 target_name: target_struct_name,
                 type_parameters,
                 trait_name,
-                member_functions,
-                static_functions,
+                trait_type_parameters,
+                functions,
             },
             Span.combine(span, end_span),
         )
@@ -1524,38 +1213,22 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         const name = tokens.expect_identifier().value
         const type_parameters = try_parse_generic_type_parameters()
         tokens.expect(":")
-        const trait = new TraitDeclaration(
-            {
-                name,
-                member_function_declarations: [],
-                static_function_declarations: [],
-                member_function_default_impls: [],
-                static_function_default_impls: [],
-                type_parameters,
-            },
-            span,
-        )
+        const functions: (FunctionDeclaration | FunctionDefinition)[] = []
         while (!tokens.at_end() && tokens.simple_peek() !== "end") {
             const declaration = parse_function_declaration()
             if (![":", "=>"].includes(tokens.simple_peek() ?? "")) {
                 // Ok, this is a declaration only.
-                if (declaration.parameters[0]?.name !== "self") {
-                    trait.static_function_declarations.push(declaration)
-                } else {
-                    trait.member_function_declarations.push(declaration)
-                }
+                functions.push(declaration)
             } else {
                 const fn = parse_function_body(declaration)
-                if (fn.declaration.parameters[0].name !== "self") {
-                    trait.static_function_default_impls.push(fn)
-                } else {
-                    trait.member_function_default_impls.push(fn)
-                }
+                functions.push(fn)
             }
         }
         const end_span = tokens.expect("end").span
-        trait.span = Span.combine(span, end_span)
-        return trait
+        return new TraitDeclaration(
+            {name, functions, type_parameters},
+            Span.combine(span, end_span),
+        )
     }
 
     function parse_enum_declaration(): EnumDeclaration {
@@ -1566,11 +1239,11 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         const variants = []
         while (!tokens.at_end() && tokens.simple_peek() !== "end") {
             const name = tokens.expect_identifier().value
-            let values = new TupleDeclaration({members: []}, span)
+            let fields = new TupleTypeDeclaration({fields: []}, span)
             if (tokens.simple_peek() === "(") {
-                values = parse_tuple_declaration().resolved as TupleDeclaration
+                fields = parse_tuple_type()
             }
-            variants.push(new EnumVariant({name, values}, span))
+            variants.push(new EnumVariant({name, fields}, span))
         }
         span = Span.combine(span, tokens.expect("end").span)
         return new EnumDeclaration({name, variants, type_parameters}, span)
@@ -1588,8 +1261,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             members[name] = type
         }
         span = Span.combine(span, tokens.expect("end").span)
-        const definition = new StructDeclaration({name, members, type_parameters}, span)
-        return definition
+        return new StructDeclaration({name, fields: members, type_parameters}, span)
     }
 
     function parse_block(mode: "normal" | "if_else") {
@@ -1628,7 +1300,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
                 values.push(parse_expression())
             }
             span = Span.combine(tokens.expect(")").span, span)
-            return new TupleInstantiation({values}, span)
+            return new TupleInstantiation({elements: values}, span)
         }
         span = Span.combine(tokens.expect(")").span, span)
         return new ParenthesizedExpression({expression}, span)
@@ -1638,7 +1310,9 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         const span = tokens.consume().span
         const index = parse_expression()
         const end_span = tokens.expect("]").span
-        return new IndexedAccess({target, index}, Span.combine(span, end_span))
+        // The default value of `is_write` is `false`.
+        // It will be set to `true` in `parse_assignment`.
+        return new IndexedAccess({target, index, is_write: false}, Span.combine(span, end_span))
     }
 
     function parse_array_literal(): ArrayLiteral {
@@ -1651,19 +1325,19 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             values.push(parse_expression())
         }
         const end_span = tokens.expect("]").span
-        return new ArrayLiteral({values}, Span.combine(span, end_span))
+        return new ArrayLiteral({elements: values}, Span.combine(span, end_span))
     }
 
     function parse_match_expression(): Match {
         const span = tokens.consume().span
         const value = parse_expression()
         const arms: MatchArm[] = []
-        let wildcard_block: Block | undefined
+        let else_block: Block | undefined
         tokens.expect(":")
         while (!tokens.at_end() && tokens.simple_peek() !== "end") {
             if (tokens.simple_peek() === "else") {
                 tokens.consume()
-                wildcard_block = parse_block("normal")
+                else_block = parse_block("normal")
                 // Wildcard arm is always last.
                 break
             }
@@ -1672,7 +1346,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             arms.push(new MatchArm({pattern, block}, Span.combine(pattern, block.span)))
         }
         const end_span = tokens.expect("end").span
-        return new Match({value, arms, wildcard_block}, Span.combine(span, end_span))
+        return new Match({value, arms, else_block}, Span.combine(span, end_span))
     }
 
     function parse_match_pattern(): MatchPattern {
@@ -1765,7 +1439,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         const mutable = tokens.simple_peek() === "mut"
         const span = tokens.consume().span
         const name = tokens.expect_identifier().value
-        let type = type_needs_to_be_inferred
+        let type: TypeDeclaration | undefined
         let end_span = span
         if (tokens.peek() instanceof Identifier) {
             type = parse_type()
@@ -1777,11 +1451,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             value = parse_expression()
             end_span = value.span
         }
-        const let_ = new VariableDeclaration(
-            {name, value, type, mutable},
-            Span.combine(span, end_span),
-        )
-        return let_
+        return new VariableDeclaration({name, value, type, mutable}, Span.combine(span, end_span))
     }
 
     function parse_function_declaration(): FunctionDeclaration {
@@ -1799,18 +1469,28 @@ function parse_ignoring_types(tokens: TokenStream): AST {
                 tokens.consume()
             }
             const name_token = tokens.expect_identifier()
-            const type = try_parse_type() || type_needs_to_be_inferred
-            parameters.push(new Parameter({name: name_token.value, type, mutable}, name_token.span))
+            let type: TypeDeclaration | undefined
+            if (name_token.value === "self" && parameters.length === 0) {
+                type = self_type
+            } else {
+                type = parse_type()
+            }
+            parameters.push(
+                new Parameter(
+                    {name: name_token.value, type_declaration: type, mutable},
+                    name_token.span,
+                ),
+            )
         }
         tokens.expect(")")
-        let return_type = type_needs_to_be_inferred
+        let return_type = unit_type
         if (tokens.peek() instanceof Identifier) {
             return_type = parse_type()
         }
         return new FunctionDeclaration({name, parameters, return_type}, span)
     }
 
-    function parse_function_type(): TypeDeclaration {
+    function parse_function_type(): FunctionTypeDeclaration {
         const span = tokens.consume().span
         tokens.expect("(")
         const parameter_types: TypeDeclaration[] = []
@@ -1822,20 +1502,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
         }
         tokens.expect(")")
         const return_type = try_parse_type() || unit_type
-        const declaration = new FunctionDeclaration(
-            {
-                name: "",
-                parameters: parameter_types.map(
-                    (t) => new Parameter({name: "", type: t, mutable: false}, span),
-                ),
-                return_type,
-            },
-            span,
-        )
-        return new TypeDeclaration(
-            {name: "<anonymous>", type_parameters: [], resolved: declaration},
-            span,
-        )
+        return new FunctionTypeDeclaration({arg_types: parameter_types, return_type}, span)
     }
 
     function parse_function_body(declaration: FunctionDeclaration): FunctionDefinition {
@@ -1856,19 +1523,22 @@ function parse_ignoring_types(tokens: TokenStream): AST {
     function parse_closure(): ClosureDefinition {
         const span = tokens.expect("fn").span
         tokens.expect("(")
-        const parameters: Parameter[] = []
+        const parameters: ClosureParameter[] = []
         while (!tokens.at_end() && tokens.simple_peek() !== ")") {
             if (parameters.length > 0) {
                 tokens.expect(",")
             }
             const name_token = tokens.expect_identifier()
-            const type = try_parse_type() || type_needs_to_be_inferred
+            const type = try_parse_type()
             parameters.push(
-                new Parameter({name: name_token.value, type, mutable: false}, name_token.span),
+                new ClosureParameter(
+                    {name: name_token.value, type_declaration: type, mutable: false},
+                    name_token.span,
+                ),
             )
         }
         tokens.expect(")")
-        let return_type = type_needs_to_be_inferred
+        let return_type
         if (tokens.peek() instanceof Identifier) {
             return_type = parse_type()
         }
@@ -1881,8 +1551,13 @@ function parse_ignoring_types(tokens: TokenStream): AST {
 
     function parse_return_expression(): Return {
         const span = tokens.expect("return").span
-        const value = parse_expression()
-        return new Return({value}, Span.combine(span, value.span))
+        let end_span = span
+        let value: Expression | undefined
+        if (tokens.simple_peek() !== "end") {
+            value = parse_expression()
+            end_span = value.span
+        }
+        return new Return({value}, Span.combine(span, end_span))
     }
 
     function parse_identifier_reference(token: Identifier): IdentifierReference {
@@ -1937,7 +1612,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             }
             const span = Span.combine(tokens.expect("}").span, token.span)
             return new StructInstantiation(
-                {target_struct_name: token.value, values: args, type_arguments},
+                {target_struct_name: token.value, fields: args, type_arguments},
                 span,
             )
         } catch (e) {
@@ -1974,8 +1649,8 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             }
             args.push(parse_expression())
         }
-        const span = Span.combine(tokens.expect(")").span, target_candidate.span)
-        return new FunctionCall({target, arguments: args}, span)
+        const span = Span.combine(target_candidate.span, tokens.expect(")").span)
+        return new FunctionCall({target, args: args}, span)
     }
 
     function try_parse_generic_type_parameters(): TypeDeclaration[] {
@@ -2008,7 +1683,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
 
     function parse_type(): TypeDeclaration {
         if (tokens.simple_peek() === "(") {
-            return parse_tuple_declaration()
+            return parse_tuple_type()
         }
         if (tokens.simple_peek() === "fn") {
             return parse_function_type()
@@ -2028,26 +1703,24 @@ function parse_ignoring_types(tokens: TokenStream): AST {
             }
             end_span = tokens.expect(">").span
         }
-        return new TypeDeclaration({name, type_parameters}, Span.combine(token.span, end_span))
+        return new TypeDeclaration(
+            {name, type_parameters: type_parameters},
+            Span.combine(token.span, end_span),
+        )
     }
 
-    function parse_tuple_declaration(): TypeDeclaration {
+    function parse_tuple_type(): TupleTypeDeclaration {
         const span = tokens.consume().span
-        const types: TypeDeclaration[] = []
+        const fields: TypeDeclaration[] = []
         while (!tokens.at_end() && tokens.simple_peek() !== ")") {
-            if (types.length > 0) {
+            if (fields.length > 0) {
                 tokens.expect(",")
             }
             const type = parse_type()
-            types.push(type)
+            fields.push(type)
         }
         const end_span = tokens.expect(")").span
-        const resolved = new TupleDeclaration({members: types}, Span.combine(span, end_span))
-        const name = `(${types.map((t) => t.to_signature_string()).join(", ")})`
-        return new TypeDeclaration(
-            {name, type_parameters: types, resolved},
-            Span.combine(span, end_span),
-        )
+        return new TupleTypeDeclaration({fields}, Span.combine(span, end_span))
     }
 
     function parse_interpolated_string(token: InterpolatedStringToken): InterpolatedString {
@@ -2059,7 +1732,7 @@ function parse_ignoring_types(tokens: TokenStream): AST {
                     new String_({value: part.value, is_multiline: part.is_multiline}, span),
                 )
             } else if (part instanceof InterpolatedStringPartExpression) {
-                const ast = parse_ignoring_types(new TokenStream(part.tokens))
+                const ast = parse(new TokenStream(part.tokens))
                 if (ast.body.length !== 1) {
                     throw new ParseError(
                         `Expected exactly one expression but got ${ast.body.length}`,

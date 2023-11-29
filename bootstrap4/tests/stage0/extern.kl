@@ -19,5 +19,4 @@ extern:
 end
 
 fn main():
-    return 0
 end

@@ -87,18 +87,20 @@ async function test_file(file: string, update = false): Promise<boolean> {
 async function cli() {
     const update = process.argv.includes("--update")
     const files = (await readdir(test_dir)).filter((x) => x.endsWith(".kl"))
-    let failed = false
+    let failed = 0
+    let total = 0
     for (const file of files) {
+        total += 1
         console.log("Running", file)
         if (!(await test_file(file, update))) {
-            failed = true
+            failed += 1
         }
     }
     if (failed) {
-        console.error("FAIL")
+        console.error(`FAILED ${failed}/${total} tests`)
         process.exit(1)
     }
-    console.log("PASS")
+    console.log(`PASSED ${total} tests`)
 }
 
 cli()

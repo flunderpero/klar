@@ -24,4 +24,5 @@ fn main():
         print(v.get(i))
         i = i + 1
     end
+    return
 end

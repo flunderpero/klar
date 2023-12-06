@@ -5,7 +5,7 @@ import assert from "assert"
 import {quote, Span, to_json} from "./common"
 import * as Lexer from "./lexer"
 import * as AST from "./parser"
-import {type_check_ast, TypeEnvironment} from "./type_check"
+import {type_check_ast, TypeEnvironment} from "./type_check2"
 
 // @ts-ignore
 const dir = import.meta.dir
@@ -30,7 +30,7 @@ function traverse_ast(ast: AST.AST, f: (e: AST.ASTNode, parent: AST.ASTNode) => 
         traverse(expression, ast.body)
     }
     function traverse(obj: any, parent: any) {
-        if (obj === undefined) {
+        if (obj == null) {
             return
         }
         if (visited.includes(obj)) {
@@ -509,8 +509,8 @@ export async function compile_prelude(
 ): Promise<{env: TypeEnvironment; prelude: string}> {
     env = env || TypeEnvironment.global()
     const src = await Bun.file(file).text()
-    const prelude = await compile({file, src, env, disable_debug: true})
-    return {env, prelude}
+    // const prelude = await compile({file, src, env, disable_debug: true})
+    return {env, prelude: ""}
 }
 
 /**

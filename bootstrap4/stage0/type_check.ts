@@ -1,3 +1,4 @@
+import assert from "assert"
 import {Span, quote} from "./common"
 import * as ast from "./parser"
 
@@ -69,7 +70,7 @@ export function type_check(node: ast.ASTNode, env: TypeEnvironment): Type {
         const struct_type = env.get_type({name: node.target_struct_name, span: node.span})
         if (!(struct_type instanceof StructType)) {
             throw new TypeError(
-                `Expected struct type but got ${quote(struct_type.name)}`,
+                `Expected struct type but got ${quote(struct_type.signature)}`,
                 node.span,
             )
         }
@@ -90,76 +91,48 @@ export function type_check(node: ast.ASTNode, env: TypeEnvironment): Type {
                 node.span,
             )
         }
-        const instance_type = new StructType(
-            node.target_struct_name,
-            struct_type.declaration,
-            struct_type.env,
-            node.span,
-        )
-        // Resolve all type parameters and set self-type.
-        for (let i = 0; i < node.type_arguments.length; i++) {
-            const type_parameter = struct_type.env.type_parameters[i]
-            type_parameter.resolved = env.get_type(node.type_arguments[i])
-        }
-        instance_type.env.self_type = new TypeParameter("Self", node.span)
-        instance_type.env.self_type.resolved = instance_type
+        // Resolve all type parameters. 
+        const instance_type = resolve_type_parameters(node, struct_type)
         return add_attrs(instance_type)
     }
 
     if (node instanceof ast.FunctionCall) {
         const function_type_ = expect_function_type(type_check(node.target, env), node.span)
         let function_type = function_type_
-        let target_env = env
-        if (
-            node.target.attributes.target_type &&
-            node.target.attributes.target_type instanceof StructuredType
-        ) {
-            target_env = node.target.attributes.target_type.env
-            const is_member_function = function_type.args[0]?.name === "Self"
-            function_type = function_type_.re_evaluate_types(target_env)
-            // Remove the first argument if it is the self type.
-            if (is_member_function) {
-                function_type.args = function_type.args.slice(1)
-            }
-        }
-        const args = node.args.map((a) => type_check(a, env))
-        if (args.length !== function_type.args.length) {
+        const func_args = function_type.is_method ? function_type.args.slice(1) : function_type.args
+        if (node.args.length !== func_args.length) {
             throw new TypeError(
-                `Expected ${function_type.args.length} arguments but got ${args.length}`,
+                `Expected ${func_args.length} arguments but got ${
+                    node.args.length
+                } for function ${quote(function_type.signature)}`,
                 node.span,
             )
         }
+        const args = node.args.map((a) => type_check(a, env))
         for (let i = 0; i < args.length; i++) {
-            const arg = args[i]
-            let f_arg = function_type.args[i]
-            if (f_arg instanceof FunctionType) {
-                f_arg = f_arg.re_evaluate_types(target_env)
-                console.log("AAA f_arg", function_type.name, f_arg.signature, target_env.to_debug_str())
-            }
-            expect_type(arg, f_arg, node.span)
+            expect_type(args[i], func_args[i], node.span)
         }
         let return_type = function_type.return_type
-        if (function_type.return_type instanceof FunctionType) {
-            return_type = function_type.return_type.re_evaluate_types(target_env)
-        }
         return add_attrs(return_type)
     }
 
     if (node instanceof ast.IdentifierReference) {
-        let target_type: StructuredType | undefined
+        let target_type = env.get_type(node)
         if (node.type_parameters.length > 0) {
             // Create a new type if we have type parameters.
-            const type = expect_struct_type(env.get_type(node), node.span)
-            // fixme: enum
-            target_type = new StructType(type.name, type.declaration, type.env.parent!, node.span)
-            for (let i = 0; i < node.type_parameters.length; i++) {
-                const type_parameter = type.env.type_parameters[i]
-                type_parameter.resolved = env.get_type(node.type_parameters[i])
+            const structured_type = expect_struct_type(target_type, node.span)
+            if (
+                node.type_parameters.length !== structured_type.declaration.type_parameters.length
+            ) {
+                throw new TypeError(
+                    `Expected ${structured_type.declaration.type_parameters.length} type arguments but got ${node.type_parameters.length}`,
+                    node.span,
+                )
             }
-            target_type.env.self_type = new TypeParameter("Self", node.span)
-            target_type.env.self_type.resolved = target_type
+            // console.log("AAA idref", target_type.signature, target_type.env.to_debug_str())
+            target_type = resolve_type_parameters(node, structured_type)
         }
-        return add_attrs(env.get_type(node), {target_type})
+        return add_attrs(target_type, {target_type})
     }
 
     if (node instanceof ast.Assignment) {
@@ -171,7 +144,7 @@ export function type_check(node: ast.ASTNode, env: TypeEnvironment): Type {
 
     if (node instanceof ast.FieldAccess) {
         const target_type = expect_structured_type(type_check(node.target, env), node.span)
-        const field_type = target_type.env.get_type({name: node.field, span: node.span})
+        let field_type = target_type.env.get_type({name: node.field, span: node.span})
         if (!field_type) {
             throw new TypeError(`Unknown field ${quote(node.field)}`, node.span)
         }
@@ -188,22 +161,16 @@ export function type_check(node: ast.ASTNode, env: TypeEnvironment): Type {
         //       a[i] = 4  -- this is an error because we expect usize
         //       ```
         if (index_type.is_assignable_to(env.builtin_type("usize"))) {
-            throw new TypeError(`Expected usize but got ${quote(index_type.name)}`, node.span)
+            throw new TypeError(`Expected usize but got ${quote(index_type.signature)}`, node.span)
         }
         const target_type = expect_structured_type(type_check(node.target, env), node.span)
         if (node.is_write) {
             expect_to_impl_trait(target_type, "IndexedSet", node.span)
-            const set_function_ = expect_to_have_function(target_type, "set", node.span)
-            // We have to re-evaluate the types of the `set_function_` because it might be part
-            // of a trait or an impl, or may contain type parameters.
-            const set_function = set_function_.re_evaluate_types(target_type.env)
+            const set_function = expect_to_have_function(target_type, "set", node.span)
             return add_attrs(set_function.return_type)
         }
         expect_to_impl_trait(target_type, "IndexedGet", node.span)
-        const get_function_ = expect_to_have_function(target_type, "get", node.span)
-        // We have to re-evaluate the types of the `get_function_` because it might be part
-        // of a trait or an impl, or may contain type parameters.
-        const get_function = get_function_.re_evaluate_types(target_type.env)
+        const get_function = expect_to_have_function(target_type, "get", node.span)
         return add_attrs(get_function.return_type)
     }
 
@@ -221,7 +188,7 @@ export function type_check(node: ast.ASTNode, env: TypeEnvironment): Type {
         )
         const type = new StructuredType(array_type.name, array_type.env, node.span)
         type.traits = array_type.traits
-        type.env.parent!.type_parameters[0].resolved = element_type
+        type.type_parameters.set_type_argument(0, element_type, node.span) // `T`
         return add_attrs(type)
     }
 
@@ -247,10 +214,7 @@ export function type_check(node: ast.ASTNode, env: TypeEnvironment): Type {
             throw new TypeError(`Unknown operator ${quote(node.operator)}`, node.span)
         }
         const lhs_type = expect_to_impl_trait(type_check(node.lhs, env), trait, node.lhs.span)
-        const op_function_ = expect_to_have_function(lhs_type, func, node.lhs.span)
-        // We have to re-evaluate the types of the `op_function_` because it might be part
-        // of a trait or an impl, or may contain type parameters.
-        const op_function = op_function_.re_evaluate_types(lhs_type.env)
+        const op_function = expect_to_have_function(lhs_type, func, node.lhs.span)
         const rhs_type = type_check(node.rhs, env)
         expect_type(rhs_type, op_function.args[1], node.rhs.span)
         return add_attrs(op_function.return_type)
@@ -277,18 +241,22 @@ export function type_check(node: ast.ASTNode, env: TypeEnvironment): Type {
         //     closure_env.add_type(param.name, param.type_declaration, node.span)
         // }
         const parameter_types = node.parameters.map((p) => env.get_type(p.type_declaration!))
-        const function_env = new TypeEnvironment(env)
-        for (const param of node.parameters) {
-            function_env.add_type(param.name, env.get_type(param.type_declaration!))
+        const type = new FunctionType(
+            "<function>",
+            node.parameters.map((p) => p.name),
+            false,
+            env,
+            node.span,
+        )
+        for (let i = 0; i < parameter_types.length; i++) {
+            type.env.add_type(node.parameters[i].name, parameter_types[i])
         }
-        const return_type = type_check(node.block, function_env)
-        const type = new FunctionType("<function>", parameter_types, return_type, node.span)
+        type.env.add_type("return", type_check(node.block, type.env))
         return add_attrs(type)
     }
 
     if (node instanceof ast.Block) {
         // Forward declare contained declarations and definitions.
-        console.log("AAA ", new Error().stack)
         const block_env = new TypeEnvironment(env)
         add_declarations_to_env(node.body, block_env)
         let return_type: Type = env.builtin_type("()")
@@ -301,7 +269,7 @@ export function type_check(node: ast.ASTNode, env: TypeEnvironment): Type {
     if (node instanceof ast.FunctionDefinition) {
         const function_env = new TypeEnvironment(env)
         for (const param of node.declaration.parameters) {
-            function_env.add_type(param.name, env.get_type(param.type_declaration))
+            function_env.add_type(param.name, env.get_type(param.type))
         }
         const block_type = type_check(node.block, function_env)
         if (node.declaration.return_type) {
@@ -341,16 +309,31 @@ export function type_check(node: ast.ASTNode, env: TypeEnvironment): Type {
     throw new TypeError(`Unknown node type ${quote(node.constructor.name)}`, node.span)
 }
 
+function resolve_type_parameters(
+    node: ast.StructInstantiation | {type_parameters: ast.TypeDeclaration[]; span: Span},
+    struct_type: StructuredType,
+): StructuredType {
+    const type_parameters = struct_type.type_parameters.copy()
+    const type_arguments =
+        node instanceof ast.StructInstantiation ? node.type_arguments : node.type_parameters
+    for (let i = 0; i < type_arguments.length; i++) {
+        const type_argument = type_arguments[i]
+        let resolved = struct_type.env.get_type(type_argument)
+        if (resolved instanceof StructuredType) {
+            resolved = resolve_type_parameters(type_argument, resolved)
+        }
+        type_parameters.set_type_argument(i, resolved, type_arguments[i].span)
+    }
+    return struct_type.resolve_type_parameters(type_parameters, node.span)
+}
+
 function add_declarations_to_env(nodes: ast.ASTNode[], env: TypeEnvironment) {
     nodes = nodes.filter((x) => x instanceof ast.DeclarationOrDefinition)
     // Add all names as dummy types to the environment to allow for forward
     // and recursive declarations.
     for (const node of nodes) {
         if (node instanceof ast.FunctionDefinition || node instanceof ast.FunctionDeclaration) {
-            env.add_type(
-                node.name,
-                new FunctionType(node.name, [], env.builtin_type("()"), node.span),
-            )
+            env.add_type(node.name, new FunctionType(node.name, [], false, env, node.span))
         } else if (node instanceof ast.StructDeclaration) {
             env.add_type(node.name, new StructType(node.name, node, env, node.span))
         } else if (node instanceof ast.EnumDeclaration) {
@@ -364,12 +347,7 @@ function add_declarations_to_env(nodes: ast.ASTNode[], env: TypeEnvironment) {
                 if (extern_node instanceof ast.FunctionDeclaration) {
                     env.add_type(
                         extern_node.name,
-                        new FunctionType(
-                            extern_node.name,
-                            [],
-                            env.builtin_type("()"),
-                            extern_node.span,
-                        ),
+                        new FunctionType(extern_node.name, [], false, env, extern_node.span),
                     )
                 } else if (extern_node instanceof ast.StructDeclaration) {
                     env.add_type(
@@ -473,8 +451,12 @@ function update_function(
 ) {
     const type = expect_function_type(env.get_type(node), node.span)
     const declaration = node instanceof ast.FunctionDefinition ? node.declaration : node
-    type.args = FunctionType.args_from_declaration(declaration, env)
-    type.return_type = env.get_type(declaration.return_type)
+    type.arg_names = declaration.parameters.map((p) => p.name)
+    const types = FunctionType.parameter_types_from_declaration(declaration, env, type)
+    for (const [i, name] of type.arg_names.entries()) {
+        type.env.add_type(name, types[i])
+    }
+    type.env.add_type("return", env.get_type(declaration.return_type))
 }
 
 function add_impl_to_type(node: ast.ImplDefinition, env: TypeEnvironment) {
@@ -488,57 +470,64 @@ function add_impl_to_type(node: ast.ImplDefinition, env: TypeEnvironment) {
     if (target_type instanceof StructType || target_type instanceof EnumType) {
         target_type.declaration.attributes.impls.push(node)
     }
+    const impl_env = new TypeEnvironment(target_type.env)
+    for (let i = 0; i < node.type_parameters.length; i++) {
+        const p = node.type_parameters[i]
+        const type_parameter = new TypeParameter(p.name, p.span)
+        impl_env.add_type(p.name, type_parameter)
+        target_type.type_parameters.add_type_parameter_mapping(
+            type_parameter,
+            target_type.type_parameters.get(i),
+            p.span,
+        )
+    }
     if (node.trait_name) {
         target_type.traits.push(node.trait_name)
-        const trait_type = expect_trait_type(
+        let trait_type = expect_trait_type(
             env.get_type({name: node.trait_name, span: node.span}),
             node.span,
         )
+        // fixme: check that types match
+        // trait_type.type_parameters.replace_matching(target_type.type_parameters)
         node.attributes.trait_declaration = trait_type.declaration
-        const new_env = new TypeEnvironment(target_type.env.parent)
-        target_type.env.parent = new_env
-        for (const type of trait_type.env.types.values()) {
-            new_env.add_type(type.name, type)
-        }
-        if (node.trait_type_parameters.length !== trait_type.declaration.type_parameters.length) {
-            throw new TypeError(
-                `Expected ${trait_type.declaration.type_parameters.length} type arguments but got ${node.trait_type_parameters.length}`,
-                node.span,
-            )
-        }
-        // Resolve trait parameters if they are an actual type.
-        for (let i = 0; i < node.trait_type_parameters.length; i++) {
-            const type_parameter = node.trait_type_parameters[i]
-            const type = target_type.env.get_type_or_null(type_parameter.name)
-            if (type) {
-                const trait_type_parameter = trait_type.declaration.type_parameters[i]
-                new_env.add_type(trait_type_parameter.name, type)
+        // Add all default implementations that are not overridden.
+        for (const f of trait_type.declaration.functions.values()) {
+            if (!node.functions.some((f2) => f2.name === f.name)) {
+                const func = FunctionType.from_declaration(f, impl_env, target_type)
+                // console.log("AAA trait-func", func.signature, target_type.signature)
+                target_type.env.add_type(f.name, func)
             }
         }
-        return
     }
     for (const f of node.functions.map((f) => f.declaration)) {
-        target_type.env.add_type(f.name, FunctionType.from_declaration(f, target_type.env))
+        const func = FunctionType.from_declaration(f, impl_env, target_type)
+        // console.log("AAA func", func.signature, target_type.signature)
+        target_type.env.add_type(f.name, func)
     }
 }
 
 function update_struct(node: ast.StructDeclaration, env: TypeEnvironment) {
     const struct_type = expect_struct_type(env.get_type(node), node.span)
-    struct_type.env.self_type = new TypeParameter("Self", node.span)
     node.type_parameters.forEach((p) =>
-        struct_type.env.add_type_parameter(p.name, new TypeParameter(p.name, node.span)),
+        struct_type.type_parameters.add(
+            new TypeParameter(p.name, node.span),
+            struct_type.env,
+            null,
+        ),
     )
     Object.entries(node.fields).forEach(([name, type]) => {
-        const field_type = struct_type.env.get_type(type)
+        let field_type = struct_type.env.get_type(type)
+        if (field_type instanceof StructuredType) {
+            struct_type.type_parameters.map_type_parameters(field_type.type_parameters)
+        }
         struct_type.env.add_type(name, field_type)
     })
 }
 
 function update_enum(node: ast.EnumDeclaration, env: TypeEnvironment) {
     const enum_type = expect_structured_type(env.get_type(node), node.span)
-    enum_type.env.self_type = new TypeParameter("Self", node.span)
     node.type_parameters.forEach((p) =>
-        enum_type.env.add_type_parameter(p.name, new TypeParameter(p.name, node.span)),
+        enum_type.type_parameters.add(new TypeParameter(p.name, node.span), enum_type.env, null),
     )
     Object.values(node.variants).forEach((variant) => {
         enum_type.env.add_type(
@@ -554,20 +543,25 @@ function update_enum(node: ast.EnumDeclaration, env: TypeEnvironment) {
 
 function update_trait(node: ast.TraitDeclaration, env: TypeEnvironment) {
     const trait_type = expect_trait_type(env.get_type(node), node.span)
-    trait_type.env.self_type = new TypeParameter("Self", node.span)
     node.type_parameters.forEach((p) =>
-        trait_type.env.add_type_parameter(p.name, new TypeParameter(p.name, node.span)),
+        trait_type.type_parameters.add(new TypeParameter(p.name, node.span), trait_type.env, null),
     )
     node.functions.forEach((func) => {
         const declaration = func instanceof ast.FunctionDefinition ? func.declaration : func
         trait_type.env.add_type(
             func.name,
-            FunctionType.from_declaration(declaration, trait_type.env),
+            FunctionType.from_declaration(declaration, trait_type.env, trait_type),
         )
     })
 }
 
 function expect_type(actual: Type, expected: Type, span: Span): Type {
+    if (expected === SelfType.SELF_TYPE) {
+        return actual
+    }
+    if (actual === SelfType.SELF_TYPE) {
+        return expected
+    }
     // We might expect a trait type, see if `actual` implements it.
     if (expected instanceof TraitType) {
         expect_to_impl_trait(actual, expected.name, span)
@@ -584,35 +578,35 @@ function expect_type(actual: Type, expected: Type, span: Span): Type {
 
 function expect_structured_type(type: Type, span: Span): StructuredType {
     if (!(type instanceof StructuredType)) {
-        throw new TypeError(`Expected a structured type but got ${quote(type.name)}`, span)
+        throw new TypeError(`Expected a structured type but got ${quote(type.signature)}`, span)
     }
     return type
 }
 
 function expect_function_type(type: Type, span: Span): FunctionType {
     if (!(type instanceof FunctionType)) {
-        throw new TypeError(`Expected a function type but got ${quote(type.name)}`, span)
+        throw new TypeError(`Expected a function type but got ${quote(type.signature)}`, span)
     }
     return type
 }
 
 function expect_trait_type(type: Type, span: Span): TraitType {
     if (!(type instanceof TraitType)) {
-        throw new TypeError(`Expected a trait type but got ${quote(type.name)}`, span)
+        throw new TypeError(`Expected a trait type but got ${quote(type.signature)}`, span)
     }
     return type
 }
 
 function expect_struct_type(type: Type, span: Span): StructType {
     if (!(type instanceof StructType)) {
-        throw new TypeError(`Expected a struct type but got ${quote(type.name)}`, span)
+        throw new TypeError(`Expected a struct type but got ${quote(type.signature)}`, span)
     }
     return type
 }
 
 function expect_numeric_type(type: Type, span: Span): NumericType {
     if (!(type instanceof NumericType)) {
-        throw new TypeError(`Expected a numeric type but got ${quote(type.name)}`, span)
+        throw new TypeError(`Expected a numeric type but got ${quote(type.signature)}`, span)
     }
     return type
 }
@@ -632,7 +626,10 @@ function expect_to_have_function(type: Type, name: string, span: Span): Function
     const structured_type = expect_structured_type(type, span)
     const function_type = structured_type.env.get_type({name, span})
     if (!(function_type instanceof FunctionType)) {
-        throw new TypeError(`Expected function type but got ${quote(function_type.name)}`, span)
+        throw new TypeError(
+            `Expected function type but got ${quote(function_type.signature)}`,
+            span,
+        )
     }
     return function_type
 }
@@ -669,41 +666,66 @@ class Type {
     get signature(): string {
         return this.name
     }
+
+    copy(): Type {
+        return new Type(this.name, this.span)
+    }
+
+    resolve_type_parameters(
+        _type_parameters: TypeParameters,
+        _span: Span,
+        _resolved?: Map<Type, Type>,
+    ): Type {
+        return this
+    }
 }
 
 class TypeParameter extends Type {
-    private _resolved?: Type
+    static instance_counter = 0
+    private instance_id: number
 
     constructor(name: string, span: Span) {
         super(name, span)
+        this.instance_id = TypeParameter.instance_counter++
     }
 
     equals(other: Type): boolean {
-        if (!super.equals(other)) {
-            return false
-        }
-        if (!(other instanceof TypeParameter)) {
-            return false
-        }
-        return true
-    }
-
-    get resolved(): Type | undefined {
-        return this._resolved
-    }
-
-    set resolved(type: Type) {
-        if (type instanceof TypeParameter) {
-            throw new TypeError(
-                `Cannot resolve type parameter to another type parameter`,
-                this.span,
-            )
-        }
-        this._resolved = type
+        // Type parameters are only equal to themselves. We expcet to have one instance
+        // per type parameter.
+        return this === other
     }
 
     get signature(): string {
-        return `${this.name}=${this._resolved?.signature ?? "?"}`
+        return `TypeParameter(${this.name}#${this.instance_id} at ${this.span.toString()})`
+    }
+
+    copy(): TypeParameter {
+        // We don't copy type parameters.
+        return this
+    }
+
+    resolve_type_parameters(
+        type_parameters: TypeParameters,
+        span: Span,
+        _resolved?: Map<Type, Type>,
+    ): Type {
+        return type_parameters.get_type_argument_or_null(this, span) || this
+    }
+}
+
+class SelfType extends TypeParameter {
+    static SELF_TYPE = new SelfType("Self", new Span(0, 0, "<builtin>", ""))
+
+    private constructor(name: string, span: Span) {
+        super(name, span)
+    }
+
+    resolve_type_parameters(
+        _type_parameters: TypeParameters,
+        _span: Span,
+        _resolved?: Map<Type, Type>,
+    ): Type {
+        return this
     }
 }
 
@@ -714,10 +736,12 @@ class TypeParameter extends Type {
 class StructuredType extends Type {
     env: TypeEnvironment
     traits: string[] = []
+    type_parameters: TypeParameters
 
     constructor(name: string, parent_env: TypeEnvironment, span: Span) {
         super(name, span)
         this.env = new TypeEnvironment(parent_env)
+        this.type_parameters = new TypeParameters()
     }
 
     equals(other: Type): boolean {
@@ -727,29 +751,11 @@ class StructuredType extends Type {
         if (!(other instanceof StructuredType)) {
             return false
         }
+        if (this === other) {
+            return true
+        }
         // Two structured types are only equal if they resolve to the same type parameters.
-        const this_type_arguments = this.env.type_parameters.map((p) => p.resolved)
-        const other_type_arguments = other.env.type_parameters.map((p) => p.resolved)
-        if (this_type_arguments.length !== other_type_arguments.length) {
-            return false
-        }
-        for (let i = 0; i < this_type_arguments.length; i++) {
-            const this_type = this_type_arguments[i]
-            const other_type = other_type_arguments[i]
-            if (!this_type) {
-                if (!other_type) {
-                    continue
-                }
-                return false
-            }
-            if (!other_type) {
-                return false
-            }
-            if (!this_type.equals(other_type!)) {
-                return false
-            }
-        }
-        return true
+        return this.type_parameters.equals(other.type_parameters)
     }
 
     implements(trait: string): boolean {
@@ -757,11 +763,50 @@ class StructuredType extends Type {
     }
 
     get signature(): string {
-        const type_parameters = this.env.type_parameters.map((p) => p.signature).join(", ")
-        if (type_parameters.length === 0) {
+        if (this.type_parameters.size === 0) {
             return super.signature
         }
-        return `${this.name}<${type_parameters}>`
+        return `${this.constructor.name}(${this.name}<${this.type_parameters.signature}>)`
+    }
+
+    copy(): StructuredType {
+        return this.finish_copy(new StructuredType(this.name, this.env, this.span))
+    }
+
+    finish_copy<T extends StructuredType>(target_type: T): T {
+        target_type.traits = [...this.traits]
+        target_type.type_parameters = this.type_parameters.copy()
+        return target_type
+    }
+
+    resolve_type_parameters(
+        type_parameters: TypeParameters,
+        span: Span,
+        resolved?: Map<Type, Type>,
+    ): StructuredType {
+        let existing = resolved?.get(this)
+        if (existing) {
+            return existing as StructuredType
+        }
+        type_parameters = type_parameters.copy()
+        const new_type = this.copy()
+        new_type.type_parameters = type_parameters
+        const new_env = new TypeEnvironment(this.env.parent!)
+        resolved = resolved || new Map()
+        resolved.set(this, new_type)
+        for (const name of this.env.types.keys()) {
+            let type = this.env
+                .get_type({name, span: this.span})
+                .resolve_type_parameters(type_parameters, span, resolved)
+            if (type === SelfType.SELF_TYPE) {
+                type = new_type
+            } else if (type instanceof TypeParameter) {
+                type = type_parameters.get_type_argument_or_null(type, span) || type
+            }
+            new_env.add_type(name, type)
+        }
+        new_type.env = new_env
+        return new_type
     }
 }
 
@@ -776,6 +821,10 @@ class TupleType extends StructuredType {
             this.env.add_type(`${i}`, type)
         }
     }
+
+    copy(): TupleType {
+        return this.finish_copy(new TupleType(this.types, this.env, this.span))
+    }
 }
 
 class StructType extends StructuredType {
@@ -786,6 +835,10 @@ class StructType extends StructuredType {
         span: Span,
     ) {
         super(name, parent_env, span)
+    }
+
+    copy(): StructType {
+        return this.finish_copy(new StructType(this.name, this.declaration, this.env, this.span))
     }
 }
 
@@ -805,6 +858,18 @@ class EnumType extends StructuredType {
             this.env.add_type(name, type)
         }
     }
+
+    copy(): EnumType {
+        return this.finish_copy(
+            new EnumType(
+                this.name,
+                new Map(this.fields.entries()),
+                this.declaration,
+                this.env,
+                this.span,
+            ),
+        )
+    }
 }
 
 class TraitType extends StructuredType {
@@ -820,27 +885,45 @@ class TraitType extends StructuredType {
             this.env.add_type(name, type)
         }
     }
+
+    copy(): TraitType {
+        return this.finish_copy(
+            new TraitType(this.name, this.functions, this.declaration, this.env, this.span),
+        )
+    }
 }
 
-class FunctionType extends Type {
+class FunctionType extends StructuredType {
     static from_declaration(
         declaration_or_definition: ast.FunctionDeclaration | ast.FunctionDefinition,
         env: TypeEnvironment,
+        target_type: StructuredType | null,
     ): FunctionType {
         let declaration =
             declaration_or_definition instanceof ast.FunctionDefinition
                 ? declaration_or_definition.declaration
                 : declaration_or_definition
-        return new FunctionType(
+        const args = FunctionType.parameter_types_from_declaration(declaration, env, target_type)
+        const f = new FunctionType(
             declaration.name,
-            FunctionType.args_from_declaration(declaration, env),
-            env.get_type(declaration.return_type),
+            declaration.parameters.map((a) => a.name),
+            declaration.parameters[0]?.name === "self",
+            env,
             declaration.span,
             declaration_or_definition,
         )
+        for (let i = 0; i < args.length; i++) {
+            f.env.add_type(f.arg_names[i], args[i])
+        }
+        f.env.add_type("return", env.get_type(declaration.return_type))
+        return f
     }
 
-    static args_from_declaration(declaration: ast.FunctionDeclaration, env: TypeEnvironment) {
+    static parameter_types_from_declaration(
+        declaration: ast.FunctionDeclaration,
+        env: TypeEnvironment,
+        target_type: StructuredType | null,
+    ): Type[] {
         return declaration.parameters.map((p, i) => {
             if (p.name === "self") {
                 if (i !== 0) {
@@ -849,13 +932,16 @@ class FunctionType extends Type {
                         p.span,
                     )
                 }
-                return env.self_type!
+                if (!target_type) {
+                    throw new TypeError(`The self parameter can only be used in methods`, p.span)
+                }
+                return SelfType.SELF_TYPE
             }
-            if (p.type_declaration instanceof ast.FunctionTypeDeclaration) {
+            if (p.type instanceof ast.FunctionTypeDeclaration) {
                 // This is a function type parameter.
-                return FunctionType.from_function_type(p.type_declaration, env)
+                return FunctionType.from_function_type(p.type, env)
             }
-            return env.get_type(p.type_declaration)
+            return env.get_type(p.type)
         })
     }
 
@@ -863,22 +949,24 @@ class FunctionType extends Type {
         type: ast.FunctionTypeDeclaration,
         env: TypeEnvironment,
     ): FunctionType {
-        return new FunctionType(
-            "<function>",
-            type.arg_types.map((p) => env.get_type(p)),
-            env.get_type(type.return_type),
-            type.span,
-        )
+        const arg_names = type.arg_types.map((_, i) => `arg${i}`)
+        const f = new FunctionType("<function>", arg_names, false, env, type.span)
+        for (const [i, arg] of type.arg_types.entries()) {
+            f.env.add_type(arg_names[i], env.get_type(arg))
+        }
+        f.env.add_type("return", env.get_type(type.return_type))
+        return f
     }
 
     constructor(
         name: string,
-        public args: Type[],
-        public return_type: Type,
+        public arg_names: string[],
+        public is_method: boolean,
+        parent_env: TypeEnvironment,
         span: Span,
         public declaration_or_definition?: ast.FunctionDeclaration | ast.FunctionDefinition,
     ) {
-        super(name, span)
+        super(name, parent_env, span)
     }
 
     equals(other: Type): boolean {
@@ -888,45 +976,49 @@ class FunctionType extends Type {
         if (!(other instanceof FunctionType)) {
             return false
         }
-        if (this.args.length !== other.args.length) {
+        if (this.arg_names.length !== other.arg_names.length) {
             return false
         }
-        for (let i = 0; i < this.args.length; i++) {
-            if (!this.args[i].equals(other.args[i])) {
+        for (let i = 0; i < this.arg_names.length; i++) {
+            const name = {name: this.arg_names[i], span: this.span}
+            if (!this.env.get_type(name).equals(other.env.get_type(name))) {
                 return false
             }
         }
-        return this.return_type.equals(other.return_type)
-    }
-
-    re_evaluate_types(env: TypeEnvironment): FunctionType {
-        const new_args = []
-        for (const arg of this.args) {
-            if (arg instanceof FunctionType) {
-                new_args.push(arg.re_evaluate_types(env))
-                continue
-            }
-            new_args.push(env.get_type(arg))
-        }
-        let new_return_type
-        if (this.return_type instanceof FunctionType) {
-            new_return_type = this.return_type.re_evaluate_types(env)
-        } else {
-            new_return_type = env.get_type(this.return_type)
-        }
-        return new FunctionType(
-            this.name,
-            new_args,
-            new_return_type,
-            this.span,
-            this.declaration_or_definition,
-        )
+        return this.env
+            .get_type({name: "return", span: this.span})
+            .equals(other.env.get_type({name: "return", span: this.span}))
     }
 
     get signature(): string {
-        return `${this.name}(${this.args.map((a) => a.signature).join(", ")}) -> ${
-            this.return_type.signature
-        }`
+        console.log("AAA ???", new Error().stack)
+        const args = []
+        for (const name of this.arg_names) {
+            args.push(`${name} ${this.env.get_type({name, span: this.span}).name}`)
+        }
+        const return_signature = this.env.get_type({name: "return", span: this.span}).name
+        return `fn ${this.name}(${args.join(", ")}) ${return_signature}`
+    }
+
+    copy(): FunctionType {
+        return this.finish_copy(
+            new FunctionType(
+                this.name,
+                [...this.arg_names],
+                this.is_method,
+                this.env,
+                this.span,
+                this.declaration_or_definition,
+            ),
+        )
+    }
+
+    get args(): Type[] {
+        return this.arg_names.map((name) => this.env.get_type({name, span: this.span}))
+    }
+
+    get return_type(): Type {
+        return this.env.get_type({name: "return", span: this.span})
     }
 }
 
@@ -947,6 +1039,150 @@ class NumericType extends StructuredType {
         }
         return false
     }
+
+    copy(): NumericType {
+        return this.finish_copy(new NumericType(this.name, this.env, this.span))
+    }
+}
+
+class TypeParameters {
+    constructor(
+        private type_parameters: TypeParameter[] = [],
+        private type_arguments: (Type | null)[] = [],
+        private type_parameter_map: [TypeParameter, TypeParameter][] = [],
+    ) {
+        assert.equal(type_parameters.length, type_arguments.length)
+    }
+
+    add(type_parameter: TypeParameter, target_env: TypeEnvironment, type_argument: Type | null) {
+        this.type_parameters.push(type_parameter)
+        this.type_arguments.push(type_argument)
+        this.type_parameter_map.push([type_parameter, type_parameter])
+        target_env.add_type(type_parameter.name, type_argument || type_parameter)
+    }
+
+    get(index: number): TypeParameter {
+        if (index >= this.type_parameters.length) {
+            throw new TypeError(
+                `There are only ${this.type_parameters.length} type parameters`,
+                this.type_parameters[0].span,
+            )
+        }
+        return this.type_parameters[index]
+    }
+
+    set_type_argument(index: number, type_argument: Type, span: Span) {
+        if (index >= this.type_arguments.length) {
+            throw new TypeError(
+                `There are only ${this.type_arguments.length} type arguments in ${this.signature}`,
+                span,
+            )
+        }
+        if (type_argument instanceof TypeParameter) {
+            throw new TypeError(
+                `Cannot use type parameter ${quote(type_argument.signature)} as type argument for ${
+                    this.type_parameters[index].signature
+                }`,
+                span,
+            )
+        }
+        this.type_arguments[index] = type_argument
+    }
+
+    get_type_argument_or_null(type_parameter: TypeParameter, span: Span): Type | null {
+        const mapped = this.type_parameter_map.find((x) => x[0] === type_parameter)
+        if (mapped) {
+            type_parameter = mapped[1]
+        }
+        const index = this.type_parameters.indexOf(type_parameter)
+        if (index === -1) {
+            // console.log(
+            //     "AAA ",
+            //     this.type_parameter_map.map((x) => [x[0].signature, x[1].signature]),
+            // )
+            throw new TypeError(
+                `Unknown type parameter ${quote(type_parameter.signature)} in ${this.signature}`,
+                span,
+            )
+        }
+        return this.type_arguments[index]
+    }
+
+    add_type_parameter_mapping(src: TypeParameter, dst: TypeParameter, span: Span) {
+        const index = this.type_parameters.indexOf(dst)
+        if (index === -1) {
+            throw new TypeError(
+                `Unknown type parameter ${quote(dst.signature)} in ${this.signature}`,
+                span,
+            )
+        }
+        const existing = this.type_parameter_map.find((x) => x[0] === src && x[1] === dst)
+        if (!existing) {
+            this.type_parameter_map.push([src, dst])
+        }
+    }
+
+    /**
+     * Add a mapping of type parameters with the same name from `other` to `this`.
+     */
+    map_type_parameters(other: TypeParameters) {
+        for (const p of this.type_parameters) {
+            const other_p = other.type_parameters.find((x) => x.name === p.name)
+            if (other_p) {
+                this.add_type_parameter_mapping(other_p, p, other_p.span)
+                for (const [src, dst] of other.type_parameter_map) {
+                    if (dst === other_p) {
+                        this.add_type_parameter_mapping(src, p, dst.span)
+                    }
+                }
+            }
+        }
+    }
+
+    get signature(): string {
+        const res = []
+        for (let i = 0; i < this.type_parameters.length; i++) {
+            const type_parameter = this.type_parameters[i]
+            const type_argument = this.type_arguments[i]
+            res.push(`${type_parameter.signature}=${type_argument?.signature ?? "?"}`)
+        }
+        return res.join(", ")
+    }
+
+    copy(): TypeParameters {
+        return new TypeParameters(
+            [...this.type_parameters],
+            [...this.type_arguments],
+            [...this.type_parameter_map],
+        )
+    }
+
+    equals(other: TypeParameters): boolean {
+        if (this === other) {
+            return true
+        }
+        if (this.type_parameters.length !== other.type_parameters.length) {
+            return false
+        }
+        for (let i = 0; i < this.type_parameters.length; i++) {
+            const this_arg = this.type_arguments[i]
+            const other_arg = other.type_arguments[i]
+            if (!this_arg && !other_arg) {
+                continue
+            }
+            if (!this_arg || !other_arg) {
+                return false
+            }
+            if (!this_arg.equals(other_arg)) {
+                return false
+            }
+        }
+        return true
+    }
+
+    get size(): number {
+        return this.type_parameters.length
+    }
 }
 
 /**
@@ -962,39 +1198,22 @@ export class TypeEnvironment {
         env.add_type("usize", new NumericType("usize", env, span))
         env.add_type("bool", new StructuredType("bool", env, span))
         env.add_type("()", new Type("()", span))
-        // Add self types to all.
-        for (const type of env.types.values()) {
-            if (type instanceof StructuredType) {
-                type.env.self_type = new TypeParameter("Self", span)
-                type.env.self_type.resolved = type
-            }
-        }
         return env
     }
 
     builtin_type(name: "i32" | "u32" | "usize" | "bool" | "()"): Type {
-        return this.get_type(
-            new ast.TypeDeclaration({name, type_parameters: []}, new Span(0, 0, "<builtin>", "")),
-        )
+        return this.get_type({name, span: new Span(0, 0, "<builtin>", "")})
     }
-
-    public types: Map<string, Type> = new Map()
-    public type_parameters: TypeParameter[] = []
-    public self_type?: TypeParameter
+    types: Map<string, Type> = new Map()
 
     constructor(public parent?: TypeEnvironment) {}
 
-    public get_type(
-        type_identifier: ast.TypeDeclaration | Type | {name: string; span: Span},
-    ): Type {
-        if (type_identifier.name === "Self") {
-            const self_type = this.get_self_type_or_null()
-            if (self_type) {
-                return self_type.resolved || self_type
-            }
-        }
+    get_type(type_identifier: ast.TypeDeclaration | Type | {name: string; span: Span}): Type {
         if (type_identifier instanceof ast.FunctionTypeDeclaration) {
             return FunctionType.from_function_type(type_identifier, this)
+        }
+        if (type_identifier.name === SelfType.SELF_TYPE.name) {
+            return SelfType.SELF_TYPE
         }
         if (type_identifier instanceof ast.TupleTypeDeclaration) {
             return new TupleType(
@@ -1006,14 +1225,7 @@ export class TypeEnvironment {
         const name = type_identifier.name
         const type = this.get_type_or_null(name)
         if (type) {
-            if (type instanceof TypeParameter) {
-                return type.resolved || type
-            }
             return type
-        }
-        const type_parameter = this.get_type_parameter_or_null(name)
-        if (type_parameter) {
-            return type_parameter.resolved || type_parameter
         }
         throw new TypeError(`Unknown type ${quote(name)}`, type_identifier.span)
     }
@@ -1029,100 +1241,48 @@ export class TypeEnvironment {
         return this.parent.get_type_or_null(name)
     }
 
-    private get_self_type_or_null(): TypeParameter | null {
-        if (this.self_type) {
-            return this.self_type
-        }
-        if (!this.parent) {
-            return null
-        }
-        return this.parent.get_self_type_or_null()
-    }
-
-    public add_type(name: string, type: Type) {
+    add_type(name: string, type: Type) {
         if (!(type instanceof Type)) {
             console.log("AAA ?????????????????????????????????????", name, new Error().stack)
         }
-        if (this.types.has(name) || this.get_type_parameter_or_null(name)) {
+        if (this.types.has(name)) {
             throw new TypeError(`Name ${quote(name)} already defined in current scope`, type.span)
         }
         this.types.set(name, type)
     }
 
-    public get_type_parameter(name: string, span: Span): TypeParameter {
-        const type_parameter = this.get_type_parameter_or_null(name)
-        if (!type_parameter) {
-            throw new TypeError(`Type parameter ${quote(name)} not found`, span)
+    all_type_names(): Set<string> {
+        const res = new Set<string>()
+        for (const [name] of this.types) {
+            res.add(name)
         }
-        return type_parameter
-    }
-
-    private get_type_parameter_or_null(name: string): TypeParameter | null {
-        const type_parameter = this.type_parameters.find((p) => p.name === name)
-        if (type_parameter) {
-            return type_parameter
+        if (this.parent) {
+            for (const name of this.parent.all_type_names()) {
+                res.add(name)
+            }
         }
-        return this.parent?.get_type_parameter_or_null(name) ?? null
-    }
-
-    public add_type_parameter(name: string, type: TypeParameter) {
-        // Type parameters cannot shadow outer type parameters and other types.
-        if (this.get_type_parameter_or_null(name)) {
-            throw new TypeError(`Type parameter ${quote(name)} already defined`, type.span)
-        }
-        const existing_type = this.get_type_or_null(name)
-        if (existing_type) {
-            throw new TypeError(
-                `Type parameter ${quote(name)} at ${type.span} shadows type ${quote(
-                    existing_type,
-                )}`,
-                existing_type.span,
-            )
-        }
-        this.type_parameters.push(type)
+        return res
     }
 
     str_type(): Type {
         return this.get_type({name: "str", span: new Span(0, 0, "<builtin>", "")})
     }
 
-    equals(other: TypeEnvironment): boolean {
-        if (this === other) {
-            return true
-        }
-        if (this.types.size !== other.types.size) {
-            return false
-        }
-        for (const [name, type] of this.types) {
-            const other_type = other.types.get(name)
-            if (!other_type || !type.equals(other_type)) {
-                return false
-            }
-        }
-        return true
+    to_debug_str(indent = 0): string {
+        return this.to_debug_str_shallow(indent) + (this.parent?.to_debug_str(indent + 2) ?? "")
     }
 
-    to_debug_str(indent = 0): string {
-        let s = `${" ".repeat(indent)}TypeEnvironment<${this.type_parameters
-            .map((p) => `${p.name} = ${p.resolved?.name || "?"}`)
-            .join(", ")}>\n`
-        s += `${" ".repeat(indent)}Self: ${
-            this.self_type?.resolved?.name || this.self_type?.name
-        }\n`
+    to_debug_str_shallow(indent = 0): string {
+        let s = `${" ".repeat(indent)}TypeEnvironment\n`
         for (const [name, type] of this.types) {
-            if (type instanceof TypeParameter) {
-                s += `${" ".repeat(indent)}${name}: ${type.name} = ${type.resolved?.name || "?"}\n`
-            } else {
-                s += `${" ".repeat(indent)}${name}\n`
-            }
+            s += `${" ".repeat(indent)}${name}: ${type.signature}\n`
         }
-        return s + "\n" + (this.parent?.to_debug_str(indent + 2) ?? "")
+        return s
     }
 
     copy(): TypeEnvironment {
         const env = new TypeEnvironment(this.parent)
         env.types = new Map(this.types)
-        env.type_parameters = this.type_parameters.slice()
         return env
     }
 }

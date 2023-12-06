@@ -10,6 +10,19 @@ import {
     Token,
 } from "./lexer"
 
+// FIXME: We have ambiguous syntax for function calls and the unit type.
+//        `let a = foo ()` could mean "call foo and assign the result to a"
+//        or "assign the function type `foo` to a and continue with a unit type".
+//        Better example:
+//        ```
+//        function a():
+//            if b => foo else => bar
+//            ()  -- We inserted the unit type here, because the
+//                -- function must return the unit type. But this
+//                -- is also a valid function call given that bar is a function.
+//        end
+//        ```
+
 type Mark = number
 
 export class TokenStream {
@@ -216,11 +229,17 @@ export abstract class DeclarationOrDefinition extends ASTNode {
 export class FunctionDeclaration extends DeclarationOrDefinition {
     kind = "function declaration"
     name: string
+    type_parameters: TypeDeclaration[]
     parameters: Parameter[]
     return_type: TypeDeclaration
 
     constructor(
-        data: {name: string; parameters: Parameter[]; return_type: TypeDeclaration},
+        data: {
+            name: string
+            type_parameters: TypeDeclaration[]
+            parameters: Parameter[]
+            return_type: TypeDeclaration
+        },
         span: Span,
     ) {
         super(span)
@@ -228,13 +247,15 @@ export class FunctionDeclaration extends DeclarationOrDefinition {
     }
 
     to_signature_string() {
-        return `${this.name}(${this.parameters
+        return `${this.name}<${this.type_parameters
+            .map((t) => t.to_signature_string())
+            .join(", ")}>(${this.parameters
             .map((p) => p.to_signature_string())
             .join(", ")}): ${this.return_type.to_signature_string()}`
     }
 
     contained_types() {
-        return [this.return_type, ...this.parameters.map((p) => p.type_declaration)].filter(
+        return [this.return_type, ...this.parameters.map((p) => p.type)].filter(
             (x) => !!x,
         ) as TypeDeclaration[]
     }
@@ -243,23 +264,20 @@ export class FunctionDeclaration extends DeclarationOrDefinition {
 export class Parameter extends ASTNode {
     kind = "parameter"
     name: string
-    type_declaration: TypeDeclaration
+    type: TypeDeclaration
     mutable: boolean
 
-    constructor(
-        data: {name: string; type_declaration: TypeDeclaration; mutable: boolean},
-        span: Span,
-    ) {
+    constructor(data: {name: string; type: TypeDeclaration; mutable: boolean}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Parameter.prototype)
     }
 
     to_signature_string() {
-        return `${this.name} ${this.type_declaration.to_signature_string()}`
+        return `${this.name} ${this.type.to_signature_string()}`
     }
 
     contained_types() {
-        return [this.type_declaration]
+        return [this.type]
     }
 }
 
@@ -318,14 +336,14 @@ export class FunctionDefinition extends DeclarationOrDefinition {
 export class VariableDeclaration extends DeclarationOrDefinition {
     kind = "variable declaration"
     name: string
-    value?: Expression
+    value: Expression
     type?: TypeDeclaration
     mutable: boolean
 
     constructor(
         data: {
             name: string
-            value?: Expression
+            value: Expression
             type?: TypeDeclaration
             mutable: boolean
         },
@@ -645,9 +663,13 @@ export class Not extends Expression {
 export class FunctionCall extends Expression {
     kind = "function call"
     target: Expression
+    type_arguments: TypeDeclaration[]
     args: Expression[]
 
-    constructor(data: {target: Expression; args: Expression[]}, span: Span) {
+    constructor(
+        data: {target: Expression; args: Expression[]; type_arguments: TypeDeclaration[]},
+        span: Span,
+    ) {
         super(span)
         Object.assign(this as typeof data, data as typeof FunctionCall.prototype)
     }
@@ -718,8 +740,12 @@ export class FieldAccess extends Expression {
     kind = "field access"
     target: Expression
     field: string
+    field_type_arguments: TypeDeclaration[]
 
-    constructor(data: {target: Expression; field: string}, span: Span) {
+    constructor(
+        data: {target: Expression; field: string; field_type_arguments: TypeDeclaration[]},
+        span: Span,
+    ) {
         super(span)
         Object.assign(this as typeof data, data as typeof FieldAccess.prototype)
     }
@@ -1038,7 +1064,7 @@ export function parse(tokens: TokenStream): AST {
         if (token instanceof LexicalToken) {
             const simple_token = token.value
             if (simple_token === "fn") {
-                if (tokens.simple_peek(2) === "(") {
+                if (["(", "<"].includes(tokens.simple_peek(2)!)) {
                     expression = parse_function_definition()
                 } else {
                     expression = parse_closure()
@@ -1136,7 +1162,11 @@ export function parse(tokens: TokenStream): AST {
             } else {
                 throw new ParseError(`Expected identifier or number`, field_token.span)
             }
-            target = new FieldAccess({target, field}, Span.combine(span, field_token))
+            const field_type_arguments = try_parse_generic_type_parameters()
+            target = new FieldAccess(
+                {target, field, field_type_arguments},
+                Span.combine(span, field_token),
+            )
         }
         return target
     }
@@ -1258,6 +1288,9 @@ export function parse(tokens: TokenStream): AST {
         while (!tokens.at_end() && tokens.simple_peek() !== "end") {
             const name = tokens.expect_identifier().value
             const type = parse_type()
+            if (members[name]) {
+                throw new ParseError(`Duplicate member ${quote(name)}`, type.span)
+            }
             members[name] = type
         }
         span = Span.combine(span, tokens.expect("end").span)
@@ -1440,23 +1473,19 @@ export function parse(tokens: TokenStream): AST {
         const span = tokens.consume().span
         const name = tokens.expect_identifier().value
         let type: TypeDeclaration | undefined
-        let end_span = span
         if (tokens.peek() instanceof Identifier) {
             type = parse_type()
-            end_span = type.span
         }
-        let value: Expression | undefined
-        if (tokens.simple_peek() === "=") {
-            tokens.expect("=")
-            value = parse_expression()
-            end_span = value.span
-        }
+        tokens.expect("=")
+        const value = parse_expression()
+        const end_span = value.span
         return new VariableDeclaration({name, value, type, mutable}, Span.combine(span, end_span))
     }
 
     function parse_function_declaration(): FunctionDeclaration {
         const span = tokens.expect("fn").span
         const name = tokens.expect_identifier().value
+        const type_parameters = try_parse_generic_type_parameters()
         tokens.expect("(")
         const parameters: Parameter[] = []
         while (!tokens.at_end() && tokens.simple_peek() !== ")") {
@@ -1476,10 +1505,7 @@ export function parse(tokens: TokenStream): AST {
                 type = parse_type()
             }
             parameters.push(
-                new Parameter(
-                    {name: name_token.value, type_declaration: type, mutable},
-                    name_token.span,
-                ),
+                new Parameter({name: name_token.value, type: type, mutable}, name_token.span),
             )
         }
         tokens.expect(")")
@@ -1487,7 +1513,7 @@ export function parse(tokens: TokenStream): AST {
         if (tokens.peek() instanceof Identifier) {
             return_type = parse_type()
         }
-        return new FunctionDeclaration({name, parameters, return_type}, span)
+        return new FunctionDeclaration({name, type_parameters, parameters, return_type}, span)
     }
 
     function parse_function_type(): FunctionTypeDeclaration {
@@ -1624,7 +1650,10 @@ export function parse(tokens: TokenStream): AST {
     function try_parse_function_call(
         target_candidate: Expression | Token,
     ): FunctionCall | undefined {
+        const mark = tokens.mark()
+        let type_arguments = try_parse_generic_type_parameters()
         if (tokens.simple_peek() !== "(") {
+            tokens.reset(mark)
             return
         }
         tokens.consume()
@@ -1636,6 +1665,9 @@ export function parse(tokens: TokenStream): AST {
             )
         } else if (target_candidate instanceof Expression) {
             target = target_candidate
+            if (target instanceof FieldAccess) {
+                type_arguments = target.field_type_arguments
+            }
         } else {
             throw new ParseError(
                 `Expected identifier or expression but got ${quote(target_candidate)}`,
@@ -1650,7 +1682,7 @@ export function parse(tokens: TokenStream): AST {
             args.push(parse_expression())
         }
         const span = Span.combine(target_candidate.span, tokens.expect(")").span)
-        return new FunctionCall({target, args: args}, span)
+        return new FunctionCall({target, args, type_arguments}, span)
     }
 
     function try_parse_generic_type_parameters(): TypeDeclaration[] {

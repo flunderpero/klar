@@ -207,8 +207,8 @@ end
 -- This is an internal data structure used by the compiler. 
 -- TODO: Don't expose this to the user.
 
-struct array<T>:
-    data JSArray<T>
+struct array<A>:
+    data JSArray<A>
 end
 
 impl array<T>:

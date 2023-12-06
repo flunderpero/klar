@@ -7,6 +7,19 @@ struct MultiContainer<T, U> {
     second: U,
 }
 
+#[allow(dead_code)]
+impl MultiContainer<i32, i32> {
+    fn new(first: i32, second: i32) -> Self {
+        Self { first, second }
+    }
+}
+
+impl MultiContainer<bool, bool> {
+    fn new(first: bool, second: bool) -> Self {
+        Self { first, second }
+    }
+}
+
 trait ComplexTrait<T, U> {
     fn get_first(&self) -> &T;
     fn get_second(&self) -> &U;
@@ -37,7 +50,12 @@ impl Doubler<Value> for Value {
     }
 }
 
+fn test<T>(value: T) -> T {
+    value
+}
+
 fn main() -> Result<(), String> {
+    test::<i32>(1);
     unsafe {
         backtrace_on_stack_overflow::enable();
     }

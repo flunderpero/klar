@@ -425,7 +425,7 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
         if (c.match(/[0-9]/)) {
             let value = ""
             const start_span = span()
-            while (peek().match(/[0-9]/)) {
+            while (peek()?.match(/[0-9]/)) {
                 value += consume()
             }
             return new NumberToken(value, span(start_span))

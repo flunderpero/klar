@@ -89,6 +89,11 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         const function_type = FunctionType.from_declaration(node.declaration, env)
         parse_function_definition_body(node, function_type, env)
         type = Type.unit
+    } else if (node instanceof ast.Assignment) {
+        const target_type = type_check(node.target, env, {...ctx, used_in_expression: true})
+        const value_type = type_check(node.value, env, {...ctx, used_in_expression: true})
+        expect_equal_types(target_type, value_type, node.span)
+        type = value_type
     } else if (node instanceof ast.FunctionCall) {
         type = function_call(node, env)
     } else if (node instanceof ast.StructInstantiation) {
@@ -2158,6 +2163,46 @@ const test = {
         test.expect_binary("1 - 1", "i32")
         test.expect_binary("1 * 1", "i32")
         test.expect_binary("1 / 1", "i32")
+    },
+
+    test_assignment() {
+        const {type, env} = test.type_check(`
+            mut a = 1
+            a = 2
+        `)
+        assert.equal(type, env.i32)
+    },
+
+    test_assignment_with_type_mismatch() {
+        assert.throws(
+            () =>
+                test.type_check(`
+            mut a = 1
+            a = true
+        `),
+            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+        )
+    },
+
+    test_assignment_as_expression() {
+        const {type, env} = test.type_check(`
+            mut a = 1
+            let b = a = 2
+            b
+        `)
+        assert.equal(type, env.i32)
+    },
+
+    test_struct_field_assigment() {
+        const {type, env} = test.type_check(`
+            struct Foo: 
+                a i32
+            end
+
+            mut foo = Foo{a: 1}
+            foo.a = 2
+        `)
+        assert.equal(type, env.i32)
     },
 }
 

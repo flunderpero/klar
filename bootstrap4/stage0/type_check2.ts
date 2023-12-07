@@ -97,6 +97,10 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         type = type_check(node.expression, env, ctx)
     } else if (node instanceof ast.IdentifierReference) {
         type = env.get(node.name, node.span)
+        if (type instanceof ComplexType && node.type_parameters.length > 0) {
+            const type_parameters = parse_type_arguments(node.type_parameters, env, node.span)
+            type = type.with_type_arguments(type_parameters, node.span)
+        }
     } else if (node instanceof ast.DeclarationOrDefinition) {
         type = Type.unit // We already forward parsed them.
     } else {
@@ -219,7 +223,7 @@ function function_call(node: ast.FunctionCall, env: TypeEnvironment): Type {
         )
     }
     const type_arguments = parse_type_arguments(node.type_arguments, env, node.span)
-    function_type = function_type.with_type_arguments(type_arguments)
+    function_type = function_type.with_type_arguments(type_arguments, node.span)
     parameters = function_type.parameters_without_self
     for (let i = 0; i < node.args.length; i++) {
         const arg_type = type_check(node.args[i], env, {used_in_expression: true})
@@ -231,7 +235,7 @@ function function_call(node: ast.FunctionCall, env: TypeEnvironment): Type {
 function struct_instantiation(node: ast.StructInstantiation, env: TypeEnvironment): StructType {
     const type_arguments = parse_type_arguments(node.type_arguments, env, node.span)
     let struct_type = StructType.from_env(node.target_struct_name, env, node.span)
-    struct_type = struct_type.with_type_arguments(type_arguments)
+    struct_type = struct_type.with_type_arguments(type_arguments, node.span)
     for (const [name, value] of Object.entries(node.fields)) {
         const field_type = struct_type.field(name, node.span)
         const value_type = type_check(value, env, {used_in_expression: true})
@@ -248,12 +252,6 @@ function parse_type_arguments(
     const result = []
     for (const p of type_arguments) {
         const type_argument = TypeParameter.from_declaration(p, env)
-        if (type_argument.contains_type_variable()) {
-            throw new TypeCheckError(
-                `Unexpected type variable ${quote(type_argument.signature)}`,
-                span,
-            )
-        }
         result.push(env.get(type_argument.signature, span))
     }
     return result
@@ -399,7 +397,11 @@ function parse_impl(node: ast.ImplDefinition, env: TypeEnvironment) {
         )
         complex_type.add_field(function_type.name, function_type, type_parameters, method.span)
         if (method instanceof ast.FunctionDefinition) {
-            parse_function_definition_body(method, function_type, parse_env)
+            const parse_function_env = new TypeEnvironment(parse_env)
+            for (const type of complex_type.type_variables) {
+                parse_function_env.add(type.name, type, node.span)
+            }
+            parse_function_definition_body(method, function_type, parse_function_env)
         }
     }
     if (node.trait_name) {
@@ -502,7 +504,7 @@ export class Type {
         return this
     }
 
-    with_type_arguments(_type_arguments: Type[]): Type {
+    with_type_arguments(_type_arguments: Type[], _span: Span): Type {
         throw new Error(`Cannot add type arguments to ${quote(this.signature)}`)
     }
 
@@ -707,11 +709,11 @@ abstract class ComplexType<
         return result
     }
 
-    with_type_arguments(type_arguments: (Type | null)[]): this {
+    with_type_arguments(type_arguments: (Type | null)[], span: Span): this {
         if (type_arguments.length !== this.type_variables.length) {
             throw new TypeCheckError(
                 `Expected ${this.type_variables.length} type arguments but got ${type_arguments.length}`,
-                builtin_span,
+                span,
             )
         }
         const new_type_arguments = new Map<TypeVariable, Type>(this.type_arguments)
@@ -721,7 +723,7 @@ abstract class ComplexType<
             if (!type_argument) {
                 throw new TypeCheckError(
                     `Missing type argument for ${quote(type_variable.signature)}`,
-                    builtin_span,
+                    span,
                 )
             }
             new_type_arguments.set(type_variable, type_argument)
@@ -1299,6 +1301,14 @@ export class TypeEnvironment {
     get str() {
         return this.get("str", builtin_span)
     }
+
+    debug_str(indent = 0): string {
+        const lines = []
+        for (const [name, type] of this.types_by_name.entries()) {
+            lines.push(`${" ".repeat(indent)}${name}: ${type.debug_str}`)
+        }
+        return lines.join("\n") + "\n" + (this.parent?.debug_str(indent + 2) ?? "")
+    }
 }
 
 // Tests
@@ -1697,6 +1707,24 @@ const test = {
             "Foo<T>{a: T, do_foo: do_foo<>(T)->T}",
         )
         assert.equal(env.get("bar_foo_do_foo", builtin_span)!.signature, "do_foo<>(i32)->i32")
+    },
+
+    test_static_struct_function() {
+        const {type} = test.type_check(`
+            struct Foo<T>: 
+                a T
+            end
+
+            impl Foo<A>:
+                fn new(a A) Foo<A>:
+                    Foo<A>{a: a}
+                end
+            end
+
+            let foo = Foo<i32>.new(1)
+            foo
+        `)
+        assert.equal(type.signature, "Foo<T=i32>")
     },
 
     test_function_call() {

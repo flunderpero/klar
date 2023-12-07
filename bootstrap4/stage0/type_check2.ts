@@ -6,7 +6,7 @@ import {Span, quote} from "./common"
 
 export function type_check_ast(ast: ast.AST, env: TypeEnvironment): Type {
     let type: Type = Type.unit
-    parse_declarations_and_definitions(ast, env)
+    type_check_declarations_and_definitions(ast, env)
     const ctx = {used_in_expression: false}
     for (let i = 0; i < ast.body.length; i++) {
         type = type_check(ast.body[i], env, {...ctx, used_in_expression: i === ast.body.length - 1})
@@ -41,7 +41,7 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         type = ctx.used_in_expression ? then_type : Type.unit
     } else if (node instanceof ast.Block) {
         const block_env = new TypeEnvironment(env)
-        parse_declarations_and_definitions(node, block_env)
+        type_check_declarations_and_definitions(node, block_env)
         let block_type: Type = Type.unit
         for (let i = 0; i < node.body.length; i++) {
             block_type = type_check(node.body[i], block_env, {
@@ -90,7 +90,7 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         type = binary_expression(node, env, ctx)
     } else if (node instanceof ast.FunctionDefinition) {
         const function_type = FunctionType.from_declaration(node.declaration, env)
-        parse_function_definition_body(node, function_type, env)
+        type_check_function_body(node, function_type, env)
         type = Type.unit
     } else if (node instanceof ast.Assignment) {
         const target_type = type_check(node.target, env, {...ctx, used_in_expression: true})
@@ -273,7 +273,7 @@ function parse_type_arguments(
     return result
 }
 
-function parse_declarations_and_definitions(block: ast.Block, env: TypeEnvironment) {
+function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvironment) {
     // First we add all types to the environment without parsing their bodies.
     // This is sufficient for type checking and for resolving recursive and forward type definitions.
     const nodes = block.body.filter((x) => x instanceof ast.DeclarationOrDefinition)
@@ -319,23 +319,20 @@ function parse_declarations_and_definitions(block: ast.Block, env: TypeEnvironme
         forward_declare(node, false)
     }
 
-    // Now parse struct fields.
     for (const node of struct_declarations) {
-        parse_struct_fields(node, env)
+        type_check_struct_fields(node, env)
     }
 
-    // Now parse trait functions.
     for (const node of trait_declarations) {
-        parse_trait_functions(node, env)
+        type_check_trait_functions(node, env)
     }
 
-    // Now we parse the impls.
     for (const impl of impl_definitions) {
-        parse_impl(impl.node, env, {extern: impl.extern})
+        type_check_impl(impl.node, env, {extern: impl.extern})
     }
 }
 
-function parse_struct_fields(node: ast.StructDeclaration, env: TypeEnvironment) {
+function type_check_struct_fields(node: ast.StructDeclaration, env: TypeEnvironment) {
     const struct_type = StructType.from_env(node.name, env, node.span)
     const struct_env = struct_type.create_type_environment(env, node.span)
     for (const [name, type] of Object.entries(node.fields)) {
@@ -345,7 +342,7 @@ function parse_struct_fields(node: ast.StructDeclaration, env: TypeEnvironment) 
     }
 }
 
-function parse_function_definition_body(
+function type_check_function_body(
     node: ast.FunctionDefinition,
     function_type: FunctionType,
     env: TypeEnvironment,
@@ -367,7 +364,7 @@ function parse_function_definition_body(
     }
 }
 
-function parse_trait_functions(node: ast.TraitDeclaration, env: TypeEnvironment) {
+function type_check_trait_functions(node: ast.TraitDeclaration, env: TypeEnvironment) {
     const trait_type = TraitType.from_env(node.name, env, node.span)
     const trait_env = trait_type.create_type_environment(env, node.span)
     trait_env.add("Self", TypeVariable.Self, node.span)
@@ -384,12 +381,12 @@ function parse_trait_functions(node: ast.TraitDeclaration, env: TypeEnvironment)
         }
         trait_type.data.fields.set(function_type.name, function_type)
         if (method instanceof ast.FunctionDefinition) {
-            parse_function_definition_body(method, function_type, trait_env)
+            type_check_function_body(method, function_type, trait_env)
         }
     }
 }
 
-function parse_impl(node: ast.ImplDefinition, env: TypeEnvironment, opts: {extern: boolean}) {
+function type_check_impl(node: ast.ImplDefinition, env: TypeEnvironment, opts: {extern: boolean}) {
     const complex_type = ComplexType.from_env(node.target_name, env, node.span)
     if (complex_type instanceof TraitType || complex_type instanceof FunctionType) {
         throw new TypeCheckError(
@@ -397,10 +394,10 @@ function parse_impl(node: ast.ImplDefinition, env: TypeEnvironment, opts: {exter
             node.span,
         )
     }
-    const parse_env = new TypeEnvironment(env)
-    parse_env.add("Self", complex_type, node.span)
+    const impl_env = new TypeEnvironment(env)
+    impl_env.add("Self", complex_type, node.span)
     const type_variables = node.type_parameters.map((p) =>
-        TypeVariable.from_declaration(p, parse_env),
+        TypeVariable.from_declaration(p, impl_env),
     )
     if (type_variables.length !== complex_type.type_variables.length) {
         throw new TypeCheckError(
@@ -409,11 +406,11 @@ function parse_impl(node: ast.ImplDefinition, env: TypeEnvironment, opts: {exter
         )
     }
     for (let i = 0; i < type_variables.length; i++) {
-        parse_env.add(type_variables[i].name, complex_type.type_variables[i], node.span)
+        impl_env.add(type_variables[i].name, complex_type.type_variables[i], node.span)
     }
     for (const method of node.functions) {
         const declaration = method instanceof ast.FunctionDeclaration ? method : method.declaration
-        const function_type = FunctionType.from_declaration(declaration, parse_env)
+        const function_type = FunctionType.from_declaration(declaration, impl_env)
         if (complex_type.data.fields.has(function_type.name)) {
             throw new TypeCheckError(
                 `Field ${quote(function_type.name)} already defined in struct ${quote(
@@ -424,20 +421,20 @@ function parse_impl(node: ast.ImplDefinition, env: TypeEnvironment, opts: {exter
         }
         const type_parameters = TypeParameters.from_declaration(
             declaration.type_parameters,
-            parse_env,
+            impl_env,
         )
         complex_type.add_field(function_type.name, function_type, type_parameters, method.span)
         if (method instanceof ast.FunctionDefinition) {
-            const parse_function_env = new TypeEnvironment(parse_env)
+            const function_env = new TypeEnvironment(impl_env)
             for (const type of complex_type.type_variables) {
-                parse_function_env.add(type.name, type, node.span)
+                function_env.add(type.name, type, node.span)
             }
-            parse_function_definition_body(method, function_type, parse_function_env)
+            type_check_function_body(method, function_type, function_env)
         }
     }
     if (node.trait_name) {
         complex_type.data.traits.push(node.trait_name)
-        let trait_type = TraitType.from_env(node.trait_name, parse_env, node.span)
+        let trait_type = TraitType.from_env(node.trait_name, impl_env, node.span)
         const type_variable_map = TypeVariable.create_type_variable_map(
             trait_type.type_variables,
             complex_type.type_variables,
@@ -629,7 +626,7 @@ export class TypeParameters {
 }
 
 /**
- * Parse something like Num<V> into a type parameter.
+ * Convert something like Num<V> into a type parameter.
  */
 export class TypeParameter {
     static from_declaration(declaration: ast.TypeDeclaration, env: TypeEnvironment): TypeParameter {

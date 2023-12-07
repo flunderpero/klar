@@ -1,4 +1,4 @@
-import { HasKindAndSpan, quote, Span } from "./common"
+import {HasKindAndSpan, quote, Span} from "./common"
 import {
     Identifier,
     InterpolatedStringPartExpression,
@@ -28,7 +28,7 @@ type Mark = number
 export class TokenStream {
     index = 0
 
-    constructor(public tokens: Token[]) { }
+    constructor(public tokens: Token[]) {}
 
     at_end() {
         return this.index >= this.tokens.length
@@ -179,8 +179,8 @@ export class TupleTypeDeclaration extends TypeDeclaration {
     kind = "tuple type"
     fields: TypeDeclaration[]
 
-    constructor(data: { fields: TypeDeclaration[] }, span: Span) {
-        super({ name: "", type_parameters: [] }, span)
+    constructor(data: {fields: TypeDeclaration[]}, span: Span) {
+        super({name: "", type_parameters: []}, span)
         Object.assign(this as typeof data, data as typeof TupleTypeDeclaration.prototype)
     }
 
@@ -205,7 +205,7 @@ export class FunctionTypeDeclaration extends TypeDeclaration {
         },
         span: Span,
     ) {
-        super({ name: "", type_parameters: [] }, span)
+        super({name: "", type_parameters: []}, span)
         Object.assign(this as typeof data, data as typeof FunctionTypeDeclaration.prototype)
     }
 
@@ -250,8 +250,8 @@ export class FunctionDeclaration extends DeclarationOrDefinition {
         return `${this.name}<${this.type_parameters
             .map((t) => t.to_signature_string())
             .join(", ")}>(${this.parameters
-                .map((p) => p.to_signature_string())
-                .join(", ")}): ${this.return_type.to_signature_string()}`
+            .map((p) => p.to_signature_string())
+            .join(", ")}): ${this.return_type.to_signature_string()}`
     }
 
     contained_types() {
@@ -267,7 +267,7 @@ export class Parameter extends ASTNode {
     type: TypeDeclaration
     mutable: boolean
 
-    constructor(data: { name: string; type: TypeDeclaration; mutable: boolean }, span: Span) {
+    constructor(data: {name: string; type: TypeDeclaration; mutable: boolean}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Parameter.prototype)
     }
@@ -288,7 +288,7 @@ export class ClosureParameter extends ASTNode {
     mutable: boolean
 
     constructor(
-        data: { name: string; type_declaration?: TypeDeclaration; mutable: boolean },
+        data: {name: string; type_declaration?: TypeDeclaration; mutable: boolean},
         span: Span,
     ) {
         super(span)
@@ -371,7 +371,7 @@ export class StructDeclaration extends DeclarationOrDefinition {
     name: string
     fields: Record<string, TypeDeclaration>
     type_parameters: TypeDeclaration[]
-    attributes: ASTNodeAttributes & { impls: ImplDefinition[] } = { impls: [] }
+    attributes: ASTNodeAttributes & {impls: ImplDefinition[]} = {impls: []}
 
     constructor(
         data: {
@@ -403,7 +403,7 @@ export class EnumDeclaration extends DeclarationOrDefinition {
     name: string
     variants: EnumVariant[]
     type_parameters: TypeDeclaration[]
-    attributes: ASTNodeAttributes & { impls: ImplDefinition[] } = { impls: [] }
+    attributes: ASTNodeAttributes & {impls: ImplDefinition[]} = {impls: []}
 
     constructor(
         data: {
@@ -439,7 +439,7 @@ class EnumVariant extends HasKindAndSpan {
     name: string
     fields: TupleTypeDeclaration
 
-    constructor(data: { name: string; fields: TupleTypeDeclaration }, span: Span) {
+    constructor(data: {name: string; fields: TupleTypeDeclaration}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof EnumVariant.prototype)
     }
@@ -467,7 +467,7 @@ export class ImplDefinition extends DeclarationOrDefinition {
     trait_type_parameters: TypeDeclaration[]
     target_name: string
     functions: (FunctionDefinition | FunctionDeclaration)[]
-    attributes: ASTNodeAttributes & { trait_declaration?: TraitDeclaration } = {}
+    attributes: ASTNodeAttributes & {trait_declaration?: TraitDeclaration} = {}
 
     constructor(
         data: {
@@ -537,7 +537,7 @@ export class Return extends Statement {
     kind = "return"
     value?: Expression
 
-    constructor(data: { value?: Expression }, span: Span) {
+    constructor(data: {value?: Expression}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Return.prototype)
     }
@@ -576,7 +576,7 @@ export class TupleInstantiation extends Expression {
     kind = "tuple"
     elements: Expression[]
 
-    constructor(data: { elements: Expression[] }, span: Span) {
+    constructor(data: {elements: Expression[]}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof TupleInstantiation.prototype)
     }
@@ -590,7 +590,7 @@ export class ParenthesizedExpression extends Expression {
     kind = "parenthesized expression"
     expression: Expression
 
-    constructor(data: { expression: Expression }, span: Span) {
+    constructor(data: {expression: Expression}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof ParenthesizedExpression.prototype)
     }
@@ -604,7 +604,7 @@ export class Number_ extends Expression {
     kind = "number"
     value: string
 
-    constructor(data: { value: string }, span: Span) {
+    constructor(data: {value: string}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Number_.prototype)
     }
@@ -615,7 +615,7 @@ export class String_ extends Expression {
     value: string
     is_multiline: boolean
 
-    constructor(data: { value: string; is_multiline: boolean }, span: Span) {
+    constructor(data: {value: string; is_multiline: boolean}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof String_.prototype)
     }
@@ -626,7 +626,7 @@ export class InterpolatedString extends Expression {
     expressions: Expression[]
     is_multiline: boolean
 
-    constructor(data: { expressions: Expression[]; is_multiline: boolean }, span: Span) {
+    constructor(data: {expressions: Expression[]; is_multiline: boolean}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof InterpolatedString.prototype)
     }
@@ -640,7 +640,7 @@ export class Bool extends Expression {
     kind = "bool"
     value: boolean
 
-    constructor(data: { value: boolean }, span: Span) {
+    constructor(data: {value: boolean}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Bool.prototype)
     }
@@ -650,7 +650,7 @@ export class Not extends Expression {
     kind = "not"
     expression: Expression
 
-    constructor(data: { expression: Expression }, span: Span) {
+    constructor(data: {expression: Expression}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Not.prototype)
     }
@@ -667,7 +667,7 @@ export class FunctionCall extends Expression {
     args: Expression[]
 
     constructor(
-        data: { target: Expression; args: Expression[]; type_arguments: TypeDeclaration[] },
+        data: {target: Expression; args: Expression[]; type_arguments: TypeDeclaration[]},
         span: Span,
     ) {
         super(span)
@@ -711,7 +711,7 @@ export class IdentifierReference extends Expression {
     name: string
     type_parameters: TypeDeclaration[]
 
-    constructor(data: { name: string; type_parameters: TypeDeclaration[] }, span: Span) {
+    constructor(data: {name: string; type_parameters: TypeDeclaration[]}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof IdentifierReference.prototype)
     }
@@ -726,7 +726,7 @@ export class Assignment extends Expression {
     target: Expression
     value: Expression
 
-    constructor(data: { target: Expression; value: Expression }, span: Span) {
+    constructor(data: {target: Expression; value: Expression}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Assignment.prototype)
     }
@@ -743,7 +743,7 @@ export class FieldAccess extends Expression {
     field_type_arguments: TypeDeclaration[]
 
     constructor(
-        data: { target: Expression; field: string; field_type_arguments: TypeDeclaration[] },
+        data: {target: Expression; field: string; field_type_arguments: TypeDeclaration[]},
         span: Span,
     ) {
         super(span)
@@ -761,7 +761,7 @@ export class IndexedAccess extends Expression {
     index: Expression
     is_write: boolean
 
-    constructor(data: { target: Expression; index: Expression; is_write: boolean }, span: Span) {
+    constructor(data: {target: Expression; index: Expression; is_write: boolean}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof IndexedAccess.prototype)
     }
@@ -776,7 +776,7 @@ export class ArrayLiteral extends Expression {
     elements: Expression[]
     name = ""
 
-    constructor(data: { elements: Expression[] }, span: Span) {
+    constructor(data: {elements: Expression[]}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof ArrayLiteral.prototype)
     }
@@ -812,7 +812,7 @@ export class BinaryExpression extends Expression {
     lhs: Expression
     rhs: Expression
 
-    constructor(data: { operator: BinaryOperator; lhs: Expression; rhs: Expression }, span: Span) {
+    constructor(data: {operator: BinaryOperator; lhs: Expression; rhs: Expression}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof BinaryExpression.prototype)
     }
@@ -828,7 +828,7 @@ export class If extends Expression {
     then_block: Block
     else_block?: Block
 
-    constructor(data: { condition: Expression; then_block: Block; else_block?: Block }, span: Span) {
+    constructor(data: {condition: Expression; then_block: Block; else_block?: Block}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof If.prototype)
     }
@@ -844,7 +844,7 @@ export class Match extends Expression {
     arms: MatchArm[]
     else_block?: Block
 
-    constructor(data: { value: Expression; arms: MatchArm[]; else_block?: Block }, span: Span) {
+    constructor(data: {value: Expression; arms: MatchArm[]; else_block?: Block}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Match.prototype)
     }
@@ -859,7 +859,7 @@ export class MatchArm extends ASTNode {
     pattern: MatchPattern
     block: Block
 
-    constructor(data: { pattern: MatchPattern; block: Block }, span: Span) {
+    constructor(data: {pattern: MatchPattern; block: Block}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof MatchArm.prototype)
     }
@@ -881,7 +881,7 @@ export class LiteralMatchPattern extends MatchPattern {
     kind = "literal number match pattern"
     value: number | boolean
 
-    constructor(data: { value: number | boolean }, span: Span) {
+    constructor(data: {value: number | boolean}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof LiteralMatchPattern.prototype)
     }
@@ -899,7 +899,7 @@ export class CaptureMatchPattern extends MatchPattern {
     kind = "capture match pattern"
     name: string
 
-    constructor(data: { name: string }, span: Span) {
+    constructor(data: {name: string}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof CaptureMatchPattern.prototype)
     }
@@ -911,7 +911,7 @@ export class StructuredMatchPattern extends MatchPattern {
     fields: Record<string, MatchPattern>
 
     constructor(
-        data: { type_expression: Expression; fields: Record<string, MatchPattern> },
+        data: {type_expression: Expression; fields: Record<string, MatchPattern>},
         span: Span,
     ) {
         super(span)
@@ -928,7 +928,7 @@ export class TupleMatchPattern extends MatchPattern {
     type_expression: IdentifierReference | FieldAccess
     values: MatchPattern[]
 
-    constructor(data: { type_expression: Expression; values: MatchPattern[] }, span: Span) {
+    constructor(data: {type_expression: Expression; values: MatchPattern[]}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof TupleMatchPattern.prototype)
     }
@@ -942,7 +942,7 @@ export class Loop extends Expression {
     kind = "loop"
     block: Block
 
-    constructor(data: { block: Block }, span: Span) {
+    constructor(data: {block: Block}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Loop.prototype)
     }
@@ -956,7 +956,7 @@ export class Block extends Expression {
     kind = "block"
     body: ASTNode[]
 
-    constructor(data: { body: Expression[] }, span: Span) {
+    constructor(data: {body: Expression[]}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Block.prototype)
     }
@@ -973,7 +973,7 @@ export class ClosureDefinition extends Expression {
     block: Block
 
     constructor(
-        data: { parameters: ClosureParameter[]; return_type?: TypeDeclaration; block: Block },
+        data: {parameters: ClosureParameter[]; return_type?: TypeDeclaration; block: Block},
         span: Span,
     ) {
         super(span)
@@ -992,12 +992,12 @@ export class ClosureDefinition extends Expression {
 }
 
 const self_type = new TypeDeclaration(
-    { name: "Self", type_parameters: [] },
+    {name: "Self", type_parameters: []},
     new Span(0, 0, "<builtin>", ""),
 )
 
 export const unit_type = new TypeDeclaration(
-    { name: "()", type_parameters: [] },
+    {name: "()", type_parameters: []},
     new Span(0, 0, "<builtin>", ""),
 )
 
@@ -1010,10 +1010,10 @@ export type AST = Block
  */
 export function parse(tokens: TokenStream): AST {
     if (tokens.at_end()) {
-        return new Block({ body: [] }, new Span(0, 0, "<unknown>", ""))
+        return new Block({body: []}, new Span(0, 0, "<unknown>", ""))
     }
     const ast = new Block(
-        { body: [] },
+        {body: []},
         Span.combine(tokens.tokens[0].span, tokens.tokens.at(-1)!.span),
     )
     while (!tokens.at_end()) {
@@ -1044,7 +1044,7 @@ export function parse(tokens: TokenStream): AST {
                     // `(1 + 2) * 3`.
                     let rhs = parse_binary_expression(op_precedence + 1)
                     lhs = new BinaryExpression(
-                        { operator: op as BinaryOperator, lhs, rhs },
+                        {operator: op as BinaryOperator, lhs, rhs},
                         Span.combine(lhs, rhs),
                     )
                 } else {
@@ -1073,11 +1073,11 @@ export function parse(tokens: TokenStream): AST {
                 expression = parse_variable_declaration()
             } else if (simple_token === "true" || simple_token === "false") {
                 const span = tokens.consume().span
-                expression = new Bool({ value: simple_token === "true" }, span)
+                expression = new Bool({value: simple_token === "true"}, span)
             } else if (simple_token === "not") {
                 const span = tokens.consume().span
                 const value = parse_expression()
-                expression = new Not({ expression: value }, Span.combine(span, value))
+                expression = new Not({expression: value}, Span.combine(span, value))
             } else if (simple_token === "if") {
                 expression = parse_if()
             } else if (simple_token === "loop") {
@@ -1109,11 +1109,11 @@ export function parse(tokens: TokenStream): AST {
             }
         } else if (token instanceof NumberToken) {
             tokens.consume()
-            expression = new Number_({ value: token.value }, token.span)
+            expression = new Number_({value: token.value}, token.span)
         } else if (token instanceof StringToken) {
             tokens.consume()
             expression = new String_(
-                { value: token.value, is_multiline: token.is_multiline },
+                {value: token.value, is_multiline: token.is_multiline},
                 token.span,
             )
         } else if (token instanceof InterpolatedStringToken) {
@@ -1149,7 +1149,7 @@ export function parse(tokens: TokenStream): AST {
         if (value instanceof IndexedAccess) {
             value.is_write = true
         }
-        return new Assignment({ target, value }, Span.combine(span, value))
+        return new Assignment({target, value}, Span.combine(span, value))
     }
 
     function parse_field_access(target: Expression): Expression {
@@ -1164,7 +1164,7 @@ export function parse(tokens: TokenStream): AST {
             }
             const field_type_arguments = try_parse_generic_type_parameters()
             target = new FieldAccess(
-                { target, field, field_type_arguments },
+                {target, field, field_type_arguments},
                 Span.combine(span, field_token),
             )
         }
@@ -1273,7 +1273,7 @@ export function parse(tokens: TokenStream): AST {
         }
         const end_span = tokens.expect("end").span
         return new TraitDeclaration(
-            { name, functions, type_parameters },
+            {name, functions, type_parameters},
             Span.combine(span, end_span),
         )
     }
@@ -1286,14 +1286,14 @@ export function parse(tokens: TokenStream): AST {
         const variants = []
         while (!tokens.at_end() && tokens.simple_peek() !== "end") {
             const name = tokens.expect_identifier().value
-            let fields = new TupleTypeDeclaration({ fields: [] }, span)
+            let fields = new TupleTypeDeclaration({fields: []}, span)
             if (tokens.simple_peek() === "(") {
                 fields = parse_tuple_type()
             }
-            variants.push(new EnumVariant({ name, fields }, span))
+            variants.push(new EnumVariant({name, fields}, span))
         }
         span = Span.combine(span, tokens.expect("end").span)
-        return new EnumDeclaration({ name, variants, type_parameters }, span)
+        return new EnumDeclaration({name, variants, type_parameters}, span)
     }
 
     function parse_struct_definition(): StructDeclaration {
@@ -1311,7 +1311,7 @@ export function parse(tokens: TokenStream): AST {
             members[name] = type
         }
         span = Span.combine(span, tokens.expect("end").span)
-        return new StructDeclaration({ name, fields: members, type_parameters }, span)
+        return new StructDeclaration({name, fields: members, type_parameters}, span)
     }
 
     function parse_block(mode: "normal" | "if_else") {
@@ -1322,7 +1322,7 @@ export function parse(tokens: TokenStream): AST {
                 block_type.span,
             )
         }
-        const block: Block = new Block({ body: [] }, block_type.span)
+        const block: Block = new Block({body: []}, block_type.span)
         if (block_type.value === "=>") {
             block.body.push(parse_expression())
         } else {
@@ -1350,10 +1350,10 @@ export function parse(tokens: TokenStream): AST {
                 values.push(parse_expression())
             }
             span = Span.combine(tokens.expect(")").span, span)
-            return new TupleInstantiation({ elements: values }, span)
+            return new TupleInstantiation({elements: values}, span)
         }
         span = Span.combine(tokens.expect(")").span, span)
-        return new ParenthesizedExpression({ expression }, span)
+        return new ParenthesizedExpression({expression}, span)
     }
 
     function parse_indexed_access(target: Expression): Expression {
@@ -1362,7 +1362,7 @@ export function parse(tokens: TokenStream): AST {
         const end_span = tokens.expect("]").span
         // The default value of `is_write` is `false`.
         // It will be set to `true` in `parse_assignment`.
-        return new IndexedAccess({ target, index, is_write: false }, Span.combine(span, end_span))
+        return new IndexedAccess({target, index, is_write: false}, Span.combine(span, end_span))
     }
 
     function parse_array_literal(): ArrayLiteral {
@@ -1375,7 +1375,7 @@ export function parse(tokens: TokenStream): AST {
             values.push(parse_expression())
         }
         const end_span = tokens.expect("]").span
-        return new ArrayLiteral({ elements: values }, Span.combine(span, end_span))
+        return new ArrayLiteral({elements: values}, Span.combine(span, end_span))
     }
 
     function parse_match_expression(): Match {
@@ -1393,20 +1393,20 @@ export function parse(tokens: TokenStream): AST {
             }
             const pattern = parse_match_pattern()
             const block = parse_block("normal")
-            arms.push(new MatchArm({ pattern, block }, Span.combine(pattern, block.span)))
+            arms.push(new MatchArm({pattern, block}, Span.combine(pattern, block.span)))
         }
         const end_span = tokens.expect("end").span
-        return new Match({ value, arms, else_block }, Span.combine(span, end_span))
+        return new Match({value, arms, else_block}, Span.combine(span, end_span))
     }
 
     function parse_match_pattern(): MatchPattern {
         const token = tokens.peek()
         if (token instanceof NumberToken) {
             tokens.consume()
-            return new LiteralMatchPattern({ value: parseInt(token.value) }, token.span)
+            return new LiteralMatchPattern({value: parseInt(token.value)}, token.span)
         } else if (token instanceof LexicalToken && ["true", "false"].includes(token.value)) {
             tokens.consume()
-            return new LiteralMatchPattern({ value: token.value === "true" }, token.span)
+            return new LiteralMatchPattern({value: token.value === "true"}, token.span)
         } else if (token instanceof LexicalToken && token.value === "_") {
             tokens.consume()
             return new WildcardMatchPattern(token.span)
@@ -1418,7 +1418,7 @@ export function parse(tokens: TokenStream): AST {
                 tokens.consume()
                 const field = tokens.expect_identifier().value
                 type_expression = new FieldAccess(
-                    { target: type_expression, field, field_type_arguments: [] },
+                    {target: type_expression, field, field_type_arguments: []},
                     token.span,
                 )
             }
@@ -1434,7 +1434,7 @@ export function parse(tokens: TokenStream): AST {
                 }
                 const end_span = tokens.expect(")").span
                 return new TupleMatchPattern(
-                    { type_expression, values },
+                    {type_expression, values},
                     Span.combine(token.span, end_span),
                 )
             }
@@ -1452,13 +1452,13 @@ export function parse(tokens: TokenStream): AST {
                         const value = parse_match_pattern()
                         fields[name] = value
                     } else {
-                        fields[name] = new CaptureMatchPattern({ name }, token.span)
+                        fields[name] = new CaptureMatchPattern({name}, token.span)
                     }
                 }
                 end_span = tokens.expect("}").span
             }
             return new StructuredMatchPattern(
-                { type_expression, fields },
+                {type_expression, fields},
                 Span.combine(token.span, end_span),
             )
         } else {
@@ -1469,14 +1469,14 @@ export function parse(tokens: TokenStream): AST {
     function parse_loop(): Loop {
         const span = tokens.expect("loop").span
         const block = parse_block("normal")
-        return new Loop({ block }, Span.combine(span, block.span))
+        return new Loop({block}, Span.combine(span, block.span))
     }
 
     function parse_if(): If {
         const span = tokens.expect("if").span
         const condition = parse_expression()
         const if_ = new If(
-            { condition, then_block: parse_block("if_else") },
+            {condition, then_block: parse_block("if_else")},
             Span.combine(span, condition.span),
         )
         if (tokens.simple_peek() === "else") {
@@ -1499,7 +1499,7 @@ export function parse(tokens: TokenStream): AST {
         tokens.expect("=")
         const value = parse_expression()
         const end_span = value.span
-        return new VariableDeclaration({ name, value, type, mutable }, Span.combine(span, end_span))
+        return new VariableDeclaration({name, value, type, mutable}, Span.combine(span, end_span))
     }
 
     function parse_function_declaration(): FunctionDeclaration {
@@ -1525,15 +1525,15 @@ export function parse(tokens: TokenStream): AST {
                 type = parse_type()
             }
             parameters.push(
-                new Parameter({ name: name_token.value, type: type, mutable }, name_token.span),
+                new Parameter({name: name_token.value, type: type, mutable}, name_token.span),
             )
         }
         tokens.expect(")")
         let return_type = unit_type
-        if (tokens.peek() instanceof Identifier) {
+        if (tokens.peek() instanceof Identifier || tokens.simple_peek() === "(") {
             return_type = parse_type()
         }
-        return new FunctionDeclaration({ name, type_parameters, parameters, return_type }, span)
+        return new FunctionDeclaration({name, type_parameters, parameters, return_type}, span)
     }
 
     function parse_function_type(): FunctionTypeDeclaration {
@@ -1548,12 +1548,12 @@ export function parse(tokens: TokenStream): AST {
         }
         tokens.expect(")")
         const return_type = try_parse_type() || unit_type
-        return new FunctionTypeDeclaration({ arg_types: parameter_types, return_type }, span)
+        return new FunctionTypeDeclaration({arg_types: parameter_types, return_type}, span)
     }
 
     function parse_function_body(declaration: FunctionDeclaration): FunctionDefinition {
         const fn_def = new FunctionDefinition(
-            { declaration, block: new Block({ body: [] }, declaration.span) },
+            {declaration, block: new Block({body: []}, declaration.span)},
             declaration.span,
         )
         fn_def.block = parse_block("normal")
@@ -1578,7 +1578,7 @@ export function parse(tokens: TokenStream): AST {
             const type = try_parse_type()
             parameters.push(
                 new ClosureParameter(
-                    { name: name_token.value, type_declaration: type, mutable: false },
+                    {name: name_token.value, type_declaration: type, mutable: false},
                     name_token.span,
                 ),
             )
@@ -1590,7 +1590,7 @@ export function parse(tokens: TokenStream): AST {
         }
         const block = parse_block("normal")
         return new ClosureDefinition(
-            { parameters, return_type, block },
+            {parameters, return_type, block},
             Span.combine(span, block.span),
         )
     }
@@ -1603,7 +1603,7 @@ export function parse(tokens: TokenStream): AST {
             value = parse_expression()
             end_span = value.span
         }
-        return new Return({ value }, Span.combine(span, end_span))
+        return new Return({value}, Span.combine(span, end_span))
     }
 
     function parse_identifier_reference(token: Identifier): IdentifierReference {
@@ -1620,7 +1620,7 @@ export function parse(tokens: TokenStream): AST {
             type_arguments = []
         }
         const span = token.span
-        return new IdentifierReference({ name: token.value, type_parameters: type_arguments }, span)
+        return new IdentifierReference({name: token.value, type_parameters: type_arguments}, span)
     }
 
     function try_parse_struct_initialization(token: Identifier): StructInstantiation | undefined {
@@ -1658,7 +1658,7 @@ export function parse(tokens: TokenStream): AST {
             }
             const span = Span.combine(tokens.expect("}").span, token.span)
             return new StructInstantiation(
-                { target_struct_name: token.value, fields: args, type_arguments },
+                {target_struct_name: token.value, fields: args, type_arguments},
                 span,
             )
         } catch (e) {
@@ -1680,7 +1680,7 @@ export function parse(tokens: TokenStream): AST {
         let target: Expression
         if (target_candidate instanceof Identifier) {
             target = new IdentifierReference(
-                { name: target_candidate.value, type_parameters: [] },
+                {name: target_candidate.value, type_parameters: []},
                 target_candidate.span,
             )
         } else if (target_candidate instanceof Expression) {
@@ -1702,7 +1702,7 @@ export function parse(tokens: TokenStream): AST {
             args.push(parse_expression())
         }
         const span = Span.combine(target_candidate.span, tokens.expect(")").span)
-        return new FunctionCall({ target, args, type_arguments }, span)
+        return new FunctionCall({target, args, type_arguments}, span)
     }
 
     function try_parse_generic_type_parameters(): TypeDeclaration[] {
@@ -1756,7 +1756,7 @@ export function parse(tokens: TokenStream): AST {
             end_span = tokens.expect(">").span
         }
         return new TypeDeclaration(
-            { name, type_parameters: type_parameters },
+            {name, type_parameters: type_parameters},
             Span.combine(token.span, end_span),
         )
     }
@@ -1772,7 +1772,7 @@ export function parse(tokens: TokenStream): AST {
             fields.push(type)
         }
         const end_span = tokens.expect(")").span
-        return new TupleTypeDeclaration({ fields }, Span.combine(span, end_span))
+        return new TupleTypeDeclaration({fields}, Span.combine(span, end_span))
     }
 
     function parse_interpolated_string(token: InterpolatedStringToken): InterpolatedString {
@@ -1781,7 +1781,7 @@ export function parse(tokens: TokenStream): AST {
         for (const part of token.parts) {
             if (part instanceof InterpolatedStringPartLiteral) {
                 expressions.push(
-                    new String_({ value: part.value, is_multiline: part.is_multiline }, span),
+                    new String_({value: part.value, is_multiline: part.is_multiline}, span),
                 )
             } else if (part instanceof InterpolatedStringPartExpression) {
                 const ast = parse(new TokenStream(part.tokens))
@@ -1799,6 +1799,6 @@ export function parse(tokens: TokenStream): AST {
         if (expressions.length > 0) {
             span = Span.combine(expressions[0].span, expressions.at(-1)!.span)
         }
-        return new InterpolatedString({ expressions, is_multiline: token.is_multiline }, span)
+        return new InterpolatedString({expressions, is_multiline: token.is_multiline}, span)
     }
 }

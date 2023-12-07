@@ -22,12 +22,12 @@ type Context = {
 function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type {
     let type: Type
     if (node instanceof ast.Number_) {
-        type = NumericType.i32
+        type = env.i32
     } else if (node instanceof ast.Bool) {
-        type = Type.bool
+        type = env.bool
     } else if (node instanceof ast.If) {
         const condition_type = type_check(node.condition, env, {...ctx, used_in_expression: true})
-        expect_equal_types(Type.bool, condition_type, node.span)
+        expect_equal_types(env.bool, condition_type, node.span)
         const then_type = type_check(node.then_block, env, {
             ...ctx,
             used_in_expression: !!node.else_block,
@@ -83,6 +83,8 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         } else {
             type = Type.unit
         }
+    } else if (node instanceof ast.BinaryExpression) {
+        type = binary_expression(node, env, ctx)
     } else if (node instanceof ast.FunctionDefinition) {
         const function_type = FunctionType.from_declaration(node.declaration, env)
         parse_function_definition_body(node, function_type, env)
@@ -108,7 +110,7 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
 }
 
 function expect_equal_types(expected: Type, got: Type, span: Span) {
-    if (expected !== got) {
+    if (!expected.equals(got)) {
         throw new TypeMismatchError(expected, got, span)
     }
 }
@@ -131,6 +133,77 @@ function expect_struct_type(type: Type, span: Span): StructType {
         throw new TypeCheckError(`Expected struct type but got ${quote(type.signature)}`, span)
     }
     return type
+}
+
+function expect_to_implement_trait(
+    type: Type,
+    trait_name: string,
+    env: TypeEnvironment,
+    span: Span,
+) {
+    if (!(type instanceof ComplexType)) {
+        throw new TypeCheckError(`Expected complex type but got ${quote(type.signature)}`, span)
+    }
+    const trait_type = TraitType.from_env(trait_name, env, span)
+    if (!type.traits.includes(trait_name)) {
+        throw new TypeCheckError(
+            `Expected ${quote(type.signature)} to implement ${quote(trait_type.signature)}`,
+            span,
+        )
+    }
+}
+
+function expect_assignable_to(expected: Type, got: Type, env: TypeEnvironment, span: Span) {
+    if (expected.equals(got)) {
+        return
+    }
+    if (expected instanceof TraitType) {
+        if (!(got instanceof ComplexType)) {
+            throw new TypeMismatchError(expected, got, span)
+        }
+        expect_to_implement_trait(got, expected.name, env, span)
+    }
+    throw new TypeMismatchError(expected, got, span)
+}
+
+function binary_expression(node: ast.BinaryExpression, env: TypeEnvironment, ctx: Context): Type {
+    const trait_based: Record<string, [string, string]> = {
+        "+": ["Add", "add"],
+        "-": ["Sub", "sub"],
+        "*": ["Mul", "mul"],
+        "/": ["Div", "div"],
+        "==": ["PartialEq", "eq"],
+        "!=": ["PartialEq", "ne"],
+        "<": ["PartialOrd", "lt"],
+        "<=": ["PartialOrd", "le"],
+        ">": ["PartialOrd", "gt"],
+        ">=": ["PartialOrd", "ge"],
+    }
+    const lhs = type_check(node.lhs, env, {...ctx, used_in_expression: true})
+    const rhs = type_check(node.rhs, env, {...ctx, used_in_expression: true})
+    if (["and", "or"].includes(node.operator)) {
+        expect_equal_types(env.bool, lhs, node.span)
+        expect_equal_types(env.bool, rhs, node.span)
+        return env.bool
+    }
+    if (!(node.operator in trait_based)) {
+        throw new TypeCheckError(
+            `Not implemented for binary operator ${quote(node.operator)}`,
+            node.span,
+        )
+    }
+    const [trait_name, method_name] = trait_based[node.operator]
+    if (!(lhs instanceof ComplexType) && !(lhs instanceof FunctionType)) {
+        throw new TypeCheckError(
+            `Expected complex type that is not a function but got ${quote(lhs.signature)}`,
+            node.span,
+        )
+    }
+    expect_to_implement_trait(lhs, trait_name, env, node.span)
+    const function_type = expect_function_type(lhs.field(method_name, node.span), node.span)
+    const parameter = function_type.parameters_without_self[0]
+    expect_assignable_to(parameter, rhs, env, node.span)
+    return function_type.return_type
 }
 
 function function_call(node: ast.FunctionCall, env: TypeEnvironment): Type {
@@ -262,7 +335,7 @@ function parse_function_definition_body(
         // The last expression is a return statement, so we don't need to check the return type.
         // We already checked that the return type is correct in the return statement.
     } else {
-        expect_equal_type_signatures(function_type.return_type, block_type, node.span)
+        expect_equal_types(function_type.return_type, block_type, node.span)
     }
 }
 
@@ -289,56 +362,63 @@ function parse_trait_functions(node: ast.TraitDeclaration, env: TypeEnvironment)
 }
 
 function parse_impl(node: ast.ImplDefinition, env: TypeEnvironment) {
-    const struct_type = StructType.from_env(node.target_name, env, node.span)
-    const struct_env = new TypeEnvironment(env)
-    struct_env.add("Self", struct_type, node.span)
-    const type_variables = node.type_parameters.map((p) =>
-        TypeVariable.from_declaration(p, struct_env),
-    )
-    if (type_variables.length !== struct_type.type_variables.length) {
+    const complex_type = ComplexType.from_env(node.target_name, env, node.span)
+    if (complex_type instanceof TraitType || complex_type instanceof FunctionType) {
         throw new TypeCheckError(
-            `Expected ${struct_type.type_variables.length} type parameters but got ${type_variables.length}`,
+            `Cannot implement a function or trait type ${quote(complex_type.signature)}`,
+            node.span,
+        )
+    }
+    const parse_env = new TypeEnvironment(env)
+    parse_env.add("Self", complex_type, node.span)
+    const type_variables = node.type_parameters.map((p) =>
+        TypeVariable.from_declaration(p, parse_env),
+    )
+    if (type_variables.length !== complex_type.type_variables.length) {
+        throw new TypeCheckError(
+            `Expected ${complex_type.type_variables.length} type parameters but got ${type_variables.length}`,
             node.span,
         )
     }
     for (let i = 0; i < type_variables.length; i++) {
-        struct_env.add(type_variables[i].name, struct_type.type_variables[i], node.span)
+        parse_env.add(type_variables[i].name, complex_type.type_variables[i], node.span)
     }
     for (const method of node.functions) {
-        const function_type = FunctionType.from_declaration(method.declaration, struct_env)
-        if (struct_type.data.fields.has(function_type.name)) {
+        const function_type = FunctionType.from_declaration(method.declaration, parse_env)
+        if (complex_type.data.fields.has(function_type.name)) {
             throw new TypeCheckError(
                 `Field ${quote(function_type.name)} already defined in struct ${quote(
-                    struct_type.signature,
+                    complex_type.signature,
                 )}`,
                 method.span,
             )
         }
         const type_parameters = TypeParameters.from_declaration(
             method.declaration.type_parameters,
-            struct_env,
+            parse_env,
         )
-        struct_type.add_field(function_type.name, function_type, type_parameters, method.span)
+        complex_type.add_field(function_type.name, function_type, type_parameters, method.span)
         if (method instanceof ast.FunctionDefinition) {
-            parse_function_definition_body(method, function_type, struct_env)
+            parse_function_definition_body(method, function_type, parse_env)
         }
     }
     if (node.trait_name) {
-        let trait_type = TraitType.from_env(node.trait_name, struct_env, node.span)
+        complex_type.data.traits.push(node.trait_name)
+        let trait_type = TraitType.from_env(node.trait_name, parse_env, node.span)
         const type_variable_map = TypeVariable.create_type_variable_map(
             trait_type.type_variables,
-            struct_type.type_variables,
+            complex_type.type_variables,
         )
-        type_variable_map.set(TypeVariable.Self, struct_type)
+        type_variable_map.set(TypeVariable.Self, complex_type)
         for (let [name, type] of trait_type.fields) {
             assert(type instanceof FunctionType)
-            if (!struct_type.fields.has(name)) {
+            if (!complex_type.fields.has(name)) {
                 // See, if we have a default implementation.
                 const default_impl = trait_type.data.methods_with_default_impl.includes(name)
                 if (!default_impl) {
                     throw new TypeCheckError(
                         `Method ${quote(name)} is not implemented in struct ${quote(
-                            struct_type.signature,
+                            complex_type.signature,
                         )}`,
                         node.span,
                     )
@@ -346,11 +426,11 @@ function parse_impl(node: ast.ImplDefinition, env: TypeEnvironment) {
                 // Add the default impl to the struct.
                 type = type.with_scope_type_variables(type_variable_map)
                 assert(type instanceof FunctionType)
-                type = struct_type.add_field_immediate(name, type)
+                type = complex_type.add_field_immediate(name, type)
             } else {
                 type = type.with_scope_type_variables(type_variable_map)
             }
-            const struct_field_type = struct_type.field(name, node.span)
+            const struct_field_type = complex_type.field(name, node.span)
             expect_equal_type_signatures(type, struct_field_type, node.span)
         }
     }
@@ -382,7 +462,6 @@ class TypeMismatchError extends TypeCheckError {
 
 export class Type {
     static unit = new Type("()")
-    static bool = new Type("bool")
 
     protected static known_types = new Map<string, Type>()
     protected static add_or_get_known_type<T extends Type>(name: string, type: T, span: Span): T {
@@ -425,6 +504,10 @@ export class Type {
 
     with_type_arguments(_type_arguments: Type[]): Type {
         throw new Error(`Cannot add type arguments to ${quote(this.signature)}`)
+    }
+
+    equals(other: Type): boolean {
+        return this === other
     }
 }
 
@@ -565,7 +648,17 @@ export class TypeParameter {
     }
 }
 
-abstract class ComplexType<T extends {name: string; fields: Map<string, Type>}> extends Type {
+abstract class ComplexType<
+    T extends {name: string; fields: Map<string, Type>; traits: string[]},
+> extends Type {
+    static from_env(name: string, env: TypeEnvironment, span: Span): ComplexType<any> {
+        const type = env.get(name, span)
+        if (!(type instanceof ComplexType)) {
+            throw new TypeCheckError(`Expected complex type but got ${quote(type.signature)}`, span)
+        }
+        return type
+    }
+
     protected _fields?: Map<string, Type>
 
     protected constructor(
@@ -661,78 +754,6 @@ abstract class ComplexType<T extends {name: string; fields: Map<string, Type>}> 
         )
     }
 
-    protected get type_signature(): string {
-        const type_variables = this.type_variables.map((v) => this.type_variable_map.get(v) ?? v)
-        return TypeParameter.to_str(type_variables, this.type_arguments)
-    }
-
-    protected get fields(): Map<string, Type> {
-        if (this._fields) {
-            return this._fields
-        }
-        this._fields = new Map()
-        for (let [name, type] of this.data.fields) {
-            type = type.resolve_type_variables(this.type_arguments)
-            this._fields.set(name, type)
-        }
-        return this._fields
-    }
-
-    protected field(name: string, span: Span): Type {
-        const field = this.fields.get(name)
-        if (!field) {
-            throw new TypeCheckError(
-                `Unknown field ${quote(name)} in ${quote(this.signature)}`,
-                span,
-            )
-        }
-        return field
-    }
-
-    protected field_signature(type: Type): string {
-        // Respect `this.type_variable_map` here.
-        if (type instanceof TypeVariable) {
-            type = this.type_variable_map.get(type) ?? type
-        }
-        return type.signature
-    }
-}
-
-export class StructType extends ComplexType<StructData> {
-    static from_declaration(declaration: ast.StructDeclaration, env: TypeEnvironment): StructType {
-        const type_variables = declaration.type_parameters.map((p) =>
-            TypeVariable.from_declaration(p, env),
-        )
-        const struct_type = new StructType(new StructData(declaration.name), type_variables)
-        return Type.add_or_get_known_type(struct_type.signature, struct_type, declaration.span)
-    }
-
-    static from_env(name: string, env: TypeEnvironment, span: Span): StructType {
-        const type = env.get(name, span)
-        if (!(type instanceof StructType)) {
-            throw new TypeCheckError(`Expected struct type but got ${quote(type.signature)}`, span)
-        }
-        return type
-    }
-
-    private constructor(
-        public data: StructData,
-        type_variables: TypeVariable[],
-        type_arguments?: Map<TypeVariable, Type>,
-        type_variable_map?: Map<TypeVariable, TypeVariable>,
-    ) {
-        super(data, type_variables, type_arguments, type_variable_map)
-    }
-
-    new_instance(
-        data: StructData,
-        type_variables: TypeVariable[],
-        type_arguments: Map<TypeVariable, Type>,
-        type_variable_map: Map<TypeVariable, TypeVariable>,
-    ): this {
-        return new StructType(data, type_variables, type_arguments, type_variable_map) as this
-    }
-
     add_field<T extends Type>(
         name: string,
         field_type: T,
@@ -775,12 +796,87 @@ export class StructType extends ComplexType<StructData> {
         return field_type
     }
 
-    get fields() {
-        return super.fields
+    get traits(): string[] {
+        return this.data.traits
+    }
+
+    protected get type_signature(): string {
+        const type_variables = this.type_variables.map((v) => this.type_variable_map.get(v) ?? v)
+        return TypeParameter.to_str(type_variables, this.type_arguments)
+    }
+
+    get fields(): Map<string, Type> {
+        if (this._fields) {
+            return this._fields
+        }
+        this._fields = new Map()
+        for (let [name, type] of this.data.fields) {
+            type = type.resolve_type_variables(this.type_arguments)
+            this._fields.set(name, type)
+        }
+        return this._fields
     }
 
     field(name: string, span: Span): Type {
-        return super.field(name, span)
+        const field = this.fields.get(name)
+        if (!field) {
+            throw new TypeCheckError(
+                `Unknown field ${quote(name)} in ${quote(this.signature)}`,
+                span,
+            )
+        }
+        return field
+    }
+
+    protected field_signature(type: Type): string {
+        // Respect `this.type_variable_map` here.
+        if (type instanceof TypeVariable) {
+            type = this.type_variable_map.get(type) ?? type
+        }
+        return type.signature
+    }
+
+    equals(other: Type): boolean {
+        if (!(other instanceof ComplexType)) {
+            return false
+        }
+        return this.data === other.data
+    }
+}
+
+export class StructType extends ComplexType<StructData> {
+    static from_declaration(declaration: ast.StructDeclaration, env: TypeEnvironment): StructType {
+        const type_variables = declaration.type_parameters.map((p) =>
+            TypeVariable.from_declaration(p, env),
+        )
+        const struct_type = new StructType(new StructData(declaration.name), type_variables)
+        return Type.add_or_get_known_type(struct_type.signature, struct_type, declaration.span)
+    }
+
+    static from_env(name: string, env: TypeEnvironment, span: Span): StructType {
+        const type = env.get(name, span)
+        if (!(type instanceof StructType)) {
+            throw new TypeCheckError(`Expected struct type but got ${quote(type.signature)}`, span)
+        }
+        return type
+    }
+
+    private constructor(
+        public data: StructData,
+        type_variables: TypeVariable[],
+        type_arguments?: Map<TypeVariable, Type>,
+        type_variable_map?: Map<TypeVariable, TypeVariable>,
+    ) {
+        super(data, type_variables, type_arguments, type_variable_map)
+    }
+
+    new_instance(
+        data: StructData,
+        type_variables: TypeVariable[],
+        type_arguments: Map<TypeVariable, Type>,
+        type_variable_map: Map<TypeVariable, TypeVariable>,
+    ): this {
+        return new StructType(data, type_variables, type_arguments, type_variable_map) as this
     }
 
     get debug_str() {
@@ -797,8 +893,9 @@ export class StructType extends ComplexType<StructData> {
 
 class StructData {
     constructor(
-        public name: string,
-        public fields: Map<string, Type> = new Map(),
+        public readonly name: string,
+        public readonly fields: Map<string, Type> = new Map(),
+        public readonly traits: string[] = [],
     ) {}
 }
 
@@ -841,14 +938,6 @@ export class TraitType extends ComplexType<TraitData> {
         return new TraitType(data, type_variables, type_arguments, type_variable_map) as this
     }
 
-    get fields() {
-        return super.fields
-    }
-
-    field(name: string, span: Span): Type {
-        return super.field(name, span)
-    }
-
     get debug_str() {
         const fields = [...this.data.fields.keys()].map(
             (name) => `${name}: ${this.field(name, builtin_span).signature}`,
@@ -863,9 +952,10 @@ export class TraitType extends ComplexType<TraitData> {
 
 class TraitData {
     constructor(
-        public name: string,
-        public fields: Map<string, Type> = new Map(),
-        public methods_with_default_impl: string[],
+        public readonly name: string,
+        public readonly fields: Map<string, Type> = new Map(),
+        public readonly methods_with_default_impl: string[],
+        public readonly traits: string[] = [],
     ) {}
 }
 
@@ -920,6 +1010,12 @@ export class FunctionType extends ComplexType<FunctionData> {
             )
         }
         return type
+    }
+
+    static from_data(data: FunctionData, span: Span): FunctionType {
+        const type_variables = data.fields.get("self") ? [TypeVariable.Self] : []
+        const type = new FunctionType(data, type_variables)
+        return Type.add_or_get_known_type(type.signature, type, span)
     }
 
     private constructor(
@@ -983,20 +1079,68 @@ class FunctionData extends Type {
         public readonly name: string,
         public readonly fields: Map<string, Type>,
         public readonly parameter_names: string[],
+        public readonly traits: string[] = [],
     ) {
         super(name)
     }
 }
 
+const builtin_span = new Span(0, 0, "<builtin>", "")
+
+export class StrType extends ComplexType<StrData> {
+    static default() {
+        const type = new StrType("str")
+        return Type.add_or_get_known_type(type.signature, type, builtin_span)
+    }
+
+    private constructor(name: string) {
+        super(new StrData(name, new Map()), [])
+    }
+
+    new_instance(): this {
+        return this
+    }
+}
+
+class StrData {
+    constructor(
+        public readonly name: string,
+        public readonly fields: Map<string, Type>,
+        public readonly traits: string[] = [],
+    ) {}
+}
+
+export class BoolType extends ComplexType<BoolData> {
+    static default() {
+        const type = new BoolType("bool")
+        return Type.add_or_get_known_type(type.signature, type, builtin_span)
+    }
+
+    private constructor(name: string) {
+        super(new BoolData(name, new Map()), [])
+    }
+
+    new_instance(): this {
+        return this
+    }
+}
+
+class BoolData {
+    constructor(
+        public readonly name: string,
+        public readonly fields: Map<string, Type>,
+        public readonly traits: string[] = [],
+    ) {}
+}
+
 export class NumericType extends ComplexType<NumericData> {
-    static i32 = new NumericType("i32")
+    static from_name(name: string): NumericType {
+        const type = new NumericType(name)
+        return Type.add_or_get_known_type(type.signature, type, builtin_span)
+    }
 
     private constructor(name: string) {
         super(new NumericData(name, new Map()), [])
-        if (Type.known_types.has(name)) {
-            throw new Error(`Type ${quote(name)} already defined`)
-        }
-        Type.known_types.set(name, this)
     }
 
     new_instance(): this {
@@ -1006,19 +1150,103 @@ export class NumericType extends ComplexType<NumericData> {
 
 class NumericData {
     constructor(
-        public name: string,
-        public fields: Map<string, Type>,
+        public readonly name: string,
+        public readonly fields: Map<string, Type>,
+        public readonly traits: string[] = [],
     ) {}
 }
 
-const builtin_span = new Span(0, 0, "<builtin>", "")
+type CoreTrait = "Add" | "Sub" | "Mul" | "Div" | "PartialEq" | "PartialOrd" | "ToStr"
+
+function add_core_traits<T extends ComplexType<any>>(
+    type: T,
+    bool_type: BoolType,
+    str_type: StrType,
+    ...names: CoreTrait[]
+): T {
+    const trait_functions: Record<CoreTrait, string[]> = {
+        Add: ["add"],
+        Sub: ["sub"],
+        Mul: ["mul"],
+        Div: ["div"],
+        PartialEq: ["eq", "ne"],
+        PartialOrd: ["lt", "le", "gt", "ge"],
+        ToStr: ["to_str"],
+    }
+    for (const name of names) {
+        if (type.data.traits.includes(name)) {
+            continue
+        }
+        type.data.traits.push(name)
+        for (const function_name of trait_functions[name]) {
+            if (function_name === "to_str") {
+                type.data.fields.set(
+                    function_name,
+                    FunctionType.from_data(
+                        new FunctionData(
+                            function_name,
+                            new Map<string, Type>([
+                                ["self", type],
+                                ["return", str_type],
+                            ]),
+                            ["self"],
+                        ),
+                        builtin_span,
+                    ),
+                )
+                continue
+            }
+            type.add_field_immediate(
+                function_name,
+                FunctionType.from_data(
+                    new FunctionData(
+                        function_name,
+                        new Map<string, Type>([
+                            ["self", type],
+                            ["rhs", type],
+                            [
+                                "return",
+                                ["PartialEq", "PartialOrd"].includes(name) ? bool_type : type,
+                            ],
+                        ]),
+                        ["self", "rhs"],
+                    ),
+                    builtin_span,
+                ),
+            )
+        }
+    }
+    return type
+}
 
 export class TypeEnvironment {
     static global() {
         const env = new TypeEnvironment()
-        env.add(NumericType.i32.name, NumericType.i32, builtin_span)
-        env.add(Type.unit.name, Type.unit, builtin_span)
-        env.add(Type.bool.name, Type.bool, builtin_span)
+        const bool = BoolType.default()
+        const str = StrType.default()
+        env.add(
+            "i32",
+            add_core_traits(
+                NumericType.from_name("i32"),
+                bool,
+                str,
+                "PartialEq",
+                "PartialOrd",
+                "ToStr",
+                "Add",
+                "Sub",
+                "Mul",
+                "Div",
+            ),
+            builtin_span,
+        )
+        env.add(
+            "bool",
+            add_core_traits(bool, bool, str, "PartialEq", "PartialOrd", "ToStr"),
+            builtin_span,
+        )
+        env.add("str", add_core_traits(str, bool, str, "PartialEq", "ToStr"), builtin_span)
+        env.add("()", Type.unit, builtin_span)
         return env
     }
 
@@ -1055,6 +1283,22 @@ export class TypeEnvironment {
     get_or_null(name: string): Type | null {
         return this.types_by_name.get(name) ?? this.parent?.get_or_null(name) ?? null
     }
+
+    get i32() {
+        return this.get("i32", builtin_span)
+    }
+
+    get bool() {
+        return this.get("bool", builtin_span)
+    }
+
+    get unit() {
+        return this.get("()", builtin_span)
+    }
+
+    get str() {
+        return this.get("str", builtin_span)
+    }
 }
 
 // Tests
@@ -1065,10 +1309,49 @@ const test = {
         return parse(new TokenStream(lexer({src, file: "test"})))
     },
 
-    type_check(src: string): {type: Type; env: TypeEnvironment} {
+    type_check(
+        src: string,
+        opts?: {with_core_traits?: boolean},
+    ): {type: Type; env: TypeEnvironment} {
+        if (opts?.with_core_traits) {
+            src =
+                `
+                trait Add:
+                    fn add(self, rhs Self) Self
+                end
+                trait Sub:
+                    fn sub(self, rhs Self) Self
+                end
+                trait Mul:
+                    fn mul(self, rhs Self) Self
+                end
+                trait Div:
+                    fn div(self, rhs Self) Self
+                end
+                trait PartialEq:
+                    fn eq(self, rhs Self) bool
+                    fn ne(self, rhs Self) bool
+                end
+                trait PartialOrd:
+                    fn lt(self, rhs Self) bool
+                    fn le(self, rhs Self) bool
+                    fn gt(self, rhs Self) bool
+                    fn ge(self, rhs Self) bool
+                end
+                trait Ord:
+                end
+                trait ToStr:
+                    fn to_str(self) str
+                end
+            ` + src
+        }
         const ast = test.parse(src)
         const env = TypeEnvironment.global()
         return {type: type_check_ast(ast, env), env}
+    },
+
+    type_check_with_core_traits(src: string) {
+        return test.type_check(src, {with_core_traits: true})
     },
 
     test_let() {
@@ -1084,13 +1367,13 @@ const test = {
     test_let_with_mismatching_type_declaration() {
         assert.throws(
             () => test.type_check("let a bool = 1"),
-            /Expected `bool \(Type\)` but got `i32 \(NumericType\)`/,
+            /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
         )
     },
 
     test_identifier_reference_variable() {
-        const {type} = test.type_check("let a = 1 a")
-        assert.strictEqual(type, NumericType.i32)
+        const {type, env} = test.type_check("let a = 1 a")
+        assert.strictEqual(type, env.i32)
     },
 
     test_identifier_reference_unknown_variable() {
@@ -1098,8 +1381,8 @@ const test = {
     },
 
     test_identifier_reference_simple_type() {
-        const {type} = test.type_check("i32")
-        assert.strictEqual(type, NumericType.i32)
+        const {type, env} = test.type_check("i32")
+        assert.strictEqual(type, env.i32)
     },
 
     test_identifier_reference_struct_type() {
@@ -1359,7 +1642,7 @@ const test = {
 
             let foo = Foo{a: true}
         `),
-            /Expected `i32 \(NumericType\)` but got `bool \(Type\)`/,
+            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
         )
     },
 
@@ -1620,28 +1903,28 @@ const test = {
     test_if_with_condition_type_mismatch() {
         assert.throws(
             () => test.type_check("if 1 => 1 else => 2"),
-            /Expected `bool \(Type\)` but got `i32 \(NumericType\)`/,
+            /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
         )
     },
 
     test_if_with_branch_type_mismatch() {
         assert.throws(
             () => test.type_check("let a = if true => 1 else => true"),
-            /Expected `i32 \(NumericType\)` but got `bool \(Type\)`/,
+            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
         )
     },
 
     test_if_with_branch_type_mismatch_when_used_as_condition_in_if() {
         assert.throws(
             () => test.type_check("if (if true => 1 else => true) => 1 else => 2"),
-            /Expected `i32 \(NumericType\)` but got `bool \(Type\)`/,
+            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
         )
     },
 
     test_if_with_branch_type_mismatch_when_used_in_function_call() {
         assert.throws(
             () => test.type_check("fn foo(a i32): end foo(if true => 1 else => true)"),
-            /Expected `i32 \(NumericType\)` but got `bool \(Type\)`/,
+            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
         )
     },
 
@@ -1652,7 +1935,7 @@ const test = {
             struct Foo: a i32 end
             Foo{a: if true => 1 else => true}
         `),
-            /Expected `i32 \(NumericType\)` but got `bool \(Type\)`/,
+            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
         )
     },
 
@@ -1664,7 +1947,7 @@ const test = {
                 if true => 1 else => true
             end
         `),
-            /Expected `i32 \(NumericType\)` but got `bool \(Type\)`/,
+            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
         )
     },
 
@@ -1678,12 +1961,12 @@ const test = {
     },
 
     test_if_branch_types_do_not_have_to_match_if_expression_is_not_used() {
-        const {type} = test.type_check(`
+        const {type, env} = test.type_check(`
             if true => 1 else => true
             1 -- We add this expression so the if expression is 
               -- not the last expression in the block.
         `)
-        assert.equal(type, NumericType.i32)
+        assert.equal(type, env.i32)
     },
 
     test_return_without_value() {
@@ -1697,35 +1980,35 @@ const test = {
     },
 
     test_return_with_value() {
-        const {type} = test.type_check(`
+        const {type, env} = test.type_check(`
             fn foo() i32: 
                 return 1
             end
             foo()
         `)
-        assert.equal(type, NumericType.i32)
+        assert.equal(type, env.i32)
     },
 
     test_nested_return() {
-        const {type} = test.type_check(`
+        const {type, env} = test.type_check(`
             fn foo(b bool) i32: 
                 if b => return 1 else => return 2
             end
                 
             foo(true)
         `)
-        assert.equal(type, NumericType.i32)
+        assert.equal(type, env.i32)
     },
 
     test_nested_return_with_only_one_branch_actually_returning() {
-        const {type} = test.type_check(`
+        const {type, env} = test.type_check(`
             fn foo(b bool) i32: 
                 if b => return 1 else => 2
             end
                 
             foo(true)
         `)
-        assert.equal(type, NumericType.i32)
+        assert.equal(type, env.i32)
     },
 
     test_nested_return_must_return_same_type() {
@@ -1738,12 +2021,12 @@ const test = {
                 
             foo(true)
         `),
-            /Expected `i32 \(NumericType\)` but got `bool \(Type\)`/,
+            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
         )
     },
 
     test_return_in_nested_function() {
-        const {type} = test.type_check(`
+        const {type, env} = test.type_check(`
             fn foo(b bool) i32: 
                 fn bar() bool: 
                     return true
@@ -1753,7 +2036,7 @@ const test = {
                 
             foo(true)
         `)
-        assert.equal(type, NumericType.i32)
+        assert.equal(type, env.i32)
     },
 
     test_if_with_branch_type_mismatch_when_used_in_return() {
@@ -1764,8 +2047,89 @@ const test = {
                 return if true => 1 else => true
             end
         `),
-            /Expected `i32 \(NumericType\)` but got `bool \(Type\)`/,
+            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
         )
+    },
+
+    expect_binary(expression: string, expected: "bool" | "i32") {
+        const {type, env} = test.type_check_with_core_traits(expression)
+        assert.equal(type, env.get(expected, builtin_span))
+    },
+
+    test_binary_and_or() {
+        test.expect_binary("true and false", "bool")
+        test.expect_binary("true or false", "bool")
+        test.expect_binary("true and false or true", "bool")
+    },
+
+    test_binary_and_or_with_type_mismatch() {
+        assert.throws(
+            () => test.type_check_with_core_traits("true or 1"),
+            /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
+        )
+        assert.throws(
+            () => test.type_check_with_core_traits("1 or true"),
+            /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
+        )
+    },
+
+    test_binary_comparison_i32() {
+        test.expect_binary("1 == 1", "bool")
+        test.expect_binary("1 != 1", "bool")
+        test.expect_binary("1 < 1", "bool")
+        test.expect_binary("1 <= 1", "bool")
+        test.expect_binary("1 > 1", "bool")
+        test.expect_binary("1 >= 1", "bool")
+    },
+
+    test_binary_comparison_i32_with_type_mismatch() {
+        assert.throws(
+            () => test.type_check_with_core_traits("1 == true"),
+            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+        )
+        assert.throws(
+            () => test.type_check_with_core_traits("true == 1"),
+            /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
+        )
+    },
+
+    test_binary_comparison_bool() {
+        test.expect_binary("true == true", "bool")
+        test.expect_binary("true != true", "bool")
+        test.expect_binary("true < true", "bool")
+        test.expect_binary("true <= true", "bool")
+        test.expect_binary("true > true", "bool")
+        test.expect_binary("true >= true", "bool")
+    },
+
+    test_binary_comparison_struct() {
+        const {type, env} = test.type_check_with_core_traits(`
+            struct Foo: 
+                a i32
+            end
+
+            impl PartialEq for Foo: 
+                fn eq(self, rhs Self) bool: 
+                    self.a == rhs.a
+                end
+
+                fn ne(self, rhs Self) bool:
+                    self.a != rhs.a
+                end
+            end
+
+            let a = Foo{a: 1}
+            let b = Foo{a: 1}
+            a == b
+        `)
+        assert.equal(type, env.bool)
+    },
+
+    test_binary_math_i32() {
+        test.expect_binary("1 + 1", "i32")
+        test.expect_binary("1 - 1", "i32")
+        test.expect_binary("1 * 1", "i32")
+        test.expect_binary("1 / 1", "i32")
     },
 }
 

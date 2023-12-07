@@ -51,6 +51,11 @@ impl Doubler<Value> for Value {
 }
 
 fn test<T>(value: T) -> T {
+    if true > false {
+        println!("true");
+    } else {
+        println!("false");
+    }
     value
 }
 

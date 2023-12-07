@@ -1,15 +1,15 @@
 import * as ast from "./parser"
-import {lexer} from "./lexer"
-import {TokenStream, parse} from "./parser"
+import { lexer } from "./lexer"
+import { TokenStream, parse } from "./parser"
 import assert from "assert"
-import {Span, quote} from "./common"
+import { Span, quote } from "./common"
 
 export function type_check_ast(ast: ast.AST, env: TypeEnvironment): Type {
     let type: Type = Type.unit
     parse_declarations_and_definitions(ast, env)
-    const ctx = {used_in_expression: false}
+    const ctx = { used_in_expression: false }
     for (let i = 0; i < ast.body.length; i++) {
-        type = type_check(ast.body[i], env, {...ctx, used_in_expression: i === ast.body.length - 1})
+        type = type_check(ast.body[i], env, { ...ctx, used_in_expression: i === ast.body.length - 1 })
     }
     return type
 }
@@ -26,14 +26,14 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
     } else if (node instanceof ast.Bool) {
         type = env.bool
     } else if (node instanceof ast.If) {
-        const condition_type = type_check(node.condition, env, {...ctx, used_in_expression: true})
+        const condition_type = type_check(node.condition, env, { ...ctx, used_in_expression: true })
         expect_equal_types(env.bool, condition_type, node.span)
         const then_type = type_check(node.then_block, env, {
             ...ctx,
             used_in_expression: !!node.else_block,
         })
         if (node.else_block) {
-            const else_type = type_check(node.else_block, env, {...ctx, used_in_expression: false})
+            const else_type = type_check(node.else_block, env, { ...ctx, used_in_expression: false })
             if (ctx.used_in_expression) {
                 expect_equal_types(then_type, else_type, node.span)
             }
@@ -52,7 +52,7 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         }
         type = block_type
     } else if (node instanceof ast.VariableDeclaration) {
-        const value_type = type_check(node.value, env, {...ctx, used_in_expression: true})
+        const value_type = type_check(node.value, env, { ...ctx, used_in_expression: true })
         if (node.type) {
             const declared_type = env.get(node.type.name, node.span)
             expect_equal_types(declared_type, value_type, node.span)
@@ -62,14 +62,14 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
     } else if (node instanceof ast.FieldAccess) {
         // fixme: support all other types like enums, tuples, bool, numeric types, etc.
         const target_type = expect_struct_type(
-            type_check(node.target, env, {...ctx, used_in_expression: false}),
+            type_check(node.target, env, { ...ctx, used_in_expression: false }),
             node.span,
         )
         const field_type = target_type.field(node.field, node.span)
         type = field_type
     } else if (node instanceof ast.Return) {
         if (node.value) {
-            const return_type = type_check(node.value, env, {...ctx, used_in_expression: true})
+            const return_type = type_check(node.value, env, { ...ctx, used_in_expression: true })
             if (!ctx.return_type) {
                 throw new TypeCheckError("Unexpected return", node.span)
             }
@@ -90,8 +90,8 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         parse_function_definition_body(node, function_type, env)
         type = Type.unit
     } else if (node instanceof ast.Assignment) {
-        const target_type = type_check(node.target, env, {...ctx, used_in_expression: true})
-        const value_type = type_check(node.value, env, {...ctx, used_in_expression: true})
+        const target_type = type_check(node.target, env, { ...ctx, used_in_expression: true })
+        const value_type = type_check(node.value, env, { ...ctx, used_in_expression: true })
         expect_equal_types(target_type, value_type, node.span)
         type = value_type
     } else if (node instanceof ast.FunctionCall) {
@@ -188,8 +188,8 @@ function binary_expression(node: ast.BinaryExpression, env: TypeEnvironment, ctx
         ">": ["PartialOrd", "gt"],
         ">=": ["PartialOrd", "ge"],
     }
-    const lhs = type_check(node.lhs, env, {...ctx, used_in_expression: true})
-    const rhs = type_check(node.rhs, env, {...ctx, used_in_expression: true})
+    const lhs = type_check(node.lhs, env, { ...ctx, used_in_expression: true })
+    const rhs = type_check(node.rhs, env, { ...ctx, used_in_expression: true })
     if (["and", "or"].includes(node.operator)) {
         expect_equal_types(env.bool, lhs, node.span)
         expect_equal_types(env.bool, rhs, node.span)
@@ -217,7 +217,7 @@ function binary_expression(node: ast.BinaryExpression, env: TypeEnvironment, ctx
 
 function function_call(node: ast.FunctionCall, env: TypeEnvironment): Type {
     let function_type = expect_function_type(
-        type_check(node.target, env, {used_in_expression: true}),
+        type_check(node.target, env, { used_in_expression: true }),
         node.span,
     )
     let parameters = function_type.parameters_without_self
@@ -231,7 +231,7 @@ function function_call(node: ast.FunctionCall, env: TypeEnvironment): Type {
     function_type = function_type.with_type_arguments(type_arguments, node.span)
     parameters = function_type.parameters_without_self
     for (let i = 0; i < node.args.length; i++) {
-        const arg_type = type_check(node.args[i], env, {used_in_expression: true})
+        const arg_type = type_check(node.args[i], env, { used_in_expression: true })
         expect_equal_types(parameters[i], arg_type, node.span)
     }
     return function_type.return_type
@@ -243,7 +243,7 @@ function struct_instantiation(node: ast.StructInstantiation, env: TypeEnvironmen
     struct_type = struct_type.with_type_arguments(type_arguments, node.span)
     for (const [name, value] of Object.entries(node.fields)) {
         const field_type = struct_type.field(name, node.span)
-        const value_type = type_check(value, env, {used_in_expression: true})
+        const value_type = type_check(value, env, { used_in_expression: true })
         expect_equal_types(field_type, value_type, node.span)
     }
     return struct_type
@@ -266,20 +266,36 @@ function parse_declarations_and_definitions(block: ast.Block, env: TypeEnvironme
     // First we add all types to the environment without parsing their bodies.
     // This is sufficient for type checking and for resolving recursive and forward type definitions.
     const nodes = block.body.filter((x) => x instanceof ast.DeclarationOrDefinition)
-    for (const node of nodes) {
+    const struct_declarations: ast.StructDeclaration[] = []
+    const function_declarations: ast.FunctionDeclaration[] = []
+    const trait_declarations: ast.TraitDeclaration[] = []
+    const impl_definitions: { node: ast.ImplDefinition; extern: boolean }[] = []
+    function forward_declare(node: ast.DeclarationOrDefinition, extern: boolean) {
         if (node instanceof ast.StructDeclaration) {
             const struct_type = StructType.from_declaration(node, env)
             env.add(struct_type.name, struct_type, node.span)
+            struct_declarations.push(node)
         } else if (node instanceof ast.FunctionDefinition) {
             const function_type = FunctionType.from_declaration(node.declaration, env)
             env.add(function_type.name, function_type, node.span)
+            function_declarations.push(node.declaration)
+        } else if (node instanceof ast.FunctionDeclaration) {
+            const function_type = FunctionType.from_declaration(node, env)
+            env.add(function_type.name, function_type, node.span)
+            function_declarations.push(node)
         } else if (node instanceof ast.TraitDeclaration) {
             const trait_type = TraitType.from_declaration(node, env)
             env.add(trait_type.name, trait_type, node.span)
+            trait_declarations.push(node)
         } else if (node instanceof ast.VariableDeclaration) {
             // Variable declarations are not forward declared.
         } else if (node instanceof ast.ImplDefinition) {
             // Will be evaluated next.
+            impl_definitions.push({ node, extern })
+        } else if (node instanceof ast.ExternBlock) {
+            for (const extern_node of node.contained_nodes()) {
+                forward_declare(extern_node, true)
+            }
         } else {
             throw new TypeCheckError(
                 `Not implemented for node type ${quote(node.constructor.name)}`,
@@ -288,25 +304,23 @@ function parse_declarations_and_definitions(block: ast.Block, env: TypeEnvironme
         }
     }
 
+    for (const node of nodes) {
+        forward_declare(node, false)
+    }
+
     // Now parse struct fields.
-    for (const node of nodes.filter(
-        (x) => x instanceof ast.StructDeclaration,
-    ) as ast.StructDeclaration[]) {
+    for (const node of struct_declarations) {
         parse_struct_fields(node, env)
     }
 
     // Now parse trait functions.
-    for (const node of nodes.filter(
-        (x) => x instanceof ast.TraitDeclaration,
-    ) as ast.TraitDeclaration[]) {
+    for (const node of trait_declarations) {
         parse_trait_functions(node, env)
     }
 
     // Now we parse the impls.
-    for (const node of nodes.filter(
-        (x) => x instanceof ast.ImplDefinition,
-    ) as ast.ImplDefinition[]) {
-        parse_impl(node, env)
+    for (const impl of impl_definitions) {
+        parse_impl(impl.node, env, { extern: impl.extern })
     }
 }
 
@@ -364,7 +378,7 @@ function parse_trait_functions(node: ast.TraitDeclaration, env: TypeEnvironment)
     }
 }
 
-function parse_impl(node: ast.ImplDefinition, env: TypeEnvironment) {
+function parse_impl(node: ast.ImplDefinition, env: TypeEnvironment, opts: { extern: boolean }) {
     const complex_type = ComplexType.from_env(node.target_name, env, node.span)
     if (complex_type instanceof TraitType || complex_type instanceof FunctionType) {
         throw new TypeCheckError(
@@ -387,7 +401,8 @@ function parse_impl(node: ast.ImplDefinition, env: TypeEnvironment) {
         parse_env.add(type_variables[i].name, complex_type.type_variables[i], node.span)
     }
     for (const method of node.functions) {
-        const function_type = FunctionType.from_declaration(method.declaration, parse_env)
+        const declaration = method instanceof ast.FunctionDeclaration ? method : method.declaration
+        const function_type = FunctionType.from_declaration(declaration, parse_env)
         if (complex_type.data.fields.has(function_type.name)) {
             throw new TypeCheckError(
                 `Field ${quote(function_type.name)} already defined in struct ${quote(
@@ -397,7 +412,7 @@ function parse_impl(node: ast.ImplDefinition, env: TypeEnvironment) {
             )
         }
         const type_parameters = TypeParameters.from_declaration(
-            method.declaration.type_parameters,
+            declaration.type_parameters,
             parse_env,
         )
         complex_type.add_field(function_type.name, function_type, type_parameters, method.span)
@@ -422,7 +437,7 @@ function parse_impl(node: ast.ImplDefinition, env: TypeEnvironment) {
             if (!complex_type.fields.has(name)) {
                 // See, if we have a default implementation.
                 const default_impl = trait_type.data.methods_with_default_impl.includes(name)
-                if (!default_impl) {
+                if (!default_impl && !opts.extern) {
                     throw new TypeCheckError(
                         `Method ${quote(name)} is not implemented in struct ${quote(
                             complex_type.signature,
@@ -491,7 +506,7 @@ export class Type {
         Type.known_types.clear()
     }
 
-    protected constructor(public name: string) {}
+    protected constructor(public name: string) { }
 
     get signature(): string {
         return this.name
@@ -583,7 +598,7 @@ export class TypeParameters {
         return new TypeParameters(type_variables.map((v) => TypeParameter.from_type_variable(v)))
     }
 
-    private constructor(public type_parameters: TypeParameter[]) {}
+    private constructor(public type_parameters: TypeParameter[]) { }
 
     all_type_variables(): TypeVariable[] {
         return this.type_parameters.flatMap((p) => p.type_variables())
@@ -633,7 +648,7 @@ export class TypeParameter {
     private constructor(
         public type: Type,
         public type_parameters: TypeParameter[],
-    ) {}
+    ) { }
 
     get signature(): string {
         if (this.type_parameters.length === 0) {
@@ -656,7 +671,7 @@ export class TypeParameter {
 }
 
 abstract class ComplexType<
-    T extends {name: string; fields: Map<string, Type>; traits: string[]},
+    T extends { name: string; fields: Map<string, Type>; traits: string[] },
 > extends Type {
     static from_env(name: string, env: TypeEnvironment, span: Span): ComplexType<any> {
         const type = env.get(name, span)
@@ -903,7 +918,7 @@ class StructData {
         public readonly name: string,
         public readonly fields: Map<string, Type> = new Map(),
         public readonly traits: string[] = [],
-    ) {}
+    ) { }
 }
 
 export class TraitType extends ComplexType<TraitData> {
@@ -963,7 +978,7 @@ class TraitData {
         public readonly fields: Map<string, Type> = new Map(),
         public readonly methods_with_default_impl: string[],
         public readonly traits: string[] = [],
-    ) {}
+    ) { }
 }
 
 export class FunctionType extends ComplexType<FunctionData> {
@@ -1114,7 +1129,7 @@ class StrData {
         public readonly name: string,
         public readonly fields: Map<string, Type>,
         public readonly traits: string[] = [],
-    ) {}
+    ) { }
 }
 
 export class BoolType extends ComplexType<BoolData> {
@@ -1137,7 +1152,7 @@ class BoolData {
         public readonly name: string,
         public readonly fields: Map<string, Type>,
         public readonly traits: string[] = [],
-    ) {}
+    ) { }
 }
 
 export class NumericType extends ComplexType<NumericData> {
@@ -1160,7 +1175,7 @@ class NumericData {
         public readonly name: string,
         public readonly fields: Map<string, Type>,
         public readonly traits: string[] = [],
-    ) {}
+    ) { }
 }
 
 type CoreTrait = "Add" | "Sub" | "Mul" | "Div" | "PartialEq" | "PartialOrd" | "ToStr"
@@ -1259,7 +1274,7 @@ export class TypeEnvironment {
 
     private types_by_name = new Map<string, Type>()
 
-    constructor(private parent?: TypeEnvironment) {}
+    constructor(private parent?: TypeEnvironment) { }
 
     add(name: string, type: Type, span: Span) {
         if (this.types_by_name.has(name)) {
@@ -1321,13 +1336,13 @@ export class TypeEnvironment {
 const test = {
     parse(src: string) {
         Type.clear_known_types()
-        return parse(new TokenStream(lexer({src, file: "test"})))
+        return parse(new TokenStream(lexer({ src, file: "test" })))
     },
 
     type_check(
         src: string,
-        opts?: {with_core_traits?: boolean},
-    ): {type: Type; env: TypeEnvironment} {
+        opts?: { with_core_traits?: boolean },
+    ): { type: Type; env: TypeEnvironment } {
         if (opts?.with_core_traits) {
             src =
                 `
@@ -1362,20 +1377,20 @@ const test = {
         }
         const ast = test.parse(src)
         const env = TypeEnvironment.global()
-        return {type: type_check_ast(ast, env), env}
+        return { type: type_check_ast(ast, env), env }
     },
 
     type_check_with_core_traits(src: string) {
-        return test.type_check(src, {with_core_traits: true})
+        return test.type_check(src, { with_core_traits: true })
     },
 
     test_let() {
-        const {type} = test.type_check("let a = 1")
+        const { type } = test.type_check("let a = 1")
         assert.strictEqual(type, Type.unit)
     },
 
     test_let_with_type_declaration() {
-        const {type} = test.type_check("let a i32 = 1")
+        const { type } = test.type_check("let a i32 = 1")
         assert.strictEqual(type, Type.unit)
     },
 
@@ -1387,7 +1402,7 @@ const test = {
     },
 
     test_identifier_reference_variable() {
-        const {type, env} = test.type_check("let a = 1 a")
+        const { type, env } = test.type_check("let a = 1 a")
         assert.strictEqual(type, env.i32)
     },
 
@@ -1396,28 +1411,28 @@ const test = {
     },
 
     test_identifier_reference_simple_type() {
-        const {type, env} = test.type_check("i32")
+        const { type, env } = test.type_check("i32")
         assert.strictEqual(type, env.i32)
     },
 
     test_identifier_reference_struct_type() {
-        const {type} = test.type_check("struct Foo: a i32 end Foo")
+        const { type } = test.type_check("struct Foo: a i32 end Foo")
         assert.equal(type.signature, "Foo<>")
     },
 
     test_identifier_reference_function_type() {
-        const {type} = test.type_check("fn foo(a i32, b bool): end foo")
+        const { type } = test.type_check("fn foo(a i32, b bool): end foo")
         assert.equal(type.signature, "foo<>(i32,bool)->()")
     },
 
     test_function_definition() {
-        const {env} = test.type_check("fn foo(a i32, b bool): end")
+        const { env } = test.type_check("fn foo(a i32, b bool): end")
         const type = env.get("foo", builtin_span)
         assert.strictEqual(type.signature, "foo<>(i32,bool)->()")
     },
 
     test_nested_function_definition() {
-        const {env} = test.type_check(`
+        const { env } = test.type_check(`
             fn foo(a i32) i32: 
                 fn bar() bool: 
                     true
@@ -1451,7 +1466,7 @@ const test = {
     },
 
     test_nested_function_definition_captures_variables() {
-        const {env} = test.type_check(`
+        const { env } = test.type_check(`
             fn foo(a i32) i32: 
                 let b = true
 
@@ -1474,14 +1489,14 @@ const test = {
     },
 
     test_generic_function() {
-        const {env} = test.type_check("fn foo<T>(a T): end")
+        const { env } = test.type_check("fn foo<T>(a T): end")
         const type = env.get("foo", builtin_span)
         assert.strictEqual(type.signature, "foo<T>(T)->()")
         assert.strictEqual(type.constructor, FunctionType)
     },
 
     test_struct() {
-        const {env} = test.type_check("struct Foo: a i32 end")
+        const { env } = test.type_check("struct Foo: a i32 end")
         const foo = env.get("Foo", builtin_span)
         assert.equal(foo.signature, "Foo<>")
         assert(foo instanceof StructType)
@@ -1496,7 +1511,7 @@ const test = {
     },
 
     test_generic_struct() {
-        const {env} = test.type_check("struct Foo<T>: a T end")
+        const { env } = test.type_check("struct Foo<T>: a T end")
         const foo = env.get("Foo", builtin_span)
         assert.equal(foo.signature, "Foo<T>")
         assert(foo instanceof StructType)
@@ -1520,7 +1535,7 @@ const test = {
     },
 
     test_impl_for_struct() {
-        const {env} = test.type_check(`
+        const { env } = test.type_check(`
             struct Foo: 
                 a i32 
             end
@@ -1554,7 +1569,7 @@ const test = {
     },
 
     test_impl_for_generic_struct() {
-        const {env} = test.type_check(`
+        const { env } = test.type_check(`
             struct Foo<T>: 
                 a T
             end
@@ -1573,7 +1588,7 @@ const test = {
     },
 
     test_impl_with_self_type() {
-        const {env} = test.type_check(`
+        const { env } = test.type_check(`
             struct Foo: 
                 a i32 
             end
@@ -1592,7 +1607,7 @@ const test = {
     },
 
     test_impl_with_self_type_for_generic_struct() {
-        const {env} = test.type_check(`
+        const { env } = test.type_check(`
             struct Foo<T>: 
                 a T
             end
@@ -1611,7 +1626,7 @@ const test = {
     },
 
     test_impl_with_closures() {
-        const {env} = test.type_check(`
+        const { env } = test.type_check(`
             struct Foo: 
                 a i32 
             end
@@ -1636,7 +1651,7 @@ const test = {
     },
 
     test_struct_instantiation() {
-        const {type} = test.type_check(`
+        const { type } = test.type_check(`
             struct Foo: 
                 a i32 
             end
@@ -1662,7 +1677,7 @@ const test = {
     },
 
     test_struct_instantiation_with_generic_struct() {
-        const {type, env} = test.type_check(`
+        const { type, env } = test.type_check(`
             struct Foo<T>: 
                 a T
             end
@@ -1683,7 +1698,7 @@ const test = {
     },
 
     test_struct_with_complex_types() {
-        const {type, env} = test.type_check(`
+        const { type, env } = test.type_check(`
             struct Foo<T>: 
                 a T
             end
@@ -1715,7 +1730,7 @@ const test = {
     },
 
     test_static_struct_function() {
-        const {type} = test.type_check(`
+        const { type } = test.type_check(`
             struct Foo<T>: 
                 a T
             end
@@ -1733,7 +1748,7 @@ const test = {
     },
 
     test_function_call() {
-        const {type} = test.type_check(`
+        const { type } = test.type_check(`
             fn foo(a i32, b bool) bool: 
                 true
             end
@@ -1743,7 +1758,7 @@ const test = {
     },
 
     test_function_call_generic() {
-        const {type} = test.type_check(`
+        const { type } = test.type_check(`
             fn foo<T>(a T, b bool) T: 
                 a
             end
@@ -1753,7 +1768,7 @@ const test = {
     },
 
     test_method_call() {
-        const {type} = test.type_check(`
+        const { type } = test.type_check(`
             struct Foo: 
                 a i32
             end
@@ -1771,7 +1786,7 @@ const test = {
     },
 
     test_recursive_generic() {
-        const {env} = test.type_check(`
+        const { env } = test.type_check(`
             struct Foo<T>: 
                 a Foo<T>
                 bar Bar<T, i32>
@@ -1799,7 +1814,7 @@ const test = {
     },
 
     test_function_call_generic_on_generic_struct() {
-        const {type} = test.type_check(`
+        const { type } = test.type_check(`
             struct Foo<T>: 
                 a T
             end
@@ -1818,7 +1833,7 @@ const test = {
     },
 
     test_trait() {
-        const {env} = test.type_check(`
+        const { env } = test.type_check(`
             trait Foo: 
                 fn foo()
             end
@@ -1827,7 +1842,7 @@ const test = {
     },
 
     test_trait_with_self_type() {
-        const {env} = test.type_check(`
+        const { env } = test.type_check(`
             trait Foo: 
                 fn foo(self) Self
 
@@ -1843,7 +1858,7 @@ const test = {
     },
 
     test_generic_trait() {
-        const {env} = test.type_check(`
+        const { env } = test.type_check(`
             trait Foo<T>: 
                 fn foo(v T)
             end
@@ -1852,7 +1867,7 @@ const test = {
     },
 
     test_trait_impl() {
-        const {env} = test.type_check(`
+        const { env } = test.type_check(`
             struct Foo<A>:
                 a A
             end
@@ -1878,7 +1893,7 @@ const test = {
     },
 
     test_trait_impl_with_self_type() {
-        const {env} = test.type_check(`
+        const { env } = test.type_check(`
             struct Foo<A>:
                 a A
             end
@@ -1926,7 +1941,7 @@ const test = {
     },
 
     test_if() {
-        const {type} = test.type_check(`
+        const { type } = test.type_check(`
             if true => 1 else => 2
         `)
         // The expression is "used" because it's the last expression in the block.
@@ -1985,7 +2000,7 @@ const test = {
     },
 
     test_if_with_nested_branches() {
-        const {type} = test.type_check(`
+        const { type } = test.type_check(`
             if true:
                 if true => 1 else => 2 
             else => 2
@@ -1994,7 +2009,7 @@ const test = {
     },
 
     test_if_branch_types_do_not_have_to_match_if_expression_is_not_used() {
-        const {type, env} = test.type_check(`
+        const { type, env } = test.type_check(`
             if true => 1 else => true
             1 -- We add this expression so the if expression is 
               -- not the last expression in the block.
@@ -2003,7 +2018,7 @@ const test = {
     },
 
     test_return_without_value() {
-        const {type} = test.type_check(`
+        const { type } = test.type_check(`
             fn foo(): 
                 return
             end
@@ -2013,7 +2028,7 @@ const test = {
     },
 
     test_return_with_value() {
-        const {type, env} = test.type_check(`
+        const { type, env } = test.type_check(`
             fn foo() i32: 
                 return 1
             end
@@ -2023,7 +2038,7 @@ const test = {
     },
 
     test_nested_return() {
-        const {type, env} = test.type_check(`
+        const { type, env } = test.type_check(`
             fn foo(b bool) i32: 
                 if b => return 1 else => return 2
             end
@@ -2034,7 +2049,7 @@ const test = {
     },
 
     test_nested_return_with_only_one_branch_actually_returning() {
-        const {type, env} = test.type_check(`
+        const { type, env } = test.type_check(`
             fn foo(b bool) i32: 
                 if b => return 1 else => 2
             end
@@ -2059,7 +2074,7 @@ const test = {
     },
 
     test_return_in_nested_function() {
-        const {type, env} = test.type_check(`
+        const { type, env } = test.type_check(`
             fn foo(b bool) i32: 
                 fn bar() bool: 
                     return true
@@ -2085,7 +2100,7 @@ const test = {
     },
 
     expect_binary(expression: string, expected: "bool" | "i32") {
-        const {type, env} = test.type_check_with_core_traits(expression)
+        const { type, env } = test.type_check_with_core_traits(expression)
         assert.equal(type, env.get(expected, builtin_span))
     },
 
@@ -2136,7 +2151,7 @@ const test = {
     },
 
     test_binary_comparison_struct() {
-        const {type, env} = test.type_check_with_core_traits(`
+        const { type, env } = test.type_check_with_core_traits(`
             struct Foo: 
                 a i32
             end
@@ -2166,7 +2181,7 @@ const test = {
     },
 
     test_assignment() {
-        const {type, env} = test.type_check(`
+        const { type, env } = test.type_check(`
             mut a = 1
             a = 2
         `)
@@ -2185,7 +2200,7 @@ const test = {
     },
 
     test_assignment_as_expression() {
-        const {type, env} = test.type_check(`
+        const { type, env } = test.type_check(`
             mut a = 1
             let b = a = 2
             b
@@ -2194,7 +2209,7 @@ const test = {
     },
 
     test_struct_field_assigment() {
-        const {type, env} = test.type_check(`
+        const { type, env } = test.type_check(`
             struct Foo: 
                 a i32
             end
@@ -2203,6 +2218,37 @@ const test = {
             foo.a = 2
         `)
         assert.equal(type, env.i32)
+    },
+
+    test_extern_block() {
+        const { env } = test.type_check(`
+            trait A:
+                fn foo()
+            end
+
+            extern:
+                fn foo(a i32, b bool) bool
+
+                struct Foo:
+                    a i32
+                end
+
+                impl A for Foo
+
+                impl Foo:
+                    fn bar() i32
+                end
+            end
+
+            let a = foo(1, true)
+            let b = Foo{a: 1}
+            let c = b.foo
+            let d = b.bar()
+        `)
+        assert.equal(env.get("a", builtin_span), env.bool)
+        assert.equal(env.get("b", builtin_span).signature, "Foo<>")
+        assert.equal(env.get("c", builtin_span).signature, "foo<>()->()")
+        assert.equal(env.get("d", builtin_span), env.i32)
     },
 }
 

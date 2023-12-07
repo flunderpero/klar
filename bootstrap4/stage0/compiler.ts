@@ -509,8 +509,8 @@ export async function compile_prelude(
 ): Promise<{env: TypeEnvironment; prelude: string}> {
     env = env || TypeEnvironment.global()
     const src = await Bun.file(file).text()
-    // const prelude = await compile({file, src, env, disable_debug: true})
-    return {env, prelude: ""}
+    const prelude = await compile({file, src, env, disable_debug: true})
+    return {env, prelude}
 }
 
 /**

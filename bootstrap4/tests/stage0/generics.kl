@@ -36,6 +36,7 @@ impl Container<T>:
 
     fn set_value(mut self, value T):
         self.value = value
+        return
     end
 end
 

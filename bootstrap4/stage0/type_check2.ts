@@ -53,6 +53,9 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         type = block_type
     } else if (node instanceof ast.VariableDeclaration) {
         const value_type = type_check(node.value, env, { ...ctx, used_in_expression: true })
+        if (value_type.equals(Type.unit)) {
+            throw new TypeCheckError("Cannot assign the unit value to a variable", node.span)
+        }
         if (node.type) {
             const declared_type = env.get(node.type.name, node.span)
             expect_equal_types(declared_type, value_type, node.span)
@@ -1398,6 +1401,19 @@ const test = {
         assert.throws(
             () => test.type_check("let a bool = 1"),
             /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
+        )
+    },
+
+    test_let_with_unit_type_is_not_allowed() {
+        assert.throws(
+            () =>
+                test.type_check(`
+                fn foo(): 
+                end
+
+                let a = foo()
+            `),
+            /Cannot assign the unit value to a variable/,
         )
     },
 

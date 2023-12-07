@@ -7,14 +7,16 @@ import {Span, quote} from "./common"
 export function type_check_ast(ast: ast.AST, env: TypeEnvironment): Type {
     let type: Type = Type.unit
     parse_declarations_and_definitions(ast, env)
+    const ctx = {used_in_expression: false}
     for (let i = 0; i < ast.body.length; i++) {
-        type = type_check(ast.body[i], env, {used_in_expression: i === ast.body.length - 1})
+        type = type_check(ast.body[i], env, {...ctx, used_in_expression: i === ast.body.length - 1})
     }
     return type
 }
 
 type Context = {
     used_in_expression: boolean
+    return_type?: Type
 }
 
 function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type {
@@ -24,11 +26,14 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
     } else if (node instanceof ast.Bool) {
         type = Type.bool
     } else if (node instanceof ast.If) {
-        const condition_type = type_check(node.condition, env, {used_in_expression: true})
+        const condition_type = type_check(node.condition, env, {...ctx, used_in_expression: true})
         expect_equal_types(Type.bool, condition_type, node.span)
-        const then_type = type_check(node.then_block, env, {used_in_expression: false})
+        const then_type = type_check(node.then_block, env, {
+            ...ctx,
+            used_in_expression: !!node.else_block,
+        })
         if (node.else_block) {
-            const else_type = type_check(node.else_block, env, {used_in_expression: false})
+            const else_type = type_check(node.else_block, env, {...ctx, used_in_expression: false})
             if (ctx.used_in_expression) {
                 expect_equal_types(then_type, else_type, node.span)
             }
@@ -36,16 +41,18 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         type = ctx.used_in_expression ? then_type : Type.unit
     } else if (node instanceof ast.Block) {
         const block_env = new TypeEnvironment(env)
+        parse_declarations_and_definitions(node, block_env)
         let block_type: Type = Type.unit
         for (let i = 0; i < node.body.length; i++) {
             block_type = type_check(node.body[i], block_env, {
+                ...ctx,
                 // The last expression in a block is used as the block's type.
                 used_in_expression: ctx.used_in_expression && i === node.body.length - 1,
             })
         }
         type = block_type
     } else if (node instanceof ast.VariableDeclaration) {
-        const value_type = type_check(node.value, env, {used_in_expression: true})
+        const value_type = type_check(node.value, env, {...ctx, used_in_expression: true})
         if (node.type) {
             const declared_type = env.get(node.type.name, node.span)
             expect_equal_types(declared_type, value_type, node.span)
@@ -55,17 +62,31 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
     } else if (node instanceof ast.FieldAccess) {
         // fixme: support all other types like enums, tuples, bool, numeric types, etc.
         const target_type = expect_struct_type(
-            type_check(node.target, env, {used_in_expression: false}),
+            type_check(node.target, env, {...ctx, used_in_expression: false}),
             node.span,
         )
         const field_type = target_type.field(node.field, node.span)
         type = field_type
     } else if (node instanceof ast.Return) {
         if (node.value) {
-            type = type_check(node.value, env, {used_in_expression: true})
+            const return_type = type_check(node.value, env, {...ctx, used_in_expression: true})
+            if (!ctx.return_type) {
+                throw new TypeCheckError("Unexpected return", node.span)
+            }
+            expect_equal_types(ctx.return_type, return_type, node.span)
+            // `return` is a statement, but we give it the type because it makes it easier
+            // to type-check nested blocks like:
+            //     fn foo(): i32
+            //         if bar => return 1 else => return 2
+            //     end
+            type = return_type
         } else {
             type = Type.unit
         }
+    } else if (node instanceof ast.FunctionDefinition) {
+        const function_type = FunctionType.from_declaration(node.declaration, env)
+        parse_function_definition_body(node, function_type, env)
+        type = Type.unit
     } else if (node instanceof ast.FunctionCall) {
         type = function_call(node, env)
     } else if (node instanceof ast.StructInstantiation) {
@@ -211,14 +232,6 @@ function parse_declarations_and_definitions(block: ast.Block, env: TypeEnvironme
     ) as ast.ImplDefinition[]) {
         parse_impl(node, env)
     }
-
-    // Now parse all functions.
-    for (const node of nodes.filter(
-        (x) => x instanceof ast.FunctionDefinition,
-    ) as ast.FunctionDefinition[]) {
-        const function_type = FunctionType.from_declaration(node.declaration, env)
-        parse_function_definition_body(node, function_type, env)
-    }
 }
 
 function parse_struct_fields(node: ast.StructDeclaration, env: TypeEnvironment) {
@@ -241,8 +254,16 @@ function parse_function_definition_body(
         const type = function_type.parameter(name, node.span)
         function_env.add(name, type, node.span)
     }
-    const block_type = type_check(node.block, function_env, {used_in_expression: true})
-    expect_equal_type_signatures(function_type.return_type, block_type, node.span)
+    const block_type = type_check(node.block, function_env, {
+        return_type: function_type.return_type,
+        used_in_expression: true,
+    })
+    if (node.block.body.at(-1) instanceof ast.Return) {
+        // The last expression is a return statement, so we don't need to check the return type.
+        // We already checked that the return type is correct in the return statement.
+    } else {
+        expect_equal_type_signatures(function_type.return_type, block_type, node.span)
+    }
 }
 
 function parse_trait_functions(node: ast.TraitDeclaration, env: TypeEnvironment) {
@@ -337,14 +358,10 @@ function parse_impl(node: ast.ImplDefinition, env: TypeEnvironment) {
 
 class TypeCheckError extends Error {
     constructor(
-        public message: string,
+        message: string,
         public span: Span,
     ) {
         super(`${message} at ${span.toString()}`)
-    }
-
-    toString() {
-        return this.message
     }
 }
 
@@ -1101,6 +1118,56 @@ const test = {
         assert.strictEqual(type.signature, "foo<>(i32,bool)->()")
     },
 
+    test_nested_function_definition() {
+        const {env} = test.type_check(`
+            fn foo(a i32) i32: 
+                fn bar() bool: 
+                    true
+                end
+                if bar() => 1 else => 2 
+            end
+        `)
+        const type = env.get("foo", builtin_span)
+        assert.strictEqual(type.signature, "foo<>(i32)->i32")
+        // `bar` is not visible outside of `foo`.
+        assert.equal(env.get_or_null("bar"), null)
+    },
+
+    test_nested_function_definition_in_sub_block() {
+        assert.throws(
+            () =>
+                test.type_check(`
+            fn foo(a i32) i32: 
+                if true:
+                    fn bar() bool:
+                        true
+                    end
+                    if bar() => 1 else => 2 
+                else:
+                    bar()
+                end
+            end
+        `),
+            /Unknown `bar` in type environment at test:9:21/,
+        )
+    },
+
+    test_nested_function_definition_captures_variables() {
+        const {env} = test.type_check(`
+            fn foo(a i32) i32: 
+                let b = true
+
+                fn bar() i32: 
+                    if b => 1 else => a
+                end
+
+                bar()
+            end
+        `)
+        const type = env.get("foo", builtin_span)
+        assert.strictEqual(type.signature, "foo<>(i32)->i32")
+    },
+
     test_function_duplication() {
         assert.throws(
             () => test.type_check("fn foo(): end fn foo(a i32): end"),
@@ -1243,6 +1310,31 @@ const test = {
         assert(foo instanceof StructType)
         assert.equal(foo.fields.get("foo")?.signature, "foo<>(Foo<T>)->Foo<T>")
         assert.equal(foo.debug_str, "Foo<T>{a: T, foo: foo<>(Foo<T>)->Foo<T>}")
+    },
+
+    test_impl_with_closures() {
+        const {env} = test.type_check(`
+            struct Foo: 
+                a i32 
+            end
+
+            impl Foo: 
+                fn foo(self) Self: 
+                    let b = true
+
+                    fn bar() i32: 
+                        if b => 1 else => self.a
+                    end
+
+                    self
+                end
+            end
+        `)
+        const foo = env.get("Foo", builtin_span)
+        assert.equal(foo.signature, "Foo<>")
+        assert(foo instanceof StructType)
+        assert.equal(foo.fields.get("foo")?.signature, "foo<>(Foo<>)->Foo<>")
+        assert.equal(foo.debug_str, "Foo<>{a: i32, foo: foo<>(Foo<>)->Foo<>}")
     },
 
     test_struct_instantiation() {
@@ -1576,10 +1668,19 @@ const test = {
         )
     },
 
+    test_if_with_nested_branches() {
+        const {type} = test.type_check(`
+            if true:
+                if true => 1 else => 2 
+            else => 2
+        `)
+        assert.equal(type.signature, "i32")
+    },
+
     test_if_branch_types_do_not_have_to_match_if_expression_is_not_used() {
         const {type} = test.type_check(`
             if true => 1 else => true
-            1 -- We add a this expression so the if expression is 
+            1 -- We add this expression so the if expression is 
               -- not the last expression in the block.
         `)
         assert.equal(type, NumericType.i32)
@@ -1601,6 +1702,56 @@ const test = {
                 return 1
             end
             foo()
+        `)
+        assert.equal(type, NumericType.i32)
+    },
+
+    test_nested_return() {
+        const {type} = test.type_check(`
+            fn foo(b bool) i32: 
+                if b => return 1 else => return 2
+            end
+                
+            foo(true)
+        `)
+        assert.equal(type, NumericType.i32)
+    },
+
+    test_nested_return_with_only_one_branch_actually_returning() {
+        const {type} = test.type_check(`
+            fn foo(b bool) i32: 
+                if b => return 1 else => 2
+            end
+                
+            foo(true)
+        `)
+        assert.equal(type, NumericType.i32)
+    },
+
+    test_nested_return_must_return_same_type() {
+        assert.throws(
+            () =>
+                test.type_check(`
+            fn foo(b bool) i32: 
+                if b => return 1 else => return true
+            end
+                
+            foo(true)
+        `),
+            /Expected `i32 \(NumericType\)` but got `bool \(Type\)`/,
+        )
+    },
+
+    test_return_in_nested_function() {
+        const {type} = test.type_check(`
+            fn foo(b bool) i32: 
+                fn bar() bool: 
+                    return true
+                end
+                if bar() => return 1 else => return 2
+            end
+                
+            foo(true)
         `)
         assert.equal(type, NumericType.i32)
     },

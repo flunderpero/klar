@@ -56,7 +56,7 @@ end
 trait Iterator<T>:
     fn next(self) T
 
-    fn for_each(self, f fn(T)):
+    fn for_each(self, f (fn(T))):
         loop:
             let next = self.next()
             match next:
@@ -68,7 +68,7 @@ trait Iterator<T>:
         end
     end
 
-    fn filter(self, f fn(T) bool) Self:
+    fn filter(self, f (fn(T) bool)) Self:
         let vec = Vector<T>.new()
         self.for_each(fn(value) => if f(value) => vec.push(value))
         return vec.iter()

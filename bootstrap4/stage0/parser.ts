@@ -1735,10 +1735,13 @@ export function parse(tokens: TokenStream): AST {
 
     function parse_type(): TypeDeclaration {
         if (tokens.simple_peek() === "(") {
+            if (tokens.simple_peek(1) === "fn") {
+                tokens.consume()
+                const fn_type = parse_function_type()
+                tokens.expect(")")
+                return fn_type
+            }
             return parse_tuple_type()
-        }
-        if (tokens.simple_peek() === "fn") {
-            return parse_function_type()
         }
         const token = tokens.expect_identifier()
         let end_span = token.span

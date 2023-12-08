@@ -95,7 +95,7 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         const target_type = type_check(node.target, env, {...ctx, used_in_expression: true})
         const value_type = type_check(node.value, env, {...ctx, used_in_expression: true})
         expect_assignable_type(value_type, env, node.span)
-        expect_assignable_to(target_type, value_type, env, node.span)
+        expect_assignable_to(target_type, value_type, node.span)
         type = value_type
     } else if (node instanceof ast.FunctionCall) {
         type = type_check_function_call_or_enum_instantiation(node, env, ctx)
@@ -173,15 +173,8 @@ function expect_to_implement_trait(
     }
 }
 
-function expect_assignable_to(expected: Type, got: Type, env: TypeEnvironment, span: Span) {
-    if (expected.equals(got)) {
-        return
-    }
-    if (expected instanceof TraitType) {
-        if (!(got instanceof ComplexType)) {
-            throw new TypeMismatchError(expected, got, span)
-        }
-        expect_to_implement_trait(got, expected.name, env, span)
+function expect_assignable_to(expected: Type, got: Type, span: Span) {
+    if (expected.assignable_to(got)) {
         return
     }
     throw new TypeMismatchError(expected, got, span)
@@ -262,7 +255,7 @@ function binary_expression(node: ast.BinaryExpression, env: TypeEnvironment, ctx
     expect_to_implement_trait(lhs, trait_name, env, node.span)
     const function_type = expect_function_type(lhs.field(method_name, node.span), node.span)
     const parameter = function_type.parameters_without_self[0]
-    expect_assignable_to(parameter, rhs, env, node.span)
+    expect_assignable_to(parameter, rhs, node.span)
     return function_type.return_type
 }
 
@@ -312,7 +305,7 @@ function type_check_function_call_or_enum_instantiation(
     parameters = function_type.parameters_without_self
     for (let i = 0; i < node.args.length; i++) {
         const arg_type = type_check(node.args[i], env, {used_in_expression: true})
-        expect_assignable_to(parameters[i], arg_type, env, node.span)
+        expect_assignable_to(parameters[i], arg_type, node.span)
     }
     return function_type.return_type
 }
@@ -447,7 +440,7 @@ function type_check_function_body(
         // The last expression is a return statement, so we don't need to check the return type.
         // We already checked that the return type is correct in the return statement.
     } else {
-        expect_equal_types(function_type.return_type, block_type, node.span)
+        expect_assignable_to(function_type.return_type, block_type, node.span)
     }
 }
 
@@ -637,6 +630,10 @@ export class Type {
 
     equals(other: Type): boolean {
         return this === other
+    }
+
+    assignable_to(other: Type): boolean {
+        return this.equals(other)
     }
 }
 
@@ -984,6 +981,19 @@ abstract class ComplexType<
         }
         return this.data === other.data
     }
+
+    assignable_to(other: Type): boolean {
+        if (this.equals(other)) {
+            return true
+        }
+        if (!(other instanceof ComplexType)) {
+            return false
+        }
+        if (other instanceof TraitType) {
+            return this.traits.includes(other.name)
+        }
+        return false
+    }
 }
 
 export class StructType extends ComplexType<StructData> {
@@ -1221,7 +1231,7 @@ class TraitData {
 
 export class FunctionType extends ComplexType<FunctionData> {
     static from_declaration(
-        declaration: ast.FunctionDeclaration,
+        declaration: ast.FunctionDeclaration | ast.FunctionTypeDeclaration,
         env: TypeEnvironment,
     ): FunctionType {
         const type_variables = declaration.type_parameters.map((p) =>
@@ -1231,7 +1241,13 @@ export class FunctionType extends ComplexType<FunctionData> {
         for (const type_variable of type_variables) {
             function_env.add(type_variable.name, type_variable, declaration.span)
         }
-        function handle_complex_type(type: Type): Type {
+        function resolve_type(declaration: ast.TypeDeclaration) {
+            let type: Type
+            if (declaration instanceof ast.FunctionTypeDeclaration) {
+                type = FunctionType.from_declaration(declaration, function_env)
+            } else {
+                type = Type.from_env_or_declaration(declaration, function_env)
+            }
             if (type instanceof ComplexType) {
                 // Map type variables to the function type variables.
                 const type_variable_map = TypeVariable.create_type_variable_map(
@@ -1242,23 +1258,24 @@ export class FunctionType extends ComplexType<FunctionData> {
             }
             return type
         }
+        const parameters =
+            declaration instanceof ast.FunctionDeclaration
+                ? declaration.parameters
+                : declaration.arg_types.map((type, i) => ({name: `${i}`, type}))
         const fields = new Map<string, Type>()
-        for (const parameter of declaration.parameters) {
-            let type = Type.from_env_or_declaration(parameter.type, function_env)
+        for (const parameter of parameters) {
+            const type = resolve_type(parameter.type)
             if (!env.get_or_null(type.name)) {
                 env.add(type.name, type, parameter.type.span)
             }
-            type = handle_complex_type(type)
             fields.set(parameter.name, type)
         }
-        let return_type = handle_complex_type(
-            Type.from_env_or_declaration(declaration.return_type, function_env),
-        )
+        let return_type = resolve_type(declaration.return_type)
         fields.set("return", return_type)
         const data = new FunctionData(
             declaration.name,
             fields,
-            declaration.parameters.map((p) => p.name),
+            parameters.map((p) => p.name),
         )
         const type = new FunctionType(data, type_variables)
         return Type.add_or_get_known_type(type.signature, type, declaration.span)
@@ -1333,7 +1350,28 @@ export class FunctionType extends ComplexType<FunctionData> {
     get signature() {
         const parameters = this.parameters.map((p) => this.field_signature(p)).join(",")
         const return_type = this.field_signature(this.return_type)
-        return `${this.name}${this.type_signature}(${parameters})->${return_type}`
+        return `${this.name || "fn"}${this.type_signature}(${parameters})->${return_type}`
+    }
+
+    assignable_to(other: Type): boolean {
+        if (this.equals(other)) {
+            return true
+        }
+        if (!(other instanceof FunctionType)) {
+            return false
+        }
+        if (this.parameters.length !== other.parameters.length) {
+            return false
+        }
+        if (!this.return_type.assignable_to(other.return_type)) {
+            return false
+        }
+        for (let i = 0; i < this.parameters.length; i++) {
+            if (!this.parameters[i].assignable_to(other.parameters[i])) {
+                return false
+            }
+        }
+        return true
     }
 }
 
@@ -2723,6 +2761,73 @@ const test = {
                     let a = Foo.Bar
                 `),
             /Enum variant `Foo<>.Bar` must be instantiated/,
+        )
+    },
+
+    test_function_type_as_function_parameter() {
+        const {env} = test.type_check(`
+            fn foo(a (fn(i32, bool) bool)): 
+            end
+
+            fn bar(a i32, b bool) bool:
+                b
+            end
+
+            foo(bar)
+
+        `)
+        assert.equal(env.get("foo", builtin_span).signature, "foo<>(fn<>(i32,bool)->bool)->()")
+    },
+
+    test_function_type_as_parameter_type_mismatch() {
+        assert.throws(
+            () =>
+                test.type_check(`
+                    fn foo(a (fn(i32, bool) bool)): 
+                    end
+
+                    fn bar(a bool, b i32) bool:
+                        a
+                    end
+
+                    foo(bar)
+                `),
+            /Expected `fn<>\(i32,bool\)->bool \(FunctionType\)` but got `bar<>\(bool,i32\)->bool \(FunctionType\)/,
+        )
+    },
+
+    test_function_type_as_function_return_type() {
+        const {env, type} = test.type_check(`
+            fn foo() (fn(i32, bool) bool): 
+                fn bar(a i32, b bool) bool:
+                    b
+                end
+                bar
+            end
+
+            let a = foo()
+            a(1, true)
+        `)
+        assert.equal(type, env.bool)
+        assert.equal(env.get("foo", builtin_span).signature, "foo<>()->fn<>(i32,bool)->bool")
+        assert.equal(env.get("a", builtin_span).signature, "fn<>(i32,bool)->bool")
+    },
+
+    test_function_type_as_function_return_type_mismatch() {
+        assert.throws(
+            () =>
+                test.type_check(`
+                    fn foo() (fn(i32, bool) bool): 
+                        fn bar(a bool, b i32) bool:
+                            a
+                        end
+                        bar
+                    end
+
+                    let a = foo()
+                    a(1, true)
+                `),
+            /Expected `fn<>\(i32,bool\)->bool \(FunctionType\)` but got `bar<>\(bool,i32\)->bool \(FunctionType\)/,
         )
     },
 }

@@ -434,7 +434,7 @@ export class EnumDeclaration extends DeclarationOrDefinition {
     }
 }
 
-class EnumVariant extends HasKindAndSpan {
+export class EnumVariant extends HasKindAndSpan {
     kind = "enum variant"
     name: string
     fields: TupleTypeDeclaration

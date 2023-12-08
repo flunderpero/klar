@@ -17,6 +17,7 @@ export function type_check_ast(ast: ast.AST, env: TypeEnvironment): Type {
 type Context = {
     used_in_expression: boolean
     return_type?: Type
+    parent_is_function_call?: boolean
 }
 
 function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type {
@@ -52,24 +53,22 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         }
         type = block_type
     } else if (node instanceof ast.VariableDeclaration) {
-        const value_type = type_check(node.value, env, {...ctx, used_in_expression: true})
-        if (value_type.equals(Type.unit)) {
-            throw new TypeCheckError("Cannot assign the unit value to a variable", node.span)
-        }
-        if (node.type) {
-            const declared_type = env.get(node.type.name, node.span)
-            expect_equal_types(declared_type, value_type, node.span)
-        }
-        env.add(node.name, value_type, node.span)
+        type_check_variable_declaration(node, env, ctx)
         type = Type.unit
     } else if (node instanceof ast.FieldAccess) {
-        // fixme: support all other types like enums, tuples, bool, numeric types, etc.
         const target_type = expect_type_with_fields(
             type_check(node.target, env, {...ctx, used_in_expression: false}),
             node.span,
         )
-        const field_type = target_type.field(node.field, node.span)
-        type = field_type
+        type = target_type.field(node.field, node.span)
+        if (type instanceof EnumType && type.is_variant) {
+            if (type.data.variant_tuple_type!.fields.size > 0 && !ctx.parent_is_function_call) {
+                throw new TypeCheckError(
+                    `Enum variant ${quote(type.signature)} must be instantiated`,
+                    node.span,
+                )
+            }
+        }
     } else if (node instanceof ast.Return) {
         if (node.value) {
             const return_type = type_check(node.value, env, {...ctx, used_in_expression: true})
@@ -95,10 +94,11 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
     } else if (node instanceof ast.Assignment) {
         const target_type = type_check(node.target, env, {...ctx, used_in_expression: true})
         const value_type = type_check(node.value, env, {...ctx, used_in_expression: true})
-        expect_equal_types(target_type, value_type, node.span)
+        expect_assignable_type(value_type, env, node.span)
+        expect_assignable_to(target_type, value_type, env, node.span)
         type = value_type
     } else if (node instanceof ast.FunctionCall) {
-        type = function_call(node, env)
+        type = type_check_function_call_or_enum_instantiation(node, env, ctx)
     } else if (node instanceof ast.StructInstantiation) {
         type = struct_instantiation(node, env)
     } else if (node instanceof ast.TupleInstantiation) {
@@ -182,8 +182,48 @@ function expect_assignable_to(expected: Type, got: Type, env: TypeEnvironment, s
             throw new TypeMismatchError(expected, got, span)
         }
         expect_to_implement_trait(got, expected.name, env, span)
+        return
     }
     throw new TypeMismatchError(expected, got, span)
+}
+
+function expect_assignable_type(type: Type, env: TypeEnvironment, span: Span) {
+    // Make sure all type variables are resolved.
+    if (type instanceof ComplexType) {
+        const unresolved_type_variables = type
+            .unresolved_type_variables()
+            .filter((v) => env.get_or_null(v.name) === null)
+        if (unresolved_type_variables.length > 0) {
+            throw new TypeCheckError(
+                `Cannot assign a type with unresolved type variables ${quote(
+                    unresolved_type_variables.map((v) => v.signature).join(","),
+                )} to a variable`,
+                span,
+            )
+        }
+        if (type instanceof EnumType) {
+            if (!type.is_variant) {
+                throw new TypeCheckError(`Cannot assign enum type ${quote(type.signature)}`, span)
+            }
+        }
+    }
+}
+
+function type_check_variable_declaration(
+    node: ast.VariableDeclaration,
+    env: TypeEnvironment,
+    ctx: Context,
+) {
+    const value_type = type_check(node.value, env, {...ctx, used_in_expression: true})
+    if (value_type.equals(Type.unit)) {
+        throw new TypeCheckError("Cannot assign the unit value to a variable", node.span)
+    }
+    if (node.type) {
+        const declared_type = env.get(node.type.name, node.span)
+        expect_equal_types(declared_type, value_type, node.span)
+    }
+    expect_assignable_type(value_type, env, node.span)
+    env.add(node.name, value_type, node.span)
 }
 
 function binary_expression(node: ast.BinaryExpression, env: TypeEnvironment, ctx: Context): Type {
@@ -226,11 +266,40 @@ function binary_expression(node: ast.BinaryExpression, env: TypeEnvironment, ctx
     return function_type.return_type
 }
 
-function function_call(node: ast.FunctionCall, env: TypeEnvironment): Type {
-    let function_type = expect_function_type(
-        type_check(node.target, env, {used_in_expression: true}),
-        node.span,
-    )
+function type_check_function_call_or_enum_instantiation(
+    node: ast.FunctionCall,
+    env: TypeEnvironment,
+    ctx: Context,
+): Type {
+    const target = type_check(node.target, env, {
+        ...ctx,
+        used_in_expression: true,
+        parent_is_function_call: true,
+    })
+    if (target instanceof EnumType) {
+        if (!target.is_variant) {
+            throw new TypeCheckError(
+                `Cannot call the enum type ${quote(target.signature)}`,
+                node.span,
+            )
+        }
+        const variant_type = target.data.variant_tuple_type!
+        if (variant_type.fields.size === 0) {
+            throw new TypeCheckError(`Enum variant ${quote(target.name)} has no fields`, node.span)
+        }
+        if (variant_type.fields.size !== node.args.length) {
+            throw new TypeCheckError(
+                `Expected ${target.fields.size} arguments but got ${node.args.length}`,
+                node.span,
+            )
+        }
+        // for (let i = 0; i < node.args.length; i++) {
+        //     const arg_type = type_check(node.args[i], env, {used_in_expression: true})
+        //     expect_assignable_to(target.fields[i], arg_type, env, node.span)
+        // }
+        return target
+    }
+    let function_type = expect_function_type(target, node.span)
     let parameters = function_type.parameters_without_self
     if (parameters.length !== node.args.length) {
         throw new TypeCheckError(
@@ -243,7 +312,7 @@ function function_call(node: ast.FunctionCall, env: TypeEnvironment): Type {
     parameters = function_type.parameters_without_self
     for (let i = 0; i < node.args.length; i++) {
         const arg_type = type_check(node.args[i], env, {used_in_expression: true})
-        expect_equal_types(parameters[i], arg_type, node.span)
+        expect_assignable_to(parameters[i], arg_type, env, node.span)
     }
     return function_type.return_type
 }
@@ -278,6 +347,7 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
     // This is sufficient for type checking and for resolving recursive and forward type definitions.
     const nodes = block.body.filter((x) => x instanceof ast.DeclarationOrDefinition)
     const struct_declarations: ast.StructDeclaration[] = []
+    const enum_declarations: ast.EnumDeclaration[] = []
     const function_declarations: ast.FunctionDeclaration[] = []
     const trait_declarations: ast.TraitDeclaration[] = []
     const impl_definitions: {node: ast.ImplDefinition; extern: boolean}[] = []
@@ -286,6 +356,10 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
             const struct_type = StructType.from_declaration(node, env)
             env.add(struct_type.name, struct_type, node.span)
             struct_declarations.push(node)
+        } else if (node instanceof ast.EnumDeclaration) {
+            const enum_type = EnumType.from_declaration(node, env)
+            env.add(enum_type.name, enum_type, node.span)
+            enum_declarations.push(node)
         } else if (node instanceof ast.FunctionDefinition) {
             const function_type = FunctionType.from_declaration(node.declaration, env)
             env.add(function_type.name, function_type, node.span)
@@ -323,6 +397,10 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
         type_check_struct_fields(node, env)
     }
 
+    for (const node of enum_declarations) {
+        type_check_enum_variants(node, env)
+    }
+
     for (const node of trait_declarations) {
         type_check_trait_functions(node, env)
     }
@@ -339,6 +417,15 @@ function type_check_struct_fields(node: ast.StructDeclaration, env: TypeEnvironm
         let field_type = struct_env.get(type.name, type.span)
         const type_parameters = TypeParameters.from_declaration(type.type_parameters, struct_env)
         struct_type.add_field(name, field_type, type_parameters, type.span)
+    }
+}
+
+function type_check_enum_variants(node: ast.EnumDeclaration, env: TypeEnvironment) {
+    const enum_type = EnumType.from_env(node.name, env, node.span)
+    const enum_env = enum_type.create_type_environment(env, node.span)
+    for (const variant_declaration of node.variants) {
+        const variant = EnumType.variant_from_declaration(enum_type, variant_declaration, enum_env)
+        enum_type.add_field_immediate(variant_declaration.name, variant)
     }
 }
 
@@ -796,6 +883,19 @@ abstract class ComplexType<
         )
     }
 
+    unresolved_type_variables(): TypeVariable[] {
+        const result = []
+        for (const type_variable of this.type_variables) {
+            const type_argument =
+                this.type_arguments.get(type_variable) ||
+                this.type_arguments.get(this.type_variable_map.get(type_variable)!)
+            if (!type_argument || type_argument instanceof TypeVariable) {
+                result.push(type_variable)
+            }
+        }
+        return result
+    }
+
     add_field<T extends Type>(
         name: string,
         field_type: T,
@@ -842,7 +942,7 @@ abstract class ComplexType<
         return this.data.traits
     }
 
-    protected get type_signature(): string {
+    get type_signature(): string {
         const type_variables = this.type_variables.map((v) => this.type_variable_map.get(v) ?? v)
         return TypeParameter.to_str(type_variables, this.type_arguments)
     }
@@ -938,6 +1038,124 @@ class StructData {
         public readonly name: string,
         public readonly fields: Map<string, Type> = new Map(),
         public readonly traits: string[] = [],
+    ) {}
+}
+
+class EnumType extends ComplexType<EnumData> {
+    static from_declaration(declaration: ast.EnumDeclaration, env: TypeEnvironment): EnumType {
+        const type_variables = declaration.type_parameters.map((p) =>
+            TypeVariable.from_declaration(p, env),
+        )
+        const enum_type = new EnumType(new EnumData(declaration.name), type_variables)
+        return Type.add_or_get_known_type(enum_type.signature, enum_type, declaration.span)
+    }
+
+    static from_env(name: string, env: TypeEnvironment, span: Span): EnumType {
+        const type = env.get(name, span)
+        if (!(type instanceof EnumType)) {
+            throw new TypeCheckError(`Expected enum type but got ${quote(type.signature)}`, span)
+        }
+        return type
+    }
+
+    static variant_from_declaration(
+        enum_type: EnumType,
+        declaration: ast.EnumVariant,
+        env: TypeEnvironment,
+    ): EnumType {
+        const data = new EnumData(
+            enum_type.data.name,
+            new Map(),
+            enum_type.data.traits,
+            declaration.name,
+            TupleType.from_declaration(
+                declaration.fields,
+                enum_type.create_type_environment(env, declaration.span),
+                declaration.span,
+            ),
+            enum_type,
+        )
+        return new EnumType(
+            data,
+            enum_type.type_variables,
+            enum_type.type_arguments,
+            enum_type.type_variable_map,
+        )
+    }
+
+    private constructor(
+        public data: EnumData,
+        type_variables: TypeVariable[],
+        type_arguments?: Map<TypeVariable, Type>,
+        type_variable_map?: Map<TypeVariable, TypeVariable>,
+    ) {
+        super(data, type_variables, type_arguments, type_variable_map)
+    }
+
+    new_instance(
+        data: EnumData,
+        type_variables: TypeVariable[],
+        type_arguments: Map<TypeVariable, Type>,
+        type_variable_map: Map<TypeVariable, TypeVariable>,
+    ): this {
+        return new EnumType(data, type_variables, type_arguments, type_variable_map) as this
+    }
+
+    get is_variant(): boolean {
+        return !!this.data.variant_name
+    }
+
+    get variants(): Map<string, EnumType> {
+        if (this.is_variant) {
+            return new Map()
+        }
+        return this.data.fields as Map<string, EnumType>
+    }
+
+    get debug_str() {
+        if (this.is_variant) {
+            return `${this.signature}.${this.data.variant_name}${this.data.variant_tuple_type?.signature}`
+        }
+        const variants = [...this.variants.entries()].map(
+            ([name, variant]) => `${name}: ${variant.data.variant_tuple_type?.signature}`,
+        )
+        return `${this.signature}{${variants.join(", ")}}`
+    }
+
+    get signature() {
+        if (this.is_variant) {
+            return `${this.data.name}${this.type_signature}.${this.data.variant_name}`
+        }
+        return `${this.data.name}${this.type_signature}`
+    }
+
+    equals(other: Type): boolean {
+        if (!(other instanceof EnumType)) {
+            return false
+        }
+        if (this === other) {
+            return true
+        }
+        if (this.data === other.data) {
+            return true
+        }
+        const this_enum_type = this.data.variant_parent ?? this
+        const other_enum_type = other.data.variant_parent ?? other
+        return (
+            this_enum_type.data.name === other_enum_type.data.name &&
+            this_enum_type.data.fields === other_enum_type.data.fields
+        )
+    }
+}
+
+class EnumData {
+    constructor(
+        public readonly name: string,
+        public readonly fields: Map<string, Type> = new Map(),
+        public readonly traits: string[] = [],
+        public readonly variant_name?: string,
+        public readonly variant_tuple_type?: TupleType,
+        public readonly variant_parent?: EnumType,
     ) {}
 }
 
@@ -2424,6 +2642,88 @@ const test = {
         assert.equal(env.get("b", builtin_span), env.i32)
         assert.equal(env.get("c", builtin_span), env.bool)
         assert.equal(env.get("d", builtin_span), env.i32)
+    },
+
+    test_enum() {
+        const {env} = test.type_check(`
+            enum Foo:
+                Bar
+                Baz(i32)
+            end
+
+            fn foo(a Foo):
+            end
+
+            foo(Foo.Bar)
+
+            let a = Foo.Bar
+            let b = Foo.Baz(1)
+        `)
+        const enum_type = env.get("Foo", builtin_span)
+        assert.equal(enum_type.signature, "Foo<>")
+        assert.equal(enum_type.debug_str, "Foo<>{Bar: (), Baz: (i32)}")
+        assert.equal(env.get("a", builtin_span).signature, "Foo<>.Bar")
+        assert.equal(env.get("b", builtin_span).signature, "Foo<>.Baz")
+    },
+
+    test_enum_with_generic_type() {
+        const {env} = test.type_check(`
+            enum Foo<T>:
+                Bar
+                Baz(T)
+            end
+
+            fn foo(a Foo<i32>):
+            end
+
+            let a = Foo<i32>.Bar
+            let b = Foo<i32>.Baz(1)
+            foo(Foo<i32>.Baz(1))
+        `)
+        const enum_type = env.get("Foo", builtin_span)
+        assert.equal(enum_type.signature, "Foo<T>")
+        assert.equal(enum_type.debug_str, "Foo<T>{Bar: (), Baz: (T)}")
+        assert.equal(env.get("a", builtin_span).signature, "Foo<T=i32>.Bar")
+        assert.equal(env.get("b", builtin_span).signature, "Foo<T=i32>.Baz")
+    },
+
+    test_enum_type_cannot_be_assigned_in_variable_declaration() {
+        assert.throws(
+            () =>
+                test.type_check(`
+                    enum Foo:
+                    end
+                    let a = Foo
+                `),
+            /Cannot assign enum type/,
+        )
+    },
+
+    test_enum_type_cannot_be_assigned() {
+        assert.throws(
+            () =>
+                test.type_check(`
+                    enum Foo:
+                        Bar
+                    end
+                    mut a = Foo.Bar
+                    a = Foo
+                `),
+            /Cannot assign enum type/,
+        )
+    },
+
+    test_enum_variant_with_fields_must_be_instantiated() {
+        assert.throws(
+            () =>
+                test.type_check(`
+                    enum Foo:
+                        Bar(i32)
+                    end
+                    let a = Foo.Bar
+                `),
+            /Enum variant `Foo<>.Bar` must be instantiated/,
+        )
     },
 }
 

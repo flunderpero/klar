@@ -18,6 +18,7 @@ type Context = {
     used_in_expression: boolean
     return_type?: Type
     parent_is_function_call?: boolean
+    inside_loop?: boolean
 }
 
 function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type {
@@ -73,7 +74,7 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         if (node.value) {
             const return_type = type_check(node.value, env, {...ctx, used_in_expression: true})
             if (!ctx.return_type) {
-                throw new TypeCheckError("Unexpected return", node.span)
+                throw new SemanticError("Unexpected return", node.span)
             }
             expect_equal_types(ctx.return_type, return_type, node.span)
             // `return` is a statement, but we give it the type because it makes it easier
@@ -114,6 +115,19 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
             const type_parameters = parse_type_arguments(node.type_parameters, env, node.span)
             type = type.with_type_arguments(type_parameters, node.span)
         }
+    } else if (node instanceof ast.Loop) {
+        type_check(node.block, env, {...ctx, used_in_expression: false, inside_loop: true})
+        type = Type.unit
+    } else if (node instanceof ast.Break || node instanceof ast.Continue) {
+        if (!ctx.inside_loop) {
+            throw new SemanticError(
+                `${quote(
+                    node instanceof ast.Break ? "break" : "continue",
+                )} can only be used inside a loop`,
+                node.span,
+            )
+        }
+        type = Type.unit
     } else if (node instanceof ast.DeclarationOrDefinition) {
         type = Type.unit // We already forward parsed them.
     } else {
@@ -546,7 +560,7 @@ function type_check_impl(node: ast.ImplDefinition, env: TypeEnvironment, opts: {
     }
 }
 
-class TypeCheckError extends Error {
+class SemanticError extends Error {
     constructor(
         message: string,
         public span: Span,
@@ -554,6 +568,8 @@ class TypeCheckError extends Error {
         super(`${message} at ${span.toString()}`)
     }
 }
+
+class TypeCheckError extends SemanticError {}
 
 class TypeMismatchError extends TypeCheckError {
     constructor(
@@ -2828,6 +2844,37 @@ const test = {
                     a(1, true)
                 `),
             /Expected `fn<>\(i32,bool\)->bool \(FunctionType\)` but got `bar<>\(bool,i32\)->bool \(FunctionType\)/,
+        )
+    },
+
+    test_loop() {
+        const {type} = test.type_check(`
+            loop:
+                break
+            end
+        `)
+        assert.equal(type, Type.unit)
+    },
+
+    test_loop_with_continue() {
+        const {type} = test.type_check(`
+            let a = true
+            loop:
+                if a => continue
+                break
+            end
+        `)
+        assert.equal(type, Type.unit)
+    },
+
+    test_break_outside_of_loop() {
+        assert.throws(() => test.type_check("break"), /`break` can only be used inside a loop/)
+    },
+
+    test_continue_outside_of_loop() {
+        assert.throws(
+            () => test.type_check("continue"),
+            /`continue` can only be used inside a loop/,
         )
     },
 }

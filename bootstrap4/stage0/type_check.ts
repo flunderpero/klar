@@ -240,7 +240,7 @@ export function type_check(node: ast.ASTNode, env: TypeEnvironment): Type {
         // for (const param of node.parameters) {
         //     closure_env.add_type(param.name, param.type_declaration, node.span)
         // }
-        const parameter_types = node.parameters.map((p) => env.get_type(p.type_declaration!))
+        const parameter_types = node.parameters.map((p) => env.get_type(p.type!))
         const type = new FunctionType(
             "<function>",
             node.parameters.map((p) => p.name),

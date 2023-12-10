@@ -78,7 +78,7 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
             if (!ctx.return_type) {
                 throw new SemanticError("Unexpected return", node.span)
             }
-            expect_equal_types(ctx.return_type, return_type, node.span)
+            expect_assignable_to(ctx.return_type, return_type, node.span)
             // `return` is a statement, but we give it the type because it makes it easier
             // to type-check nested blocks like:
             //     fn foo(): i32
@@ -94,6 +94,10 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         const function_type = FunctionType.from_declaration(node.declaration, env)
         type_check_function_body(node, function_type, env)
         type = Type.unit
+    } else if (node instanceof ast.ClosureDefinition) {
+        const function_type = FunctionType.from_declaration(node, env)
+        type_check_function_body(node, function_type, env)
+        type = function_type
     } else if (node instanceof ast.Assignment) {
         const target_type = type_check(node.target, env, {...ctx, used_in_expression: true})
         const value_type = type_check(node.value, env, {...ctx, used_in_expression: true})
@@ -192,7 +196,7 @@ function expect_to_implement_trait(
 }
 
 function expect_assignable_to(expected: Type, got: Type, span: Span) {
-    if (expected.assignable_to(got)) {
+    if (got.assignable_to(expected)) {
         return
     }
     throw new TypeMismatchError(expected, got, span)
@@ -614,7 +618,7 @@ function type_check_enum_variants(node: ast.EnumDeclaration, env: TypeEnvironmen
 }
 
 function type_check_function_body(
-    node: ast.FunctionDefinition,
+    node: ast.FunctionDefinition | ast.ClosureDefinition,
     function_type: FunctionType,
     env: TypeEnvironment,
 ) {
@@ -1546,12 +1550,15 @@ class TraitData {
 
 export class FunctionType extends ComplexType<FunctionData> {
     static from_declaration(
-        declaration: ast.FunctionDeclaration | ast.FunctionTypeDeclaration,
+        declaration: ast.FunctionDeclaration | ast.FunctionTypeDeclaration | ast.ClosureDefinition,
         env: TypeEnvironment,
     ): FunctionType {
-        const type_variables = declaration.type_parameters.map((p) =>
-            TypeVariable.from_declaration(p, env),
-        )
+        let type_variables: TypeVariable[] = []
+        if (!(declaration instanceof ast.ClosureDefinition)) {
+            type_variables = declaration.type_parameters.map((p) =>
+                TypeVariable.from_declaration(p, env),
+            )
+        }
         const function_env = new TypeEnvironment(env)
         for (const type_variable of type_variables) {
             function_env.add(type_variable.name, type_variable, declaration.span)
@@ -1576,7 +1583,9 @@ export class FunctionType extends ComplexType<FunctionData> {
         const parameters =
             declaration instanceof ast.FunctionDeclaration
                 ? declaration.parameters
-                : declaration.arg_types.map((type, i) => ({name: `${i}`, type}))
+                : declaration instanceof ast.ClosureDefinition
+                  ? declaration.parameters.map((p) => ({name: p.name, type: p.type}))
+                  : declaration.arg_types.map((type, i) => ({name: `${i}`, type}))
         const fields = new Map<string, Type>()
         for (const parameter of parameters) {
             const type = resolve_type(parameter.type)
@@ -1588,7 +1597,7 @@ export class FunctionType extends ComplexType<FunctionData> {
         let return_type = resolve_type(declaration.return_type)
         fields.set("return", return_type)
         const data = new FunctionData(
-            declaration.name,
+            declaration instanceof ast.ClosureDefinition ? "<closure>" : declaration.name,
             fields,
             parameters.map((p) => p.name),
         )
@@ -2157,12 +2166,10 @@ const test = {
         const {env} = test.type_check(`
             fn foo(a i32) i32: 
                 let b = true
-
-                fn bar() i32: 
-                    if b => 1 else => a
+                fn bar() bool: 
+                    b 
                 end
-
-                bar()
+                if bar() => 1 else => 2 
             end
         `)
         const type = env.get("foo", builtin_span)
@@ -2181,6 +2188,22 @@ const test = {
         const type = env.get("foo", builtin_span)
         assert.strictEqual(type.signature, "foo<T>(T)->()")
         assert.strictEqual(type.constructor, FunctionType)
+    },
+
+    test_closure_captures_variables() {
+        const {type} = test.type_check(
+            `
+            fn foo(a i32) i32: 
+                let b = 1
+                let bar = fn() i32:
+                    b 
+                end
+                bar()
+            end
+            foo
+        `,
+        )
+        assert.strictEqual(type.signature, "foo<>(i32)->i32")
     },
 
     test_struct() {
@@ -2314,7 +2337,7 @@ const test = {
         assert.equal(foo.debug_str, "Foo<T>{a: T, foo: foo<>(Foo<T>)->Foo<T>}")
     },
 
-    test_impl_with_closures() {
+    test_impl_with_inner_function() {
         const {env} = test.type_check(`
             struct Foo: 
                 a i32 
@@ -2325,7 +2348,7 @@ const test = {
                     let b = true
 
                     fn bar() i32: 
-                        if b => 1 else => self.a
+                        self.a
                     end
 
                     self

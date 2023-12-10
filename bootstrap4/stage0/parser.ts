@@ -284,23 +284,20 @@ export class Parameter extends ASTNode {
 export class ClosureParameter extends ASTNode {
     kind = "closure parameter"
     name: string
-    type_declaration?: TypeDeclaration
+    type: TypeDeclaration
     mutable: boolean
 
-    constructor(
-        data: {name: string; type_declaration?: TypeDeclaration; mutable: boolean},
-        span: Span,
-    ) {
+    constructor(data: {name: string; type: TypeDeclaration; mutable: boolean}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Parameter.prototype)
     }
 
     to_signature_string() {
-        return `${this.name} ${this.type_declaration?.to_signature_string() ?? "<unknown>"}`
+        return `${this.name} ${this.type?.to_signature_string() ?? "<unknown>"}`
     }
 
     contained_types() {
-        return this.type_declaration ? [this.type_declaration] : []
+        return this.type ? [this.type] : []
     }
 }
 
@@ -968,11 +965,11 @@ export class Block extends Expression {
 export class ClosureDefinition extends Expression {
     kind = "closure definition"
     parameters: ClosureParameter[]
-    return_type?: TypeDeclaration
+    return_type: TypeDeclaration
     block: Block
 
     constructor(
-        data: {parameters: ClosureParameter[]; return_type?: TypeDeclaration; block: Block},
+        data: {parameters: ClosureParameter[]; return_type: TypeDeclaration; block: Block},
         span: Span,
     ) {
         super(span)
@@ -984,7 +981,7 @@ export class ClosureDefinition extends Expression {
     }
 
     contained_types() {
-        return [this.return_type, ...this.parameters.map((p) => p.type_declaration)].filter(
+        return [this.return_type, ...this.parameters.map((p) => p.type)].filter(
             (x) => !!x,
         ) as TypeDeclaration[]
     }
@@ -1111,10 +1108,7 @@ export function parse(tokens: TokenStream): AST {
             expression = new Number_({value: token.value}, token.span)
         } else if (token instanceof StringToken) {
             tokens.consume()
-            expression = new Str(
-                {value: token.value, is_multiline: token.is_multiline},
-                token.span,
-            )
+            expression = new Str({value: token.value, is_multiline: token.is_multiline}, token.span)
         } else if (token instanceof InterpolatedStringToken) {
             tokens.consume()
             expression = parse_interpolated_string(token)
@@ -1449,7 +1443,10 @@ export function parse(tokens: TokenStream): AST {
                 }
                 end_span = tokens.expect("}").span
             }
-            if (type_expression instanceof IdentifierReference && type_expression.type_parameters.length === 0) {
+            if (
+                type_expression instanceof IdentifierReference &&
+                type_expression.type_parameters.length === 0
+            ) {
                 // This is a variable capture.
                 return new CaptureMatchPatternOrType({name: type_expression.name}, token.span)
             }
@@ -1571,19 +1568,16 @@ export function parse(tokens: TokenStream): AST {
                 tokens.expect(",")
             }
             const name_token = tokens.expect_identifier()
-            const type = try_parse_type()
+            const type = parse_type()
             parameters.push(
                 new ClosureParameter(
-                    {name: name_token.value, type_declaration: type, mutable: false},
+                    {name: name_token.value, type: type, mutable: false},
                     name_token.span,
                 ),
             )
         }
         tokens.expect(")")
-        let return_type
-        if (tokens.peek() instanceof Identifier) {
-            return_type = parse_type()
-        }
+        const return_type = try_parse_type() || unit_type
         const block = parse_block("normal")
         return new ClosureDefinition(
             {parameters, return_type, block},

@@ -54,16 +54,16 @@ trait IndexedSet<T>:
 end
 
 trait Iterator<T>:
-    fn next(self) T
+    fn next(self) Option<T>
 
     fn for_each(self, f (fn(T))):
         loop:
             let next = self.next()
             match next:
-                Option.None :
+                Option<T>.None :
                     break
                 end
-                Option.Some(value) => f(value)
+                Option<T>.Some(value) => f(value)
             end
         end
     end

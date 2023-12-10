@@ -842,7 +842,6 @@ export class Match extends Expression {
     kind = "match"
     value: Expression
     arms: MatchArm[]
-    else_block?: Block
 
     constructor(data: {value: Expression; arms: MatchArm[]; else_block?: Block}, span: Span) {
         super(span)
@@ -850,7 +849,7 @@ export class Match extends Expression {
     }
 
     contained_nodes() {
-        return [this.value, ...this.arms, ...(this.else_block ? [this.else_block] : [])]
+        return [this.value, ...this.arms]
     }
 }
 
@@ -895,13 +894,13 @@ export class WildcardMatchPattern extends MatchPattern {
     }
 }
 
-export class CaptureMatchPattern extends MatchPattern {
+export class CaptureMatchPatternOrType extends MatchPattern {
     kind = "capture match pattern"
     name: string
 
     constructor(data: {name: string}, span: Span) {
         super(span)
-        Object.assign(this as typeof data, data as typeof CaptureMatchPattern.prototype)
+        Object.assign(this as typeof data, data as typeof CaptureMatchPatternOrType.prototype)
     }
 }
 
@@ -1382,21 +1381,14 @@ export function parse(tokens: TokenStream): AST {
         const span = tokens.consume().span
         const value = parse_expression()
         const arms: MatchArm[] = []
-        let else_block: Block | undefined
         tokens.expect(":")
         while (!tokens.at_end() && tokens.simple_peek() !== "end") {
-            if (tokens.simple_peek() === "else") {
-                tokens.consume()
-                else_block = parse_block("normal")
-                // Wildcard arm is always last.
-                break
-            }
             const pattern = parse_match_pattern()
             const block = parse_block("normal")
             arms.push(new MatchArm({pattern, block}, Span.combine(pattern, block.span)))
         }
         const end_span = tokens.expect("end").span
-        return new Match({value, arms, else_block}, Span.combine(span, end_span))
+        return new Match({value, arms}, Span.combine(span, end_span))
     }
 
     function parse_match_pattern(): MatchPattern {
@@ -1411,10 +1403,10 @@ export function parse(tokens: TokenStream): AST {
             tokens.consume()
             return new WildcardMatchPattern(token.span)
         } else if (token instanceof Identifier) {
+            tokens.consume()
             let type_expression: IdentifierReference | FieldAccess =
                 parse_identifier_reference(token)
-            tokens.consume()
-            if (tokens.simple_peek() === ".") {
+            while (tokens.simple_peek() === ".") {
                 tokens.consume()
                 const field = tokens.expect_identifier().value
                 type_expression = new FieldAccess(
@@ -1452,10 +1444,14 @@ export function parse(tokens: TokenStream): AST {
                         const value = parse_match_pattern()
                         fields[name] = value
                     } else {
-                        fields[name] = new CaptureMatchPattern({name}, token.span)
+                        fields[name] = new CaptureMatchPatternOrType({name}, token.span)
                     }
                 }
                 end_span = tokens.expect("}").span
+            }
+            if (type_expression instanceof IdentifierReference && type_expression.type_parameters.length === 0) {
+                // This is a variable capture.
+                return new CaptureMatchPatternOrType({name: type_expression.name}, token.span)
             }
             return new StructuredMatchPattern(
                 {type_expression, fields},
@@ -1607,20 +1603,20 @@ export function parse(tokens: TokenStream): AST {
     }
 
     function parse_identifier_reference(token: Identifier): IdentifierReference {
-        let type_arguments: TypeDeclaration[]
+        let type_parameters: TypeDeclaration[]
         // TODO: We should try to make this work without backtracking.
         //       For now we have to because we may parse a less-than operator
         //       as a type argument list. We will try to parse `a < b` as a type argument
         //       list, but we should only parse `a` as an identifier reference.
         const mark = tokens.mark()
         try {
-            type_arguments = try_parse_generic_type_parameters()
+            type_parameters = try_parse_generic_type_parameters()
         } catch (e) {
             tokens.reset(mark)
-            type_arguments = []
+            type_parameters = []
         }
         const span = token.span
-        return new IdentifierReference({name: token.value, type_parameters: type_arguments}, span)
+        return new IdentifierReference({name: token.value, type_parameters}, span)
     }
 
     function try_parse_struct_initialization(token: Identifier): StructInstantiation | undefined {

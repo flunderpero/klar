@@ -80,7 +80,7 @@ function mangle_names(ast: AST.AST) {
             if (e.name !== "self") {
                 e.name = mangle(e.name)
             }
-        } else if (e instanceof AST.CaptureMatchPattern) {
+        } else if (e instanceof AST.CaptureMatchPatternOrType) {
             e.name = mangle(e.name)
         } else if (e instanceof AST.IdentifierReference) {
             e.name = mangle(e.name)
@@ -364,7 +364,7 @@ function code_gen(ast: AST.AST) {
         return s
     }
     function declare_captured_variables(pattern: AST.MatchPattern) {
-        if (pattern instanceof AST.CaptureMatchPattern) {
+        if (pattern instanceof AST.CaptureMatchPatternOrType) {
             return `let ${pattern.name};`
         } else if (pattern instanceof AST.StructuredMatchPattern) {
             const {fields} = pattern
@@ -392,7 +392,7 @@ function code_gen(ast: AST.AST) {
             return `(${match_expression}.value === ${pattern.value})`
         } else if (pattern instanceof AST.WildcardMatchPattern) {
             return "true"
-        } else if (pattern instanceof AST.CaptureMatchPattern) {
+        } else if (pattern instanceof AST.CaptureMatchPatternOrType) {
             return `(${pattern.name} = ${match_expression})`
         } else if (
             pattern instanceof AST.StructuredMatchPattern ||

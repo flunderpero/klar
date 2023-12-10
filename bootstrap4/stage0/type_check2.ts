@@ -63,7 +63,7 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         )
         type = target_type.field(node.field, node.span)
         if (type instanceof EnumType && type.is_variant) {
-            if (type.data.variant_tuple_type!.fields.size > 0 && !ctx.parent_is_function_call) {
+            if (type.variant_tuple_type!.fields.size > 0 && !ctx.parent_is_function_call) {
                 throw new TypeCheckError(
                     `Enum variant ${quote(type.signature)} must be instantiated`,
                     node.span,
@@ -95,7 +95,13 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
     } else if (node instanceof ast.Assignment) {
         const target_type = type_check(node.target, env, {...ctx, used_in_expression: true})
         const value_type = type_check(node.value, env, {...ctx, used_in_expression: true})
-        expect_type_can_be_used_in_assignments(value_type, env, node.span)
+        if (
+            node.value instanceof ast.FieldAccess ||
+            node.value instanceof ast.IdentifierReference
+        ) {
+            // Prevent use cases like: `a = Foo` where `Foo` is an enum or struct type.
+            expect_type_can_be_used_in_assignments(value_type, env, node.span)
+        }
         expect_assignable_to(target_type, value_type, node.span)
         type = value_type
     } else if (node instanceof ast.FunctionCall) {
@@ -130,6 +136,8 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         type = Type.unit
     } else if (node instanceof ast.DeclarationOrDefinition) {
         type = Type.unit // We already forward parsed them.
+    } else if (node instanceof ast.Match) {
+        type = type_check_match(node, env, ctx)
     } else {
         throw new TypeCheckError(
             `Not implemented for node type ${quote(node.constructor.name)}`,
@@ -210,6 +218,158 @@ function expect_type_can_be_used_in_assignments(type: Type, env: TypeEnvironment
     }
 }
 
+function type_check_match(node: ast.Match, env: TypeEnvironment, ctx: Context): Type {
+    if (node.arms.length === 0) {
+        throw new TypeCheckError("Match expression has no arms", node.span)
+    }
+    const target_type = type_check(node.value, env, {...ctx, used_in_expression: true})
+    const arm_types: Type[] = []
+    for (const arm of node.arms) {
+        arm_types.push(type_check_match_arm(arm, target_type, env, ctx))
+    }
+    if (ctx.used_in_expression) {
+        const type = arm_types[0]!
+        for (let i = 1; i < arm_types.length; i++) {
+            expect_equal_types(type, arm_types[i], node.span)
+        }
+        return type
+    }
+    return Type.unit
+}
+
+function type_check_match_arm(
+    node: ast.MatchArm,
+    target_type: Type,
+    env: TypeEnvironment,
+    ctx: Context,
+): Type {
+    const pattern_env = new TypeEnvironment(env)
+    type_check_match_pattern(node.pattern, target_type, pattern_env, ctx)
+    return type_check(node.block, pattern_env, ctx)
+}
+
+function type_check_match_pattern(
+    pattern: ast.MatchPattern,
+    target_type: Type,
+    env: TypeEnvironment,
+    ctx: Context,
+): Type {
+    if (pattern instanceof ast.LiteralMatchPattern) {
+        if (typeof pattern.value === "number") {
+            if (!env.i32.assignable_to(target_type)) {
+                // Note how the order in the exception is reversed.
+                // We did not expect to find a number but `target_type`.
+                // This logic differs from `expect_assignable_to`.
+                throw new TypeMismatchError(target_type, env.i32, pattern.span)
+            }
+            expect_assignable_to(env.i32, target_type, pattern.span)
+            return env.i32
+        } else if (typeof pattern.value === "boolean") {
+            if (!env.bool.assignable_to(target_type)) {
+                // Note how the order in the exception is reversed.
+                // We did not expect to find a number but `target_type`.
+                // This logic differs from `expect_assignable_to`.
+                throw new TypeMismatchError(target_type, env.bool, pattern.span)
+            }
+            return env.bool
+        } else {
+            throw new TypeCheckError(
+                `Not implemented for literal type ${quote(pattern.value)}`,
+                pattern.span,
+            )
+        }
+    } else if (pattern instanceof ast.CaptureMatchPatternOrType) {
+        // This might be a capture or a type.
+        const type = env.get_or_null(pattern.name)
+        if (type && type.name === pattern.name) {
+            // The name can only match the type if it is a type.
+            if (type.has_type_parameters()) {
+                throw new TypeCheckError(
+                    `Cannot match on generic type ${quote(type.signature)}`,
+                    pattern.span,
+                )
+            }
+        }
+        env.add(pattern.name, target_type, pattern.span)
+        return target_type
+    } else if (pattern instanceof ast.StructuredMatchPattern) {
+        const pattern_type = type_check(pattern.type_expression, env, ctx)
+        if (pattern_type instanceof EnumType) {
+            if (!pattern_type.is_variant) {
+                throw new TypeCheckError(
+                    `Cannot match on enum type ${quote(pattern_type.signature)}, only on variants`,
+                    pattern.span,
+                )
+            }
+            if (pattern_type.variant_tuple_type!.fields.size === 0) {
+                return target_type
+            }
+        }
+        const struct_type = expect_type_with_fields(target_type, pattern.span)
+        if (Object.keys(pattern.fields).length !== struct_type.fields.size) {
+            throw new TypeCheckError(
+                `Expected ${struct_type.fields.size} fields but got ${
+                    Object.keys(pattern.fields).length
+                }`,
+                pattern.span,
+            )
+        }
+        const pattern_type_with_fields = expect_type_with_fields(pattern_type, pattern.span)
+        for (const [name, sub_pattern] of Object.entries(pattern.fields)) {
+            const field_type = pattern_type_with_fields.field(name, sub_pattern.span)
+            const sub_pattern_type = type_check_match_pattern(sub_pattern, field_type, env, ctx)
+            expect_assignable_to(field_type, sub_pattern_type, sub_pattern.span)
+        }
+        return struct_type
+    } else if (pattern instanceof ast.TupleMatchPattern) {
+        let pattern_type = type_check(pattern.type_expression, env, {
+            ...ctx,
+            parent_is_function_call: true,
+        })
+        expect_assignable_to(target_type, pattern_type, pattern.span)
+        let tuple_type = pattern_type
+        if (target_type instanceof EnumType) {
+            assert(pattern_type instanceof EnumType)
+            if (!pattern_type.is_variant) {
+                throw new TypeCheckError(
+                    `Cannot match on enum type ${quote(target_type.signature)}, only on variants`,
+                    pattern.span,
+                )
+            }
+            if (pattern_type.variant_tuple_type!.fields.size === 0) {
+                return pattern_type
+            }
+            tuple_type = pattern_type.variant_tuple_type!
+        }
+        if (!(tuple_type instanceof TupleType)) {
+            throw new TypeCheckError(
+                `Expected tuple type but got ${quote(target_type.signature)}`,
+                pattern.span,
+            )
+        }
+        if (tuple_type.fields.size !== pattern.values.length) {
+            throw new TypeCheckError(
+                `Expected ${tuple_type.fields.size} elements but got ${pattern.values.length}`,
+                pattern.span,
+            )
+        }
+        for (let i = 0; i < pattern.values.length; i++) {
+            const sub_pattern = pattern.values[i]
+            const field_type = tuple_type.field(`${i}`, sub_pattern.span)
+            const sub_pattern_type = type_check_match_pattern(sub_pattern, field_type, env, ctx)
+            expect_assignable_to(sub_pattern_type, field_type, sub_pattern.span)
+        }
+        return target_type
+    } else if (pattern instanceof ast.WildcardMatchPattern) {
+        return target_type
+    } else {
+        throw new TypeCheckError(
+            `Not implemented for pattern type ${quote(pattern.constructor.name)}`,
+            pattern.span,
+        )
+    }
+}
+
 function type_check_variable_declaration(
     node: ast.VariableDeclaration,
     env: TypeEnvironment,
@@ -220,10 +380,18 @@ function type_check_variable_declaration(
         throw new TypeCheckError("Cannot assign the unit value to a variable", node.span)
     }
     if (node.type) {
-        const declared_type = env.get(node.type.name, node.span)
-        expect_equal_types(declared_type, value_type, node.span)
+        const declared_type = env
+            .get(node.type.name, node.span)
+            .with_type_arguments(
+                parse_type_arguments(node.type.type_parameters, env, node.span),
+                node.span,
+            )
+        expect_assignable_to(declared_type, value_type, node.span)
     }
-    expect_type_can_be_used_in_assignments(value_type, env, node.span)
+    if (node.value instanceof ast.FieldAccess || node.value instanceof ast.IdentifierReference) {
+        // Prevent use cases like: `let a = Foo` where `Foo` is an enum or struct type.
+        expect_type_can_be_used_in_assignments(value_type, env, node.span)
+    }
     env.add(node.name, value_type, node.span)
 }
 
@@ -284,7 +452,7 @@ function type_check_function_call_or_enum_instantiation(
                 node.span,
             )
         }
-        const variant_type = target.data.variant_tuple_type!
+        const variant_type = target.variant_tuple_type!
         if (variant_type.fields.size === 0) {
             throw new TypeCheckError(`Enum variant ${quote(target.name)} has no fields`, node.span)
         }
@@ -294,10 +462,10 @@ function type_check_function_call_or_enum_instantiation(
                 node.span,
             )
         }
-        // for (let i = 0; i < node.args.length; i++) {
-        //     const arg_type = type_check(node.args[i], env, {used_in_expression: true})
-        //     expect_assignable_to(target.fields[i], arg_type, env, node.span)
-        // }
+        for (let i = 0; i < node.args.length; i++) {
+            const arg_type = type_check(node.args[i], env, {used_in_expression: true})
+            expect_assignable_to(variant_type.fields.get(`${i}`)!, arg_type, node.span)
+        }
         return target
     }
     let function_type = expect_function_type(target, node.span)
@@ -338,7 +506,12 @@ function parse_type_arguments(
     const result = []
     for (const p of type_arguments) {
         const type_argument = TypeParameter.from_declaration(p, env)
-        result.push(env.get(type_argument.signature, span))
+        const type_argument_type = env.get(type_argument.type.name, span)
+        if (type_argument_type instanceof TypeVariable) {
+            result.push(null)
+        } else {
+            result.push(type_argument_type)
+        }
     }
     return result
 }
@@ -619,7 +792,16 @@ export class Type {
      */
     static from_env_or_declaration(declaration: ast.TypeDeclaration, env: TypeEnvironment): Type {
         if (declaration instanceof ast.TupleTypeDeclaration) {
-            const type = TupleType.from_declaration(declaration, env, declaration.span)
+            const type_variables = TypeParameters.from_declaration(
+                declaration.type_parameters,
+                env,
+            ).all_type_variables()
+            const type = TupleType.from_declaration(
+                declaration,
+                env,
+                type_variables,
+                declaration.span,
+            )
             return type
         }
         return env.get(declaration.name, declaration.span)
@@ -664,7 +846,7 @@ export class Type {
         return this
     }
 
-    with_type_arguments(_type_arguments: Type[], _span: Span): Type {
+    with_type_arguments(_type_arguments: (Type | null)[], _span: Span): Type {
         throw new Error(`Cannot add type arguments to ${quote(this.signature)}`)
     }
 
@@ -674,6 +856,10 @@ export class Type {
 
     assignable_to(other: Type): boolean {
         return this.equals(other)
+    }
+
+    has_type_parameters(): boolean {
+        return false
     }
 }
 
@@ -867,20 +1053,30 @@ abstract class ComplexType<
         return result
     }
 
-    with_type_arguments(type_arguments: (Type | null)[], span: Span): this {
-        if (type_arguments.length !== this.type_variables.length) {
-            throw new TypeCheckError(
-                `Expected ${this.type_variables.length} type arguments but got ${type_arguments.length}`,
-                span,
-            )
+    with_type_arguments(
+        type_arguments: (Type | null)[] | Map<TypeVariable, Type>,
+        span: Span,
+    ): this {
+        if (Array.isArray(type_arguments)) {
+            if (type_arguments.length !== this.type_variables.length) {
+                throw new TypeCheckError(
+                    `Expected ${this.type_variables.length} type arguments but got ${type_arguments.length}`,
+                    span,
+                )
+            }
         }
         const new_type_arguments = new Map<TypeVariable, Type>(this.type_arguments)
         for (let i = 0; i < this.type_variables.length; i++) {
             const type_variable = this.type_variables[i]
-            const type_argument = type_arguments[i]
+            const type_argument = Array.isArray(type_arguments)
+                ? type_arguments[i]
+                : type_arguments.get(type_variable)
             if (!type_argument) {
+                continue
+            }
+            if (type_argument instanceof TypeVariable) {
                 throw new TypeCheckError(
-                    `Missing type argument for ${quote(type_variable.signature)}`,
+                    `Cannot use type variable ${quote(type_argument.signature)} as type argument`,
                     span,
                 )
             }
@@ -982,14 +1178,19 @@ abstract class ComplexType<
         }
         this._fields = new Map()
         for (let [name, type] of this.data.fields) {
-            type = type.resolve_type_variables(this.type_arguments)
-            if (type instanceof TypeVariable) {
-                // Respect `this.type_variable_map` here.
-                type = this.type_variable_map.get(type) ?? type
-            }
+            type = this.resolve_field(type)
             this._fields.set(name, type)
         }
         return this._fields
+    }
+
+    protected resolve_field(type: Type): Type {
+        if (type instanceof TypeVariable) {
+            // Respect `this.type_variable_map` here.
+            type = this.type_variable_map.get(type) ?? type
+        }
+        type = type.resolve_type_variables(this.type_arguments)
+        return type
     }
 
     field(name: string, span: Span): Type {
@@ -1007,6 +1208,18 @@ abstract class ComplexType<
         if (!(other instanceof ComplexType)) {
             return false
         }
+        if (this.data !== other.data) {
+            return false
+        }
+        if (this.type_arguments.size !== other.type_arguments.size) {
+            return false
+        }
+        for (const [key, value] of this.type_arguments.entries()) {
+            const other_value = other.type_arguments.get(key)
+            if (!other_value || !value.equals(other_value)) {
+                return false
+            }
+        }
         return this.data === other.data
     }
 
@@ -1017,10 +1230,23 @@ abstract class ComplexType<
         if (!(other instanceof ComplexType)) {
             return false
         }
+        if (this.type_arguments.size !== other.type_arguments.size) {
+            return false
+        }
+        for (const [key, value] of this.type_arguments.entries()) {
+            const other_value = other.type_arguments.get(key)
+            if (!other_value || !value.equals(other_value)) {
+                return false
+            }
+        }
         if (other instanceof TraitType) {
             return this.traits.includes(other.name)
         }
         return false
+    }
+
+    has_type_parameters(): boolean {
+        return this.type_arguments.size > 0
     }
 }
 
@@ -1101,23 +1327,21 @@ class EnumType extends ComplexType<EnumData> {
         declaration: ast.EnumVariant,
         env: TypeEnvironment,
     ): EnumType {
-        const data = new EnumData(
-            enum_type.data.name,
-            new Map(),
-            enum_type.data.traits,
-            declaration.name,
-            TupleType.from_declaration(
-                declaration.fields,
-                enum_type.create_type_environment(env, declaration.span),
-                declaration.span,
-            ),
-            enum_type,
-        )
+        const data = new EnumData(enum_type.data.name, new Map(), enum_type.data.traits)
+        const type_variables = enum_type.type_variables
         return new EnumType(
             data,
             enum_type.type_variables,
             enum_type.type_arguments,
             enum_type.type_variable_map,
+            declaration.name,
+            TupleType.from_declaration(
+                declaration.fields,
+                enum_type.create_type_environment(env, declaration.span),
+                type_variables,
+                declaration.span,
+            ),
+            enum_type,
         )
     }
 
@@ -1126,6 +1350,9 @@ class EnumType extends ComplexType<EnumData> {
         type_variables: TypeVariable[],
         type_arguments?: Map<TypeVariable, Type>,
         type_variable_map?: Map<TypeVariable, TypeVariable>,
+        private variant_name?: string,
+        public variant_tuple_type?: TupleType,
+        private variant_parent?: EnumType,
     ) {
         super(data, type_variables, type_arguments, type_variable_map)
     }
@@ -1136,11 +1363,23 @@ class EnumType extends ComplexType<EnumData> {
         type_arguments: Map<TypeVariable, Type>,
         type_variable_map: Map<TypeVariable, TypeVariable>,
     ): this {
-        return new EnumType(data, type_variables, type_arguments, type_variable_map) as this
+        const type = new EnumType(data, type_variables, type_arguments, type_variable_map) as this
+        if (this.is_variant) {
+            type.variant_parent = this.variant_parent
+            type.variant_name = this.variant_name
+            type.variant_tuple_type = this.variant_tuple_type!.resolve_type_variables(
+                type_arguments,
+            ) as TupleType
+            return type
+        }
+        for (const [name, variant] of this.variants) {
+            type.add_field_immediate(name, variant)
+        }
+        return type
     }
 
     get is_variant(): boolean {
-        return !!this.data.variant_name
+        return !!this.variant_name
     }
 
     get variants(): Map<string, EnumType> {
@@ -1152,17 +1391,17 @@ class EnumType extends ComplexType<EnumData> {
 
     get debug_str() {
         if (this.is_variant) {
-            return `${this.signature}.${this.data.variant_name}${this.data.variant_tuple_type?.signature}`
+            return `${this.signature}${this.variant_tuple_type?.signature}`
         }
         const variants = [...this.variants.entries()].map(
-            ([name, variant]) => `${name}: ${variant.data.variant_tuple_type?.signature}`,
+            ([name, variant]) => `${name}: ${variant.variant_tuple_type?.signature}`,
         )
         return `${this.signature}{${variants.join(", ")}}`
     }
 
     get signature() {
         if (this.is_variant) {
-            return `${this.data.name}${this.type_signature}.${this.data.variant_name}`
+            return `${this.data.name}${this.type_signature}.${this.variant_name}`
         }
         return `${this.data.name}${this.type_signature}`
     }
@@ -1177,8 +1416,8 @@ class EnumType extends ComplexType<EnumData> {
         if (this.data === other.data) {
             return true
         }
-        const this_enum_type = this.data.variant_parent ?? this
-        const other_enum_type = other.data.variant_parent ?? other
+        const this_enum_type = this.variant_parent ?? this
+        const other_enum_type = other.variant_parent ?? other
         return (
             this_enum_type.data.name === other_enum_type.data.name &&
             this_enum_type.data.fields === other_enum_type.data.fields
@@ -1191,9 +1430,6 @@ class EnumData {
         public readonly name: string,
         public readonly fields: Map<string, Type> = new Map(),
         public readonly traits: string[] = [],
-        public readonly variant_name?: string,
-        public readonly variant_tuple_type?: TupleType,
-        public readonly variant_parent?: EnumType,
     ) {}
 }
 
@@ -1247,8 +1483,8 @@ export class TraitType extends ComplexType<TraitData> {
     }
 
     get debug_str() {
-        const fields = [...this.data.fields.keys()].map(
-            (name) => `${name}: ${this.field(name, builtin_span).signature}`,
+        const fields = [...this.data.fields.entries()].map(
+            ([name, type]) => `${name}: ${type.signature}`,
         )
         return `${this.signature}{${fields.join(", ")}}`
     }
@@ -1441,11 +1677,9 @@ class TupleType extends ComplexType<TupleData> {
     static from_declaration(
         declaration: ast.TupleTypeDeclaration,
         env: TypeEnvironment,
+        type_variables: TypeVariable[],
         span: Span,
     ): TupleType {
-        const type_variables = declaration.type_parameters.map((p) =>
-            TypeVariable.from_declaration(p, env),
-        )
         const types = declaration.fields.map((f) => Type.from_env_or_declaration(f, env))
         const fields = new Map<string, Type>()
         for (let i = 0; i < types.length; i++) {
@@ -1482,11 +1716,20 @@ class TupleType extends ComplexType<TupleData> {
     }
 
     get debug_str() {
-        return this.name
+        return this.signature
     }
 
     get signature() {
-        return this.name
+        let s = "("
+        for (let i = 0; i < this.fields.size; i++) {
+            const field = this.fields.get(`${i}`)
+            if (s.length > 1) {
+                s += ","
+            }
+            s += field!.signature
+        }
+        s += ")"
+        return s
     }
 }
 
@@ -2102,6 +2345,21 @@ const test = {
         assert.equal(env.get("Foo", builtin_span)!.debug_str, "Foo<T>{a: T, foo: foo<>(T)->T}")
     },
 
+    test_struct_instantiation_with_generic_struct_incompatible_type() {
+        assert.throws(
+            () =>
+                test.type_check(`
+            struct Foo<T>: 
+                a T
+            end
+
+            let foo = Foo<i32>{a: 1}
+            let bar Foo<bool> = foo
+        `),
+            /Expected `Foo<T=bool> \(StructType\)` but got `Foo<T=i32> \(StructType\)`/,
+        )
+    },
+
     test_struct_with_complex_types() {
         const {type, env} = test.type_check(`
             struct Foo<T>: 
@@ -2613,7 +2871,7 @@ const test = {
         assert.equal(type, env.i32)
     },
 
-    test_struct_field_assigment() {
+    test_struct_field_assignment() {
         const {type, env} = test.type_check(`
             struct Foo: 
                 a i32
@@ -2777,6 +3035,20 @@ const test = {
         assert.equal(env.get("b", builtin_span).signature, "Foo<T=i32>.Baz")
     },
 
+    test_enum_with_generic_type_and_type_mismatch() {
+        assert.throws(
+            () =>
+                test.type_check(`
+                    enum Foo<T>: 
+                        Baz(T)
+                    end
+
+                    Foo<i32>.Baz(true)
+                `),
+            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+        )
+    },
+
     test_enum_type_cannot_be_assigned_in_variable_declaration() {
         assert.throws(
             () =>
@@ -2913,10 +3185,209 @@ const test = {
             /`continue` can only be used inside a loop/,
         )
     },
+
+    test_match_primitives() {
+        const {type, env} = test.type_check(`
+            match 1:
+                1 => true
+                2 => false
+            end
+        `)
+        assert.equal(type, env.bool)
+    },
+
+    test_match_struct() {
+        const {type, env} = test.type_check(`
+            struct Foo: 
+                a i32
+            end
+
+            match Foo{a: 1}:
+                Foo{a: 1} => true
+                Foo{a: 2} => false
+            end
+        `)
+        assert.equal(type, env.bool)
+    },
+
+    test_match_nested_struct() {
+        const {type, env} = test.type_check(`
+            struct Foo: 
+                a i32
+            end
+
+            struct Bar:
+                foo Foo
+            end
+
+            match Bar{foo: Foo{a: 1}}:
+                Bar{foo: Foo{a: 1}} => true
+                Bar{foo: Foo{a: 2}} => false
+            end
+        `)
+        assert.equal(type, env.bool)
+    },
+
+    test_match_struct_with_generic_type() {
+        const {type, env} = test.type_check(`
+            struct Foo<T>: 
+                a T
+            end
+
+            match Foo<i32>{a: 1}:
+                Foo<i32>{a: 1} => true
+                Foo<i32>{a: 2} => false
+            end
+        `)
+        assert.equal(type, env.bool)
+    },
+
+    test_match_struct_with_generic_type_and_type_mismatch() {
+        assert.throws(
+            () =>
+                test.type_check(`
+                    struct Foo<T>: 
+                        a T
+                    end
+
+                    match Foo<i32>{a: 1}:
+                        Foo<i32>{a: 1} => true
+                        Foo<i32>{a: true} => false
+                    end
+                `),
+            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+        )
+    },
+
+    test_match_struct_with_generic_type_and_type_mismatch_in_pattern() {
+        assert.throws(
+            () =>
+                test.type_check(`
+                    struct Foo<T>: 
+                        a T
+                    end
+
+                    match Foo<i32>{a: 1}:
+                        Foo<i32>{a: 1} => true
+                        Foo<i32>{a: true} => false
+                    end
+                `),
+            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+        )
+    },
+
+    test_match_enum_without_fields() {
+        const {type, env} = test.type_check(`
+            enum Foo:
+                Bar
+                Baz
+            end
+
+            match Foo.Bar:
+                Foo.Bar => true
+                Foo.Baz => false
+            end
+        `)
+        assert.equal(type, env.bool)
+    },
+
+    test_match_enum_with_generic_type() {
+        const {type, env} = test.type_check(`
+            enum Foo<T>:
+                Bar
+                Baz(T)
+            end
+
+            match Foo<i32>.Bar:
+                Foo<i32>.Bar => true
+                Foo<i32>.Baz(1) => false
+            end
+        `)
+        assert.equal(type, env.bool)
+    },
+
+    test_match_enum_with_generic_type_on_parameterized_variant() {
+        const {type, env} = test.type_check(`
+            enum Foo<T>:
+                Bar
+                Baz(T)
+            end
+
+            match Foo<i32>.Baz(1): -- This is the difference from the previous test.
+                Foo<i32>.Bar => true
+                Foo<i32>.Baz(1) => false
+            end
+        `)
+        assert.equal(type, env.bool)
+    },
+
+    test_match_enum_with_generic_type_and_type_mismatch() {
+        assert.throws(
+            () =>
+                test.type_check(`
+                    enum Foo<T>:
+                        Bar
+                        Baz(T)
+                    end
+
+                    match Foo<i32>.Bar:
+                        Foo<i32>.Bar => true
+                        Foo<i32>.Baz(true) => false
+                    end
+                `),
+            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+        )
+    },
+
+    test_wildcard_pattern() {
+        const {type, env} = test.type_check(`
+            match 1:
+                _ => true
+            end
+        `)
+        assert.equal(type, env.bool)
+    },
+
+    test_wildcard_pattern_with_complex_match() {
+        const {type, env} = test.type_check(`
+            struct BazStruct<T>:
+                baz T
+            end
+
+            enum Foo<T>:
+                Bar
+                Baz(BazStruct<T>)
+            end
+
+            struct FooStruct<T>:
+                foo Foo<T>
+            end
+
+            match FooStruct<i32>{foo: Foo<i32>.Baz(BazStruct<i32>{baz: 1})}:
+                FooStruct<i32>{foo: _} => true
+                FooStruct<i32>{foo: Foo<i32>.Baz(BazStruct<i32>{baz: _})} => false
+                _ => false
+            end
+        `)
+        assert.equal(type, env.bool)
+    },
+
+    test_match_with_variable_capture() {
+        const {type, env} = test.type_check(`
+            match 1:
+                a => a
+            end
+        `)
+        assert.equal(type, env.i32)
+    },
 }
 
 if (Bun.argv[1].endsWith("type_check2.ts")) {
+    const filter = Bun.argv[2]
     for (const [name, fn] of Object.entries(test).filter(([name]) => name.startsWith("test"))) {
+        if (filter && !name.includes(filter)) {
+            continue
+        }
         try {
             // @ts-ignore
             fn()

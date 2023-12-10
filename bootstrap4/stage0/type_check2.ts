@@ -582,11 +582,15 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
     }
 
     for (const impl of impl_definitions) {
-        type_check_impl(impl.node, env, {extern: impl.extern})
+        type_check_impl(impl.node, env, {extern: impl.extern}, "signatures")
     }
 
     for (const node of trait_declarations) {
         type_check_trait_functions(node, env, "default_impls")
+    }
+
+    for (const impl of impl_definitions) {
+        type_check_impl(impl.node, env, {extern: impl.extern}, "impls")
     }
 }
 
@@ -650,7 +654,7 @@ function type_check_trait_functions(
     for (const func of node.functions) {
         const declaration = func instanceof ast.FunctionDeclaration ? func : func.declaration
         const function_type = FunctionType.from_declaration(declaration, trait_env)
-        if (trait_type.data.fields.has(function_type.name)) {
+        if (trait_type.fields.has(function_type.name)) {
             throw new TypeCheckError(
                 `Field ${quote(function_type.name)} already defined in trait ${quote(
                     trait_type.signature,
@@ -658,7 +662,7 @@ function type_check_trait_functions(
                 func.span,
             )
         }
-        trait_type.data.fields.set(function_type.name, function_type)
+        trait_type.add_field_immediate(function_type.name, function_type)
     }
     if (mode === "signatures") {
         return
@@ -670,13 +674,18 @@ function type_check_trait_functions(
         return
     }
     for (const func of functions_with_default_impl) {
-        const function_type = trait_type.data.fields.get(func.name)!
+        const function_type = trait_type.fields.get(func.name)!
         assert(function_type instanceof FunctionType)
         type_check_function_body(func, function_type, trait_env)
     }
 }
 
-function type_check_impl(node: ast.ImplDefinition, env: TypeEnvironment, opts: {extern: boolean}) {
+function type_check_impl(
+    node: ast.ImplDefinition,
+    env: TypeEnvironment,
+    opts: {extern: boolean},
+    mode: "signatures" | "impls",
+) {
     const complex_type = ComplexType.from_env(node.target_name, env, node.span)
     if (complex_type instanceof TraitType || complex_type instanceof FunctionType) {
         throw new TypeCheckError(
@@ -698,59 +707,61 @@ function type_check_impl(node: ast.ImplDefinition, env: TypeEnvironment, opts: {
     for (let i = 0; i < type_variables.length; i++) {
         impl_env.add(type_variables[i].name, complex_type.type_variables[i], node.span)
     }
-    const function_definitions: ast.FunctionDefinition[] = []
-    for (const func of node.functions) {
-        const declaration = func instanceof ast.FunctionDeclaration ? func : func.declaration
-        const function_type = FunctionType.from_declaration(declaration, impl_env)
-        if (complex_type.data.fields.has(function_type.name)) {
-            throw new TypeCheckError(
-                `Field ${quote(function_type.name)} already defined in struct ${quote(
-                    complex_type.signature,
-                )}`,
-                func.span,
-            )
-        }
-        const type_parameters = TypeParameters.from_declaration(
-            declaration.type_parameters,
-            impl_env,
-        )
-        complex_type.add_field(function_type.name, function_type, type_parameters, func.span)
-        if (func instanceof ast.FunctionDefinition) {
-            function_definitions.push(func)
-        }
-    }
-    if (node.trait_name) {
-        complex_type.data.traits.push(node.trait_name)
-        let trait_type = TraitType.from_env(node.trait_name, impl_env, node.span)
-        const type_variable_map = TypeVariable.create_type_variable_map(
-            trait_type.type_variables,
-            complex_type.type_variables,
-        )
-        type_variable_map.set(TypeVariable.Self, complex_type)
-        for (let [name, type] of trait_type.fields) {
-            assert(type instanceof FunctionType)
-            if (!complex_type.fields.has(name)) {
-                // See, if we have a default implementation.
-                const default_impl = trait_type.data.functions_with_default_impl.includes(name)
-                if (!default_impl && !opts.extern) {
-                    throw new TypeCheckError(
-                        `Trait function ${quote(name)} is not implemented in struct ${quote(
-                            complex_type.signature,
-                        )}`,
-                        node.span,
-                    )
-                }
-                // Add the default impl to the struct.
-                type = type.with_scope_type_variables(type_variable_map)
-                assert(type instanceof FunctionType)
-                type = complex_type.add_field_immediate(name, type)
-            } else {
-                type = type.with_scope_type_variables(type_variable_map)
+    if (mode === "signatures") {
+        for (const func of node.functions) {
+            const declaration = func instanceof ast.FunctionDeclaration ? func : func.declaration
+            const function_type = FunctionType.from_declaration(declaration, impl_env)
+            if (complex_type.fields.has(function_type.name)) {
+                throw new TypeCheckError(
+                    `Field ${quote(function_type.name)} already defined in struct ${quote(
+                        complex_type.signature,
+                    )}`,
+                    func.span,
+                )
             }
-            const struct_field_type = complex_type.field(name, node.span)
-            expect_assignable_to(type, struct_field_type, node.span)
+            const type_parameters = TypeParameters.from_declaration(
+                declaration.type_parameters,
+                impl_env,
+            )
+            complex_type.add_field(function_type.name, function_type, type_parameters, func.span)
         }
+        if (node.trait_name) {
+            complex_type.data.traits.push(node.trait_name)
+            let trait_type = TraitType.from_env(node.trait_name, impl_env, node.span)
+            const type_variable_map = TypeVariable.create_type_variable_map(
+                trait_type.type_variables,
+                complex_type.type_variables,
+            )
+            type_variable_map.set(TypeVariable.Self, complex_type)
+            for (let [name, type] of trait_type.fields) {
+                assert(type instanceof FunctionType)
+                if (!complex_type.fields.has(name)) {
+                    // See, if we have a default implementation.
+                    const default_impl = trait_type.data.functions_with_default_impl.includes(name)
+                    if (!default_impl && !opts.extern) {
+                        throw new TypeCheckError(
+                            `Trait function ${quote(name)} is not implemented in struct ${quote(
+                                complex_type.signature,
+                            )}`,
+                            node.span,
+                        )
+                    }
+                    // Add the default impl to the struct.
+                    type = type.with_scope_type_variables(type_variable_map)
+                    assert(type instanceof FunctionType)
+                    type = complex_type.add_field_immediate(name, type)
+                } else {
+                    type = type.with_scope_type_variables(type_variable_map)
+                }
+                const struct_field_type = complex_type.field(name, node.span)
+                expect_assignable_to(type, struct_field_type, node.span)
+            }
+        }
+        return
     }
+    const function_definitions = node.functions.filter(
+        (f) => f instanceof ast.FunctionDefinition,
+    ) as ast.FunctionDefinition[]
     const function_env = new TypeEnvironment(impl_env)
     for (const type of complex_type.type_variables) {
         function_env.add(type.name, type, node.span)
@@ -1096,7 +1107,13 @@ abstract class ComplexType<
     }
 
     with_scope_type_variables(map: Map<TypeVariable, TypeVariable>): this {
-        return this.new_instance(this.data, this.type_variables, this.type_arguments, map)
+        const new_map = new Map(map)
+        for (const [key, value] of this.type_variable_map.entries()) {
+            if (!new_map.has(key)) {
+                new_map.set(key, value)
+            }
+        }
+        return this.new_instance(this.data, this.type_variables, this.type_arguments, new_map)
     }
 
     resolve_type_variables(map: Map<TypeVariable, Type>): Type {
@@ -1149,13 +1166,21 @@ abstract class ComplexType<
                 const type_parameter = type_parameters.type_parameters[i]
                 const type_variable = type_variables[i]
                 if (type_parameter.type instanceof TypeVariable) {
-                    type_variable_map.set(type_variable, type_parameter.type)
+                    if (
+                        !type_variable_map.has(type_variable) &&
+                        type_variable !== type_parameter.type
+                    ) {
+                        type_variable_map.set(type_variable, type_parameter.type)
+                    }
                 } else {
                     type_arguments.set(type_variable, type_parameter.type)
                 }
             }
             field_type = field_type.with_scope_type_variables(type_variable_map)
             field_type = field_type.resolve_type_variables(type_arguments) as T
+        }
+        if (field_type instanceof ComplexType) {
+            field_type = field_type.with_scope_type_variables(this.type_variable_map)
         }
         this.data.fields.set(name, field_type)
         this._fields = undefined
@@ -1178,24 +1203,22 @@ abstract class ComplexType<
     }
 
     get fields(): Map<string, Type> {
-        if (this._fields) {
-            return this._fields
-        }
+        // if (this._fields) {
+        //     return this._fields
+        // }
         this._fields = new Map()
         for (let [name, type] of this.data.fields) {
-            type = this.resolve_field(type)
+            if (type instanceof TypeVariable) {
+                // Respect `this.type_variable_map` here.
+                type = this.type_variable_map.get(type) ?? type
+            }
+            type = type.resolve_type_variables(this.type_arguments)
+            if (type instanceof ComplexType) {
+                type = type.with_scope_type_variables(this.type_variable_map)
+            }
             this._fields.set(name, type)
         }
         return this._fields
-    }
-
-    protected resolve_field(type: Type): Type {
-        if (type instanceof TypeVariable) {
-            // Respect `this.type_variable_map` here.
-            type = this.type_variable_map.get(type) ?? type
-        }
-        type = type.resolve_type_variables(this.type_arguments)
-        return type
     }
 
     field(name: string, span: Span): Type {
@@ -1488,7 +1511,7 @@ export class TraitType extends ComplexType<TraitData> {
     }
 
     get debug_str() {
-        const fields = [...this.data.fields.entries()].map(
+        const fields = [...this.fields.entries()].map(
             ([name, type]) => `${name}: ${type.signature}`,
         )
         return `${this.signature}{${fields.join(", ")}}`
@@ -2639,6 +2662,37 @@ const test = {
                 end
             end
         `)
+    },
+
+    test_trait_impl_with_generic_struct() {
+        const {env} = test.type_check(`
+            trait IndexedGet<T>:
+                fn get(self, i i32) T
+            end
+
+            extern:
+                struct JSArray<X>:
+                end
+
+                impl JSArray<X>:
+                    fn get(self, i i32) X
+                end
+            end
+
+            struct array<A>:
+                data JSArray<A>
+            end
+
+            impl IndexedGet<T> for array<T>:
+                fn get(self, i i32) T:
+                    self.data.get(i)
+                end
+            end
+        `)
+        assert.equal(
+            env.get("array", builtin_span)!.debug_str,
+            "array<A>{data: JSArray<A>, get: get<>(array<A>,i32)->A}",
+        )
     },
 
     test_if() {

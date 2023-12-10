@@ -610,14 +610,14 @@ export class Number_ extends Expression {
     }
 }
 
-export class String_ extends Expression {
+export class Str extends Expression {
     kind = "string"
     value: string
     is_multiline: boolean
 
     constructor(data: {value: string; is_multiline: boolean}, span: Span) {
         super(span)
-        Object.assign(this as typeof data, data as typeof String_.prototype)
+        Object.assign(this as typeof data, data as typeof Str.prototype)
     }
 }
 
@@ -1111,7 +1111,7 @@ export function parse(tokens: TokenStream): AST {
             expression = new Number_({value: token.value}, token.span)
         } else if (token instanceof StringToken) {
             tokens.consume()
-            expression = new String_(
+            expression = new Str(
                 {value: token.value, is_multiline: token.is_multiline},
                 token.span,
             )
@@ -1780,7 +1780,7 @@ export function parse(tokens: TokenStream): AST {
         for (const part of token.parts) {
             if (part instanceof InterpolatedStringPartLiteral) {
                 expressions.push(
-                    new String_({value: part.value, is_multiline: part.is_multiline}, span),
+                    new Str({value: part.value, is_multiline: part.is_multiline}, span),
                 )
             } else if (part instanceof InterpolatedStringPartExpression) {
                 const ast = parse(new TokenStream(part.tokens))

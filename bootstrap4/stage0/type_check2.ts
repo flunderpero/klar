@@ -27,6 +27,8 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         type = env.i32
     } else if (node instanceof ast.Bool) {
         type = env.bool
+    } else if (node instanceof ast.Str) {
+        type = env.str
     } else if (node instanceof ast.If) {
         const condition_type = type_check(node.condition, env, {...ctx, used_in_expression: true})
         expect_equal_types(env.bool, condition_type, node.span)
@@ -576,12 +578,15 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
     }
 
     for (const node of trait_declarations) {
-        type_check_trait_functions(node, env, "default_impls")
         type_check_trait_functions(node, env, "signatures")
     }
 
     for (const impl of impl_definitions) {
         type_check_impl(impl.node, env, {extern: impl.extern})
+    }
+
+    for (const node of trait_declarations) {
+        type_check_trait_functions(node, env, "default_impls")
     }
 }
 
@@ -2023,6 +2028,19 @@ const test = {
         assert.strictEqual(type, Type.unit)
     },
 
+    test_let_with_basic_types() {
+        const {env} = test.type_check(
+            `
+            let a = 1
+            let b = true
+            let c = "foo"
+        `,
+        )
+        assert.equal(env.get("a", builtin_span), env.i32)
+        assert.equal(env.get("b", builtin_span), env.bool)
+        assert.equal(env.get("c", builtin_span), env.str)
+    },
+
     test_let_with_type_declaration() {
         const {type} = test.type_check("let a i32 = 1")
         assert.strictEqual(type, Type.unit)
@@ -2601,6 +2619,26 @@ const test = {
         `),
             /Trait function `foo` is not implemented/,
         )
+    },
+
+    test_trait_impl_accessing_function_of_another_struct() {
+        test.type_check(`
+            struct Foo:
+                a i32
+            end
+
+            trait Bar: 
+                fn bar() Foo:
+                   Foo.new()
+                end
+            end
+
+            impl Foo:
+                fn new() Foo:
+                    Foo{a: 1}
+                end
+            end
+        `)
     },
 
     test_if() {

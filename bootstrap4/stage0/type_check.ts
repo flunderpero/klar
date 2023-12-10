@@ -39,7 +39,7 @@ export function type_check(node: ast.ASTNode, env: TypeEnvironment): Type {
     if (node instanceof ast.Bool) {
         return add_attrs(env.builtin_type("bool"))
     }
-    if (node instanceof ast.String_) {
+    if (node instanceof ast.Str) {
         return add_attrs(env.str_type())
     }
     if (node instanceof ast.InterpolatedString) {

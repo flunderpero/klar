@@ -97,7 +97,7 @@ extern:
     end
 
     impl JSArray<T>:
-        fn new() Self
+        fn new(size i32) Self
         fn len(self) i32
         fn push(mut self, s T) 
         fn get(self, i i32) T
@@ -115,7 +115,7 @@ end
 
 impl array<T>:
     fn new(size i32) array<T>:
-        return array { data: JSArray<T>.new(size) }
+        return array<T> { data: JSArray<T>.new(size) }
     end
 
     fn iter(self) ArrayIter<T>:

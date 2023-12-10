@@ -138,7 +138,7 @@ function code_gen(ast: AST.AST) {
             return `new i32(${e.value})`
         } else if (e instanceof AST.Bool || e instanceof AST.Number_) {
             return `new bool(${e.value})`
-        } else if (e instanceof AST.String_) {
+        } else if (e instanceof AST.Str) {
             let value = e.value.replace(/\\/g, "\\\\")
             value = value.replace(/\n/g, "\\n")
             value = value.replace(/\t/g, "\\t")

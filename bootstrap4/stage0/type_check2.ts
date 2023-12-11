@@ -35,6 +35,13 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
             expect_to_implement_trait(expression_type, "ToStr", env, e.span)
         }
         type = env.str
+    } else if (node instanceof ast.Not) {
+        expect_equal_types(
+            env.bool,
+            type_check(node.expression, env, {...ctx, used_in_expression: true}),
+            node.span,
+        )
+        type = env.bool
     } else if (node instanceof ast.If) {
         const condition_type = type_check(node.condition, env, {...ctx, used_in_expression: true})
         expect_equal_types(env.bool, condition_type, node.span)
@@ -3642,6 +3649,21 @@ const test = {
                     f"foo: {foo}"
                 `),
             /Expected `Foo<>` to implement `ToStr<>`/,
+        )
+    },
+
+    test_not() {
+        const {type, env} = test.type_check(`
+            let a = true
+            not a
+        `)
+        assert.equal(type, env.bool)
+    },
+
+    test_not_only_works_on_bool() {
+        assert.throws(
+            () => test.type_check("not 1"),
+            /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
         )
     },
 }

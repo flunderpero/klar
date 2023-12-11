@@ -10,40 +10,19 @@
 3
 
 /expected ---
-extern:
-    struct JSArray<T>:
-    end
-
-    impl JSArray<T>:
-        fn new() JSArray<T>
-        fn push(value T)
-    end
-end
-
-struct Vector<T>:
-    data JSArray<T>
-end
-
-impl Vector<T>:
-
-    fn new() Vector<T>:
-        return Vector { data: JSArray<T>.new(0) }
-    end
-end
-
 
 fn main():
     mut v = Vector<i32>.new()
-    -- v.push(1)
-    -- v.push(2)
-    -- v.push(3)
-    -- mut i = 0
-    -- loop:
-    --     if i >= v.len():
-    --         break
-    --     end
-    --     print(v.get(i))
-    --     i = i + 1
-    -- end
-    -- return
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    mut i = 0
+    loop:
+        if i >= v.len():
+            break
+        end
+        print(v.get(i))
+        i = i + 1
+    end
+    return
 end

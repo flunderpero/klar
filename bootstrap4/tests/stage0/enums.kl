@@ -16,8 +16,12 @@ enum Color:
     Blue
 end
 
-impl ToStr for Color:
-    fn to_str(self) str:
+trait ColorNum:
+    fn to_num(self) i32
+end
+
+impl ColorNum for Color:
+    fn to_num(self) i32:
         -- We currently cannot match, so this function is kinda useless.
         -- But we want to demonstrate that traits can be implemented for enums.
         return 1
@@ -32,6 +36,6 @@ end
 
 fn main():
     let c = Color.Red
-    print(c.to_str())
+    print(c.to_num())
     print(c.some_function())
 end

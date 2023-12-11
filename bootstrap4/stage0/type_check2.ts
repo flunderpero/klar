@@ -553,7 +553,7 @@ function struct_instantiation(node: ast.StructInstantiation, env: TypeEnvironmen
     for (const [name, value] of Object.entries(node.fields)) {
         const field_type = struct_type.field(name, node.span)
         const value_type = type_check(value, env, {used_in_expression: true})
-        expect_equal_types(field_type, value_type, node.span)
+        expect_assignable_to(field_type, value_type, node.span)
     }
     return struct_type
 }
@@ -577,6 +577,12 @@ function parse_type_arguments(
         if (type_argument_type instanceof TypeVariable) {
             result.push(null)
         } else {
+            if (type_argument_type) {
+                type_argument_type = type_argument_type.with_type_arguments(
+                    parse_type_arguments(p.type_parameters, env, span),
+                    span,
+                )
+            }
             result.push(type_argument_type)
         }
     }

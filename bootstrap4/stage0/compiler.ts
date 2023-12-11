@@ -76,7 +76,7 @@ function mangle_names(ast: AST.AST) {
             if (e.name !== "self") {
                 e.name = mangle(e.name)
             }
-        } else if (e instanceof AST.Parameter) {
+        } else if (e instanceof AST.Parameter || e instanceof AST.ClosureParameter) {
             if (e.name !== "self") {
                 e.name = mangle(e.name)
             }

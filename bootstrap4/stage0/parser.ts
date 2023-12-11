@@ -1128,6 +1128,7 @@ export function parse(tokens: TokenStream): AST {
             } else if (tokens.simple_peek() === ".") {
                 expression = parse_field_access(expression)
             } else if (tokens.simple_peek() === "[") {
+                // FIXME: The grammar is ambiguous here. This could be a standalone array literal.
                 expression = parse_indexed_access(expression)
             } else {
                 break

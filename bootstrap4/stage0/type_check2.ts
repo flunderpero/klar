@@ -35,6 +35,8 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
             expect_to_implement_trait(expression_type, "ToStr", env, e.span)
         }
         type = env.str
+    } else if (node instanceof ast.ArrayLiteral) {
+        type = type_check_array_literal(node, env, ctx)
     } else if (node instanceof ast.Not) {
         expect_equal_types(
             env.bool,
@@ -87,6 +89,29 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         }
         // Remember the target for later use.
         node.attributes.target_type = target_type
+    } else if (node instanceof ast.IndexedAccess) {
+        const index_type = type_check(node.index, env, {...ctx, used_in_expression: true})
+        // TODO: This should be the usize type.
+        expect_assignable_to(env.i32, index_type, node.span)
+        const target_type = expect_type_with_fields(
+            type_check(node.target, env, {...ctx, used_in_expression: true}),
+            node.span,
+        )
+        if (node.is_write) {
+            expect_to_implement_trait(target_type, "IndexedSet", env, node.span)
+            const set_function_type = expect_function_type(
+                target_type.field("set", node.span),
+                node.span,
+            )
+            type = set_function_type.return_type
+        } else {
+            expect_to_implement_trait(target_type, "IndexedGet", env, node.span)
+            const get_function_type = expect_function_type(
+                target_type.field("get", node.span),
+                node.span,
+            )
+            type = get_function_type.return_type
+        }
     } else if (node instanceof ast.Return) {
         if (node.value) {
             const return_type = type_check(node.value, env, {...ctx, used_in_expression: true})
@@ -237,6 +262,20 @@ function expect_type_can_be_used_in_assignments(type: Type, env: TypeEnvironment
             }
         }
     }
+}
+
+function type_check_array_literal(node: ast.ArrayLiteral, env: TypeEnvironment, ctx: Context) {
+    if (node.elements.length === 0) {
+        throw new TypeCheckError("Array literal must have at least one element", node.span)
+    }
+    const element_type = type_check(node.elements[0], env, {...ctx, used_in_expression: true})
+    for (let i = 1; i < node.elements.length; i++) {
+        const element = node.elements[i]
+        const element_type2 = type_check(element, env, {...ctx, used_in_expression: true})
+        expect_assignable_to(element_type, element_type2, element.span)
+    }
+    const array_type = env.get("Array", node.span)
+    return array_type.with_type_arguments([element_type], node.span)
 }
 
 function type_check_match(node: ast.Match, env: TypeEnvironment, ctx: Context): Type {
@@ -1931,6 +1970,49 @@ class NumericData {
     ) {}
 }
 
+export class ArrayType extends ComplexType<ArrayData> {
+    static from_type(type: Type, span: Span): ArrayType {
+        const data = new ArrayData(`[${type.signature}]`, new Map(), type)
+        const array_type = new ArrayType(data, [])
+        return Type.add_or_get_known_type(array_type.signature, array_type, span)
+    }
+
+    private constructor(
+        public data: ArrayData,
+        type_variables: TypeVariable[],
+        type_arguments?: Map<TypeVariable, Type>,
+        type_variable_map?: Map<TypeVariable, TypeVariable>,
+    ) {
+        super(data, type_variables, type_arguments, type_variable_map)
+    }
+
+    new_instance(
+        data: ArrayData,
+        type_variables: TypeVariable[],
+        type_arguments: Map<TypeVariable, Type>,
+        type_variable_map: Map<TypeVariable, TypeVariable>,
+    ): this {
+        return new ArrayType(data, type_variables, type_arguments, type_variable_map) as this
+    }
+
+    get debug_str() {
+        return this.signature
+    }
+
+    get signature() {
+        return `[${this.data.element_type.signature}]`
+    }
+}
+
+class ArrayData {
+    constructor(
+        public readonly name: string,
+        public readonly fields: Map<string, Type>,
+        public readonly element_type: Type,
+        public readonly traits: string[] = [],
+    ) {}
+}
+
 type CoreTrait = "Add" | "Sub" | "Mul" | "Div" | "PartialEq" | "PartialOrd" | "ToStr"
 
 function add_core_traits<T extends ComplexType<any>>(
@@ -2126,6 +2208,14 @@ const test = {
                 trait ToStr:
                     fn to_str(self) str
                 end
+                trait IndexedGet<T>:
+                    fn get(self, index i32) T
+                end
+                trait IndexedSet<T>:
+                    fn set(self, index i32, value T)
+                end
+                struct Array<T>:
+                end
             ` + src
         }
         const ast = test.parse(src)
@@ -2133,7 +2223,7 @@ const test = {
         return {type: type_check_ast(ast, env), env}
     },
 
-    type_check_with_core_traits(src: string) {
+    type_check_with_core_types(src: string) {
         return test.type_check(src, {with_core_traits: true})
     },
 
@@ -2988,7 +3078,7 @@ const test = {
     },
 
     expect_binary(expression: string, expected: "bool" | "i32") {
-        const {type, env} = test.type_check_with_core_traits(expression)
+        const {type, env} = test.type_check_with_core_types(expression)
         assert.equal(type, env.get(expected, builtin_span))
     },
 
@@ -3000,11 +3090,11 @@ const test = {
 
     test_binary_and_or_with_type_mismatch() {
         assert.throws(
-            () => test.type_check_with_core_traits("true or 1"),
+            () => test.type_check_with_core_types("true or 1"),
             /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
         )
         assert.throws(
-            () => test.type_check_with_core_traits("1 or true"),
+            () => test.type_check_with_core_types("1 or true"),
             /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
         )
     },
@@ -3020,11 +3110,11 @@ const test = {
 
     test_binary_comparison_i32_with_type_mismatch() {
         assert.throws(
-            () => test.type_check_with_core_traits("1 == true"),
+            () => test.type_check_with_core_types("1 == true"),
             /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
         )
         assert.throws(
-            () => test.type_check_with_core_traits("true == 1"),
+            () => test.type_check_with_core_types("true == 1"),
             /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
         )
     },
@@ -3039,7 +3129,7 @@ const test = {
     },
 
     test_binary_comparison_struct() {
-        const {type, env} = test.type_check_with_core_traits(`
+        const {type, env} = test.type_check_with_core_types(`
             struct Foo: 
                 a i32
             end
@@ -3633,7 +3723,7 @@ const test = {
     },
 
     test_interpolated_string() {
-        const {type, env} = test.type_check_with_core_traits(`
+        const {type, env} = test.type_check_with_core_types(`
             let a = 1
             f"foo: {a}"
         `)
@@ -3643,7 +3733,7 @@ const test = {
     test_interpolated_string_expressions_must_implement_to_str() {
         assert.throws(
             () =>
-                test.type_check_with_core_traits(`
+                test.type_check_with_core_types(`
                     struct Foo: end
                     let foo = Foo{}
                     f"foo: {foo}"
@@ -3665,6 +3755,49 @@ const test = {
             () => test.type_check("not 1"),
             /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
         )
+    },
+
+    test_array_literal() {
+        const {type} = test.type_check_with_core_types(`
+            let a = [1, 2, 3]
+            a
+        `)
+        assert.equal(type.signature, "Array<T=i32>")
+    },
+
+    test_indexed_access() {
+        const {type, env} = test.type_check_with_core_types(`
+            struct Foo:
+                a1 i32
+                a2 i32
+                a3 i32
+            end
+
+            impl IndexedGet<i32> for Foo:
+                fn get(self, i i32) i32 =>
+                    match i:
+                        0 => self.a1
+                        1 => self.a2
+                        2 => self.a3
+                    end
+            end
+
+            impl IndexedSet<i32> for Foo:
+                fn set(mut self, i i32, v i32):
+                    match i:
+                        0 => self.a1 = v
+                        1 => self.a2 = v
+                        2 => self.a3 = v
+                    end
+                    return
+                end
+            end
+
+            let foo = Foo{a1: 1, a2: 2, a3: 3}
+            let a = foo[0]
+            foo[1] = 4
+        `)
+        assert.equal(type, env.i32)
     },
 }
 

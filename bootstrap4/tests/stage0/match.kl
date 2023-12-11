@@ -27,7 +27,7 @@ fn match_number(x i32) i32:
     return match x:
         0 => x + 1
         1 => x + 2
-        else:
+        _:
             -- The last expression in a block is the return value.
             x + 1
             x + 2
@@ -58,7 +58,7 @@ fn match_struct(p Point) i32:
     return match p:
         Point {x: 1, y: 2} => 20
         Point {x: 1, y: _} => 21
-        else => 22
+        _ => 22
     end
 end
 
@@ -73,7 +73,7 @@ fn match_nested_struct(l Line) i32:
         Line {start: Point {x: 1, y: 2}, end_: Point {x: 3, y: _}} => 31
         Line {start: Point {x: 1, y: 2}, end_: _} => 32
         Line {start: Point {x: 1, y: _}, end_: _} => 33
-        else => 34
+        _ => 34
     end
 end
 

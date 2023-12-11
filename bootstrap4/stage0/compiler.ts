@@ -478,8 +478,8 @@ export async function compile({
         }
     }
     if (debug_transpiled) {
-        // console.log(`\n${log_prefix} TRANSPILED:`)
-        // console.log(transpiled)
+        console.log(`\n${log_prefix} TRANSPILED:`)
+        console.log(transpiled)
     }
     return transpiled
 }

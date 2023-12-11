@@ -1445,7 +1445,8 @@ export function parse(tokens: TokenStream): AST {
             }
             if (
                 type_expression instanceof IdentifierReference &&
-                type_expression.type_parameters.length === 0
+                type_expression.type_parameters.length === 0 &&
+                Object.keys(fields).length === 0
             ) {
                 // This is a variable capture.
                 return new CaptureMatchPatternOrType({name: type_expression.name}, token.span)

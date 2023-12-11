@@ -82,7 +82,7 @@ async function run_test(test: Test): Promise<boolean> {
             throw new Error(`Assertion failed at ${test.name}`)
         }
         console.error("FAILED", e)
-        console.log("\nTranspiled code:")
+        // console.log("\nTranspiled code:")
         console.log(linked)
         return false
     }

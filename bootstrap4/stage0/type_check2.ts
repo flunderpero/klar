@@ -1711,8 +1711,8 @@ export class FunctionType extends ComplexType<FunctionData> {
             declaration instanceof ast.FunctionDeclaration
                 ? declaration.parameters
                 : declaration instanceof ast.ClosureDefinition
-                  ? declaration.parameters.map((p) => ({name: p.name, type: p.type}))
-                  : declaration.arg_types.map((type, i) => ({name: `${i}`, type}))
+                ? declaration.parameters.map((p) => ({name: p.name, type: p.type}))
+                : declaration.arg_types.map((type, i) => ({name: `${i}`, type}))
         const fields = new Map<string, Type>()
         for (const parameter of parameters) {
             const type = resolve_type(parameter.type)
@@ -2084,6 +2084,7 @@ function add_core_traits<T extends ComplexType<any>>(
 
 export class TypeEnvironment {
     static global() {
+        Type.clear_known_types()
         const env = new TypeEnvironment()
         const bool = BoolType.default()
         const str = StrType.default()
@@ -2176,7 +2177,6 @@ export class TypeEnvironment {
 
 const test = {
     parse(src: string) {
-        Type.clear_known_types()
         return parse(new TokenStream(lexer({src, file: "test"})))
     },
 

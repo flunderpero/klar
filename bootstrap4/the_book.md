@@ -89,13 +89,14 @@ fn main():
     assert(vector[1] == 42)
 
     -- Accessing an index out of bounds results in a panic.
-    assert_panic(fn() => vector[3])
+    -- TODO: We should not have to add a `return` so that the type becomes `()`.
+    assert_panic(fn(): vector[3] return end)
 end
 ```
 
 Just demonstrating a compile error.
 ```klar
 fn main():
-    unknown_function() -- Compile error: Identifier `unknown_function` not found
+    unknown_function() -- Compile error: Unknown `unknown_function` 
 end
 ```

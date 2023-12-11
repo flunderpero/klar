@@ -1,22 +1,22 @@
-function panic(message) {
+function klar_panic(message) {
     throw new Error(message)
 }
 
-function assert(condition) {
+function klar_assert(condition) {
     if (!condition.value) {
         panic("Assertion failed")
     }
 }
 
-function assert_panic(f) {
-    const old_panic = global.panic;
+function klar_assert_panic(f) {
+    const old_panic = global.klar_panic;
     let panicked = false;
-    global.panic = function () {
+    global.klar_panic = function () {
         panicked = true;
     };
     f();
-    global.panic = old_panic;
+    global.klar_panic = old_panic;
     if (!panicked) {
-        panic("Expected panic")
+        klar_panic("Expected panic")
     }
 }

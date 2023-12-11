@@ -1359,7 +1359,7 @@ class EnumType extends ComplexType<EnumData> {
         declaration: ast.EnumVariant,
         env: TypeEnvironment,
     ): EnumType {
-        const data = new EnumData(enum_type.data.name, new Map(), enum_type.data.traits)
+        const data = new EnumData(enum_type.data.name, enum_type.data.fields, enum_type.data.traits)
         const type_variables = enum_type.type_variables
         return new EnumType(
             data,
@@ -1410,6 +1410,18 @@ class EnumType extends ComplexType<EnumData> {
         return type
     }
 
+    get fields(): Map<string, Type> {
+        if (this.is_variant) {
+            const fields = new Map(
+                [...this.variant_parent!.fields.entries()].filter(
+                    ([_, type]) => type instanceof FunctionType,
+                ),
+            )
+            return fields
+        }
+        return super.fields
+    }
+
     get is_variant(): boolean {
         return !!this.variant_name
     }
@@ -1418,7 +1430,9 @@ class EnumType extends ComplexType<EnumData> {
         if (this.is_variant) {
             return new Map()
         }
-        return this.data.fields as Map<string, EnumType>
+        return new Map(
+            [...this.data.fields.entries()].filter(([, type]) => type instanceof EnumType),
+        ) as Map<string, EnumType>
     }
 
     get debug_str() {
@@ -1428,7 +1442,11 @@ class EnumType extends ComplexType<EnumData> {
         const variants = [...this.variants.entries()].map(
             ([name, variant]) => `${name}: ${variant.variant_tuple_type?.signature}`,
         )
-        return `${this.signature}{${variants.join(", ")}}`
+        const fields = [...this.fields.entries()]
+            .filter(([_, type]) => !(type instanceof EnumType))
+            .map(([name, type]) => `${name}: ${type.signature}`)
+            .join(", ")
+        return `${this.signature}{${variants.join(", ")}${fields ? `, ${fields}` : ""}}`
     }
 
     get signature() {
@@ -3201,6 +3219,32 @@ const test = {
                 `),
             /Enum variant `Foo<>.Bar` must be instantiated/,
         )
+    },
+
+    test_enum_impl() {
+        const {env} = test.type_check(`
+            enum Foo:
+                Bar
+                Baz(i32)
+            end
+
+            impl Foo:
+                fn foo(self) i32:
+                    match self:
+                        Foo.Bar => 1
+                        Foo.Baz(a) => a
+                    end
+                end
+            end
+
+            let a = Foo.Bar.foo
+            let b = Foo.Baz(1).foo
+        `)
+        const enum_type = env.get("Foo", builtin_span)
+        assert.equal(enum_type.signature, "Foo<>")
+        assert.equal(enum_type.debug_str, "Foo<>{Bar: (), Baz: (i32), foo: foo<>(Foo<>)->i32}")
+        assert.equal(env.get("a", builtin_span).signature, "foo<>(Foo<>)->i32")
+        assert.equal(env.get("b", builtin_span).signature, "foo<>(Foo<>)->i32")
     },
 
     test_function_type_as_function_parameter() {

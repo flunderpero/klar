@@ -31,16 +31,16 @@ enum Color:
 end
 
 impl ToStr for Color:
-    fn to_str(self) i32:
+    fn to_str(self) str:
         return match self:
-            Color.Red => 1
-            Color.Green => 2
-            Color.Blue => 3
-            Color.Gray(_) => 4
-            Color.RGB(1, _, _) => 5
-            Color.RGB(_, _, _) => 6
-            Color.HSL(HSL{ h: 10, s: _, l: _ }) => 7
-            Color.HSL(_) => 8
+            Color.Red => "Red"
+            Color.Green => "Green"
+            Color.Blue => "Blue"
+            Color.Gray(_) => "Gray"
+            Color.RGB(1, _, _) => "RGB(1, _, _)"
+            Color.RGB(_, _, _) => "RGB(_, _, _)"
+            Color.HSL(HSL{ h: 10, s: _, l: _ }) => "HSL(10, _, _)"
+            Color.HSL(_) => "HSL(_, _, _)"
         end
     end
 end

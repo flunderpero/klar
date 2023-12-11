@@ -72,6 +72,8 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
                 )
             }
         }
+        // Remember the target for later use.
+        node.attributes.target_type = target_type
     } else if (node instanceof ast.Return) {
         if (node.value) {
             const return_type = type_check(node.value, env, {...ctx, used_in_expression: true})
@@ -697,6 +699,10 @@ function type_check_impl(
             node.span,
         )
     }
+    // Add impl to the target type's attributes for later use.
+    if (complex_type instanceof StructType || complex_type instanceof EnumType) {
+        complex_type.data.declaration?.attributes.impls.push(node)
+    }
     const impl_env = new TypeEnvironment(env)
     impl_env.add("Self", complex_type, node.span)
     const type_variables = node.type_parameters.map((p) =>
@@ -737,6 +743,8 @@ function type_check_impl(
                 complex_type.type_variables,
             )
             type_variable_map.set(TypeVariable.Self, complex_type)
+            // Add declaration for later user.
+            node.attributes.trait_declaration = trait_type.data.declaration
             for (let [name, type] of trait_type.fields) {
                 assert(type instanceof FunctionType)
                 if (!complex_type.fields.has(name)) {
@@ -1287,7 +1295,10 @@ export class StructType extends ComplexType<StructData> {
         const type_variables = declaration.type_parameters.map((p) =>
             TypeVariable.from_declaration(p, env),
         )
-        const struct_type = new StructType(new StructData(declaration.name), type_variables)
+        const struct_type = new StructType(
+            new StructData(declaration.name, declaration),
+            type_variables,
+        )
         return Type.add_or_get_known_type(struct_type.signature, struct_type, declaration.span)
     }
 
@@ -1317,6 +1328,10 @@ export class StructType extends ComplexType<StructData> {
         return new StructType(data, type_variables, type_arguments, type_variable_map) as this
     }
 
+    get declaration(): ast.StructDeclaration {
+        return this.data.declaration!
+    }
+
     get debug_str() {
         const fields = [...this.fields.entries()].map(
             ([name, field]) => `${name}: ${field.signature}`,
@@ -1332,6 +1347,7 @@ export class StructType extends ComplexType<StructData> {
 class StructData {
     constructor(
         public readonly name: string,
+        public readonly declaration: ast.StructDeclaration,
         public readonly fields: Map<string, Type> = new Map(),
         public readonly traits: string[] = [],
     ) {}
@@ -1342,7 +1358,7 @@ class EnumType extends ComplexType<EnumData> {
         const type_variables = declaration.type_parameters.map((p) =>
             TypeVariable.from_declaration(p, env),
         )
-        const enum_type = new EnumType(new EnumData(declaration.name), type_variables)
+        const enum_type = new EnumType(new EnumData(declaration.name, declaration), type_variables)
         return Type.add_or_get_known_type(enum_type.signature, enum_type, declaration.span)
     }
 
@@ -1359,7 +1375,12 @@ class EnumType extends ComplexType<EnumData> {
         declaration: ast.EnumVariant,
         env: TypeEnvironment,
     ): EnumType {
-        const data = new EnumData(enum_type.data.name, enum_type.data.fields, enum_type.data.traits)
+        const data = new EnumData(
+            enum_type.data.name,
+            undefined,
+            enum_type.data.fields,
+            enum_type.data.traits,
+        )
         const type_variables = enum_type.type_variables
         return new EnumType(
             data,
@@ -1408,6 +1429,10 @@ class EnumType extends ComplexType<EnumData> {
             type.add_field_immediate(name, variant)
         }
         return type
+    }
+
+    get declaration(): ast.EnumDeclaration | undefined {
+        return this.data.declaration
     }
 
     get fields(): Map<string, Type> {
@@ -1478,6 +1503,7 @@ class EnumType extends ComplexType<EnumData> {
 class EnumData {
     constructor(
         public readonly name: string,
+        public readonly declaration?: ast.EnumDeclaration,
         public readonly fields: Map<string, Type> = new Map(),
         public readonly traits: string[] = [],
     ) {}
@@ -1491,7 +1517,12 @@ export class TraitType extends ComplexType<TraitData> {
         const functions_with_default_impl = declaration.functions
             .filter((f) => f instanceof ast.FunctionDefinition)
             .map((f) => f.name)
-        const struct_data = new TraitData(declaration.name, new Map(), functions_with_default_impl)
+        const struct_data = new TraitData(
+            declaration.name,
+            declaration,
+            new Map(),
+            functions_with_default_impl,
+        )
         const trait_type = new TraitType(struct_data, type_variables)
         return Type.add_or_get_known_type(trait_type.signature, trait_type, declaration.span)
     }
@@ -1523,7 +1554,12 @@ export class TraitType extends ComplexType<TraitData> {
     }
 
     copy_without_fields(): this {
-        const data = new TraitData(this.data.name, new Map(), this.data.traits)
+        const data = new TraitData(
+            this.data.name,
+            this.data.declaration,
+            new Map(),
+            this.data.traits,
+        )
         return this.new_instance(
             data,
             this.type_variables,
@@ -1560,6 +1596,7 @@ export class TraitType extends ComplexType<TraitData> {
 class TraitData {
     constructor(
         public readonly name: string,
+        public readonly declaration: ast.TraitDeclaration,
         public readonly fields: Map<string, Type> = new Map(),
         public readonly functions_with_default_impl: string[],
         public readonly traits: string[] = [],

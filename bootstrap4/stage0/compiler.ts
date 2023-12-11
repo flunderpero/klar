@@ -322,7 +322,9 @@ function code_gen(ast: AST.AST) {
         }
         for (const impl of e.attributes.impls) {
             for (const fn of impl.functions) {
-                transpile_impl_function(impl, fn)
+                if (fn instanceof AST.FunctionDefinition) {
+                    transpile_impl_function(impl, fn)
+                }
             }
             if (impl.trait_name) {
                 const trait = impl.attributes.trait_declaration
@@ -353,12 +355,6 @@ function code_gen(ast: AST.AST) {
             if (index < e.arms.length - 1) {
                 s += " else "
             }
-        }
-        if (e.else_block) {
-            if (e.arms.length > 0) {
-                s += " else "
-            }
-            s += transpile_block(e.else_block, "__match_result")
         }
         s += `return __match_result;})()\n`
         return s
@@ -482,8 +478,8 @@ export async function compile({
         }
     }
     if (debug_transpiled) {
-        console.log(`\n${log_prefix} TRANSPILED:`)
-        console.log(transpiled)
+        // console.log(`\n${log_prefix} TRANSPILED:`)
+        // console.log(transpiled)
     }
     return transpiled
 }

@@ -29,6 +29,12 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         type = env.bool
     } else if (node instanceof ast.Str) {
         type = env.str
+    } else if (node instanceof ast.InterpolatedStr) {
+        for (const e of node.expressions) {
+            const expression_type = type_check(e, env, {...ctx, used_in_expression: true})
+            expect_to_implement_trait(expression_type, "ToStr", env, e.span)
+        }
+        type = env.str
     } else if (node instanceof ast.If) {
         const condition_type = type_check(node.condition, env, {...ctx, used_in_expression: true})
         expect_equal_types(env.bool, condition_type, node.span)
@@ -3575,6 +3581,26 @@ const test = {
             end
         `)
         assert.equal(type, env.i32)
+    },
+
+    test_interpolated_string() {
+        const {type, env} = test.type_check_with_core_traits(`
+            let a = 1
+            f"foo: {a}"
+        `)
+        assert.equal(type, env.str)
+    },
+
+    test_interpolated_string_expressions_must_implement_to_str() {
+        assert.throws(
+            () =>
+                test.type_check_with_core_traits(`
+                    struct Foo: end
+                    let foo = Foo{}
+                    f"foo: {foo}"
+                `),
+            /Expected `Foo<>` to implement `ToStr<>`/,
+        )
     },
 }
 

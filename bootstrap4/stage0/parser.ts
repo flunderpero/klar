@@ -618,14 +618,14 @@ export class Str extends Expression {
     }
 }
 
-export class InterpolatedString extends Expression {
+export class InterpolatedStr extends Expression {
     kind = "interpolated string"
     expressions: Expression[]
     is_multiline: boolean
 
     constructor(data: {expressions: Expression[]; is_multiline: boolean}, span: Span) {
         super(span)
-        Object.assign(this as typeof data, data as typeof InterpolatedString.prototype)
+        Object.assign(this as typeof data, data as typeof InterpolatedStr.prototype)
     }
 
     contained_nodes() {
@@ -1768,7 +1768,7 @@ export function parse(tokens: TokenStream): AST {
         return new TupleTypeDeclaration({fields}, Span.combine(span, end_span))
     }
 
-    function parse_interpolated_string(token: InterpolatedStringToken): InterpolatedString {
+    function parse_interpolated_string(token: InterpolatedStringToken): InterpolatedStr {
         let span = token.span
         const expressions: Expression[] = []
         for (const part of token.parts) {
@@ -1792,6 +1792,6 @@ export function parse(tokens: TokenStream): AST {
         if (expressions.length > 0) {
             span = Span.combine(expressions[0].span, expressions.at(-1)!.span)
         }
-        return new InterpolatedString({expressions, is_multiline: token.is_multiline}, span)
+        return new InterpolatedStr({expressions, is_multiline: token.is_multiline}, span)
     }
 }

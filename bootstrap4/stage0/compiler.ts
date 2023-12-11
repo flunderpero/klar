@@ -148,7 +148,7 @@ function code_gen(ast: AST.AST) {
                 return `new str(\`${value}\`)`
             }
             return `new str("${value}")`
-        } else if (e instanceof AST.InterpolatedString) {
+        } else if (e instanceof AST.InterpolatedStr) {
             const parts = e.expressions.map((x) => `_.push(${transpile_expression(x)}.to_str());`)
             return `(function () { const _ = new str(""); ${parts.join("")}; return _; })()`
         } else if (e instanceof AST.FunctionCall) {

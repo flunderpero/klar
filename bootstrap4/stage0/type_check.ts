@@ -42,7 +42,7 @@ export function type_check(node: ast.ASTNode, env: TypeEnvironment): Type {
     if (node instanceof ast.Str) {
         return add_attrs(env.str_type())
     }
-    if (node instanceof ast.InterpolatedString) {
+    if (node instanceof ast.InterpolatedStr) {
         for (const e of node.expressions) {
             const type = expect_structured_type(type_check(e, env), e.span)
             expect_to_impl_trait(type, "ToStr", e.span)

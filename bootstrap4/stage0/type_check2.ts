@@ -516,11 +516,18 @@ function parse_type_arguments(
     type_arguments: ast.TypeDeclaration[],
     env: TypeEnvironment,
     span: Span,
+    opts?: {ignore_missing: boolean},
 ) {
     const result = []
     for (const p of type_arguments) {
         const type_argument = TypeParameter.from_declaration(p, env)
-        const type_argument_type = env.get(type_argument.type.name, span)
+
+        let type_argument_type
+        if (opts?.ignore_missing) {
+            type_argument_type = env.get_or_null(type_argument.type.name)
+        } else {
+            type_argument_type = env.get(type_argument.type.name, span)
+        }
         if (type_argument_type instanceof TypeVariable) {
             result.push(null)
         } else {
@@ -742,6 +749,12 @@ function type_check_impl(
             complex_type.add_field(function_type.name, function_type, type_parameters, func.span)
         }
         if (node.trait_name) {
+            const trait_type_arguments = parse_type_arguments(
+                node.trait_type_parameters,
+                impl_env,
+                node.span,
+                {ignore_missing: true},
+            )
             complex_type.data.traits.push(node.trait_name)
             let trait_type = TraitType.from_env(node.trait_name, impl_env, node.span)
             const type_variable_map = TypeVariable.create_type_variable_map(
@@ -749,6 +762,7 @@ function type_check_impl(
                 complex_type.type_variables,
             )
             type_variable_map.set(TypeVariable.Self, complex_type)
+            trait_type = trait_type.with_type_arguments(trait_type_arguments, node.span)
             // Add declaration for later user.
             node.attributes.trait_declaration = trait_type.data.declaration
             for (let [name, type] of trait_type.fields) {
@@ -2782,6 +2796,28 @@ const test = {
         assert.equal(
             env.get("array", builtin_span)!.debug_str,
             "array<A>{data: JSArray<A>, get: get<>(array<A>,i32)->A}",
+        )
+    },
+
+    test_generic_trait_impl_with_concrete_type() {
+        const {env} = test.type_check(`
+            struct Foo:
+                a i32
+            end
+
+            trait Trait<B>: 
+                fn foo(self) B
+            end
+
+            impl Trait<Foo> for Foo: 
+                fn foo(self) Foo: 
+                    self
+                end
+            end
+        `)
+        assert.equal(
+            env.get("Foo", builtin_span)!.debug_str,
+            "Foo<>{a: i32, foo: foo<>(Foo<>)->Foo<>}",
         )
     },
 

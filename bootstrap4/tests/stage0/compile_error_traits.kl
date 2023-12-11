@@ -1,7 +1,7 @@
 --- expected
 
 # compiler output:
-Compile error: Missing implementation of function `double(self: Self): T` of trait `Doubler<T>` at compile_error_traits.kl:19:1
+Compile error: Trait function `double` is not implemented in struct `Num<>` at compile_error_traits.kl:19:1
 # exit code:
 # stderr:
 # stdout:
@@ -16,7 +16,7 @@ struct Num:
     value i32
 end
 
-impl Doubler for Num:
+impl Doubler<i32> for Num:
     -- Expect a compile error because `double` is not implemented.
 end
 

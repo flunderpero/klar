@@ -1697,6 +1697,7 @@ export function parse(tokens: TokenStream): AST {
     }
 
     function try_parse_generic_type_parameters(): TypeDeclaration[] {
+        const mark = tokens.mark()
         const type_parameters: TypeDeclaration[] = []
         if (tokens.simple_peek() === "<") {
             tokens.consume()
@@ -1704,7 +1705,11 @@ export function parse(tokens: TokenStream): AST {
                 if (type_parameters.length > 0) {
                     tokens.expect(",")
                 }
-                const type_parameter = parse_type()
+                const type_parameter = try_parse_type()
+                if (!type_parameter) {
+                    tokens.reset(mark)
+                    return []
+                }
                 type_parameter.is_type_parameter = true
                 type_parameters.push(type_parameter)
             }

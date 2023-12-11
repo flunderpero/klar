@@ -610,7 +610,7 @@ function type_check_struct_fields(node: ast.StructDeclaration, env: TypeEnvironm
     const struct_type = StructType.from_env(node.name, env, node.span)
     const struct_env = struct_type.create_type_environment(env, node.span)
     for (const [name, type] of Object.entries(node.fields)) {
-        let field_type = struct_env.get(type.name, type.span)
+        let field_type = Type.from_env_or_declaration(type, struct_env)
         const type_parameters = TypeParameters.from_declaration(type.type_parameters, struct_env)
         struct_type.add_field(name, field_type, type_parameters, type.span)
     }
@@ -2273,6 +2273,12 @@ const test = {
         assert.equal(foo.signature, "Foo<>")
         assert(foo instanceof StructType)
         assert.deepEqual([...foo.fields.keys()], ["a"])
+    },
+
+    test_struct_with_tuple_field() {
+        const {env} = test.type_check("struct Foo: a (i32, bool) end")
+        const foo = env.get("Foo", builtin_span)
+        assert.equal(foo.debug_str, "Foo<>{a: (i32,bool)}")
     },
 
     test_struct_duplicate_struct() {

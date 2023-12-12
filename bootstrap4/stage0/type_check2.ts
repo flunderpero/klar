@@ -585,7 +585,18 @@ function type_check_function_call_or_enum_instantiation(
         // `panic` is a special function that never returns.
         return Type.internal_any
     }
-    return function_type.return_type
+    const return_type = function_type.return_type
+    if (node.propagate_error) {
+        if (return_type.name !== "Result") {
+            throw new TypeCheckError(
+                `Cannot propagate error from function that does not return a Result type`,
+                node.span,
+            )
+        }
+        assert(return_type instanceof ComplexType)
+        return return_type.type_arguments.get(return_type.type_variables[0])!
+    }
+    return return_type
 }
 
 function struct_instantiation(node: ast.StructInstantiation, env: TypeEnvironment): StructType {
@@ -4003,6 +4014,26 @@ const test = {
 
             let ok = divide(10, 2)
             let err = divide(10, 0)
+        `)
+        assert.equal(env.get("ok", builtin_span).signature, "Result<T=i32,E default ()=()>")
+        assert.equal(env.get("err", builtin_span).signature, "Result<T=i32,E default ()=()>")
+    },
+
+    test_error_propagation() {
+        const {env} = test.type_check_with_core_types(`
+            fn divide(dividend i32, divisor i32) i32 throws:
+                if divisor == 0 => return Error {message: "Division by zero", data: ()}
+                dividend / divisor
+            end
+
+            fn divide_10_by(n i32) i32 throws:
+                let result = divide(10, n)!
+                if result == 1 => return Error {message: "We did not expect 1", data: ()}
+                result
+            end
+
+            let ok = divide_10_by(2)
+            let err = divide_10_by(0)
         `)
         assert.equal(env.get("ok", builtin_span).signature, "Result<T=i32,E default ()=()>")
         assert.equal(env.get("err", builtin_span).signature, "Result<T=i32,E default ()=()>")

@@ -219,3 +219,31 @@ end
 
 Always write idiomatic error handling using `throws`. `klarfmt` will
 always transform your code to the idiomatic form.
+
+#### Error Propagation
+
+Errors can be propagated using the `!` operator.
+
+```klar
+fn divide(divisor i32, dividend i32) i32 throws:
+    if dividend == 0 => return Error.from_str("Division by zero")
+    return divisor / dividend
+end
+
+fn number_of_orbits(total_time i32, orbit_time i32) i32 throws:
+    --- Staying with the space theme, we calculate the number of orbits
+        of an object in a given time.
+    ---
+    let orbits = divide(total_time, orbit_time)!  -- Propagate the error.
+
+    -- The type of `orbits` is `i32` here, the `!` operator automatically
+    -- unwraps the `Result` type.
+    if orbits < 0 => return Error.from_str("Negative number of orbits")
+    return orbits
+end
+
+fn main():
+    assert(number_of_orbits(10, 2).unwrap() == 5)
+    assert(number_of_orbits(10, 0).is_err())
+end
+```

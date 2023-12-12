@@ -680,9 +680,15 @@ export class FunctionCall extends Expression {
     target: Expression
     type_arguments: TypeDeclaration[]
     args: Expression[]
+    propagate_error: boolean
 
     constructor(
-        data: {target: Expression; args: Expression[]; type_arguments: TypeDeclaration[]},
+        data: {
+            target: Expression
+            args: Expression[]
+            type_arguments: TypeDeclaration[]
+            propagate_error: boolean
+        },
         span: Span,
     ) {
         super(span)
@@ -985,6 +991,8 @@ export class ClosureDefinition extends Expression {
     parameters: ClosureParameter[]
     return_type: TypeDeclaration
     block: Block
+    // FIXME: Parse this
+    throws?: true | TypeDeclaration
 
     constructor(
         data: {parameters: ClosureParameter[]; return_type: TypeDeclaration; block: Block},
@@ -1731,8 +1739,17 @@ export function parse(tokens: TokenStream): AST {
             }
             args.push(parse_expression())
         }
-        const span = Span.combine(target_candidate.span, tokens.expect(")").span)
-        return new FunctionCall({target, args, type_arguments}, span)
+        const span = target_candidate.span
+        let end_span = tokens.expect(")").span
+        let propagate_error = false
+        if (tokens.simple_peek() === "!") {
+            propagate_error = true
+            end_span = tokens.consume().span
+        }
+        return new FunctionCall(
+            {target, args, type_arguments, propagate_error},
+            Span.combine(span, end_span),
+        )
     }
 
     function try_parse_generic_type_parameters(): TypeDeclaration[] {

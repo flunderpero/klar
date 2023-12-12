@@ -116,19 +116,15 @@ function code_gen(ast: AST.AST) {
         res += transpile_expression(expression, {})
         res += "\n"
     }
-    type Context = {func?: AST.FunctionDeclaration}
+    type Context = {func?: AST.FunctionDeclaration | AST.ClosureDefinition}
     function transpile_expression(e: AST.Expression, ctx: Context): string {
         if (e instanceof AST.FunctionDefinition) {
             const parameters = e.declaration.parameters.map((x) => x.name).join(",")
             const block = transpile_block(e.block, {...ctx, func: e.declaration})
-            // fixme: Use a try / catch to be able to break out of contained a match
-            // expression with a `return` statement.
             return `function ${e.declaration.name}(${parameters})${block}`
         } else if (e instanceof AST.ClosureDefinition) {
             const parameters = e.parameters.map((x) => x.name).join(",")
-            const block = transpile_block(e.block, ctx)
-            // fixme: Use a try / catch to be able to break out of contained a match
-            // expression with a `return` statement.
+            const block = transpile_block(e.block, {...ctx, func: e})
             return `function (${parameters})${block}`
         } else if (e instanceof AST.Return) {
             if (!e.value) {
@@ -164,12 +160,25 @@ function code_gen(ast: AST.AST) {
             return `(function () { const _ = new str(""); ${parts.join("")}; return _; })()`
         } else if (e instanceof AST.FunctionCall) {
             const args = e.args.map((x) => transpile_expression(x, ctx))
+            let call
             if (e.target instanceof AST.FunctionDefinition) {
-                return `${e.target.declaration.name}(${args.join(",")})\n`
+                call = `${e.target.declaration.name}(${args.join(",")})\n`
             } else {
                 const target = transpile_expression(e.target, ctx)
-                return `${target}(${args.join(",")})\n`
+                call = `${target}(${args.join(",")})\n`
             }
+            if (e.propagate_error) {
+                return `(function() {
+                    let res = ${call};
+                    if (res.constructor.name == "klar_Result_Err") {
+                        const error = new Error("return")
+                        error.value = res;
+                        throw error;
+                    }
+                    if (res.constructor.name == "klar_Result_Ok") return res[0];
+                    return res})()`
+            }
+            return call
         } else if (e instanceof AST.StructInstantiation) {
             const create_instance = `let _ = new ${e.target_struct_name}()`
             const assign_members = Object.entries(e.fields).map(
@@ -325,7 +334,7 @@ function code_gen(ast: AST.AST) {
             return `{${body};${assign_last_expression_to} = ${last_expression_code};}`
         }
         const body = block.body.map((x) => transpile_expression(x, ctx)).join("\n")
-        return `{${body}}`
+        return `{try {${body} } catch (e) { if (e.message === "return") {return e.value;} throw e;}}`
     }
     function transpile_impls(e: AST.StructDeclaration | AST.EnumDeclaration) {
         let s = ""

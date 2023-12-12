@@ -157,3 +157,37 @@ class klar_JSArray extends Array {
         this[index.value] = value
     }
 }
+
+class klar_File {
+    static at(path) {
+        return new klar_File(path)
+    }
+
+    constructor(path) {
+        this.path = path
+    }
+
+    to_str() {
+        return new str(this.path)
+    }
+
+    read_str() {
+        const fs = require("fs")
+        try {
+            const res = new str(fs.readFileSync(this.path.value, "utf8"))
+            return new klar_Result_Ok(res)
+        } catch (e) {
+            return new klar_Result_Err(new str(e.message))
+        }
+    }
+
+    write_str(value) {
+        const fs = require("fs")
+        try {
+            fs.writeFileSync(this.path.value, value.value)
+            return new klar_Result_Ok()
+        } catch (e) {
+            return new klar_Result_Err(new str(e.message))
+        }
+    }
+}

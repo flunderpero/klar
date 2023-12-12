@@ -1,0 +1,24 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+File IO works!
+File IO failed as expected: No such file or directory
+
+/expected ---
+
+fn main():
+    let file = File.at("/tmp/klar_file_io.test.txt")
+    file.write_str("Hello, World!")!
+    let contents = file.read_str()!
+    if contents == "Hello, World!" => print("File IO works!")
+    else => print("File IO failed!")
+    let invalid_file = File.at("/tmp/\n")
+    match invalid_file.read_str():
+        Result<str>.Err(error) => print(f"File IO failed as expected: {error}")
+        Result<str>.Ok(result) => print(f"File IO succeeded??? It returned: {result}")
+    end
+end

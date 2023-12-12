@@ -100,6 +100,12 @@ impl Error<T>:
     end
 end
 
+impl ToStr for Error<T>:
+    fn to_str(self) str:
+        return self.msg
+    end
+end
+
 enum Result<T, E=()>:
     Ok(T)
     Err(Error<E>)
@@ -161,6 +167,27 @@ extern:
         fn push(mut self, s T) 
         fn get(self, i i32) T
         fn set(mut self, i i32, v T)
+    end
+
+    -- File IO.
+    struct File:
+        path str
+    end
+
+    impl File:
+        fn at(path str) Self
+
+        fn cwd() Self
+
+        --- Open the file and read its contests as a string.
+            Close the file in any case.
+        ---
+        fn read_str(self) str throws 
+
+        --- Open the file and write the given string to it.
+            Close the file in any case.
+        ---
+        fn write_str(mut self, data str) throws 
     end
 end
 

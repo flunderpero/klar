@@ -85,6 +85,26 @@ trait Len:
     fn len(self) i32
 end
 
+struct Error<T=()>:
+    msg str
+    data T
+end
+
+impl Error<T>:
+    fn from_str(msg str) Error:
+        Error { msg: msg, data: () }
+    end
+
+    fn new(msg str, data T) Error<T>:
+        Error<T> { msg: msg, data: data }
+    end
+end
+
+enum Result<T, E=()>:
+    Ok(T)
+    Err(Error<E>)
+end
+
 extern:
 
     fn print(s ToStr)

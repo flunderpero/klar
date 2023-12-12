@@ -136,7 +136,7 @@ export class TypeDeclaration extends HasKindAndSpan {
     kind = "type"
     name: string
     type_parameters: TypeDeclaration[]
-    is_type_parameter?: boolean
+    type_parameter_default?: TypeDeclaration
 
     constructor(
         data: {
@@ -190,6 +190,14 @@ export class TupleTypeDeclaration extends TypeDeclaration {
 
     contained_types(): TypeDeclaration[] {
         return this.fields
+    }
+}
+
+export class UnitTypeDeclaration extends TypeDeclaration {
+    kind = "unit type"
+
+    constructor(span: Span) {
+        super({name: "", type_parameters: []}, span)
     }
 }
 
@@ -604,6 +612,14 @@ export class Number_ extends Expression {
     constructor(data: {value: string}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Number_.prototype)
+    }
+}
+
+export class UnitLiteral extends Expression {
+    kind = "unit"
+
+    constructor(span: Span) {
+        super(span)
     }
 }
 
@@ -1079,7 +1095,7 @@ export function parse(tokens: TokenStream): AST {
             } else if (simple_token === "loop") {
                 expression = parse_loop()
             } else if (simple_token === "(") {
-                expression = parse_parenthesized_expression_or_tuple()
+                expression = parse_parenthesized_expression_or_tuple_or_unit_type()
             } else if (simple_token === "break") {
                 const span = tokens.consume().span
                 expression = new Break(span)
@@ -1282,7 +1298,14 @@ export function parse(tokens: TokenStream): AST {
             const name = tokens.expect_identifier().value
             let fields = new TupleTypeDeclaration({fields: []}, span)
             if (tokens.simple_peek() === "(") {
-                fields = parse_tuple_type()
+                const tuple_type = parse_tuple_or_unit_type()
+                if (!(tuple_type instanceof TupleTypeDeclaration)) {
+                    throw new ParseError(
+                        `Expected tuple type but got ${quote(tuple_type.to_signature_string())}`,
+                        tuple_type.span,
+                    )
+                }
+                fields = tuple_type
             }
             variants.push(new EnumVariant({name, fields}, span))
         }
@@ -1334,8 +1357,12 @@ export function parse(tokens: TokenStream): AST {
         return block
     }
 
-    function parse_parenthesized_expression_or_tuple(): Expression {
+    function parse_parenthesized_expression_or_tuple_or_unit_type(): Expression {
         let span = tokens.consume().span
+        if (tokens.simple_peek() === ")") {
+            span = Span.combine(tokens.expect(")").span, span)
+            return new UnitLiteral(span)
+        }
         const expression = parse_expression()
         if (tokens.simple_peek() === ",") {
             const values = [expression]
@@ -1711,7 +1738,10 @@ export function parse(tokens: TokenStream): AST {
                     tokens.reset(mark)
                     return []
                 }
-                type_parameter.is_type_parameter = true
+                if (tokens.simple_peek() === "=") {
+                    tokens.consume()
+                    type_parameter.type_parameter_default = parse_type()
+                }
                 type_parameters.push(type_parameter)
             }
             tokens.expect(">")
@@ -1738,7 +1768,7 @@ export function parse(tokens: TokenStream): AST {
                 tokens.expect(")")
                 return fn_type
             }
-            return parse_tuple_type()
+            return parse_tuple_or_unit_type()
         }
         const token = tokens.expect_identifier()
         let end_span = token.span
@@ -1761,7 +1791,7 @@ export function parse(tokens: TokenStream): AST {
         )
     }
 
-    function parse_tuple_type(): TupleTypeDeclaration {
+    function parse_tuple_or_unit_type(): TupleTypeDeclaration | UnitTypeDeclaration {
         const span = tokens.consume().span
         const fields: TypeDeclaration[] = []
         while (!tokens.at_end() && tokens.simple_peek() !== ")") {
@@ -1772,6 +1802,9 @@ export function parse(tokens: TokenStream): AST {
             fields.push(type)
         }
         const end_span = tokens.expect(")").span
+        if (fields.length === 0) {
+            return new UnitTypeDeclaration(Span.combine(span, end_span))
+        }
         return new TupleTypeDeclaration({fields}, Span.combine(span, end_span))
     }
 

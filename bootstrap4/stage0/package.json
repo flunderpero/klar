@@ -8,7 +8,10 @@
     "lint:prettier": "prettier --check .",
     "lint": "bun run lint:tsc && bun run lint:prettier",
     "prettier": "prettier --write .",
-    "test": "bun test.ts && bun type_check2.ts && bun the_book_tests.ts",
+    "test:stage0": "bun test.ts",
+    "test:type_check": "bun type_check2.ts",
+    "test:the_book": "bun the_book_tests.ts",
+    "test": "bun run test:stage0 && bun run test:type_check && bun run test:the_book",
     "pre_commit": "bun run prettier && bun run lint && bun run test"
   },
   "type": "module"

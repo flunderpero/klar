@@ -1,3 +1,10 @@
+/**
+ * This is not the cleanest, most elegant, or most efficient
+ * implementation of a type checker.
+ *
+ * We basically explore how to write a type checker so we can do a
+ * better job in the next iteration.
+ */
 import * as ast from "./parser"
 import {lexer} from "./lexer"
 import {TokenStream, parse} from "./parser"
@@ -37,6 +44,8 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         type = env.str
     } else if (node instanceof ast.ArrayLiteral) {
         type = type_check_array_literal(node, env, ctx)
+    } else if (node instanceof ast.UnitLiteral) {
+        type = env.unit
     } else if (node instanceof ast.Not) {
         expect_equal_types(
             env.bool,
@@ -164,7 +173,7 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
     } else if (node instanceof ast.IdentifierReference) {
         type = env.get(node.name, node.span)
         if (type instanceof ComplexType && node.type_parameters.length > 0) {
-            const type_parameters = parse_type_arguments(node.type_parameters, env, node.span)
+            const type_parameters = parse_type_arguments(type, node.type_parameters, env, node.span)
             type = type.with_type_arguments(type_parameters, node.span)
         }
     } else if (node instanceof ast.Loop) {
@@ -274,7 +283,7 @@ function type_check_array_literal(node: ast.ArrayLiteral, env: TypeEnvironment, 
         const element_type2 = type_check(element, env, {...ctx, used_in_expression: true})
         expect_assignable_to(element_type, element_type2, element.span)
     }
-    const array_type = env.get("Array", node.span)
+    const array_type = env.get("Array", node.span) as ComplexType<any>
     return array_type.with_type_arguments([element_type], node.span)
 }
 
@@ -440,12 +449,13 @@ function type_check_variable_declaration(
         throw new TypeCheckError("Cannot assign the unit value to a variable", node.span)
     }
     if (node.type) {
-        const declared_type = env
-            .get(node.type.name, node.span)
-            .with_type_arguments(
-                parse_type_arguments(node.type.type_parameters, env, node.span),
+        let declared_type = env.get(node.type.name, node.span)
+        if (declared_type instanceof ComplexType) {
+            declared_type = declared_type.with_type_arguments(
+                parse_type_arguments(declared_type, node.type.type_parameters, env, node.span),
                 node.span,
             )
+        }
         expect_assignable_to(declared_type, value_type, node.span)
     }
     if (node.value instanceof ast.FieldAccess || node.value instanceof ast.IdentifierReference) {
@@ -536,7 +546,7 @@ function type_check_function_call_or_enum_instantiation(
             node.span,
         )
     }
-    const type_arguments = parse_type_arguments(node.type_arguments, env, node.span)
+    const type_arguments = parse_type_arguments(function_type, node.type_arguments, env, node.span)
     function_type = function_type.with_type_arguments(type_arguments, node.span)
     parameters = function_type.parameters_without_self
     for (let i = 0; i < node.args.length; i++) {
@@ -547,8 +557,8 @@ function type_check_function_call_or_enum_instantiation(
 }
 
 function struct_instantiation(node: ast.StructInstantiation, env: TypeEnvironment): StructType {
-    const type_arguments = parse_type_arguments(node.type_arguments, env, node.span)
     let struct_type = StructType.from_env(node.target_struct_name, env, node.span)
+    const type_arguments = parse_type_arguments(struct_type, node.type_arguments, env, node.span)
     struct_type = struct_type.with_type_arguments(type_arguments, node.span)
     for (const [name, value] of Object.entries(node.fields)) {
         const field_type = struct_type.field(name, node.span)
@@ -559,15 +569,15 @@ function struct_instantiation(node: ast.StructInstantiation, env: TypeEnvironmen
 }
 
 function parse_type_arguments(
+    type: ComplexType<any>,
     type_arguments: ast.TypeDeclaration[],
     env: TypeEnvironment,
     span: Span,
     opts?: {ignore_missing: boolean},
 ) {
-    const result = []
+    const result: (Type | null)[] = []
     for (const p of type_arguments) {
         const type_argument = TypeParameter.from_declaration(p, env)
-
         let type_argument_type
         if (opts?.ignore_missing) {
             type_argument_type = env.get_or_null(type_argument.type.name)
@@ -577,13 +587,20 @@ function parse_type_arguments(
         if (type_argument_type instanceof TypeVariable) {
             result.push(null)
         } else {
-            if (type_argument_type) {
+            if (type_argument_type instanceof ComplexType) {
                 type_argument_type = type_argument_type.with_type_arguments(
-                    parse_type_arguments(p.type_parameters, env, span),
+                    parse_type_arguments(type_argument_type, p.type_parameters, env, span),
                     span,
                 )
             }
             result.push(type_argument_type)
+        }
+    }
+    // Add trailing default types.
+    for (let i = result.length; i < type.type_variables.length; i++) {
+        const type_variable = type.type_variables[i]
+        if (type_variable.default_type) {
+            result.push(type_variable.default_type)
         }
     }
     return result
@@ -801,19 +818,20 @@ function type_check_impl(
             complex_type.add_field(function_type.name, function_type, type_parameters, func.span)
         }
         if (node.trait_name) {
-            const trait_type_arguments = parse_type_arguments(
-                node.trait_type_parameters,
-                impl_env,
-                node.span,
-                {ignore_missing: true},
-            )
             complex_type.data.traits.push(node.trait_name)
             let trait_type = TraitType.from_env(node.trait_name, impl_env, node.span)
             const type_variable_map = TypeVariable.create_type_variable_map(
                 trait_type.type_variables,
                 complex_type.type_variables,
             )
-            type_variable_map.set(TypeVariable.Self, complex_type)
+            type_variable_map.set(TypeVariable.Self, complex_type as any)
+            const trait_type_arguments = parse_type_arguments(
+                trait_type,
+                node.trait_type_parameters,
+                impl_env,
+                node.span,
+                {ignore_missing: true},
+            )
             trait_type = trait_type.with_type_arguments(trait_type_arguments, node.span)
             // Add declaration for later user.
             node.attributes.trait_declaration = trait_type.data.declaration
@@ -903,6 +921,8 @@ export class Type {
                 declaration.span,
             )
             return type
+        } else if (declaration instanceof ast.UnitTypeDeclaration) {
+            return env.unit
         }
         return env.get(declaration.name, declaration.span)
     }
@@ -946,10 +966,6 @@ export class Type {
         return this
     }
 
-    with_type_arguments(_type_arguments: (Type | null)[], _span: Span): Type {
-        throw new Error(`Cannot add type arguments to ${quote(this.signature)}`)
-    }
-
     equals(other: Type): boolean {
         return this === other
     }
@@ -964,9 +980,14 @@ export class Type {
 }
 
 class TypeVariable extends Type {
-    static Self = new TypeVariable("Self")
+    static Self = new TypeVariable("Self", null)
     static from_declaration(declaration: ast.TypeDeclaration, env: TypeEnvironment): TypeVariable {
-        let type = env.get_or_null(declaration.name)
+        let default_type: Type | null = null
+        if (declaration.type_parameter_default) {
+            default_type = Type.from_env_or_declaration(declaration.type_parameter_default, env)
+        }
+        const result = new TypeVariable(declaration.name, default_type)
+        let type = env.get_or_null(result.signature)
         if (type) {
             if (!(type instanceof TypeVariable)) {
                 throw new TypeCheckError(
@@ -976,35 +997,44 @@ class TypeVariable extends Type {
             }
             return type
         }
-        return TypeVariable.from_string(declaration.name, declaration.span)
-    }
-
-    static from_string(name: string, span: Span) {
-        const type = new TypeVariable(name)
-        return Type.add_or_get_known_type(name, type, span)
+        return Type.add_or_get_known_type(
+            result.signature,
+            result,
+            declaration.span,
+        ) as TypeVariable
     }
 
     static create_type_variable_map(
         type_variables: TypeVariable[],
         type_arguments: (Type | null)[],
     ) {
-        const map = new Map<TypeVariable, Type>()
+        const map = new Map<TypeVariable, TypeVariable>()
         for (let i = 0; i < type_variables.length; i++) {
             const type_variable = type_variables[i]
             const type_argument = type_arguments[i]
-            if (type_argument) {
+            if (type_argument instanceof TypeVariable) {
                 map.set(type_variable, type_argument)
             }
         }
         return map
     }
 
-    private constructor(name: string) {
+    private constructor(
+        name: string,
+        public default_type: Type | null,
+    ) {
         super(name)
     }
 
     resolve_type_variables(map: Map<TypeVariable, Type>): Type {
         return map.get(this) ?? this
+    }
+
+    get signature(): string {
+        if (this.default_type) {
+            return `${this.name} default ${this.default_type.signature}`
+        }
+        return this.name
     }
 }
 
@@ -1037,7 +1067,7 @@ export class TypeParameter {
         let type = env.get_or_null(declaration.name)
         if (!type) {
             // The type is unknown, we treat this as a type variable.
-            type = TypeVariable.from_string(declaration.name, declaration.span)
+            type = TypeVariable.from_declaration(declaration, env)
             return new TypeParameter(type, [])
         }
         const type_parameters = declaration.type_parameters.map((p) =>
@@ -1323,11 +1353,27 @@ abstract class ComplexType<
         if (this.data !== other.data) {
             return false
         }
-        if (this.type_arguments.size !== other.type_arguments.size) {
+        const this_arguments = new Map(
+            [...this.type_arguments.entries()].map(([k, v]) => [k, v || k.default_type]),
+        )
+        const other_arguments = new Map(
+            [...other.type_arguments.entries()].map(([k, v]) => [k, v || k.default_type]),
+        )
+        for (const type_variable of this.type_variables) {
+            if (type_variable.default_type && !this_arguments.has(type_variable)) {
+                this_arguments.set(type_variable, type_variable.default_type)
+            }
+        }
+        for (const type_variable of other.type_variables) {
+            if (type_variable.default_type && !other_arguments.has(type_variable)) {
+                other_arguments.set(type_variable, type_variable.default_type)
+            }
+        }
+        if (this_arguments.size !== other_arguments.size) {
             return false
         }
-        for (const [key, value] of this.type_arguments.entries()) {
-            const other_value = other.type_arguments.get(key)
+        for (const [key, value] of this_arguments.entries()) {
+            const other_value = other_arguments.get(key)
             if (!other_value || !value.equals(other_value)) {
                 return false
             }
@@ -1342,17 +1388,33 @@ abstract class ComplexType<
         if (!(other instanceof ComplexType)) {
             return false
         }
-        if (this.type_arguments.size !== other.type_arguments.size) {
+        if (other instanceof TraitType) {
+            return this.traits.includes(other.name)
+        }
+        const this_arguments = new Map(
+            [...this.type_arguments.entries()].map(([k, v]) => [k, v || k.default_type]),
+        )
+        const other_arguments = new Map(
+            [...other.type_arguments.entries()].map(([k, v]) => [k, v || k.default_type]),
+        )
+        for (const type_variable of this.type_variables) {
+            if (type_variable.default_type && !this_arguments.has(type_variable)) {
+                this_arguments.set(type_variable, type_variable.default_type)
+            }
+        }
+        for (const type_variable of other.type_variables) {
+            if (type_variable.default_type && !other_arguments.has(type_variable)) {
+                other_arguments.set(type_variable, type_variable.default_type)
+            }
+        }
+        if (this_arguments.size !== other_arguments.size) {
             return false
         }
-        for (const [key, value] of this.type_arguments.entries()) {
-            const other_value = other.type_arguments.get(key)
+        for (const [key, value] of this_arguments.entries()) {
+            const other_value = other_arguments.get(key)
             if (!other_value || !value.equals(other_value)) {
                 return false
             }
-        }
-        if (other instanceof TraitType) {
-            return this.traits.includes(other.name)
         }
         return false
     }
@@ -2415,31 +2477,63 @@ const test = {
         assert.equal(a.signature, "T")
     },
 
+    test_generic_struct_with_default_type() {
+        const {env} = test.type_check(`
+            struct Foo<T=i32>: 
+                a T
+            end
+            
+            let foo_default = Foo{a: 1}
+            let foo_bool = Foo<bool>{a: true}
+        `)
+        assert.equal(env.get("foo_default", builtin_span).signature, "Foo<T default i32=i32>")
+        assert.equal(env.get("foo_bool", builtin_span).signature, "Foo<T default i32=bool>")
+    },
+
+    test_generic_struct_with_trailing_default_type() {
+        const {env} = test.type_check(`
+            struct Error<T=()>:
+                message str
+                data T
+            end
+
+            enum Result<T, E=()>:
+                Ok(T)
+                Err(Error<E>)
+            end
+
+            let a = Result<i32>.Ok(1)
+            let b = Result<i32>.Err(Error{message: "foo", data: ()})
+        `)
+        assert.equal(env.get("a", builtin_span).signature, "Result<T=i32,E default ()=()>.Ok")
+        assert.equal(env.get("b", builtin_span).signature, "Result<T=i32,E default ()=()>.Err")
+    },
+
     test_generic_struct_with_type_parameter_that_is_not_a_type_variable() {
         assert.throws(
             () =>
                 test.type_check(`
-                struct Foo<T>: 
-                end
+                struct Foo<T>:
+            end
 
-                struct Bar<Foo<T>>: 
-                end
-            `),
+                struct Bar<Foo<T>>:
+            end
+                `),
             /Expected type variable but got `Foo<T>`/,
         )
     },
 
     test_impl_for_struct() {
         const {env} = test.type_check(`
-            struct Foo: 
-                a i32 
+            struct Foo:
+            a i32 
             end
 
-            impl Foo: 
-                fn foo(): 
-                end
+            impl Foo:
+            fn foo():
             end
-        `)
+            end
+                `)
         const foo = env.get("Foo", builtin_span)
         assert.equal(foo.signature, "Foo<>")
         assert(foo instanceof StructType)
@@ -2450,31 +2544,31 @@ const test = {
         assert.throws(
             () =>
                 test.type_check(`
-            struct Foo: 
-                a i32 
+            struct Foo:
+            a i32 
             end
 
-            impl Foo: 
-                fn a(): 
-                end
+            impl Foo:
+            fn a():
             end
-        `),
+            end
+                `),
             /`a` already defined/,
         )
     },
 
     test_impl_for_generic_struct() {
         const {env} = test.type_check(`
-            struct Foo<T>: 
-                a T
+            struct Foo<T>:
+            a T
             end
 
-            impl Foo<A>: 
-                fn foo(v A) A: 
-                    v 
+            impl Foo<A>:
+            fn foo(v A) A:
+            v 
                 end
             end
-        `)
+                `)
         const foo = env.get("Foo", builtin_span)
         assert.equal(foo.signature, "Foo<T>")
         assert(foo instanceof StructType)
@@ -2484,13 +2578,13 @@ const test = {
 
     test_impl_with_self_type() {
         const {env} = test.type_check(`
-            struct Foo: 
-                a i32 
+            struct Foo:
+            a i32 
             end
 
-            impl Foo: 
-                fn foo(self) Self: 
-                    self.a  -- Test accessing a field of \`self\`
+            impl Foo:
+            fn foo(self) Self:
+            self.a-- Test accessing a field of \`self\`
                     self
                 end
             end

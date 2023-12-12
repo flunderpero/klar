@@ -33,9 +33,15 @@ fn main():
 end
 ```
 
-### Built-in Data Types
+### Types
 
-#### Integer Types
+#### Built-in Types
+
+##### Number types
+
+Unsigned integers: `u8`, `u16`, `u32`, `u64`, `u128`, `usize`
+Signed integers: `i8`, `i16`, `i32`, `i64`, `i128`, `isize`
+Floating point numbers: `f32`, `f64`
 
 ```klar
 
@@ -46,7 +52,7 @@ fn main():
 end
 ```
 
-#### The Boolean Type
+##### The Boolean Type
 
 ```klar
 fn main():
@@ -55,7 +61,57 @@ fn main():
 end
 ```
 
-#### Tuples
+
+##### The String Type
+
+```klar
+fn main():
+    let a = "Hello, World!"
+    let b str = """
+        This is a 
+        multi-line string.
+        """
+end
+```
+
+##### The Unit Type
+
+The unit type `()` is a type with only one value, also called `()`. It basically
+means "nothing" or "no value".
+
+It cannot be instantiated and it cannot be assigned to a variable.
+
+```klar
+fn main():
+    let a = ()  -- Compile error: Cannot assign the unit value
+end
+```
+
+It is also the default return type of functions.
+
+```klar
+fn test():
+    -- This function returns the unit value.
+    return
+end
+
+fn main():
+    test()
+end
+```
+
+##### The Array Type
+
+```klar
+fn main():
+    let a = [1, 2, 3]
+    let b = a[1]
+end
+```
+
+#### Compound Types
+
+##### Tuples
 
 ```klar
 fn main():
@@ -70,7 +126,7 @@ fn main():
 end
 ```
 
-#### Vector
+##### Vector
 
 ```klar
 fn main():
@@ -94,9 +150,39 @@ fn main():
 end
 ```
 
-Just demonstrating a compile error.
-```klar
-fn main():
-    unknown_function() -- Compile error: Unknown `unknown_function` 
+### Error handling
+
+In Klar, errors are values and may be returned from functions. 
+The shorthand syntax looks like this:
+
+fn divide(divisor i32, dividend i32) i32 throws:
+    if dividend == 0:
+        throw Error.new("Division by zero")
+    end
+    return divisor / dividend
 end
+
+-- The built-in `Error` type looks like this:
+struct Error<T=()>:
+    message str
+    data T
+end
+
+This is syntactic sugar for the following:
+
+```klar
+fn divide(divisor i32, dividend i32) Result<i32>:
+    if dividend == 0:
+        return Result<i32>.Err(Error.from_str("Division by zero"))
+    end
+    return Result<i32>.Ok(divisor / dividend)
+end
+
+--- 
+-- The built-in `Result` type looks like this:
+enum Result<T, E=()>:
+    Ok(T)
+    Err(Error<E>)
+end
+---
 ```

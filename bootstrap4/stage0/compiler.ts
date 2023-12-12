@@ -279,6 +279,8 @@ function code_gen(ast: AST.AST) {
             return ""
         } else if (e instanceof AST.Match) {
             return transpile_match(e)
+        } else if (e instanceof AST.UnitLiteral) {
+            return "undefined"
         } else {
             throw new CodeGenError(`Unexpected expression ${quote(e.kind)}`, e.span)
         }

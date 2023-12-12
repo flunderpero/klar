@@ -1,5 +1,7 @@
 # Klar - The Official Guide
 
+This is the living documentation and spec of Klar.
+
 ## Common Concepts
 
 ### Comments
@@ -14,19 +16,42 @@ fn main():
 end
 ```
 
-Documentation comments are multi-line comments put a above
-the declaration of the thing it is supposed to document.
+Documentation comments are multi-line comments.
+Put these _inside_ of block elements like `fn`, `struct`, or `trait`
+or right above single line declarations like fields.
 
 ```klar
 
----
-A planet is a body circumventing a star.
----
 struct Planet:
-    --- The mass in kg. ---
+    --- A planet is a body circumventing a star.
+        Multi-line comments are indented by 4 spaces.
+    ---
+
+    --- The mass in kg.
+    ---
     mass i32 -- TODO: change to u64
+
+    --- The circumference in km.
+    ---
+    circumference i32
+
     -- This is a regular comment and not a documentation comment.
     name str
+end
+
+trait Orbit:
+    --- An orbit describes the path around a bigger mass object.
+    ---
+
+    --- This is just a declaration, so we document above it.
+    ---
+    fn mean_distance(self) i32
+end
+
+fn calculate_radius(planet Planet) i32:
+    --- Calculate the radius of a planet.
+    ---
+    return planet.circumference / 2
 end
 
 fn main():
@@ -61,14 +86,13 @@ fn main():
 end
 ```
 
-
 ##### The String Type
 
 ```klar
 fn main():
     let a = "Hello, World!"
     let b str = """
-        This is a 
+        This is a
         multi-line string.
         """
 end
@@ -91,7 +115,8 @@ It is also the default return type of functions.
 
 ```klar
 fn test():
-    -- This function returns the unit value.
+    --- This function returns the unit value.
+    ---
     return
 end
 
@@ -152,23 +177,36 @@ end
 
 ### Error handling
 
-In Klar, errors are values and may be returned from functions. 
-The shorthand syntax looks like this:
+In Klar, errors are values and may be returned from functions.
 
+The canonical way of error handling is as follows:
+
+```klar
 fn divide(divisor i32, dividend i32) i32 throws:
     if dividend == 0:
-        throw Error.new("Division by zero")
+        return Error.from_str("Division by zero")
     end
     return divisor / dividend
 end
 
--- The built-in `Error` type looks like this:
-struct Error<T=()>:
-    message str
-    data T
-end
+fn main():
+    let result = match divide(10, 2):
+        Result<i32>.Ok(value) => value
+        Result<i32>.Err(error) => panic("Should not be reached")
+    end
+    assert(result == 5)
 
-This is syntactic sugar for the following:
+    -- Or using the `is_ok()` and `is_err()` functions.
+    assert(divide(10, 0).is_err())
+    assert(divide(10, 2).is_ok())
+
+    -- Or just `unwrap()` which will cause a runtime panic if
+    -- the result is `Result.Err`.
+    assert_panic(fn(): divide(10, 0).unwrap() return end)
+end
+```
+
+Note: This is syntactic sugar for this code:
 
 ```klar
 fn divide(divisor i32, dividend i32) Result<i32>:
@@ -177,12 +215,7 @@ fn divide(divisor i32, dividend i32) Result<i32>:
     end
     return Result<i32>.Ok(divisor / dividend)
 end
-
---- 
--- The built-in `Result` type looks like this:
-enum Result<T, E=()>:
-    Ok(T)
-    Err(Error<E>)
-end
----
 ```
+
+Always write idiomatic error handling using `throws`. `klarfmt` will
+always transform your code to the idiomatic form.

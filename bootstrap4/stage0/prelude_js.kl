@@ -92,17 +92,56 @@ end
 
 impl Error<T>:
     fn from_str(msg str) Error:
-        Error { msg: msg, data: () }
+        return Error { msg: msg, data: () }
     end
 
     fn new(msg str, data T) Error<T>:
-        Error<T> { msg: msg, data: data }
+        return Error<T> { msg: msg, data: data }
     end
 end
 
 enum Result<T, E=()>:
     Ok(T)
     Err(Error<E>)
+end
+
+impl Result<T, E>:
+    fn is_ok(self) bool:
+        return match self:
+            Result<T, E>.Ok(_) => true
+            Result<T, E>.Err(_) => false
+        end
+    end
+
+    fn is_err(self) bool:
+        return match self:
+            Result<T, E>.Ok(_) => false
+            Result<T, E>.Err(_) => true
+        end
+    end
+
+    fn unwrap(self) T:
+        return match self:
+            Result<T, E>.Ok(value) => value
+            Result<T, E>.Err(err) => panic(f"called `Result.unwrap()` on an `Err` value: {err.msg}")
+        end
+    end
+
+    fn unwrap_err(self) Error<E>:
+        return match self:
+            Result<T, E>.Ok(value) => panic(f"called `Result.unwrap_err()` on an `Ok` value")
+            Result<T, E>.Err(err) => err
+        end
+    end
+end
+
+impl ToStr for Result<T, E>:
+    fn to_str(self) str:
+        return match self:
+            Result<T, E>.Ok(value) => f"Ok()"
+            Result<T, E>.Err(err) => f"Err()"
+        end
+    end
 end
 
 extern:

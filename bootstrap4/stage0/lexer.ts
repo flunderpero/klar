@@ -56,7 +56,8 @@ export class LexicalToken extends Token {
             | "extern"
             | "impl"
             | "true"
-            | "false",
+            | "false"
+            | "throws",
         span: Span,
     ) {
         super(span)
@@ -416,6 +417,7 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
                     "and",
                     "or",
                     "not",
+                    "throws",
                 ].includes(value)
             ) {
                 return new LexicalToken(value as any, span(start_span))

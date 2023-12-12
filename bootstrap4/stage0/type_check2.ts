@@ -123,17 +123,17 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         }
     } else if (node instanceof ast.Return) {
         if (node.value) {
-            const return_type = type_check(node.value, env, {...ctx, used_in_expression: true})
             if (!ctx.return_type) {
                 throw new SemanticError("Unexpected return", node.span)
             }
-            expect_assignable_to(ctx.return_type, return_type, node.span)
+            const return_type = type_check(node.value, env, {...ctx, used_in_expression: true})
+            type_check_return_type(ctx.return_type, return_type, node.span)
             // `return` is a statement, but we give it the type because it makes it easier
             // to type-check nested blocks like:
             //     fn foo(): i32
             //         if bar => return 1 else => return 2
             //     end
-            type = return_type
+            type = ctx.return_type
         } else {
             type = Type.unit
         }
@@ -203,7 +203,28 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
     return type
 }
 
+function type_check_return_type(expected_return_type: Type, return_type: Type, span: Span) {
+    if (expected_return_type.name === "Result" && return_type.name !== "Result") {
+        const result_type = expect_type_with_fields(expected_return_type, span)
+        if (return_type.name === "Error") {
+            return
+        } else {
+            expect_assignable_to(
+                result_type.type_arguments.get(result_type.type_variables[0])!,
+                return_type,
+                span,
+            )
+        }
+    } else {
+        expect_assignable_to(expected_return_type, return_type, span)
+    }
+}
+
 function expect_equal_types(expected: Type, got: Type, span: Span) {
+    if (got === Type.internal_any || expected === Type.internal_any) {
+        // This is a special handling for the `panic` function.
+        return
+    }
     if (!expected.equals(got)) {
         throw new TypeMismatchError(expected, got, span)
     }
@@ -245,6 +266,10 @@ function expect_to_implement_trait(
 }
 
 function expect_assignable_to(expected: Type, got: Type, span: Span) {
+    if (got === Type.internal_any || expected === Type.internal_any) {
+        // This is a special handling for the `panic` function.
+        return
+    }
     if (got.assignable_to(expected)) {
         return
     }
@@ -297,9 +322,12 @@ function type_check_match(node: ast.Match, env: TypeEnvironment, ctx: Context): 
         arm_types.push(type_check_match_arm(arm, target_type, env, ctx))
     }
     if (ctx.used_in_expression) {
-        const type = arm_types[0]!
+        let type = arm_types[0]!
         for (let i = 1; i < arm_types.length; i++) {
             expect_equal_types(type, arm_types[i], node.span)
+            if (type === Type.internal_any) {
+                type = arm_types[i]
+            }
         }
         return type
     }
@@ -553,6 +581,10 @@ function type_check_function_call_or_enum_instantiation(
         const arg_type = type_check(node.args[i], env, {used_in_expression: true})
         expect_assignable_to(parameters[i], arg_type, node.span)
     }
+    if (function_type.name === "panic") {
+        // `panic` is a special function that never returns.
+        return Type.internal_any
+    }
     return function_type.return_type
 }
 
@@ -711,15 +743,16 @@ function type_check_function_body(
         const type = function_type.parameter(name, node.span)
         function_env.add(name, type, node.span)
     }
+    const return_type = function_type.return_type
     const block_type = type_check(node.block, function_env, {
-        return_type: function_type.return_type,
+        return_type,
         used_in_expression: true,
     })
     if (node.block.body.at(-1) instanceof ast.Return) {
         // The last expression is a return statement, so we don't need to check the return type.
         // We already checked that the return type is correct in the return statement.
     } else {
-        expect_assignable_to(function_type.return_type, block_type, node.span)
+        type_check_return_type(return_type, block_type, node.span)
     }
 }
 
@@ -903,6 +936,7 @@ class TypeMismatchError extends TypeCheckError {
 
 export class Type {
     static unit = new Type("()")
+    static internal_any = new Type("__internal_any__")
 
     /**
      * Some types like tuples are `inline defined` and don't have a name.
@@ -1420,7 +1454,7 @@ abstract class ComplexType<
     }
 
     has_type_parameters(): boolean {
-        return this.type_arguments.size > 0
+        return this.type_variables.length > 0
     }
 }
 
@@ -1759,13 +1793,25 @@ export class FunctionType extends ComplexType<FunctionData> {
             } else {
                 type = Type.from_env_or_declaration(declaration, function_env)
             }
-            if (type instanceof ComplexType) {
-                // Map type variables to the function type variables.
-                const type_variable_map = TypeVariable.create_type_variable_map(
-                    type.type_variables,
-                    type_variables,
+            if (!(type instanceof ComplexType)) {
+                return type
+            }
+            // Map type variables to the function type variables.
+            const type_variable_map = TypeVariable.create_type_variable_map(
+                type.type_variables,
+                type_variables,
+            )
+            type = type.with_scope_type_variables(type_variable_map)
+            if (declaration.type_parameters.length > 0) {
+                type = (type as ComplexType<any>).with_type_arguments(
+                    parse_type_arguments(
+                        type as ComplexType<any>,
+                        declaration.type_parameters,
+                        function_env,
+                        declaration.span,
+                    ),
+                    declaration.span,
                 )
-                type = type.with_scope_type_variables(type_variable_map)
             }
             return type
         }
@@ -1784,6 +1830,13 @@ export class FunctionType extends ComplexType<FunctionData> {
             fields.set(parameter.name, type)
         }
         let return_type = resolve_type(declaration.return_type)
+        const throws = declaration instanceof ast.FunctionDeclaration ? declaration.throws : false
+        if (throws) {
+            return_type = expect_type_with_fields(
+                env.get("Result", declaration.span),
+                declaration.span,
+            ).with_type_arguments([return_type, env.unit], declaration.span)
+        }
         fields.set("return", return_type)
         const data = new FunctionData(
             declaration instanceof ast.ClosureDefinition ? "<closure>" : declaration.name,
@@ -2283,6 +2336,16 @@ const test = {
                     fn set(self, index i32, value T)
                 end
                 struct Array<T>:
+                end
+                struct Error<T=()>:
+                    message str
+                    data T
+                end
+                enum Result<T, E=()>:
+                    Ok(T)
+                    Err(Error<E>)
+                end
+                fn panic(message str):
                 end
             ` + src
         }
@@ -3896,6 +3959,71 @@ const test = {
             let foo = Foo{a1: 1, a2: 2, a3: 3}
             let a = foo[0]
             foo[1] = 4
+        `)
+        assert.equal(type, env.i32)
+    },
+
+    test_concise_error_handling_with_return() {
+        const {env} = test.type_check_with_core_types(`
+            fn divide(dividend i32, divisor i32) i32 throws:
+                if divisor == 0 => return Error {message: "Division by zero", data: ()}
+                return dividend / divisor
+            end
+
+            let ok = divide(10, 2)
+            let err = divide(10, 0)
+        `)
+        assert.equal(env.get("ok", builtin_span).signature, "Result<T=i32,E default ()=()>")
+        assert.equal(env.get("err", builtin_span).signature, "Result<T=i32,E default ()=()>")
+    },
+
+    test_concise_error_handling_with_nested_expression() {
+        const {env} = test.type_check_with_core_types(`
+            fn divide(dividend i32, divisor i32) i32 throws:
+                if divisor == 0 => return Error {message: "Division by zero", data: ()}
+                if divisor > 10 => dividend / divisor else => 0
+            end
+
+            let ok = divide(10, 2)
+            let err = divide(10, 0)
+        `)
+        assert.equal(env.get("ok", builtin_span).signature, "Result<T=i32,E default ()=()>")
+        assert.equal(env.get("err", builtin_span).signature, "Result<T=i32,E default ()=()>")
+    },
+
+    test_concise_error_handling_with_result_type() {
+        const {env} = test.type_check_with_core_types(`
+            fn divide(dividend i32, divisor i32) Result<i32>:
+                if divisor == 0 
+                    -- Explicit return is tested here.
+                    => return Result<i32>.Err(Error {message: "Division by zero", data: ()})
+                -- Implicit return is tested here.
+                Result<i32>.Ok(dividend / divisor)
+            end
+
+            let ok = divide(10, 2)
+            let err = divide(10, 0)
+        `)
+        assert.equal(env.get("ok", builtin_span).signature, "Result<T=i32,E default ()=()>")
+        assert.equal(env.get("err", builtin_span).signature, "Result<T=i32,E default ()=()>")
+    },
+
+    test_panic_call_is_ignored_in_function_return() {
+        const {type, env} = test.type_check_with_core_types(`
+            fn foo() i32: 
+                panic("foo") -- This does not violate the return type.
+            end
+            foo()
+        `)
+        assert.equal(type, env.i32)
+    },
+
+    test_panic_call_is_ignored_in_match() {
+        const {type, env} = test.type_check_with_core_types(`
+            match 1:
+                1 => panic("foo") -- This does not violate the match type.
+                2 => 2
+            end
         `)
         assert.equal(type, env.i32)
     },

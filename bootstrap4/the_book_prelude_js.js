@@ -4,7 +4,7 @@ function klar_panic(message) {
 
 function klar_assert(condition) {
     if (!condition.value) {
-        panic("Assertion failed")
+        klar_panic("Assertion failed")
     }
 }
 

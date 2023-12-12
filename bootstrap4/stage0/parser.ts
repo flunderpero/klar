@@ -240,6 +240,7 @@ export class FunctionDeclaration extends DeclarationOrDefinition {
     type_parameters: TypeDeclaration[]
     parameters: Parameter[]
     return_type: TypeDeclaration
+    throws?: true | TypeDeclaration
 
     constructor(
         data: {
@@ -247,6 +248,7 @@ export class FunctionDeclaration extends DeclarationOrDefinition {
             type_parameters: TypeDeclaration[]
             parameters: Parameter[]
             return_type: TypeDeclaration
+            throws?: true | TypeDeclaration
         },
         span: Span,
     ) {
@@ -1550,12 +1552,21 @@ export function parse(tokens: TokenStream): AST {
                 new Parameter({name: name_token.value, type: type, mutable}, name_token.span),
             )
         }
-        tokens.expect(")")
+        let end_span = tokens.expect(")").span
         let return_type = unit_type
         if (tokens.peek() instanceof Identifier || tokens.simple_peek() === "(") {
             return_type = parse_type()
+            end_span = return_type.span
         }
-        return new FunctionDeclaration({name, type_parameters, parameters, return_type}, span)
+        let throws: true | TypeDeclaration | undefined = undefined
+        if (tokens.simple_peek() === "throws") {
+            end_span = tokens.consume().span
+            throws = true
+        }
+        return new FunctionDeclaration(
+            {name, type_parameters, parameters, return_type, throws},
+            Span.combine(span, end_span),
+        )
     }
 
     function parse_function_type(): FunctionTypeDeclaration {

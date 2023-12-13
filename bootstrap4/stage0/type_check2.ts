@@ -625,11 +625,9 @@ function parse_type_arguments(
     const result: (Type | null)[] = []
     for (const p of type_arguments) {
         const type_argument = TypeParameter.from_declaration(p, env)
-        let type_argument_type
-        if (opts?.ignore_missing) {
-            type_argument_type = env.get_or_null(type_argument.type.name)
-        } else {
-            type_argument_type = env.get(type_argument.type.name, span)
+        let type_argument_type = type_argument.type
+        if (!opts?.ignore_missing && !(type_argument.type instanceof TupleType)) {
+            env.get(type_argument.type.name, span)
         }
         if (type_argument_type instanceof TypeVariable) {
             result.push(null)
@@ -689,7 +687,24 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
             // Will be evaluated next.
             impl_definitions.push({node, extern})
         } else if (node instanceof ast.ExternBlock) {
-            for (const extern_node of node.contained_nodes()) {
+            // Forward declare functions last because they might depend on other types.
+            for (const extern_node of node
+                .contained_nodes()
+                .filter(
+                    (x) =>
+                        !(
+                            x instanceof ast.FunctionDeclaration ||
+                            x instanceof ast.FunctionDefinition
+                        ),
+                )) {
+                forward_declare(extern_node, true)
+            }
+            for (const extern_node of node
+                .contained_nodes()
+                .filter(
+                    (x) =>
+                        x instanceof ast.FunctionDeclaration || x instanceof ast.FunctionDefinition,
+                )) {
                 forward_declare(extern_node, true)
             }
         } else {
@@ -700,7 +715,15 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
         }
     }
 
-    for (const node of nodes) {
+    // Forward declare functions last because they might depend on other types.
+    for (const node of nodes.filter(
+        (x) => !(x instanceof ast.FunctionDeclaration || x instanceof ast.FunctionDefinition),
+    )) {
+        forward_declare(node, false)
+    }
+    for (const node of nodes.filter(
+        (x) => x instanceof ast.FunctionDeclaration || x instanceof ast.FunctionDefinition,
+    )) {
         forward_declare(node, false)
     }
 
@@ -958,6 +981,20 @@ export class Type {
      * All other types are looked up in the environment.
      */
     static from_env_or_declaration(declaration: ast.TypeDeclaration, env: TypeEnvironment): Type {
+        const type = Type.from_env_or_declaration_or_null(declaration, env)
+        if (!type) {
+            throw new TypeCheckError(
+                `Unknown ${quote(declaration.name)} in type environment`,
+                declaration.span,
+            )
+        }
+        return type
+    }
+
+    static from_env_or_declaration_or_null(
+        declaration: ast.TypeDeclaration,
+        env: TypeEnvironment,
+    ): Type | null {
         if (declaration instanceof ast.TupleTypeDeclaration) {
             const type_variables = TypeParameters.from_declaration(
                 declaration.type_parameters,
@@ -973,7 +1010,7 @@ export class Type {
         } else if (declaration instanceof ast.UnitTypeDeclaration) {
             return env.unit
         }
-        return env.get(declaration.name, declaration.span)
+        return env.get_or_null(declaration.name)
     }
 
     protected static known_types = new Map<string, Type>()
@@ -1113,7 +1150,7 @@ export class TypeParameters {
  */
 export class TypeParameter {
     static from_declaration(declaration: ast.TypeDeclaration, env: TypeEnvironment): TypeParameter {
-        let type = env.get_or_null(declaration.name)
+        let type = Type.from_env_or_declaration_or_null(declaration, env)
         if (!type) {
             // The type is unknown, we treat this as a type variable.
             type = TypeVariable.from_declaration(declaration, env)
@@ -3486,6 +3523,18 @@ const test = {
         assert.equal(env.get("b", builtin_span), env.i32)
         assert.equal(env.get("c", builtin_span), env.bool)
         assert.equal(env.get("d", builtin_span), env.i32)
+    },
+
+    test_tuple_as_type_parameter() {
+        const {type} = test.type_check(` 
+            struct Foo<T>:
+                a T
+            end
+
+            let foo = Foo<(i32, bool)>{a: (1, true)}
+            foo
+        `)
+        assert.equal(type.signature, "Foo<T=(i32,bool)>")
     },
 
     test_enum() {

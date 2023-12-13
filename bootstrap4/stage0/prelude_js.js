@@ -191,3 +191,11 @@ class klar_File {
         }
     }
 }
+
+function klar_ext_args() {
+    const result = new klar_JSArray(0)
+    for (let i = 0; i < Bun.argv.length; i++) {
+        result.push(new str(Bun.argv[i]))
+    }
+    return result
+}

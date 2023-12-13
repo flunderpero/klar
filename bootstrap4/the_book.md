@@ -327,3 +327,14 @@ fn main():
     assert(number_of_orbits(10, 0).is_err())
 end
 ```
+
+## Environment
+
+### Arguments
+
+```klar
+fn main():
+    let args = env.args
+    assert(args.len() > 0)
+end
+```

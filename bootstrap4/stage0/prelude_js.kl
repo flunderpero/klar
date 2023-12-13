@@ -182,6 +182,9 @@ extern:
         ---
         fn write_str(mut self, data str) throws 
     end
+
+    fn ext_args() JSArray<str>
+    fn ext_env() JSArray<(str, str)>
 end
 
 -- Fixed size array
@@ -302,4 +305,25 @@ impl Iterator<T> for VectorIter<T>:
     end
 end
 
+struct Env:
+    args Vector<str>
+end
 
+impl Env:
+    fn new() Env:
+        mut i = 0
+        let src = ext_args()
+        mut args = Vector<str>.new()
+        loop:
+            if i == src.len():
+                break
+            end
+            let arg = src.get(i)
+            args.push(arg)
+            i = i + 1
+        end
+        Env { args: args }
+    end
+end
+
+let env = Env.new()

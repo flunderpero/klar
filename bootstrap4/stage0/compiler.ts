@@ -576,23 +576,23 @@ export async function compile_prelude(
 async function cli() {
     try {
         const {env, prelude} = await compile_prelude(`${dir}/prelude_js.kl`)
-        const file = Bun.argv[2]
+        const src_file = Bun.argv[2]
+        const dst_file = Bun.argv[3]
         let src: string
         try {
-            src = await Bun.file(file).text()
+            src = await Bun.file(src_file).text()
         } catch (error: any) {
             console.error(`Error reading file: ${error.message}`)
             process.exit(1)
         }
-        const compiled = await compile({file, src, env})
+        const compiled = await compile({file: src_file, src, env})
         const res = await link({
             compiled,
             prelude,
             epilogue: await Bun.file(`${dir}/epilogue_js.js`).text(),
         })
-        const dst = `${dir}/build/${(file.split("/")?.pop() ?? file).split(".")[0]}`
-        await Bun.write(dst, res)
-        const proc = Bun.spawn(["chmod", "+x", dst])
+        await Bun.write(dst_file, res)
+        const proc = Bun.spawn(["chmod", "+x", dst_file])
         await proc.exited
     } catch (error: any) {
         if (debug || debug_ast || debug_tokens || debug_transpiled) {

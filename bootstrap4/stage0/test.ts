@@ -7,13 +7,14 @@ const test_dir = join(dir, "../tests/stage0")
 const build_dir = join(dir, "build")
 
 async function test_file(file: string, update = false): Promise<boolean> {
-    const compiler = Bun.spawnSync(["bun", join(dir, "compiler.ts"), join(test_dir, file)])
+    const dst = join(build_dir, file.replace(".kl", ""))
+    const compiler = Bun.spawnSync(["bun", join(dir, "compiler.ts"), join(test_dir, file), dst])
     const actual_compiler_output = compiler.stdout.toString() + compiler.stderr.toString().trim()
     let actual_exit_code = ""
     let actual_stdout = ""
     let actual_stderr = ""
     if (compiler.exitCode === 0) {
-        const compiled = Bun.spawnSync(["bash", "-c", join(build_dir, file.replace(".kl", ""))])
+        const compiled = Bun.spawnSync(["bash", "-c", dst])
         actual_stdout = compiled.stdout.toString().trim()
         actual_stderr = compiled.stderr.toString().trim()
         actual_exit_code = `${compiled.exitCode}`

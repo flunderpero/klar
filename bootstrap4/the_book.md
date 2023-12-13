@@ -172,6 +172,68 @@ fn main():
 end
 ```
 
+### Expressions and Statements
+
+In Klar, almost everything is an expression. Expressions return a value.
+
+In contrast, statements do not return a value and have the unit type `()`.
+
+Statements are:
+
+- `let` declarations
+
+```klar
+    let a = 42
+```
+
+- Assignments
+
+```klar
+    mut a = 42
+    let b = (a = 43) -- Compile error: Cannot assign the unit value
+```
+
+- Struct, trait, function declarations, and implementation blocks:
+
+```klar
+    struct Planet:
+        mass i32
+        circumference i32
+        name str
+    end
+
+    trait Orbit:
+        fn mean_distance(self) i32
+    end
+
+    impl Orbit for Planet:
+        fn mean_distance(self) i32:
+            self.circumference / 2
+        end
+    end
+
+    fn calculate_radius(planet Planet) i32:
+        planet.circumference / 2
+    end
+```
+
+- Loops, break and continue
+
+```klar
+fn main():
+    mut i = 0
+    loop:
+        if i == 10:
+            break
+        end
+        i = i + 1
+        if i == 5:
+            continue
+        end
+    end
+end
+```
+
 ### Error handling
 
 In Klar, errors are values and may be returned from functions.

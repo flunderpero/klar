@@ -158,7 +158,8 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
             expect_type_can_be_used_in_assignments(value_type, env, node.span)
         }
         expect_assignable_to(target_type, value_type, node.span)
-        type = value_type
+        // Assignments are statements.
+        type = Type.unit
     } else if (node instanceof ast.FunctionCall) {
         type = type_check_function_call_or_enum_instantiation(node, env, ctx)
     } else if (node instanceof ast.StructInstantiation) {
@@ -3337,7 +3338,8 @@ const test = {
             mut a = 1
             a = 2
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.unit)
+        assert.equal(env.get("a", builtin_span), env.i32)
     },
 
     test_assignment_with_type_mismatch() {
@@ -3351,13 +3353,15 @@ const test = {
         )
     },
 
-    test_assignment_as_expression() {
-        const {type, env} = test.type_check(`
+    test_assignment_cannot_be_used_as_an_expression() {
+        assert.throws(
+            () =>
+                test.type_check(`
             mut a = 1
             let b = a = 2
-            b
-        `)
-        assert.equal(type, env.i32)
+        `),
+            /Cannot assign the unit value to a variable/,
+        )
     },
 
     test_struct_field_assignment() {
@@ -3369,7 +3373,7 @@ const test = {
             mut foo = Foo{a: 1}
             foo.a = 2
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.unit)
     },
 
     test_extern_block() {
@@ -3971,7 +3975,7 @@ const test = {
             let a = foo[0]
             foo[1] = 4
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.unit)
     },
 
     test_concise_error_handling_with_return() {

@@ -83,7 +83,7 @@ async function run_test(test: Test): Promise<boolean> {
         }
         console.error("FAILED", e)
         console.log("\nTranspiled code:")
-        console.log(linked)
+        // console.log(linked)
         return false
     }
     return true

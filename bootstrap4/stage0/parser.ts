@@ -742,7 +742,7 @@ export class IdentifierReference extends Expression {
     }
 }
 
-export class Assignment extends Expression {
+export class Assignment extends Statement {
     kind = "assignment"
     target: Expression
     value: Expression

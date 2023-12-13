@@ -71,13 +71,13 @@ trait Iterator<T>:
     fn filter(self, f (fn(T) bool)) Self:
         let vec = Vector<T>.new()
         self.for_each(fn(value T) => if f(value) => vec.push(value))
-        return vec.iter()
+        vec.iter()
     end
 
     fn collect(self) Vector<T>:
         let vec = Vector<T>.new()
         self.for_each(fn(value T) => vec.push(value))
-        return vec
+        vec
     end
 end
 
@@ -91,19 +91,12 @@ struct Error<T=()>:
 end
 
 impl Error<T>:
-    fn from_str(msg str) Error:
-        return Error { msg: msg, data: () }
-    end
-
-    fn new(msg str, data T) Error<T>:
-        return Error<T> { msg: msg, data: data }
-    end
+    fn from_str(msg str) Error => Error { msg: msg, data: () }
+    fn new(msg str, data T) Error<T> => Error<T> { msg: msg, data: data }
 end
 
 impl ToStr for Error<T>:
-    fn to_str(self) str:
-        return self.msg
-    end
+    fn to_str(self) str => self.msg
 end
 
 enum Result<T, E=()>:
@@ -113,28 +106,28 @@ end
 
 impl Result<T, E>:
     fn is_ok(self) bool:
-        return match self:
+        match self:
             Result<T, E>.Ok(_) => true
             Result<T, E>.Err(_) => false
         end
     end
 
     fn is_err(self) bool:
-        return match self:
+        match self:
             Result<T, E>.Ok(_) => false
             Result<T, E>.Err(_) => true
         end
     end
 
     fn unwrap(self) T:
-        return match self:
+        match self:
             Result<T, E>.Ok(value) => value
             Result<T, E>.Err(err) => panic(f"called `Result.unwrap()` on an `Err` value: {err.msg}")
         end
     end
 
     fn unwrap_err(self) Error<E>:
-        return match self:
+        match self:
             Result<T, E>.Ok(value) => panic(f"called `Result.unwrap_err()` on an `Ok` value")
             Result<T, E>.Err(err) => err
         end
@@ -143,7 +136,7 @@ end
 
 impl ToStr for Result<T, E>:
     fn to_str(self) str:
-        return match self:
+        match self:
             Result<T, E>.Ok(value) => f"Ok()"
             Result<T, E>.Err(err) => f"Err()"
         end
@@ -199,19 +192,12 @@ struct Array<T>:
 end
 
 impl Array<T>:
-    fn new(size i32) Array<T>:
-        return Array<T> { data: JSArray<T>.new(size) }
-    end
-
-    fn iter(self) ArrayIter<T>:
-        return ArrayIter<T> { arr: self, index: 0 }
-    end
+    fn new(size i32) Array<T> => Array<T> { data: JSArray<T>.new(size) }
+    fn iter(self) ArrayIter<T> => ArrayIter<T> { arr: self, index: 0 }
 end
 
 impl Len for Array<T>:
-    fn len(self) i32:
-        return self.data.len()
-    end
+    fn len(self) i32 => self.data.len()
 end
 
 impl IndexedGet<T> for Array<T>:
@@ -219,7 +205,7 @@ impl IndexedGet<T> for Array<T>:
         if i >= self.len():
             panic("Array index out of bounds")
         end
-        return self.data.get(i)
+        self.data.get(i)
     end
 end
 
@@ -244,7 +230,7 @@ impl Iterator<T> for ArrayIter<T>:
         end
         let value = self.arr.get(self.index)
         self.index = self.index + 1
-        return Option.Some(value)
+        Option.Some(value)
     end
 end
 
@@ -255,9 +241,7 @@ struct Vector<T>:
 end
 
 impl Vector<T>:
-    fn new() Vector<T>:
-        return Vector<T> { data: JSArray<T>.new(0) }
-    end
+    fn new() Vector<T> => Vector<T> { data: JSArray<T>.new(0) }
 
     fn from(arr Array<T>) Vector<T>:
         let vec = Vector<T>.new()
@@ -270,22 +254,18 @@ impl Vector<T>:
             vec.push(v)
             i = i + 1
         end
-        return vec
+        vec
     end
 
     fn push(mut self, s T):
         self.data.push(s)
     end
 
-    fn iter(self) VectorIter<T>:
-        return VectorIter<T> { vec: self, index: 0 }
-    end
+    fn iter(self) VectorIter<T> => VectorIter<T> { vec: self, index: 0 }
 end
 
 impl Len for Vector<T>:
-    fn len(self) i32:
-        return self.data.len()
-    end
+    fn len(self) i32 => self.data.len()
 end
 
 impl IndexedGet<T> for Vector<T>:
@@ -293,7 +273,7 @@ impl IndexedGet<T> for Vector<T>:
         if i >= self.len():
             panic("Vector index out of bounds")
         end
-        return self.data.get(i)
+        self.data.get(i)
     end
 end
 
@@ -318,7 +298,7 @@ impl Iterator<T> for VectorIter<T>:
         end
         let value = self.vec.get(self.index)
         self.index = self.index + 1
-        return Option.Some(value)
+        Option.Some(value)
     end
 end
 

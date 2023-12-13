@@ -120,24 +120,25 @@ function code_gen(ast: AST.AST) {
     function transpile_expression(e: AST.Expression, ctx: Context): string {
         if (e instanceof AST.FunctionDefinition) {
             const parameters = e.declaration.parameters.map((x) => x.name).join(",")
-            const block = transpile_block(e.block, {...ctx, func: e.declaration})
+            const block = transpile_block(
+                e.block,
+                {...ctx, func: e.declaration},
+                {return_last_expression: true},
+            )
             return `function ${e.declaration.name}(${parameters})${block}`
         } else if (e instanceof AST.ClosureDefinition) {
             const parameters = e.parameters.map((x) => x.name).join(",")
-            const block = transpile_block(e.block, {...ctx, func: e})
+            const block = transpile_block(
+                e.block,
+                {...ctx, func: e},
+                {return_last_expression: true},
+            )
             return `function (${parameters})${block}`
         } else if (e instanceof AST.Return) {
             if (!e.value) {
                 return "return;"
             }
-            let value = transpile_expression(e.value, ctx)
-            if (ctx.func?.throws) {
-                // Wrap the return value in a `Result.Ok` or `Result.Err`.
-                value = `(function(){
-                    let res = ${value}; 
-                    return res instanceof klar_Error ? 
-                        new klar_Result_Err(res): new klar_Result_Ok(res)})()`
-            }
+            const value = wrap_return_value(transpile_expression(e.value, ctx), ctx)
             return `return ${value};`
         } else if (e instanceof AST.Number_) {
             return `new i32(${e.value})`
@@ -308,22 +309,36 @@ function code_gen(ast: AST.AST) {
             throw new CodeGenError(`Unexpected expression ${quote(e.kind)}`, e.span)
         }
     }
+    function wrap_return_value(value: string, ctx: Context) {
+        if (ctx.func?.throws) {
+            // Wrap the return value in a `Result.Ok` or `Result.Err`.
+            return `(function(){
+                    let res = ${value}; 
+                    return res.constructor.name === "klar_Error" ? 
+                        new klar_Result_Err(res): new klar_Result_Ok(res)})()`
+        }
+        return value
+    }
     /**
      * When `assign_last_expression_to` is set, the last expression of the block
      * is assigned to the given variable. If the last expression affects the control flow
      * (i.e. return, break, continue), an error with the expression is thrown.
      */
-    function transpile_block(block: AST.Block, ctx: Context, assign_last_expression_to?: string) {
-        if (assign_last_expression_to) {
+    function transpile_block(
+        block: AST.Block,
+        ctx: Context,
+        opts?: {assign_last_expression_to?: string; return_last_expression?: boolean},
+    ) {
+        let body = block.body
+            .slice(0, -1)
+            .map((x) => transpile_expression(x, ctx))
+            .join("\n")
+        const last_expression_code =
+            block.body.length === 0 ? "undefined" : transpile_expression(block.body.at(-1)!, ctx)
+        if (opts?.assign_last_expression_to) {
             if (block.body.length === 0) {
-                return `{${assign_last_expression_to} = undefined;)`
+                return `{${opts.assign_last_expression_to} = undefined;)`
             }
-            const last_expression = block.body.at(-1)!
-            const body = block.body
-                .slice(0, -1)
-                .map((x) => transpile_expression(x, ctx))
-                .join("\n")
-            const last_expression_code = transpile_expression(last_expression, ctx)
             if (
                 block.body.at(-1) instanceof AST.Return ||
                 block.body.at(-1) instanceof AST.Break ||
@@ -331,9 +346,21 @@ function code_gen(ast: AST.AST) {
             ) {
                 return `{${body};throw new Error("${last_expression_code}")}`
             }
-            return `{${body};${assign_last_expression_to} = ${last_expression_code};}`
+            return `{${body};${opts.assign_last_expression_to} = ${last_expression_code};}`
         }
-        const body = block.body.map((x) => transpile_expression(x, ctx)).join("\n")
+        if (
+            opts?.return_last_expression &&
+            (ctx.func?.return_type !== AST.unit_type || ctx.func?.throws) &&
+            !(
+                block.body.at(-1) instanceof AST.Return ||
+                block.body.at(-1) instanceof AST.Break ||
+                block.body.at(-1) instanceof AST.Continue
+            )
+        ) {
+            body = `{${body};return ${wrap_return_value(last_expression_code, ctx)};}`
+        } else {
+            body = `{${body};${last_expression_code}}`
+        }
         return `{try {${body} } catch (e) { if (e.message === "return") {return e.value;} throw e;}}`
     }
     function transpile_impls(e: AST.StructDeclaration | AST.EnumDeclaration) {
@@ -344,10 +371,11 @@ function code_gen(ast: AST.AST) {
                 .filter((x) => x.name !== "self")
                 .map((x) => x.name)
                 .join(",")
-            const block = transpile_expression(fn.block, {func: fn.declaration}).replace(
-                "{",
-                "{const klar_self = this;",
-            )
+            const block = transpile_block(
+                fn.block,
+                {func: fn.declaration},
+                {return_last_expression: true},
+            ).replace("{", "{const klar_self = this;")
             const prefix = is_static ? `${impl.target_name}.` : `${impl.target_name}.prototype.`
             s += `\n${prefix}${fn.declaration.name} = function(${parameters})${block}`
         }
@@ -382,7 +410,7 @@ function code_gen(ast: AST.AST) {
         }
         for (const [index, arm] of e.arms.entries()) {
             s += `if (${transpile_match_pattern_to_condition("__match_expression", arm.pattern)}) `
-            s += transpile_block(arm.block, ctx, "__match_result")
+            s += transpile_block(arm.block, ctx, {assign_last_expression_to: "__match_result"})
             if (index < e.arms.length - 1) {
                 s += " else "
             }

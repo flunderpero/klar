@@ -51,10 +51,7 @@ end
 fn calculate_radius(planet Planet) i32:
     --- Calculate the radius of a planet.
     ---
-    return planet.circumference / 2
-end
-
-fn main():
+    planet.circumference / 2
 end
 ```
 
@@ -186,7 +183,7 @@ fn divide(divisor i32, dividend i32) i32 throws:
     if dividend == 0:
         return Error.from_str("Division by zero")
     end
-    return divisor / dividend
+    divisor / dividend
 end
 
 fn main():
@@ -213,7 +210,7 @@ fn divide(divisor i32, dividend i32) Result<i32>:
     if dividend == 0:
         return Result<i32>.Err(Error.from_str("Division by zero"))
     end
-    return Result<i32>.Ok(divisor / dividend)
+    Result<i32>.Ok(divisor / dividend)
 end
 ```
 
@@ -227,7 +224,7 @@ Errors can be propagated using the `!` operator.
 ```klar
 fn divide(divisor i32, dividend i32) i32 throws:
     if dividend == 0 => return Error.from_str("Division by zero")
-    return divisor / dividend
+    divisor / dividend
 end
 
 fn number_of_orbits(total_time i32, orbit_time i32) i32 throws:
@@ -239,7 +236,7 @@ fn number_of_orbits(total_time i32, orbit_time i32) i32 throws:
     -- The type of `orbits` is `i32` here, the `!` operator automatically
     -- unwraps the `Result` type.
     if orbits < 0 => return Error.from_str("Negative number of orbits")
-    return orbits
+    orbits
 end
 
 fn main():

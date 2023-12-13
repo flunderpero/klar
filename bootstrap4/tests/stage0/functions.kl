@@ -27,7 +27,7 @@ fn foo_with_multiple_args(x i32, y i32):
 end
 
 fn foo_with_return_value(x i32) i32:
-    return x + 1
+    x + 1
 end
 
 fn main():

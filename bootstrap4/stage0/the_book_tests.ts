@@ -131,6 +131,7 @@ async function cli() {
     }
     const test_pattern_index = process.argv.indexOf("--test-pattern")
     const test_pattern = test_pattern_index === -1 ? null : process.argv[test_pattern_index + 1]
+    const bail = process.argv.includes("--bail")
     let failed = false
     for (const test of tests) {
         if (test_pattern && !test.section.join(" ").match(RegExp(test_pattern, "i"))) {
@@ -139,6 +140,9 @@ async function cli() {
         }
         if (!(await run_test(test))) {
             failed = true
+            if (bail) {
+                break
+            }
         }
     }
     if (failed) {

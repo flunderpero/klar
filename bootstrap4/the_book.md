@@ -167,8 +167,7 @@ fn main():
     assert(vector[1] == 42)
 
     -- Accessing an index out of bounds results in a panic.
-    -- TODO: We should not have to add a `return` so that the type becomes `()`.
-    assert_panic(fn(): vector[3] return end)
+    assert_panic(fn() => vector[3];)
 end
 ```
 
@@ -234,6 +233,28 @@ fn main():
 end
 ```
 
+#### The Unit Operator `;`
+
+Sometimes you need to convert an expression to a statement like in 
+this example:
+
+```klar
+fn apply(func (fn(i32))):
+    func(42)
+end
+
+fn main():
+    -- The following would not compile, because `x + 1` is an expression
+    -- of the type `i32` but `apply` expects a closure that returns 
+    -- the unit type `()`.
+    --   apply(fn(x i32) => x + 1)
+
+    -- Using the unit operator `;` we can convert the expression to a
+    -- statement. Statements always have the unit type `()`.
+    apply(fn(x i32) => x + 1;)
+end
+```
+
 ### Error handling
 
 In Klar, errors are values and may be returned from functions.
@@ -261,7 +282,7 @@ fn main():
 
     -- Or just `unwrap()` which will cause a runtime panic if
     -- the result is `Result.Err`.
-    assert_panic(fn(): divide(10, 0).unwrap() return end)
+    assert_panic(fn() => divide(10, 0).unwrap();)
 end
 ```
 

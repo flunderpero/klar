@@ -540,6 +540,20 @@ export abstract class Statement extends ASTNode {
     }
 }
 
+export class UnitOperator extends Statement {
+    kind = "unit operator"
+    expression: Expression
+
+    constructor(data: {expression: Expression}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof UnitOperator.prototype)
+    }
+
+    contained_nodes() {
+        return [this.expression]
+    }
+}
+
 export class Return extends Statement {
     kind = "return"
     value?: Expression
@@ -1074,7 +1088,12 @@ export function parse(tokens: TokenStream): AST {
                 }
             }
         }
-        return parse_binary_expression(1)
+        const expression = parse_binary_expression(1)
+        if (tokens.simple_peek() === ";") {
+            tokens.consume()
+            return new UnitOperator({expression}, expression.span)
+        }
+        return expression
     }
 
     function parse_primary(): Expression {
@@ -1156,6 +1175,13 @@ export function parse(tokens: TokenStream): AST {
             } else if (tokens.simple_peek() === "[") {
                 // FIXME: The grammar is ambiguous here. This could be a standalone array literal.
                 expression = parse_indexed_access(expression)
+                // } else if (tokens.simple_peek() === ";") {
+                //     tokens.consume()
+                //     if (expression instanceof Statement) {
+                //         throw new ParseError(`Expected expression but got statement`, expression.span)
+                //     }
+                //     expression = new UnitOperator({expression}, expression.span)
+                //     break
             } else {
                 break
             }

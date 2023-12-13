@@ -53,6 +53,9 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
             node.span,
         )
         type = env.bool
+    } else if (node instanceof ast.UnitOperator) {
+        type_check(node.expression, env, {...ctx, used_in_expression: false})
+        type = env.unit
     } else if (node instanceof ast.If) {
         const condition_type = type_check(node.condition, env, {...ctx, used_in_expression: true})
         expect_equal_types(env.bool, condition_type, node.span)
@@ -4061,6 +4064,20 @@ const test = {
             end
         `)
         assert.equal(type, env.i32)
+    },
+
+    test_semicolon_transforms_expression_into_statement() {
+        const {type, env} = test.type_check(`
+            true;
+        `)
+        assert.equal(type, env.unit)
+    },
+
+    test_semicolon_has_the_highest_precedence() {
+        const {type, env} = test.type_check_with_core_types(`
+            1 == 2;
+        `)
+        assert.equal(type, env.unit)
     },
 }
 

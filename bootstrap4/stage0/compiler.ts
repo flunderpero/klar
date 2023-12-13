@@ -118,7 +118,9 @@ function code_gen(ast: AST.AST) {
     }
     type Context = {func?: AST.FunctionDeclaration | AST.ClosureDefinition}
     function transpile_expression(e: AST.Expression, ctx: Context): string {
-        if (e instanceof AST.FunctionDefinition) {
+        if (e instanceof AST.UnitOperator) {
+            return transpile_expression(e.expression, ctx)
+        } else if (e instanceof AST.FunctionDefinition) {
             const parameters = e.declaration.parameters.map((x) => x.name).join(",")
             const block = transpile_block(
                 e.block,

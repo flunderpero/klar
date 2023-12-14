@@ -427,6 +427,9 @@ function type_check_match_pattern(
                 )
             }
         }
+        if (type) {
+            pattern.attributes.type = type
+        }
         env.add(pattern.name, target_type, pattern.span)
         return target_type
     } else if (pattern instanceof ast.StructuredMatchPattern) {
@@ -861,6 +864,8 @@ function type_check_enum_variants(node: ast.EnumDeclaration, env: TypeEnvironmen
     for (const variant_declaration of node.variants) {
         const variant = EnumType.variant_from_declaration(enum_type, variant_declaration, enum_env)
         enum_type.add_field_immediate(variant_declaration.name, variant)
+        // Bring the variant into scope but only if the name is not already taken.
+        env.add_enum_variant(variant, variant_declaration.span)
     }
 }
 
@@ -1720,7 +1725,7 @@ class EnumType extends ComplexType<EnumData> {
         type_variables: TypeVariable[],
         type_arguments?: Map<TypeVariable, Type>,
         type_variable_map?: Map<TypeVariable, TypeVariable>,
-        private variant_name?: string,
+        public variant_name?: string,
         public variant_tuple_type?: TupleType,
         private variant_parent?: EnumType,
     ) {
@@ -2405,6 +2410,7 @@ export class TypeEnvironment {
     }
 
     private types_by_name = new Map<string, Type>()
+    private enum_name_clashes = new Set<string>()
 
     constructor(private parent?: TypeEnvironment) {}
 
@@ -2424,6 +2430,21 @@ export class TypeEnvironment {
             )
         }
         this.types_by_name.set(name, type)
+    }
+
+    add_enum_variant(enum_variant: EnumType, span: Span) {
+        assert(enum_variant.is_variant && enum_variant.variant_name)
+        const existing = this.types_by_name.get(enum_variant.variant_name)
+        if (existing) {
+            if (existing instanceof EnumType && existing.is_variant) {
+                this.types_by_name.delete(enum_variant.variant_name)
+            }
+            this.enum_name_clashes.add(enum_variant.variant_name)
+        }
+        if (this.enum_name_clashes.has(enum_variant.variant_name)) {
+            return
+        }
+        this.add(enum_variant.variant_name, enum_variant, span)
     }
 
     get(name: string, span: Span): Type {
@@ -4365,22 +4386,41 @@ const test = {
         `)
         assert.equal(type.signature, "Option<T=i32>")
     },
+
+    test_use_on_enum() {
+        const {type} = test.type_check(`
+            enum Foo<T>:
+                Bar(T)
+                Baz
+            end
+
+            let a = Bar(1)
+            match a:
+                Bar(a) => a
+                Baz => 0
+            end
+            a
+        `)
+        assert.equal(type.signature, "Foo<T=i32>.Bar")
+    },
 }
 
 if (Bun.argv[1].endsWith("type_check2.ts")) {
     const filter = Bun.argv[2]
+    let overall = 0
     for (const [name, fn] of Object.entries(test).filter(([name]) => name.startsWith("test"))) {
         if (filter && !name.includes(filter)) {
             continue
         }
+        overall += 1
         try {
             // @ts-ignore
             fn()
             console.log("PASS", name)
         } catch (e) {
             console.error("FAIL", name)
-            console.error(e)
-            break
+            throw e
         }
     }
+    console.log(`PASSED ${overall} tests`)
 }

@@ -132,23 +132,25 @@ async function cli() {
     const test_pattern_index = process.argv.indexOf("--test-pattern")
     const test_pattern = test_pattern_index === -1 ? null : process.argv[test_pattern_index + 1]
     const bail = process.argv.includes("--bail")
-    let failed = false
+    let overall = 0
+    let failed = 0
     for (const test of tests) {
         if (test_pattern && !test.section.join(" ").match(RegExp(test_pattern, "i"))) {
             console.log("Skipping", test.path)
             continue
         }
+        overall += 1
         if (!(await run_test(test))) {
-            failed = true
+            failed += 1
             if (bail) {
                 break
             }
         }
     }
     if (failed) {
-        throw new Error("Some tests failed")
+        throw new Error(`FAILED ${failed}/${overall} tests`)
     }
-    console.log("PASS")
+    console.log(`PASSED ${overall} tests`)
 }
 
 await cli()

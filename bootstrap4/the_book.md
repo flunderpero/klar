@@ -142,8 +142,10 @@ fn main():
 
     -- Use a match expression to get the value.
     let value = match a:
-        Option.Some(value) => value
-        Option.None => panic("Should not be reached")
+        -- Enum variants are automatically imported into the current scope.
+        -- So we can just use `Some` and `None` here.
+        Some(value) => value
+        None => panic("Should not be reached")
     end
 end
 ```
@@ -155,11 +157,11 @@ Within functions you don't need to wrap the return value in `Option` anymore.
 fn divide(divisor i32, dividend i32?) i32?:
     if dividend.is_some():
         if (dividend.unwrap() == 0):
-            return Option.None
+            return None
         end
         return divisor / dividend.unwrap()
     end
-    Option.None
+    None
 end
 
 fn main():

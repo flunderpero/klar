@@ -304,6 +304,19 @@ function code_gen(ast: AST.AST) {
             const values = e.elements.map((x) => transpile_expression(x, ctx)).join(",")
             return `[${values}]`
         } else if (e instanceof AST.IdentifierReference) {
+            if (e.attributes.type?.constructor.name === "EnumType") {
+                let enum_type = e.attributes.type as any
+                if (
+                    enum_type.is_variant &&
+                    enum_type.variant_name === e.name.replace("klar_", "")
+                ) {
+                    const constructor_name = `klar_${enum_type.name}_${enum_type.variant_name}`
+                    if (enum_type.fields.length === 0) {
+                        return `new ${constructor_name}()`
+                    }
+                    return `new ${constructor_name}`
+                }
+            }
             return e.name
         } else if (e instanceof AST.ImplDefinition) {
             return ""
@@ -444,6 +457,9 @@ function code_gen(ast: AST.AST) {
     }
     function declare_captured_variables(pattern: AST.MatchPattern) {
         if (pattern instanceof AST.CaptureMatchPatternOrType) {
+            if (pattern.attributes.type?.constructor.name === "EnumType") {
+                return ""
+            }
             return `let ${pattern.name};`
         } else if (pattern instanceof AST.StructuredMatchPattern) {
             const {fields} = pattern
@@ -472,6 +488,11 @@ function code_gen(ast: AST.AST) {
         } else if (pattern instanceof AST.WildcardMatchPattern) {
             return "true"
         } else if (pattern instanceof AST.CaptureMatchPatternOrType) {
+            if (pattern.attributes.type?.constructor.name === "EnumType") {
+                const enum_type = pattern.attributes.type as any
+                const constructor_name = `klar_${enum_type.variant_parent.name}_${enum_type.variant_name}`
+                return `(${match_expression}.constructor.name == "${constructor_name}")`
+            }
             return `(${pattern.name} = ${match_expression})`
         } else if (
             pattern instanceof AST.StructuredMatchPattern ||
@@ -481,6 +502,16 @@ function code_gen(ast: AST.AST) {
             let target_name
             if (type_expression instanceof AST.IdentifierReference) {
                 target_name = type_expression.name
+                if (type_expression.attributes.type?.constructor.name === "EnumType") {
+                    let enum_type = type_expression.attributes.type as any
+                    if (enum_type.is_variant) {
+                        const constructor_name = `klar_${enum_type.variant_parent.name}_${enum_type.variant_name}`
+                        if (enum_type.fields.length === 0) {
+                            target_name = `${constructor_name}()`
+                        }
+                        target_name = `${constructor_name}`
+                    }
+                }
             } else if (
                 type_expression instanceof AST.FieldAccess &&
                 type_expression.target instanceof AST.IdentifierReference &&

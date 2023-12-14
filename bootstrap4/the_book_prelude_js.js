@@ -1,10 +1,6 @@
-function klar_panic(message) {
-    throw new Error(message)
-}
-
 function klar_assert(condition) {
     if (!condition.value) {
-        klar_panic("Assertion failed")
+        klar_panic(new str("Assertion failed"))
     }
 }
 
@@ -17,6 +13,6 @@ function klar_assert_panic(f) {
     f();
     global.klar_panic = old_panic;
     if (!panicked) {
-        klar_panic("Expected panic")
+        klar_panic(new str("Expected panic"))
     }
 }

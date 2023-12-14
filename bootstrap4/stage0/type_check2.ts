@@ -103,8 +103,6 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         node.attributes.target_type = target_type
     } else if (node instanceof ast.IndexedAccess) {
         const index_type = type_check(node.index, env, {...ctx, used_in_expression: true})
-        // TODO: This should be the usize type.
-        expect_assignable_to(env.i32, index_type, node.span)
         const target_type = expect_type_with_fields(
             type_check(node.target, env, {...ctx, used_in_expression: true}),
             node.span,
@@ -115,13 +113,15 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
                 target_type.field("set", node.span),
                 node.span,
             )
-            type = set_function_type.return_type
+            expect_assignable_to(set_function_type.parameters[1], index_type, node.span)
+            type = set_function_type.parameters[2]
         } else {
             expect_to_implement_trait(target_type, "IndexedGet", env, node.span)
             const get_function_type = expect_function_type(
                 target_type.field("get", node.span),
                 node.span,
             )
+            expect_assignable_to(get_function_type.parameters[1], index_type, node.span)
             type = get_function_type.return_type
         }
     } else if (node instanceof ast.Return) {
@@ -141,7 +141,7 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
             type = Type.unit
         }
     } else if (node instanceof ast.BinaryExpression) {
-        type = binary_expression(node, env, ctx)
+        type = type_check_binary_expression(node, env, ctx)
     } else if (node instanceof ast.FunctionDefinition) {
         const function_type = FunctionType.from_declaration(node.declaration, env)
         type_check_function_body(node, function_type, env)
@@ -178,7 +178,14 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         type = env.get(node.name, node.span)
         if (type instanceof ComplexType && node.type_parameters.length > 0) {
             const type_parameters = parse_type_arguments(type, node.type_parameters, env, node.span)
-            type = type.with_type_arguments(type_parameters, node.span)
+            type = type.with_type_arguments(type_parameters, node.span).with_scope_type_variables(
+                TypeVariable.create_type_variable_map(
+                    type.type_variables,
+                    TypeParameters.from_declaration(node.type_parameters, env).type_parameters.map(
+                        (x) => x.type,
+                    ),
+                ),
+            )
         }
     } else if (node instanceof ast.Loop) {
         type_check(node.block, env, {...ctx, used_in_expression: false, inside_loop: true})
@@ -406,6 +413,15 @@ function type_check_match_pattern(
                 return target_type
             }
         }
+        if (target_type instanceof TypeVariable) {
+            if (Object.keys(pattern.fields).length > 0) {
+                throw new TypeCheckError(
+                    `Cannot match on type variable ${quote(target_type.signature)}`,
+                    pattern.span,
+                )
+            }
+            return target_type
+        }
         const struct_type = expect_type_with_fields(target_type, pattern.span)
         if (Object.keys(pattern.fields).length !== struct_type.fields.size) {
             throw new TypeCheckError(
@@ -497,7 +513,11 @@ function type_check_variable_declaration(
     env.add(node.name, value_type, node.span)
 }
 
-function binary_expression(node: ast.BinaryExpression, env: TypeEnvironment, ctx: Context): Type {
+function type_check_binary_expression(
+    node: ast.BinaryExpression,
+    env: TypeEnvironment,
+    ctx: Context,
+): Type {
     const trait_based: Record<string, [string, string]> = {
         "+": ["Add", "add"],
         "-": ["Sub", "sub"],
@@ -524,6 +544,16 @@ function binary_expression(node: ast.BinaryExpression, env: TypeEnvironment, ctx
         )
     }
     const [trait_name, function_name] = trait_based[node.operator]
+    if (lhs instanceof TypeVariable) {
+        // TODO: We need trait bounds.
+        expect_equal_types(lhs, rhs, node.span)
+        const trait_type = TraitType.from_env(trait_name, env, node.span)
+        const function_type = expect_function_type(
+            trait_type.field(function_name, node.span),
+            node.span,
+        )
+        return function_type.return_type
+    }
     if (!(lhs instanceof ComplexType) && !(lhs instanceof FunctionType)) {
         throw new TypeCheckError(
             `Expected complex type that is not a function but got ${quote(lhs.signature)}`,
@@ -891,11 +921,6 @@ function type_check_impl(
         if (node.trait_name) {
             complex_type.data.traits.push(node.trait_name)
             let trait_type = TraitType.from_env(node.trait_name, impl_env, node.span)
-            const type_variable_map = TypeVariable.create_type_variable_map(
-                trait_type.type_variables,
-                complex_type.type_variables,
-            )
-            type_variable_map.set(TypeVariable.Self, complex_type as any)
             const trait_type_arguments = parse_type_arguments(
                 trait_type,
                 node.trait_type_parameters,
@@ -904,6 +929,15 @@ function type_check_impl(
                 {ignore_missing: true},
             )
             trait_type = trait_type.with_type_arguments(trait_type_arguments, node.span)
+            const type_variable_map = new Map<TypeVariable, TypeVariable>()
+            for (let i = 0; i < node.trait_type_parameters.length; i++) {
+                const arg = TypeParameter.from_declaration(node.trait_type_parameters[i], impl_env)
+                if (arg.type instanceof TypeVariable) {
+                    const src = trait_type.type_variables[i]
+                    type_variable_map.set(src, arg.type)
+                }
+            }
+            type_variable_map.set(TypeVariable.Self, complex_type as any)
             // Add declaration for later user.
             node.attributes.trait_declaration = trait_type.data.declaration
             for (let [name, type] of trait_type.fields) {
@@ -1643,6 +1677,8 @@ class EnumType extends ComplexType<EnumData> {
             type.variant_tuple_type = this.variant_tuple_type!.resolve_type_variables(
                 type_arguments,
             ) as TupleType
+            type.variant_tuple_type =
+                type.variant_tuple_type!.with_scope_type_variables(type_variable_map)
             return type
         }
         for (const [name, variant] of this.variants) {
@@ -1848,10 +1884,12 @@ export class FunctionType extends ComplexType<FunctionData> {
             if (!(type instanceof ComplexType)) {
                 return type
             }
-            // Map type variables to the function type variables.
             const type_variable_map = TypeVariable.create_type_variable_map(
                 type.type_variables,
-                type_variables,
+                TypeParameters.from_declaration(
+                    declaration.type_parameters,
+                    env,
+                ).all_type_variables(),
             )
             type = type.with_scope_type_variables(type_variable_map)
             if (declaration.type_parameters.length > 0) {
@@ -1984,8 +2022,10 @@ export class FunctionType extends ComplexType<FunctionData> {
         if (!this.return_type.assignable_to(other.return_type)) {
             return false
         }
-        for (let i = 0; i < this.parameters.length; i++) {
-            if (!this.parameters[i].assignable_to(other.parameters[i])) {
+        const self_parameters = this.parameters_without_self
+        const other_parameters = other.parameters_without_self
+        for (let i = 0; i < self_parameters.length; i++) {
+            if (!self_parameters[i].assignable_to(other_parameters[i])) {
                 return false
             }
         }
@@ -2061,6 +2101,26 @@ class TupleType extends ComplexType<TupleData> {
         }
         s += ")"
         return s
+    }
+
+    assignable_to(other: Type): boolean {
+        if (this.equals(other)) {
+            return true
+        }
+        if (!(other instanceof TupleType)) {
+            return false
+        }
+        if (this.fields.size !== other.fields.size) {
+            return false
+        }
+        for (let i = 0; i < this.fields.size; i++) {
+            const this_field = this.fields.get(`${i}`)!
+            const other_field = other.fields.get(`${i}`)!
+            if (!this_field.assignable_to(other_field)) {
+                return false
+            }
+        }
+        return true
     }
 }
 
@@ -2381,11 +2441,11 @@ const test = {
                 trait ToStr:
                     fn to_str(self) str
                 end
-                trait IndexedGet<T>:
-                    fn get(self, index i32) T
+                trait IndexedGet<K, V>:
+                    fn get(self, key K) V
                 end
-                trait IndexedSet<T>:
-                    fn set(self, index i32, value T)
+                trait IndexedSet<K, V>:
+                    fn set(self, key K, value V)
                 end
                 struct Array<T>:
                 end
@@ -4003,7 +4063,7 @@ const test = {
                 a3 i32
             end
 
-            impl IndexedGet<i32> for Foo:
+            impl IndexedGet<i32, i32> for Foo:
                 fn get(self, i i32) i32 =>
                     match i:
                         0 => self.a1
@@ -4012,14 +4072,13 @@ const test = {
                     end
             end
 
-            impl IndexedSet<i32> for Foo:
+            impl IndexedSet<i32, i32> for Foo:
                 fn set(mut self, i i32, v i32):
                     match i:
                         0 => self.a1 = v
                         1 => self.a2 = v
                         2 => self.a3 = v
                     end
-                    return
                 end
             end
 
@@ -4028,6 +4087,69 @@ const test = {
             foo[1] = 4
         `)
         assert.equal(type, env.unit)
+    },
+
+    test_indexed_access_on_generic_type() {
+        const {type, env} = test.type_check_with_core_types(`
+            enum Option<T>:
+                Some(T)
+                None
+            end
+
+            struct Map<K, V>:
+                k1 K
+                k2 K
+                v1 V
+                v2 V
+            end
+
+            impl IndexedGet<K, Option<V>> for Map<K, V>:
+                fn get(self, k K) Option<V>:
+                    match k:
+                        self.k1 => Option<V>.Some(self.v1)
+                        self.k2 => Option<V>.Some(self.v2)
+                        _ => Option<V>.None
+                    end
+                end
+            end
+
+            impl IndexedSet<K, V> for Map<K, V>:
+                fn set(mut self, k K, v V):
+                    match k:
+                        self.k1 => self.v1 = v
+                        self.k2 => self.v2 = v
+                        _ => panic("Key not found")
+                    end
+                end
+            end
+
+            let map = Map<str, i32>{k1: "a", k2: "b", v1: 1, v2: 2}
+            map["a"] = 3
+            map["a"]
+        `)
+        const map_type = env.get("map", builtin_span)
+        assert(map_type instanceof ComplexType)
+        assert.equal(map_type.signature, "Map<K=str,V=i32>")
+        assert.equal(
+            map_type.field("get", builtin_span)!.signature,
+            "get<>(Map<K=str,V=i32>,str)->Option<V=i32>",
+        )
+        assert.equal(type.signature, "Option<V=i32>")
+    },
+
+    test_indexed_access_on_generic_type_with_concrete_type() {
+        const {type} = test.type_check_with_core_types(`
+            struct Foo<T>:
+                v T
+            end
+
+            impl IndexedGet<i32, T> for Foo<T>:
+                fn get(self, i i32) T => self.v
+            end
+
+            Foo
+        `)
+        assert.equal(type.signature, "Foo<T>")
     },
 
     test_concise_error_handling_with_return() {

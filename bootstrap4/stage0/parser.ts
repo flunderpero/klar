@@ -1192,8 +1192,8 @@ export function parse(tokens: TokenStream): AST {
     function parse_assignment(target: Expression): Assignment {
         const span = tokens.consume().span
         const value = parse_expression()
-        if (value instanceof IndexedAccess) {
-            value.is_write = true
+        if (target instanceof IndexedAccess) {
+            target.is_write = true
         }
         return new Assignment({target, value}, Span.combine(span, value))
     }

@@ -5,6 +5,36 @@ enum Option<T>:
     Some(T)
 end
 
+impl Option<T>:
+    fn is_none(self) bool:
+        match self:
+            Option<T>.None => true
+            Option<T>.Some(_) => false
+        end
+    end
+
+    fn is_some(self) bool:
+        match self:
+            Option<T>.None => false
+            Option<T>.Some(_) => true
+        end
+    end
+
+    fn unwrap(self) T:
+        match self:
+            Option<T>.None => panic("called `Option.unwrap()` on a `None` value")
+            Option<T>.Some(value) => value
+        end
+    end
+
+    fn unwrap_or(self, def T) T:
+        match self:
+            Option<T>.None => def
+            Option<T>.Some(value) => value
+        end
+    end
+end
+
 trait ToStr:
     fn to_str(self) str
 end
@@ -45,12 +75,12 @@ end
 trait Ord:
 end
 
-trait IndexedGet<T>:
-    fn get(self, i i32) T
+trait IndexedGet<K, V>:
+    fn get(self, key K) V
 end
 
-trait IndexedSet<T>:
-    fn set(mut self, i i32, v T)
+trait IndexedSet<K, V>:
+    fn set(mut self, key K, value V)
 end
 
 trait Iterator<T>:
@@ -203,7 +233,7 @@ impl Len for Array<T>:
     fn len(self) i32 => self.data.len()
 end
 
-impl IndexedGet<T> for Array<T>:
+impl IndexedGet<i32, T> for Array<T>:
     fn get(self, i i32) T:
         if i >= self.len():
             panic("Array index out of bounds")
@@ -212,7 +242,7 @@ impl IndexedGet<T> for Array<T>:
     end
 end
 
-impl IndexedSet<T> for Array<T>:
+impl IndexedSet<i32, T> for Array<T>:
     fn set(mut self, i i32, v T):
         if i >= self.len():
             panic("Array index out of bounds")
@@ -271,7 +301,7 @@ impl Len for Vector<T>:
     fn len(self) i32 => self.data.len()
 end
 
-impl IndexedGet<T> for Vector<T>:
+impl IndexedGet<i32, T> for Vector<T>:
     fn get(self, i i32) T:
         if i >= self.len():
             panic("Vector index out of bounds")
@@ -280,7 +310,7 @@ impl IndexedGet<T> for Vector<T>:
     end
 end
 
-impl IndexedSet<T> for Vector<T>:
+impl IndexedSet<i32, T> for Vector<T>:
     fn set(mut self, i i32, v T):
         if i >= self.len():
             panic("Vector index out of bounds")
@@ -303,6 +333,55 @@ impl Iterator<T> for VectorIter<T>:
         self.index = self.index + 1
         Option.Some(value)
     end
+end
+
+-- Map
+
+struct Map<K, V>:
+    data Vector<(K, Option<V>)>
+end
+
+impl Map<K, V>:
+    fn new() Map<K, V> => Map<K, V> { data: Vector<(K, Option<V>)>.new() }
+end
+
+impl IndexedGet<K, Option<V>> for Map<K, V>:
+    fn get(self, key K) Option<V>:
+        mut i = 0
+        loop:
+            if i >= self.data.len():
+                break
+            end
+            let v = self.data.get(i)
+            if v.0 == key:
+                return v.1
+            end
+            i = i + 1
+        end
+        Option<V>.None
+    end
+end
+
+impl IndexedSet<K, V> for Map<K, V>:
+    fn set(mut self, key K, value V):
+        mut i = 0
+        loop:
+            if i >= self.data.len():
+                break
+            end
+            let v = self.data.get(i)
+            if v.0 == key:
+                self.data.set(i, (key, Option<V>.Some(value)))
+                return
+            end
+            i = i + 1
+        end
+        self.data.push((key, Option<V>.Some(value)))
+    end
+end
+
+impl Len for Map<K, V>:
+    fn len(self) i32 => self.data.len()
 end
 
 struct Env:

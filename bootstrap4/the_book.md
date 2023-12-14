@@ -171,6 +171,28 @@ fn main():
 end
 ```
 
+##### Map
+
+```klar
+fn main():
+    mut map = Map<str, i32>.new()
+    map["one"] = 1  -- Idiomatic way of setting elements.
+    map.set("two", 2) -- Alternative way of setting elements.
+    map["three"] = 3
+    assert(map.len() == 3)
+
+    -- Accessing elements by key.
+    let two = map["two"] -- Idiomatic way of getting elements.
+    -- `two` is of type `Option<i32>`.
+    assert(two.is_some())
+
+    let four = map.get("four") -- Alternative way of getting elements.
+    assert(four.is_none())
+end
+```
+
+```
+
 ### Expressions and Statements
 
 In Klar, almost everything is an expression. Expressions return a value.

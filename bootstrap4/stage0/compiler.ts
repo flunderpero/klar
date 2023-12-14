@@ -271,11 +271,12 @@ function code_gen(ast: AST.AST) {
                 const declaration = e.target.attributes.type?.declaration
                 assert(typeof e.field === "string")
                 const variant = declaration.get_variant(e.field)
-                assert(variant, `Enum ${declaration.name} has no variant ${e.field}`)
-                if (variant.fields.fields.length === 0) {
-                    return `new ${declaration.name}_${e.field}()`
+                if (variant) {
+                    if (variant.fields.fields.length === 0) {
+                        return `new ${declaration.name}_${e.field}()`
+                    }
+                    return `new ${declaration.name}_${e.field}`
                 }
-                return `new ${declaration.name}_${e.field}`
             }
             const target = transpile_expression(e.target, ctx)
             if (parseInt(e.field).toString() === e.field) {

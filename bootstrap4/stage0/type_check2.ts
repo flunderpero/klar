@@ -293,18 +293,23 @@ function expect_type_can_be_used_in_assignments(type: Type, env: TypeEnvironment
         const unresolved_type_variables = type
             .unresolved_type_variables()
             .filter((v) => env.get_or_null(v.name) === null)
+        if (type instanceof EnumType) {
+            if (!type.is_variant) {
+                throw new TypeCheckError(`Cannot assign enum type ${quote(type.signature)}`, span)
+            }
+        }
         if (unresolved_type_variables.length > 0) {
+            if (type instanceof EnumType) {
+                if (type.variant_tuple_type!.fields.size === 0) {
+                    return
+                }
+            }
             throw new TypeCheckError(
                 `Cannot assign a type with unresolved type variables ${quote(
                     unresolved_type_variables.map((v) => v.signature).join(","),
                 )} to a variable`,
                 span,
             )
-        }
-        if (type instanceof EnumType) {
-            if (!type.is_variant) {
-                throw new TypeCheckError(`Cannot assign enum type ${quote(type.signature)}`, span)
-            }
         }
     }
 }
@@ -594,9 +599,26 @@ function type_check_function_call_or_enum_instantiation(
                 node.span,
             )
         }
+        const arg_types = node.args.map((x) => type_check(x, env, {used_in_expression: true}))
+        if (
+            node.args
+                .map((_, i) => variant_type.field(`${i}`, node.span))
+                .every((x) => x instanceof TypeVariable) &&
+            arg_types.every((x) => !(x instanceof TypeVariable))
+        ) {
+            // Infer the type.
+            const type_arguments = target.type_variables.map((v) => {
+                const index = node.args.findIndex(
+                    (_, i) => variant_type.field(`${i}`, node.span) === v,
+                )
+                return arg_types[index]
+            })
+            return target.with_type_arguments(type_arguments, node.span)
+        }
         for (let i = 0; i < node.args.length; i++) {
-            const arg_type = type_check(node.args[i], env, {used_in_expression: true})
-            expect_assignable_to(variant_type.fields.get(`${i}`)!, arg_type, node.span)
+            const arg_type = arg_types[i]
+            const field_type = variant_type.fields.get(`${i}`)!
+            expect_assignable_to(field_type, arg_type, node.span)
         }
         return target
     }
@@ -635,6 +657,23 @@ function type_check_function_call_or_enum_instantiation(
 
 function struct_instantiation(node: ast.StructInstantiation, env: TypeEnvironment): StructType {
     let struct_type = StructType.from_env(node.target_struct_name, env, node.span)
+    const value_types = Object.values(node.fields).map((v) =>
+        type_check(v, env, {used_in_expression: true}),
+    )
+    if (
+        struct_type.has_type_parameters() &&
+        node.type_arguments.length === 0 &&
+        value_types.every((x) => !(x instanceof TypeVariable))
+    ) {
+        // Infer the type.
+        const type_arguments = struct_type.type_variables.map((v) => {
+            const index = Object.entries(node.fields).findIndex(
+                ([name, _]) => struct_type.field(name, node.span) === v,
+            )
+            return value_types[index]
+        })
+        return struct_type.with_type_arguments(type_arguments, node.span)
+    }
     const type_arguments = parse_type_arguments(struct_type, node.type_arguments, env, node.span)
     struct_type = struct_type.with_type_arguments(type_arguments, node.span)
     for (const [name, value] of Object.entries(node.fields)) {
@@ -4249,6 +4288,32 @@ const test = {
             1 == 2;
         `)
         assert.equal(type, env.unit)
+    },
+
+    test_infer_generic_type_from_enum_instantiation() {
+        const {type} = test.type_check(`
+            enum Foo<T>:
+                Bar
+                Baz(T)
+            end
+
+            let foo = Foo.Baz(1)
+            let bar = Foo.Bar
+            foo
+        `)
+        assert.equal(type.signature, "Foo<T=i32>.Baz")
+    },
+
+    test_infer_generic_type_from_struct_instantiation() {
+        const {type} = test.type_check(`
+            struct Foo<T>:
+                a T
+            end
+
+            let foo = Foo{a: 1}
+            foo
+        `)
+        assert.equal(type.signature, "Foo<T=i32>")
     },
 }
 

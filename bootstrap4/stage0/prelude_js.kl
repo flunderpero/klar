@@ -8,29 +8,29 @@ end
 impl Option<T>:
     fn is_none(self) bool:
         match self:
-            Option<T>.None => true
-            Option<T>.Some(_) => false
+            Option.None => true
+            Option.Some(_) => false
         end
     end
 
     fn is_some(self) bool:
         match self:
-            Option<T>.None => false
-            Option<T>.Some(_) => true
+            Option.None => false
+            Option.Some(_) => true
         end
     end
 
     fn unwrap(self) T:
         match self:
-            Option<T>.None => panic("called `Option.unwrap()` on a `None` value")
-            Option<T>.Some(value) => value
+            Option.None => panic("called `Option.unwrap()` on a `None` value")
+            Option.Some(value) => value
         end
     end
 
     fn unwrap_or(self, def T) T:
         match self:
-            Option<T>.None => def
-            Option<T>.Some(value) => value
+            Option.None => def
+            Option.Some(value) => value
         end
     end
 end
@@ -90,10 +90,10 @@ trait Iterator<T>:
         loop:
             let next = self.next()
             match next:
-                Option<T>.None :
+                Option.None :
                     break
                 end
-                Option<T>.Some(value) => f(value)
+                Option.Some(value) => f(value)
             end
         end
     end
@@ -137,29 +137,29 @@ end
 impl Result<T, E>:
     fn is_ok(self) bool:
         match self:
-            Result<T, E>.Ok(_) => true
-            Result<T, E>.Err(_) => false
+            Result.Ok(_) => true
+            Result.Err(_) => false
         end
     end
 
     fn is_err(self) bool:
         match self:
-            Result<T, E>.Ok(_) => false
-            Result<T, E>.Err(_) => true
+            Result.Ok(_) => false
+            Result.Err(_) => true
         end
     end
 
     fn unwrap(self) T:
         match self:
-            Result<T, E>.Ok(value) => value
-            Result<T, E>.Err(err) => panic(f"called `Result.unwrap()` on an `Err` value: {err.msg}")
+            Result.Ok(value) => value
+            Result.Err(err) => panic(f"called `Result.unwrap()` on an `Err` value: {err.msg}")
         end
     end
 
     fn unwrap_err(self) Error<E>:
         match self:
-            Result<T, E>.Ok(value) => panic(f"called `Result.unwrap_err()` on an `Ok` value")
-            Result<T, E>.Err(err) => err
+            Result.Ok(value) => panic(f"called `Result.unwrap_err()` on an `Ok` value")
+            Result.Err(err) => err
         end
     end
 end
@@ -167,8 +167,8 @@ end
 impl ToStr for Result<T, E>:
     fn to_str(self) str:
         match self:
-            Result<T, E>.Ok(value) => f"Ok()"
-            Result<T, E>.Err(err) => f"Err()"
+            Result.Ok(value) => f"Ok()"
+            Result.Err(err) => f"Err()"
         end
     end
 end
@@ -358,7 +358,7 @@ impl IndexedGet<K, Option<V>> for Map<K, V>:
             end
             i = i + 1
         end
-        Option<V>.None
+        Option.None
     end
 end
 

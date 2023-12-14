@@ -226,6 +226,17 @@ function type_check_return_type(expected_return_type: Type, return_type: Type, s
                 span,
             )
         }
+    } else if (expected_return_type.name === "Option" && return_type.name !== "Option") {
+        const option_type = expect_type_with_fields(expected_return_type, span)
+        if (return_type.name === "None") {
+            return
+        } else {
+            expect_assignable_to(
+                option_type.type_arguments.get(option_type.type_variables[0])!,
+                return_type,
+                span,
+            )
+        }
     } else {
         expect_assignable_to(expected_return_type, return_type, span)
     }
@@ -280,6 +291,19 @@ function expect_assignable_to(expected: Type, got: Type, span: Span) {
     if (got === Type.internal_any || expected === Type.internal_any) {
         // This is a special handling for the `panic` function.
         return
+    }
+    if (expected.name === "Option" && got.name !== "Option") {
+        const option_type = expect_type_with_fields(expected, span)
+        if (got.name === "None") {
+            return
+        } else {
+            expect_assignable_to(
+                option_type.type_arguments.get(option_type.type_variables[0])!,
+                got,
+                span,
+            )
+            return
+        }
     }
     if (got.assignable_to(expected)) {
         return
@@ -4314,6 +4338,32 @@ const test = {
             foo
         `)
         assert.equal(type.signature, "Foo<T=i32>")
+    },
+
+    test_option_type() {
+        const {type} = test.type_check(`
+            enum Option<T>:
+                Some(T)
+                None
+            end
+
+            impl Option<T>:
+                fn is_none(self) bool:
+                    match self:
+                        Option<T>.Some(_) => false
+                        Option<T>.None => true
+                    end
+                end
+            end
+
+            fn foo(a i32?) i32?:
+                if a.is_none() => return 0
+                a
+            end
+
+            foo(1)
+        `)
+        assert.equal(type.signature, "Option<T=i32>")
     },
 }
 

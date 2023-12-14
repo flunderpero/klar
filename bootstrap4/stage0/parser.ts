@@ -1839,10 +1839,18 @@ export function parse(tokens: TokenStream): AST {
             }
             end_span = tokens.expect(">").span
         }
-        return new TypeDeclaration(
+        let type = new TypeDeclaration(
             {name, type_parameters: type_parameters},
             Span.combine(token.span, end_span),
         )
+        if (tokens.simple_peek() === "?") {
+            end_span = tokens.consume().span
+            type = new TypeDeclaration(
+                {name: "Option", type_parameters: [type]},
+                Span.combine(token.span, end_span),
+            )
+        }
+        return type
     }
 
     function parse_tuple_or_unit_type(): TupleTypeDeclaration | UnitTypeDeclaration {

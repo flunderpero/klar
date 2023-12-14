@@ -162,7 +162,14 @@ function code_gen(ast: AST.AST) {
             )
             return `(function () { const _ = new str(""); ${parts.join("")}; return _; })()`
         } else if (e instanceof AST.FunctionCall) {
-            const args = e.args.map((x) => transpile_expression(x, ctx))
+            const args = e.args.map((x, i) => {
+                let s = transpile_expression(x, ctx)
+                const p = (e.target.attributes?.type as any)?.parameters_without_self?.[i]
+                if (p?.name === "Option" && x.attributes.type!.name !== "Option") {
+                    s = `new klar_Option_Some(${s})`
+                }
+                return s
+            })
             let call
             if (e.target instanceof AST.FunctionDefinition) {
                 call = `${e.target.declaration.name}(${args.join(",")})\n`
@@ -313,12 +320,26 @@ function code_gen(ast: AST.AST) {
         }
     }
     function wrap_return_value(value: string, ctx: Context) {
-        if (ctx.func?.throws) {
-            // Wrap the return value in a `Result.Ok` or `Result.Err`.
+        const throws = ctx.func?.throws
+        const is_option = ctx.func?.return_type.name === "Option"
+        if (throws || is_option) {
+            // Wrap the return value in a `Result` or `Option` constructor.
             return `(function(){
                     let res = ${value}; 
-                    return res.constructor.name === "klar_Error" ? 
-                        new klar_Result_Err(res): new klar_Result_Ok(res)})()`
+                    if (${is_option}) {
+                        if (res.constructor.name !== "klar_Option_Some" 
+                            && res.constructor.name !== "klar_Option_None") {
+                            res = new klar_Option_Some(res);
+                        }
+                    }
+                    if (${throws}) {
+                        if (res.constructor.name === "klar_Error") {
+                            res = new klar_Result_Err(res);
+                        } else {
+                            res = new klar_Result_Ok(res)
+                        }
+                    }
+                    return res})()`
         }
         return value
     }

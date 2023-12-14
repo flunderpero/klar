@@ -22,6 +22,7 @@ export class LexicalToken extends Token {
             | "."
             | ","
             | "!"
+            | "?"
             | ":"
             | ";"
             | "_"
@@ -373,6 +374,7 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
                 ".",
                 ",",
                 "!",
+                "?",
                 "=",
                 "+",
                 "-",

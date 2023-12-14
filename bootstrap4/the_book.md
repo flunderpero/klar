@@ -131,6 +131,42 @@ fn main():
 end
 ```
 
+##### The `Option` Type
+
+The `Option` type is a generic type that can either be `Some` value or `None`.
+
+```klar
+fn main():
+    let a = Option.Some(42)
+    let b = Option.None
+
+    -- Use a match expression to get the value.
+    let value = match a:
+        Option.Some(value) => value
+        Option.None => panic("Should not be reached")
+    end
+end
+```
+
+The idiomatic way of using `Option` is to append a `?` to the type.
+Within functions you don't need to wrap the return value in `Option` anymore.
+
+```klar
+fn divide(divisor i32, dividend i32?) i32?:
+    if dividend.is_some():
+        if (dividend.unwrap() == 0):
+            return Option.None
+        end
+        return divisor / dividend.unwrap()
+    end
+    Option.None
+end
+
+fn main():
+    assert(divide(10, 2).is_some())
+end
+```
+
 #### Compound Types
 
 ##### Tuples
@@ -189,8 +225,6 @@ fn main():
     let four = map.get("four") -- Alternative way of getting elements.
     assert(four.is_none())
 end
-```
-
 ```
 
 ### Expressions and Statements
@@ -257,7 +291,7 @@ end
 
 #### The Unit Operator `;`
 
-Sometimes you need to convert an expression to a statement like in 
+Sometimes you need to convert an expression to a statement like in
 this example:
 
 ```klar
@@ -267,7 +301,7 @@ end
 
 fn main():
     -- The following would not compile, because `x + 1` is an expression
-    -- of the type `i32` but `apply` expects a closure that returns 
+    -- of the type `i32` but `apply` expects a closure that returns
     -- the unit type `()`.
     --   apply(fn(x i32) => x + 1)
 

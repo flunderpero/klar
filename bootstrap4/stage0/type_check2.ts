@@ -368,6 +368,10 @@ function type_check_match(node: ast.Match, env: TypeEnvironment, ctx: Context): 
     if (ctx.used_in_expression) {
         let type = arm_types[0]!
         for (let i = 1; i < arm_types.length; i++) {
+            if (node.arms[i].block.body.at(-1) instanceof ast.Return) {
+                // If the last statement in the block is a return, we can ignore the type.
+                continue
+            }
             expect_equal_types(type, arm_types[i], node.span)
             if (type === Type.internal_any) {
                 type = arm_types[i]
@@ -4187,6 +4191,18 @@ const test = {
             end
         `)
         assert.equal(type, env.i32)
+    },
+
+    test_match_arms_with_return_are_ignored() {
+        test.type_check(`
+            fn foo() str:
+                let s = match 1:
+                    1 => 42
+                    2 => return "bar"
+                end
+                "foo" 
+            end
+        `)
     },
 
     test_interpolated_string() {

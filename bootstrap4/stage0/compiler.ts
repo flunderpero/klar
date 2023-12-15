@@ -493,7 +493,7 @@ function code_gen(ast: AST.AST) {
         pattern: AST.MatchPattern,
     ) {
         if (pattern instanceof AST.LiteralMatchPattern) {
-            return `(${match_expression}.value === ${pattern.value})`
+            return `(${match_expression}.value === ${pattern.value.value})`
         } else if (pattern instanceof AST.WildcardMatchPattern) {
             return "true"
         } else if (pattern instanceof AST.CaptureMatchPatternOrType) {

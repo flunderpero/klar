@@ -934,9 +934,9 @@ export abstract class MatchPattern extends ASTNode {
 
 export class LiteralMatchPattern extends MatchPattern {
     kind = "literal number match pattern"
-    value: number | boolean
+    value: Number_ | Bool | Char | Str
 
-    constructor(data: {value: number | boolean}, span: Span) {
+    constructor(data: {value: Number_ | Bool | Char | Str}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof LiteralMatchPattern.prototype)
     }
@@ -1497,10 +1497,28 @@ export function parse(tokens: TokenStream): AST {
         const token = tokens.peek()
         if (token instanceof NumberToken) {
             tokens.consume()
-            return new LiteralMatchPattern({value: parseInt(token.value)}, token.span)
+            return new LiteralMatchPattern(
+                {value: new Number_({value: token.value}, token.span)},
+                token.span,
+            )
+        } else if (token instanceof StringToken) {
+            tokens.consume()
+            return new LiteralMatchPattern(
+                {value: new Str({value: token.value, is_multiline: false}, token.span)},
+                token.span,
+            )
+        } else if (token instanceof CharToken) {
+            tokens.consume()
+            return new LiteralMatchPattern(
+                {value: new Char({value: token.value}, token.span)},
+                token.span,
+            )
         } else if (token instanceof LexicalToken && ["true", "false"].includes(token.value)) {
             tokens.consume()
-            return new LiteralMatchPattern({value: token.value === "true"}, token.span)
+            return new LiteralMatchPattern(
+                {value: new Bool({value: token.value === "true"}, token.span)},
+                token.span,
+            )
         } else if (token instanceof LexicalToken && token.value === "_") {
             tokens.consume()
             return new WildcardMatchPattern(token.span)

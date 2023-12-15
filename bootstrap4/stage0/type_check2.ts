@@ -400,16 +400,15 @@ function type_check_match_pattern(
     ctx: Context,
 ): Type {
     if (pattern instanceof ast.LiteralMatchPattern) {
-        if (typeof pattern.value === "number") {
+        if (pattern.value instanceof ast.Number_) {
             if (!env.i32.assignable_to(target_type)) {
                 // Note how the order in the exception is reversed.
                 // We did not expect to find a number but `target_type`.
                 // This logic differs from `expect_assignable_to`.
                 throw new TypeMismatchError(target_type, env.i32, pattern.span)
             }
-            expect_assignable_to(env.i32, target_type, pattern.span)
             return env.i32
-        } else if (typeof pattern.value === "boolean") {
+        } else if (pattern.value instanceof ast.Bool) {
             if (!env.bool.assignable_to(target_type)) {
                 // Note how the order in the exception is reversed.
                 // We did not expect to find a number but `target_type`.
@@ -417,6 +416,22 @@ function type_check_match_pattern(
                 throw new TypeMismatchError(target_type, env.bool, pattern.span)
             }
             return env.bool
+        } else if (pattern.value instanceof ast.Str) {
+            if (!env.str.assignable_to(target_type)) {
+                // Note how the order in the exception is reversed.
+                // We did not expect to find a number but `target_type`.
+                // This logic differs from `expect_assignable_to`.
+                throw new TypeMismatchError(target_type, env.str, pattern.span)
+            }
+            return env.str
+        } else if (pattern.value instanceof ast.Char) {
+            if (!env.char.assignable_to(target_type)) {
+                // Note how the order in the exception is reversed.
+                // We did not expect to find a number but `target_type`.
+                // This logic differs from `expect_assignable_to`.
+                throw new TypeMismatchError(target_type, env.char, pattern.span)
+            }
+            return env.char
         } else {
             throw new TypeCheckError(
                 `Not implemented for literal type ${quote(pattern.value)}`,
@@ -3998,7 +4013,7 @@ const test = {
         )
     },
 
-    test_match_primitives() {
+    test_match_literal_number() {
         const {type, env} = test.type_check(`
             match 1:
                 1 => true
@@ -4006,6 +4021,36 @@ const test = {
             end
         `)
         assert.equal(type, env.bool)
+    },
+
+    test_match_literal_bool() {
+        const {type, env} = test.type_check(`
+            match true:
+                true => 1
+                false => 2
+            end
+        `)
+        assert.equal(type, env.i32)
+    },
+
+    test_match_literal_string() {
+        const {type, env} = test.type_check(`
+            match "foo":
+                "foo" => 1
+                "bar" => 2
+            end
+        `)
+        assert.equal(type, env.i32)
+    },
+
+    test_match_literal_char() {
+        const {type, env} = test.type_check(`
+            match 'f':
+                'f' => 1
+                'b' => 2
+            end
+        `)
+        assert.equal(type, env.i32)
     },
 
     test_match_struct() {

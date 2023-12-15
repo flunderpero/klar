@@ -532,7 +532,7 @@ export class TraitDeclaration extends DeclarationOrDefinition {
     }
 }
 
-// Statemens
+// Statements
 
 export abstract class Statement extends ASTNode {
     kind = "statement"
@@ -993,7 +993,7 @@ export class TupleMatchPattern extends MatchPattern {
     }
 }
 
-export class Loop extends Expression {
+export class Loop extends Statement {
     kind = "loop"
     block: Block
 

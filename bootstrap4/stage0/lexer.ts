@@ -87,12 +87,12 @@ export class NumberToken extends Token {
 }
 
 export const escape_sequences: Record<string, string> = {
-    "\0": "\\0",
-    "\n": "\\n",
-    "\r": "\\r",
-    "\t": "\\t",
-    "\v": "\\v",
-    "\b": "\\b",
+    "\0": "0",
+    "\n": "n",
+    "\r": "r",
+    "\t": "t",
+    "\v": "v",
+    "\b": "b",
 }
 
 export class StringToken extends Token {
@@ -110,7 +110,7 @@ export class StringToken extends Token {
         // replace all control characters with their escape sequences
         let value = this.value
         for (const [key, val] of Object.entries(escape_sequences)) {
-            value = value.replaceAll(key, val)
+            value = value.replaceAll(key, `\\${val}`)
         }
         return `${value} (string)`
     }
@@ -127,9 +127,8 @@ export class CharToken extends Token {
     }
 
     toString() {
-        // replace all control characters with their escape sequences
-        // https://en.wikipedia.org/wiki/ASCII#Control_characters
-        return `${escape_sequences[this.value] ?? this.value} (char)`
+        const escape_sequence = escape_sequences[this.value]
+        return `${escape_sequence ? `\\${escape_sequence}` : this.value} (char)`
     }
 }
 
@@ -491,17 +490,15 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
     }
     function parse_string_escape_sequence() {
         const c = consume()
-        if (c === "n") {
-            return "\n"
-        } else if (c === "t") {
-            return "\t"
-        } else if (c === "\\") {
-            return "\\"
-        } else if (c === '"') {
-            return '"'
-        } else {
-            throw new LexerError(`Invalid escape sequence ${quote(c)}`, span())
+        for (const [key, val] of Object.entries(escape_sequences)) {
+            if (c === val) {
+                return key
+            }
         }
+        if (c === '"' || c === "'" || c === "\\") {
+            return c
+        }
+        throw new LexerError(`Invalid escape sequence ${quote(c)}`, span())
     }
     function parse_interpolated_string_expression(): InterpolatedStringPartExpression {
         const start_span = span()

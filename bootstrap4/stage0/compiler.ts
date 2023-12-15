@@ -113,64 +113,77 @@ function code_gen(ast: AST.AST) {
     }
     let res = ""
     for (const expression of ast.body) {
-        res += transpile_expression(expression, {})
+        res += transpile_expression(expression, {used_in_expression: false})
         res += "\n"
     }
-    type Context = {func?: AST.FunctionDeclaration | AST.ClosureDefinition}
+    type Context = {
+        func?: AST.FunctionDeclaration | AST.ClosureDefinition
+        used_in_expression: boolean
+    }
     function transpile_expression(e: AST.Expression, ctx: Context): string {
         if (e instanceof AST.UnitOperator) {
-            return transpile_expression(e.expression, ctx)
+            return transpile_expression(e.expression, {...ctx, used_in_expression: false})
         } else if (e instanceof AST.FunctionDefinition) {
             const parameters = e.declaration.parameters.map((x) => x.name).join(",")
             const block = transpile_block(
                 e.block,
-                {...ctx, func: e.declaration},
+                {...ctx, func: e.declaration, used_in_expression: false},
                 {return_last_expression: true},
             )
-            return `function ${e.declaration.name}(${parameters})${block}`
+            return `function ${e.declaration.name}(${parameters}) {
+                try {
+                    ${block}
+                } catch (e) {
+                    if (e.message === "return") {
+                        return e.value
+                    }
+                    throw e
+                }}`
         } else if (e instanceof AST.ClosureDefinition) {
             const parameters = e.parameters.map((x) => x.name).join(",")
             const block = transpile_block(
                 e.block,
-                {...ctx, func: e},
+                {...ctx, func: e, used_in_expression: false},
                 {return_last_expression: true},
             )
-            return `function (${parameters})${block}`
+            return `function (${parameters}) { 
+                try {
+                    ${block}
+                } catch (e) { 
+                    if (e.message === "return") {return e.value;} 
+                    throw e;
+                }}`
         } else if (e instanceof AST.Return) {
             if (!e.value) {
-                return "return;"
+                return "throw new Error('return')"
             }
-            const value = wrap_return_value(transpile_expression(e.value, ctx), ctx)
-            return `return ${value};`
+            const value = wrap_return_value(
+                transpile_expression(e.value, {...ctx, used_in_expression: true}),
+                ctx,
+            )
+            return `;(function () { const error = new Error("return"); error.value = ${value}; throw error; })()`
         } else if (e instanceof AST.Number_) {
             return `new i32(${e.value})`
         } else if (e instanceof AST.Bool || e instanceof AST.Number_) {
             return `new bool(${e.value})`
         } else if (e instanceof AST.Str) {
-            let value = e.value.replace(/\\/g, "\\\\")
-            for (const [char, replacement] of Object.entries(Lexer.escape_sequences)) {
-                value = value.replaceAll(char, replacement)
-            }
-            value = value.replace(/"/g, "\\`")
-            if (e.is_multiline) {
-                value = value.replace(/`/g, "\\`")
-                return `new str(\`${value}\`)`
-            }
-            return `new str("${value}")`
+            const value = escape_str(e)
+            return `new str(${value})`
         } else if (e instanceof AST.Char) {
-            let value = e.value.replace(/\\/g, "\\\\")
-            for (const [char, replacement] of Object.entries(Lexer.escape_sequences)) {
-                value = value.replaceAll(char, replacement)
-            }
-            return `new char("${value}")`
+            const value = escape_str(e)
+            return `new char(${value})`
         } else if (e instanceof AST.InterpolatedStr) {
             const parts = e.expressions.map(
-                (x) => `_.push(${transpile_expression(x, ctx)}.to_str());`,
+                (x) =>
+                    `_.push(${transpile_expression(x, {
+                        ...ctx,
+                        used_in_expression: true,
+                    })}.to_str());`,
             )
             return `(function () { const _ = new str(""); ${parts.join("")}; return _; })()`
         } else if (e instanceof AST.FunctionCall) {
             const args = e.args.map((x, i) => {
-                let s = transpile_expression(x, ctx)
+                let s = transpile_expression(x, {...ctx, used_in_expression: true})
                 const p = (e.target.attributes?.type as any)?.parameters_without_self?.[i]
                 if (p?.name === "Option" && x.attributes.type!.name !== "Option") {
                     s = `new klar_Option_Some(${s})`
@@ -181,11 +194,11 @@ function code_gen(ast: AST.AST) {
             if (e.target instanceof AST.FunctionDefinition) {
                 call = `${e.target.declaration.name}(${args.join(",")})\n`
             } else {
-                const target = transpile_expression(e.target, ctx)
+                const target = transpile_expression(e.target, {...ctx, used_in_expression: true})
                 call = `${target}(${args.join(",")})\n`
             }
             if (e.propagate_error) {
-                return `(function() {
+                call = `(function() {
                     let res = ${call};
                     if (res.constructor.name == "klar_Result_Err") {
                         const error = new Error("return")
@@ -195,47 +208,67 @@ function code_gen(ast: AST.AST) {
                     if (res.constructor.name == "klar_Result_Ok") return res[0];
                     return res})()`
             }
-            return call
+            if (ctx.used_in_expression) {
+                return call
+            } else {
+                return `${call};`
+            }
         } else if (e instanceof AST.StructInstantiation) {
             const create_instance = `let _ = new ${e.target_struct_name}()`
             const assign_members = Object.entries(e.fields).map(
-                ([name, value]) => `_.${name} = ${transpile_expression(value, ctx)};`,
+                ([name, value]) =>
+                    `_.${name} = ${transpile_expression(value, {
+                        ...ctx,
+                        used_in_expression: true,
+                    })};`,
             )
             return `(() => {${create_instance};${assign_members.join("\n")} return _})()`
         } else if (e instanceof AST.VariableDeclaration) {
             const kind = e.mutable ? "let" : "const"
             if (e.value) {
-                const value = transpile_expression(e.value, ctx)
+                const value = transpile_expression(e.value, {...ctx, used_in_expression: true})
                 return `${kind} ${e.name} = ${value};`
             } else {
                 return `${kind} ${e.name};`
             }
         } else if (e instanceof AST.Assignment) {
-            const value = transpile_expression(e.value, ctx)
+            const value = transpile_expression(e.value, {...ctx, used_in_expression: true})
             if (e.target instanceof AST.IndexedAccess) {
-                return `${transpile_expression(e.target.target, ctx)}.set(${transpile_expression(
-                    e.target.index,
-                    ctx,
-                )}, ${value});`
+                return `${transpile_expression(e.target.target, {
+                    ...ctx,
+                    used_in_expression: true,
+                })}.set(${transpile_expression(e.target.index, {
+                    ...ctx,
+                    used_in_expression: true,
+                })}, ${value});`
             }
-            const target = transpile_expression(e.target, ctx)
+            const target = transpile_expression(e.target, {...ctx, used_in_expression: true})
             return `${target} = ${value};`
         } else if (e instanceof AST.ArrayLiteral) {
             const values = e.elements
-                .map((x) => `_.push(${transpile_expression(x, ctx)});`)
+                .map(
+                    (x) =>
+                        `_.push(${transpile_expression(x, {...ctx, used_in_expression: true})});`,
+                )
                 .join("")
             return `(function () { const _ = klar_Vector.new(); ${values} return _; })()`
         } else if (e instanceof AST.Block) {
             return transpile_block(e, ctx)
         } else if (e instanceof AST.If) {
-            const condition = transpile_expression(e.condition, ctx)
-            const then = transpile_block(e.then_block, ctx)
-            let s = `if (${condition}.value) ${then}`
+            const condition = transpile_expression(e.condition, {...ctx, used_in_expression: true})
+            const then = transpile_block(e.then_block, {...ctx, used_in_expression: true})
+            let s = `(${condition}.value) ? (function() {${then}})()`
             if (e.else_block) {
-                const else_ = transpile_block(e.else_block, ctx)
-                s += ` else ${else_}`
+                const else_ = transpile_block(e.else_block, {...ctx, used_in_expression: true})
+                s += ` : (function() {${else_}})()`
+            } else {
+                s += ": undefined"
             }
-            return s
+            if (ctx.used_in_expression) {
+                return s
+            } else {
+                return `;${s};`
+            }
         } else if (e instanceof AST.StructDeclaration) {
             const members = Object.keys(e.fields).join(";")
             const impls = transpile_impls(e)
@@ -256,17 +289,17 @@ function code_gen(ast: AST.AST) {
             // The `try / catch` is a bit of a hack to be able to break out of a match
             // expression.
             return `while (true) try { ${block} } catch (e) {
-                if (e.message.startsWith("break")) break;
-                if (e.message.startsWith("continue")) continue;
-                throw e;
+                    if (e.message.startsWith("break")) break;
+                    if (e.message.startsWith("continue")) continue;
+                    throw e;
             }`
         } else if (e instanceof AST.Break) {
-            return "break;"
+            return "throw new Error('break')"
         } else if (e instanceof AST.Continue) {
-            return "continue;"
+            return "throw new Error('continue')"
         } else if (e instanceof AST.BinaryExpression) {
-            const lhs = transpile_expression(e.lhs, ctx)
-            const rhs = transpile_expression(e.rhs, ctx)
+            const lhs = transpile_expression(e.lhs, {...ctx, used_in_expression: true})
+            const rhs = transpile_expression(e.rhs, {...ctx, used_in_expression: true})
             if (e.operator === "and") {
                 return `new bool(${lhs}.value && ${rhs}.value)`
             } else if (e.operator === "or") {
@@ -292,23 +325,25 @@ function code_gen(ast: AST.AST) {
                     return `new ${declaration.name}_${e.field}`
                 }
             }
-            const target = transpile_expression(e.target, ctx)
+            const target = transpile_expression(e.target, {...ctx, used_in_expression: true})
             if (parseInt(e.field).toString() === e.field) {
                 return `${target}[${e.field}]`
             }
             return `${target}.${e.field}`
         } else if (e instanceof AST.IndexedAccess) {
-            const target = transpile_expression(e.target, ctx)
-            const index = transpile_expression(e.index, ctx)
+            const target = transpile_expression(e.target, {...ctx, used_in_expression: true})
+            const index = transpile_expression(e.index, {...ctx, used_in_expression: true})
             return `${target}.get(${index})`
         } else if (e instanceof AST.Not) {
-            const value = transpile_expression(e.expression, ctx)
+            const value = transpile_expression(e.expression, {...ctx, used_in_expression: true})
             return `!${value}`
         } else if (e instanceof AST.ParenthesizedExpression) {
             const value = transpile_expression(e.expression, ctx)
             return `(${value})`
         } else if (e instanceof AST.TupleInstantiation) {
-            const values = e.elements.map((x) => transpile_expression(x, ctx)).join(",")
+            const values = e.elements
+                .map((x) => transpile_expression(x, {...ctx, used_in_expression: true}))
+                .join(",")
             return `[${values}]`
         } else if (e instanceof AST.IdentifierReference) {
             if (e.attributes.type?.constructor.name === "EnumType") {
@@ -377,20 +412,23 @@ function code_gen(ast: AST.AST) {
     ) {
         let body = block.body
             .slice(0, -1)
-            .map((x) => transpile_expression(x, ctx))
+            .map((x) => transpile_expression(x, {...ctx, used_in_expression: false}))
             .join("\n")
         const last_expression_code =
-            block.body.length === 0 ? "undefined" : transpile_expression(block.body.at(-1)!, ctx)
+            block.body.length === 0
+                ? "undefined"
+                : transpile_expression(block.body.at(-1)!, {...ctx, used_in_expression: true})
         if (opts?.assign_last_expression_to) {
             if (block.body.length === 0) {
                 return `{${opts.assign_last_expression_to} = undefined;)`
             }
             if (
+                block.body.at(-1) instanceof AST.Loop ||
                 block.body.at(-1) instanceof AST.Return ||
                 block.body.at(-1) instanceof AST.Break ||
                 block.body.at(-1) instanceof AST.Continue
             ) {
-                return `{${body};throw new Error("${last_expression_code}")}`
+                return `{${body};${last_expression_code}}`
             }
             return `{${body};${opts.assign_last_expression_to} = ${last_expression_code};}`
         }
@@ -400,14 +438,15 @@ function code_gen(ast: AST.AST) {
             !(
                 block.body.at(-1) instanceof AST.Return ||
                 block.body.at(-1) instanceof AST.Break ||
-                block.body.at(-1) instanceof AST.Continue
+                block.body.at(-1) instanceof AST.Continue ||
+                block.body.at(-1) instanceof AST.Loop
             )
         ) {
             body = `{${body};return ${wrap_return_value(last_expression_code, ctx)};}`
         } else {
             body = `{${body};${last_expression_code}}`
         }
-        return `{try {${body} } catch (e) { if (e.message === "return") {return e.value;} throw e;}}`
+        return `${body}`
     }
     function transpile_impls(e: AST.StructDeclaration | AST.EnumDeclaration) {
         let s = ""
@@ -419,11 +458,19 @@ function code_gen(ast: AST.AST) {
                 .join(",")
             const block = transpile_block(
                 fn.block,
-                {func: fn.declaration},
+                {func: fn.declaration, used_in_expression: false},
                 {return_last_expression: true},
             ).replace("{", "{const klar_self = this;")
             const prefix = is_static ? `${impl.target_name}.` : `${impl.target_name}.prototype.`
-            s += `\n${prefix}${fn.declaration.name} = function(${parameters})${block}`
+            s += `\n${prefix}${fn.declaration.name} = function(${parameters}){
+                try {
+                    ${block}
+                } catch (e) {
+                    if (e.message === "return") {
+                        return e.value
+                    }
+                    throw e
+                }}`
         }
         for (const impl of e.attributes.impls) {
             for (const fn of impl.functions) {
@@ -450,7 +497,10 @@ function code_gen(ast: AST.AST) {
     }
     function transpile_match(e: AST.Match, ctx: Context) {
         let s = "(function() { let __match_result;"
-        s += `let __match_expression = ${transpile_expression(e.value, ctx)};`
+        s += `let __match_expression = ${transpile_expression(e.value, {
+            ...ctx,
+            used_in_expression: true,
+        })};`
         for (const arm of e.arms) {
             s += declare_captured_variables(arm.pattern)
         }
@@ -488,12 +538,29 @@ function code_gen(ast: AST.AST) {
             return ""
         }
     }
+    function escape_str(s: AST.Str | AST.Char) {
+        let value = s.value.replace(/\\/g, "\\\\")
+        for (const [char, replacement] of Object.entries(Lexer.escape_sequences)) {
+            value = value.replaceAll(char, `\\${replacement}`)
+        }
+        value = value.replace(/"/g, "\\`")
+        if (s instanceof AST.Str && s.is_multiline) {
+            value = value.replace(/`/g, "\\`")
+            return `\`${value}\``
+        }
+        return `"${value}"`
+    }
+
     function transpile_match_pattern_to_condition(
         match_expression: string,
         pattern: AST.MatchPattern,
     ) {
         if (pattern instanceof AST.LiteralMatchPattern) {
-            return `(${match_expression}.value === ${pattern.value.value})`
+            let value = pattern.value.value
+            if (pattern.value instanceof AST.Str || pattern.value instanceof AST.Char) {
+                value = escape_str(pattern.value)
+            }
+            return `(${match_expression}.value === ${value})`
         } else if (pattern instanceof AST.WildcardMatchPattern) {
             return "true"
         } else if (pattern instanceof AST.CaptureMatchPatternOrType) {
@@ -616,11 +683,11 @@ export async function compile({
         const imported_type_name = path.split("/").pop()!
         env.import(imported_type_name, module_env.get(imported_type_name, use.span), use.span)
     }
-    type_check_ast(ast, env)
     if (debug_ast && !disable_debug) {
         console.log(`\n${log_prefix} AST:`)
         console.log(to_json(ast, 2))
     }
+    type_check_ast(ast, env)
     transpiled += code_gen(ast)
     if (prettify) {
         try {

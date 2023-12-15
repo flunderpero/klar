@@ -362,8 +362,8 @@ end
 
 fn main():
     let result = match divide(10, 2):
-        Result<i32>.Ok(value) => value
-        Result<i32>.Err(error) => panic("Should not be reached")
+        Ok<i32>(value) => value
+        Err(error) => panic("Should not be reached")
     end
     assert(result == 5)
 

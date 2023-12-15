@@ -90,9 +90,7 @@ trait Iterator<T>:
         loop:
             let next = self.next()
             match next:
-                None:
-                    break
-                end
+                None => break
                 Some(value) => f(value)
             end
         end
@@ -108,6 +106,36 @@ trait Iterator<T>:
         let vec = Vector<T>.new()
         self.for_each(fn(value T) => vec.push(value))
         vec
+    end
+end
+
+struct PeekableIterator<T>:
+    iter Iterator<T>
+    peeked T?
+    idx i32
+end
+
+impl PeekableIterator<T>:
+    fn new(iter Iterator<T>) Self => PeekableIterator<T> { iter: iter, peeked: None, idx: 0 }
+
+    fn peek(mut self) Option<T>:
+        if self.peeked.is_some():
+            return self.peeked
+        end
+        self.peeked = self.iter.next()
+        self.peeked 
+    end
+end
+
+impl Iterator<T> for PeekableIterator<T>:
+    fn next(mut self) Option<T>:
+        self.idx = self.idx + 1
+        if self.peeked.is_some():
+            let value = self.peeked.unwrap()
+            self.peeked = None
+            return Some(value)
+        end
+        self.iter.next()
     end
 end
 

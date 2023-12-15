@@ -38,7 +38,7 @@ async function run_test(test: Test): Promise<boolean> {
     let compiled
     try {
         compiled = await compile({
-            file: path,
+            file: `${dir}/../the_book.md:${test.path}`,
             src: test.src,
             env: the_book_prelude.env,
             modules: new Map(),

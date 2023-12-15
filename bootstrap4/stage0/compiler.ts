@@ -148,14 +148,21 @@ function code_gen(ast: AST.AST) {
             return `new bool(${e.value})`
         } else if (e instanceof AST.Str) {
             let value = e.value.replace(/\\/g, "\\\\")
-            value = value.replace(/\n/g, "\\n")
-            value = value.replace(/\t/g, "\\t")
+            for (const [char, replacement] of Object.entries(Lexer.escape_sequences)) {
+                value = value.replaceAll(char, replacement)
+            }
             value = value.replace(/"/g, "\\`")
             if (e.is_multiline) {
                 value = value.replace(/`/g, "\\`")
                 return `new str(\`${value}\`)`
             }
             return `new str("${value}")`
+        } else if (e instanceof AST.Char) {
+            let value = e.value.replace(/\\/g, "\\\\")
+            for (const [char, replacement] of Object.entries(Lexer.escape_sequences)) {
+                value = value.replaceAll(char, replacement)
+            }
+            return `new char("${value}")`
         } else if (e instanceof AST.InterpolatedStr) {
             const parts = e.expressions.map(
                 (x) => `_.push(${transpile_expression(x, ctx)}.to_str());`,

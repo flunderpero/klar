@@ -86,6 +86,15 @@ export class NumberToken extends Token {
     }
 }
 
+export const escape_sequences: Record<string, string> = {
+    "\0": "\\0",
+    "\n": "\\n",
+    "\r": "\\r",
+    "\t": "\\t",
+    "\v": "\\v",
+    "\b": "\\b",
+}
+
 export class StringToken extends Token {
     kind = "string"
 
@@ -98,7 +107,29 @@ export class StringToken extends Token {
     }
 
     toString() {
-        return `${this.value.replaceAll("\n", "\\n")} (string)`
+        // replace all control characters with their escape sequences
+        let value = this.value
+        for (const [key, val] of Object.entries(escape_sequences)) {
+            value = value.replaceAll(key, val)
+        }
+        return `${value} (string)`
+    }
+}
+
+export class CharToken extends Token {
+    kind = "char"
+
+    constructor(
+        public value: string,
+        span: Span,
+    ) {
+        super(span)
+    }
+
+    toString() {
+        // replace all control characters with their escape sequences
+        // https://en.wikipedia.org/wiki/ASCII#Control_characters
+        return `${escape_sequences[this.value] ?? this.value} (char)`
     }
 }
 
@@ -334,6 +365,22 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
                 throw new LexerError(`Unterminated string`, span(start_span))
             }
             return new StringToken(value, false, span(start_span))
+        }
+        if (c === "'") {
+            const start_span = span()
+            skip()
+            const value = consume()
+            if (value === "\\") {
+                const escaped = parse_string_escape_sequence()
+                if (consume() !== "'") {
+                    throw new LexerError(`Expected ' after character literal`, span())
+                }
+                return new CharToken(escaped, span(start_span))
+            }
+            if (consume() !== "'") {
+                throw new LexerError(`Expected ' after character literal`, span())
+            }
+            return new CharToken(value, span(start_span))
         }
         if (c === "=" && peek(1) === "=") {
             const token = new LexicalToken("==", span())

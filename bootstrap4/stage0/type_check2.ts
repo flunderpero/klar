@@ -38,6 +38,8 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         type = env.bool
     } else if (node instanceof ast.Str) {
         type = env.str
+    } else if (node instanceof ast.Char) {
+        type = env.char
     } else if (node instanceof ast.InterpolatedStr) {
         for (const e of node.expressions) {
             const expression_type = type_check(e, env, {...ctx, used_in_expression: true})
@@ -2227,6 +2229,29 @@ class StrData {
     ) {}
 }
 
+export class CharType extends ComplexType<CharData> {
+    static default() {
+        const type = new CharType("char")
+        return Type.add_or_get_known_type(type.signature, type, builtin_span)
+    }
+
+    private constructor(name: string) {
+        super(new CharData(name, new Map()), [])
+    }
+
+    new_instance(): this {
+        return this
+    }
+}
+
+class CharData {
+    constructor(
+        public readonly name: string,
+        public readonly fields: Map<string, Type>,
+        public readonly traits: string[] = [],
+    ) {}
+}
+
 export class BoolType extends ComplexType<BoolData> {
     static default() {
         const type = new BoolType("bool")
@@ -2451,6 +2476,11 @@ export class TypeEnvironment {
             builtin_span,
         )
         env.add("str", add_core_traits(str, bool, str, "PartialEq", "ToStr"), builtin_span)
+        env.add(
+            "char",
+            add_core_traits(CharType.default(), bool, str, "PartialEq", "ToStr"),
+            builtin_span,
+        )
         env.add("()", Type.unit, builtin_span)
         return env
     }
@@ -2532,6 +2562,10 @@ export class TypeEnvironment {
 
     get str() {
         return this.get("str", builtin_span)
+    }
+
+    get char() {
+        return this.get("char", builtin_span)
     }
 
     debug_str(indent = 0): string {

@@ -83,6 +83,17 @@ fn main():
 end
 ```
 
+##### The Character Type
+
+A character is a single [Unicode](https://www.unicode.org/glossary/#unicode_scalar_value) scalar value.
+
+```klar
+fn main():
+    let a = 'a'
+    let b char = '\n' -- Escape sequences are supported.
+end
+```
+
 ##### The String Type
 
 ```klar
@@ -92,6 +103,28 @@ fn main():
         This is a
         multi-line string.
         """
+    -- Concatenate string and characters.
+    mut s = "".push(a).push_char('\n').push("This is Klar.")
+    assert(s == "Hello, World!\nThis is Klar.")
+
+    -- Iterate over the characters of a string.
+    mut iter = s.iter()
+    assert(iter.next().unwrap() == 'H')
+    assert(iter.next().unwrap() == 'e')
+end
+```
+
+##### Interpolated Strings
+
+Klar lets you interpolate variables into strings. The syntax is `f"..."`.
+
+```klar
+fn main():
+    let a = 1
+    let b = true
+    let c = "Hello"
+    let interpolated = f"a = {a}, b = {b}, c = {c}"
+    assert(interpolated == "a = 1, b = true, c = Hello")
 end
 ```
 

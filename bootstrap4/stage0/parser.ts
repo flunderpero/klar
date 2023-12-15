@@ -1,5 +1,6 @@
 import {HasKindAndSpan, quote, Span} from "./common"
 import {
+    CharToken,
     Identifier,
     InterpolatedStringPartExpression,
     InterpolatedStringPartLiteral,
@@ -660,6 +661,16 @@ export class Str extends Expression {
     }
 }
 
+export class Char extends Expression {
+    kind = "char"
+    value: string
+
+    constructor(data: {value: string}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Char.prototype)
+    }
+}
+
 export class InterpolatedStr extends Expression {
     kind = "interpolated string"
     expressions: Expression[]
@@ -1166,6 +1177,9 @@ export function parse(tokens: TokenStream): AST {
         } else if (token instanceof StringToken) {
             tokens.consume()
             expression = new Str({value: token.value, is_multiline: token.is_multiline}, token.span)
+        } else if (token instanceof CharToken) {
+            tokens.consume()
+            expression = new Char({value: token.value}, token.span)
         } else if (token instanceof InterpolatedStringToken) {
             tokens.consume()
             expression = parse_interpolated_string(token)

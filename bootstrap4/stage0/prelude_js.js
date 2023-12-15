@@ -114,29 +114,49 @@ class str {
         return new bool(this.value !== other.value)
     }
 
-    lt(other) {
-        return new bool(this.value < other.value)
-    }
-
-    le(other) {
-        return new bool(this.value <= other.value)
-    }
-
-    gt(other) {
-        return new bool(this.value > other.value)
-    }
-
-    ge(other) {
-        return new bool(this.value >= other.value)
-    }
-
     push(other) {
+        this.value += other.value
+        return this
+    }
+
+    push_char(other) {
         this.value += other.value
         return this
     }
 
     len() {
         return new usize(this.value.length)
+    }
+
+    iter() {
+        let idx = 0
+        return {
+            next: () => {
+                if (idx < this.value.length) {
+                    return new klar_Option_Some(new char(this.value[idx++]))
+                } else {
+                    return new klar_Option_None()
+                }
+            },
+        }
+    }
+}
+
+class char {
+    constructor(value) {
+        this.value = value
+    }
+
+    to_str() {
+        return new str(this.value)
+    }
+
+    eq(other) {
+        return new bool(this.value === other.value)
+    }
+
+    ne(other) {
+        return new bool(this.value !== other.value)
     }
 }
 

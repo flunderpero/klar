@@ -1,0 +1,32 @@
+--- This file is an example module that is imported inside `the_book.md`
+---
+
+struct SomeStruct:
+    value i32
+end
+
+impl SomeStruct:
+    fn new(value i32) SomeStruct:
+        SomeStruct{value: value}
+    end
+
+    fn increment(mut self):
+        self.value = self.value + 1
+    end
+end
+
+enum SomeEnum:
+    SomeA
+    SomeB
+    SomeC
+end
+
+impl ToStr for SomeEnum:
+    fn to_str(self) str:
+        match self:
+            SomeA => "some a"
+            SomeB => "some b"
+            SomeC => "some c"
+        end
+    end
+end

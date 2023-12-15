@@ -584,6 +584,16 @@ export class Continue extends Statement {
     }
 }
 
+export class Use extends Statement {
+    kind = "use"
+    path: string[]
+
+    constructor(data: {path: string[]}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof Use.prototype)
+    }
+}
+
 // Expressions
 
 export abstract class Expression extends ASTNode {
@@ -1147,6 +1157,8 @@ export function parse(tokens: TokenStream): AST {
                 expression = parse_match_expression()
             } else if (simple_token === "[") {
                 expression = parse_array_literal()
+            } else if (simple_token === "use") {
+                expression = parse_use()
             }
         } else if (token instanceof NumberToken) {
             tokens.consume()
@@ -1187,6 +1199,24 @@ export function parse(tokens: TokenStream): AST {
             }
         }
         return expression
+    }
+
+    function parse_use(): Use {
+        let span = tokens.consume().span
+        // For now, we only support local paths.
+        const path = ["."]
+        let end_span = tokens.expect(".").span
+        while (true) {
+            const token = tokens.expect_identifier()
+            end_span = token.span
+            path.push(token.value)
+            if (tokens.simple_peek() !== ".") {
+                break
+            }
+            path.push(".")
+            end_span = tokens.consume().span
+        }
+        return new Use({path}, Span.combine(span, end_span))
     }
 
     function parse_assignment(target: Expression): Assignment {

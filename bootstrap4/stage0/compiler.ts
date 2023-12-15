@@ -328,6 +328,8 @@ function code_gen(ast: AST.AST) {
             return transpile_match(e, ctx)
         } else if (e instanceof AST.UnitLiteral) {
             return "undefined"
+        } else if (e instanceof AST.Use) {
+            return ""
         } else {
             throw new CodeGenError(`Unexpected expression ${quote(e.kind)}`, e.span)
         }
@@ -560,11 +562,13 @@ export async function compile({
     src,
     disable_debug,
     env,
+    modules,
 }: {
     file: string
     src: string
     env: TypeEnvironment
     disable_debug?: boolean
+    modules: Map<string, TypeEnvironment>
 }) {
     const log_prefix = `[${file.split("/").pop()}]`
     const tokens = Lexer.lexer({file: file.split("/").pop() ?? file, src})
@@ -573,12 +577,44 @@ export async function compile({
         console.log(to_json(tokens, 2))
     }
     let ast = AST.parse(new AST.TokenStream(tokens))
+    let transpiled = ""
+    // Resolve top-level use statements.
+    for (const use of ast.body.filter((x) => x instanceof AST.Use) as AST.Use[]) {
+        const path = use.path.join("/")
+        // Find the file to import.
+        let cwd = file.split("/").slice(0, -1).join("/") || "."
+        let path_to_import = path
+        while (!(await Bun.file(`${cwd}/${path_to_import}.kl`).exists())) {
+            if (path_to_import === "") {
+                throw new Error(`No module found for ${quote(cwd + "/" + path)}`)
+            }
+            path_to_import = path_to_import.split("/").slice(0, -1).join("/")
+        }
+
+        let module_env = modules.get(path_to_import)
+        if (!module_env) {
+            module_env = new TypeEnvironment(env)
+            transpiled += await compile({
+                file: `${cwd}/${path_to_import}.kl`,
+                src: await Bun.file(`${cwd}/${path_to_import}.kl`).text(),
+                env: module_env,
+                modules,
+            })
+            transpiled += "\n"
+            modules.set(path_to_import, module_env)
+        }
+        if (path_to_import === path) {
+            throw new Error(`As of now, modules cannot be imported as a whole.`)
+        }
+        const imported_type_name = path.split("/").pop()!
+        env.import(imported_type_name, module_env.get(imported_type_name, use.span), use.span)
+    }
     type_check_ast(ast, env)
     if (debug_ast && !disable_debug) {
         console.log(`\n${log_prefix} AST:`)
         console.log(to_json(ast, 2))
     }
-    let transpiled = code_gen(ast)
+    transpiled += code_gen(ast)
     if (prettify) {
         try {
             const proc = Bun.spawn(["prettier", "--stdin-filepath", "transpiled.js"], {
@@ -619,7 +655,7 @@ export async function compile_prelude(
 ): Promise<{env: TypeEnvironment; prelude: string}> {
     env = env || TypeEnvironment.global()
     const src = await Bun.file(file).text()
-    const prelude = await compile({file, src, env, disable_debug: true})
+    const prelude = await compile({file, src, env, disable_debug: true, modules: new Map()})
     return {env, prelude}
 }
 
@@ -638,7 +674,7 @@ async function cli() {
             console.error(`Error reading file: ${error.message}`)
             process.exit(1)
         }
-        const compiled = await compile({file: src_file, src, env})
+        const compiled = await compile({file: src_file, src, env, modules: new Map()})
         const res = await link({
             compiled,
             prelude,

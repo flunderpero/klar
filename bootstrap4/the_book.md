@@ -386,6 +386,30 @@ fn main():
 end
 ```
 
+### Modules
+
+In Klar, modules are files. The name of the module is the name of the file.
+
+This is how you import a type from a local module:
+
+```klar
+use .the_book_use_example.SomeStruct
+use .the_book_use_example.SomeEnum
+
+fn main():
+    let s = SomeStruct.new(1)
+    assert(s.value == 1)
+    s.increment()
+    assert(s.value == 2)
+
+    let e = SomeEnum.SomeA
+    assert(e.to_str() == "some a")
+    -- As always, enum variants are auto imported.
+    let some_b = SomeB
+    assert(some_b.to_str() == "some b")
+end
+```
+
 ## Environment
 
 ### Arguments

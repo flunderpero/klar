@@ -30,7 +30,9 @@ type Context = {
 
 function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type {
     let type: Type
-    if (node instanceof ast.Number_) {
+    if (node instanceof ast.Use) {
+        type = Type.unit
+    } else if (node instanceof ast.Number_) {
         type = env.i32
     } else if (node instanceof ast.Bool) {
         type = env.bool
@@ -2314,6 +2316,50 @@ class ArrayData {
     ) {}
 }
 
+export class ModuleType extends ComplexType<ModuleData> {
+    static from_type_environment(name: string, env: TypeEnvironment, span: Span): ModuleType {
+        const data = new ModuleData(name)
+        const module_type = new ModuleType(data, [])
+        for (const [name, type] of env.types_by_name.entries()) {
+            module_type.add_field_immediate(name, type)
+        }
+        return Type.add_or_get_known_type(module_type.signature, module_type, span)
+    }
+    private constructor(
+        public data: ModuleData,
+        type_variables: TypeVariable[],
+        type_arguments?: Map<TypeVariable, Type>,
+        type_variable_map?: Map<TypeVariable, TypeVariable>,
+    ) {
+        super(data, type_variables, type_arguments, type_variable_map)
+    }
+
+    new_instance(
+        data: ModuleData,
+        type_variables: TypeVariable[],
+        type_arguments: Map<TypeVariable, Type>,
+        type_variable_map: Map<TypeVariable, TypeVariable>,
+    ): this {
+        return new ModuleType(data, type_variables, type_arguments, type_variable_map) as this
+    }
+
+    get debug_str() {
+        return this.signature
+    }
+
+    get signature() {
+        return `${this.data.name}${this.type_signature}`
+    }
+}
+
+class ModuleData {
+    constructor(
+        public readonly name: string,
+        public readonly fields: Map<string, Type> = new Map(),
+        public readonly traits: string[] = [],
+    ) {}
+}
+
 type CoreTrait = "Add" | "Sub" | "Mul" | "Div" | "PartialEq" | "PartialOrd" | "ToStr"
 
 function add_core_traits<T extends ComplexType<any>>(
@@ -2409,7 +2455,7 @@ export class TypeEnvironment {
         return env
     }
 
-    private types_by_name = new Map<string, Type>()
+    types_by_name = new Map<string, Type>()
     private enum_name_clashes = new Set<string>()
 
     constructor(private parent?: TypeEnvironment) {}
@@ -2445,6 +2491,19 @@ export class TypeEnvironment {
             return
         }
         this.add(enum_variant.variant_name, enum_variant, span)
+    }
+
+    import(name: string, type: Type, span: Span) {
+        this.add(name, type, span)
+        if (type instanceof EnumType) {
+            if (type.is_variant) {
+                this.add_enum_variant(type, span)
+            } else {
+                for (const variant of type.variants.values()) {
+                    this.add_enum_variant(variant, span)
+                }
+            }
+        }
     }
 
     get(name: string, span: Span): Type {

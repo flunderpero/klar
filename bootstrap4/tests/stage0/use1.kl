@@ -1,0 +1,28 @@
+--- This is only used by `use.kl` to test imports.
+---
+struct Point:
+    x i32
+    y i32
+end
+
+enum ImportedEnum:
+    A
+    B
+    C
+end
+
+impl ImportedEnum:
+    fn print(self):
+        match self:
+            A => print("a")
+            B => print("b")
+            C => print("c")
+        end
+    end
+end
+
+impl Point:
+    fn new(x i32, y i32) Point:
+        Point{x: x, y: y}
+    end
+end

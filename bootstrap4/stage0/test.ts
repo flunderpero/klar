@@ -87,7 +87,9 @@ async function test_file(file: string, update = false): Promise<boolean> {
 
 async function cli() {
     const update = process.argv.includes("--update")
-    const files = (await readdir(test_dir)).filter((x) => x.endsWith(".kl"))
+    const files = (await readdir(test_dir)).filter(
+        (x) => x.endsWith(".kl") && !x.includes("use1.kl"),
+    )
     let failed = 0
     let total = 0
     for (const file of files) {

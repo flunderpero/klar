@@ -33,13 +33,16 @@ async function run_test(test: Test): Promise<boolean> {
         pos += line.length + 1
     }
     const default_prelude = await compile_prelude(`${dir}/prelude_js.kl`)
-    const the_book_prelude = await compile_prelude(
-        `${dir}/../the_book_prelude_js.kl`,
-        default_prelude.env,
-    )
+    const path = `${dir}/../the_book_prelude_js.kl`
+    const the_book_prelude = await compile_prelude(path, default_prelude.env)
     let compiled
     try {
-        compiled = await compile({file: test.path, src: test.src, env: the_book_prelude.env})
+        compiled = await compile({
+            file: path,
+            src: test.src,
+            env: the_book_prelude.env,
+            modules: new Map(),
+        })
     } catch (e: any) {
         if (expected_error) {
             if (!e.message.startsWith(expected_error.message)) {

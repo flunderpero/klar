@@ -1663,6 +1663,7 @@ export function parse(tokens: TokenStream): AST {
     function parse_if(): If {
         const span = tokens.expect("if").span
         const condition = parse_expression()
+        const single_block = tokens.simple_peek() === "=>"
         const if_ = new If(
             {condition, then_block: parse_block("if_else")},
             Span.combine(span, condition.span),
@@ -1670,7 +1671,7 @@ export function parse(tokens: TokenStream): AST {
         if (tokens.simple_peek() === "else") {
             tokens.consume()
             if_.else_block = parse_block("normal")
-        } else if (tokens.simple_peek() === "end") {
+        } else if (!single_block && tokens.simple_peek() === "end") {
             tokens.consume()
         }
         return if_

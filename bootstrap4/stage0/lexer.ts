@@ -45,6 +45,7 @@ export class LexicalToken extends Token {
             | "-"
             | "*"
             | "/"
+            | ".."
             | "let"
             | "mut"
             | "if"
@@ -252,6 +253,11 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
                 skip()
             }
             return undefined
+        }
+        if (c === "." && peek(1) === ".") {
+            const token = new LexicalToken("..", span())
+            skip(2)
+            return token
         }
         if (c === "f" && peek(1) === '"' && peek(2) === '"' && peek(3) === '"') {
             const start_span = span()

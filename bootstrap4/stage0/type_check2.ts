@@ -433,31 +433,39 @@ function type_check_match_pattern(
             return env.i32
         } else if (pattern.value instanceof ast.Bool) {
             if (!env.bool.assignable_to(target_type)) {
-                // Note how the order in the exception is reversed.
-                // We did not expect to find a number but `target_type`.
-                // This logic differs from `expect_assignable_to`.
                 throw new TypeMismatchError(target_type, env.bool, pattern.span)
             }
             return env.bool
         } else if (pattern.value instanceof ast.Str) {
             if (!env.str.assignable_to(target_type)) {
-                // Note how the order in the exception is reversed.
-                // We did not expect to find a number but `target_type`.
-                // This logic differs from `expect_assignable_to`.
                 throw new TypeMismatchError(target_type, env.str, pattern.span)
             }
             return env.str
         } else if (pattern.value instanceof ast.Char) {
             if (!env.char.assignable_to(target_type)) {
-                // Note how the order in the exception is reversed.
-                // We did not expect to find a number but `target_type`.
-                // This logic differs from `expect_assignable_to`.
                 throw new TypeMismatchError(target_type, env.char, pattern.span)
             }
             return env.char
         } else {
             throw new TypeCheckError(
                 `Not implemented for literal type ${quote(pattern.value)}`,
+                pattern.span,
+            )
+        }
+    } else if (pattern instanceof ast.RangeMatchPattern) {
+        if (pattern.start instanceof ast.Number_) {
+            if (!env.i32.assignable_to(target_type)) {
+                throw new TypeMismatchError(target_type, env.i32, pattern.span)
+            }
+            return env.i32
+        } else if (pattern.start instanceof ast.Char) {
+            if (!env.char.assignable_to(target_type)) {
+                throw new TypeMismatchError(target_type, env.char, pattern.span)
+            }
+            return env.char
+        } else {
+            throw new TypeCheckError(
+                `Not implemented for literal type ${quote(pattern.start)}`,
                 pattern.span,
             )
         }
@@ -4088,6 +4096,44 @@ const test = {
             end
         `)
         assert.equal(type, env.i32)
+    },
+
+    test_match_range_number() {
+        const {type, env} = test.type_check(`
+            match 1:
+                1..10 => true
+                11..<20 => false
+                _ => false
+            end
+        `)
+        assert.equal(type, env.bool)
+    },
+
+    test_match_range_char() {
+        const {type, env} = test.type_check(`
+            match 'f':
+                'a'..<'z' => 1
+                'A'..'Z' => 2
+                'b' => 3
+            end
+        `)
+        assert.equal(type, env.i32)
+    },
+
+    test_match_range_with_option_type() {
+        const {type, env} = test.type_check(`
+            enum Option<T>:
+                Some(T)
+                None
+            end
+
+            match Some(1):
+                Some<i32>(1..10) => true
+                Some<i32>(2) => false
+                None => false
+            end
+        `)
+        assert.equal(type, env.bool)
     },
 
     test_match_struct() {

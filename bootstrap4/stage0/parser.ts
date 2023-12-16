@@ -950,6 +950,21 @@ export class WildcardMatchPattern extends MatchPattern {
     }
 }
 
+export class RangeMatchPattern extends MatchPattern {
+    kind = "range match pattern"
+    start: Number_ | Char
+    end: Number_ | Char
+    is_closed: boolean
+
+    constructor(
+        data: {start: Number_ | Char; end: Number_ | Char; is_closed: boolean},
+        span: Span,
+    ) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof RangeMatchPattern.prototype)
+    }
+}
+
 export class CaptureMatchPatternOrType extends MatchPattern {
     kind = "capture match pattern"
     name: string
@@ -1493,10 +1508,34 @@ export function parse(tokens: TokenStream): AST {
         return new Match({value, arms}, Span.combine(span, end_span))
     }
 
+    function parse_range(start: Number_ | Char): RangeMatchPattern {
+        tokens.consume()
+        let is_closed = true
+        if (tokens.simple_peek() === "<") {
+            tokens.consume()
+            is_closed = false
+        }
+        const end = tokens.consume() as any
+        if (end.kind !== start.kind) {
+            throw new ParseError(`Expected ${quote(start.kind)} but got ${quote(end)}`, end.span)
+        }
+        return new RangeMatchPattern(
+            {
+                start,
+                end: new (start.constructor as any)({value: end.value}, end.span),
+                is_closed,
+            },
+            Span.combine(start.span, end.span),
+        )
+    }
+
     function parse_match_pattern(): MatchPattern {
         const token = tokens.peek()
         if (token instanceof NumberToken) {
             tokens.consume()
+            if (tokens.simple_peek() === "..") {
+                return parse_range(new Number_({value: token.value}, token.span))
+            }
             return new LiteralMatchPattern(
                 {value: new Number_({value: token.value}, token.span)},
                 token.span,
@@ -1509,6 +1548,9 @@ export function parse(tokens: TokenStream): AST {
             )
         } else if (token instanceof CharToken) {
             tokens.consume()
+            if (tokens.simple_peek() === "..") {
+                return parse_range(new Char({value: token.value}, token.span))
+            }
             return new LiteralMatchPattern(
                 {value: new Char({value: token.value}, token.span)},
                 token.span,

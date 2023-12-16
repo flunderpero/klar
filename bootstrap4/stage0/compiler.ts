@@ -563,6 +563,13 @@ function code_gen(ast: AST.AST) {
             return `(${match_expression}.value === ${value})`
         } else if (pattern instanceof AST.WildcardMatchPattern) {
             return "true"
+        } else if (pattern instanceof AST.RangeMatchPattern) {
+            const {start, end} = pattern
+            const start_value = transpile_expression(start, {used_in_expression: true})
+            const end_value = transpile_expression(end, {used_in_expression: true})
+            const end_op = pattern.is_closed ? "<=" : "<"
+            return `(${match_expression}.value >= ${start_value}.value 
+                && ${match_expression}.value ${end_op} ${end_value}.value)`
         } else if (pattern instanceof AST.CaptureMatchPatternOrType) {
             if (pattern.attributes.type?.constructor.name === "EnumType") {
                 const enum_type = pattern.attributes.type as any

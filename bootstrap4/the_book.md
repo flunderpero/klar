@@ -460,6 +460,31 @@ fn main():
 end
 ```
 
+#### Range Patterns
+
+Match a numeric range:
+```klar
+fn main():
+    let result = match 42:
+        0..39 => "0..39"    -- By default, ranges are closed.
+        40..<42 => "40..41" -- Use `..<` for an half-open range.
+        _ => "unknown"
+    end
+    assert(result == "unknown")
+end
+```
+
+```klar 
+fn main():
+    let result = match 'c':
+        'a' => "a"          -- Match a single character.
+        'a'..'z' => "range" -- Match a range of characters.
+        _ => "unknown"
+    end
+    assert(result == "range")
+end
+```
+
 ### Modules
 
 In Klar, modules are files. The name of the module is the name of the file.

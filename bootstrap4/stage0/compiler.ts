@@ -563,6 +563,11 @@ function code_gen(ast: AST.AST) {
             return `(${match_expression}.value === ${value})`
         } else if (pattern instanceof AST.WildcardMatchPattern) {
             return "true"
+        } else if (pattern instanceof AST.AlternativeMatchPattern) {
+            const conditions: string[] = pattern.patterns.map((x) =>
+                transpile_match_pattern_to_condition(match_expression, x),
+            )
+            return `(${conditions.join(" || ")})`
         } else if (pattern instanceof AST.RangeMatchPattern) {
             const {start, end} = pattern
             const start_value = transpile_expression(start, {used_in_expression: true})

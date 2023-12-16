@@ -485,6 +485,37 @@ fn main():
 end
 ```
 
+#### Alternative Patterns
+
+```klar
+fn main():
+    let result = match 42:
+        0 | 1 | 2 => "0, 1, or 2"
+        31 | 42 | 53 => "31, 42, or 53"
+        _ => "unknown"
+    end
+    assert(result == "31, 42, or 53")
+end
+```
+
+#### Nested Patterns
+
+```klar
+struct Planet:
+    name str
+end
+
+fn main():
+    let planet = Some(Planet{name: "Earth"})
+    let result = match planet:
+        Some<Planet>(Planet{name: "Earth" | "Venus" | "Mars" | "Mercury"}) => "inner planet"
+        Some<Planet>(Planet{name: name}) => name
+        _ => "unknown"
+    end
+    assert(result == "inner planet")
+end
+```
+
 ### Modules
 
 In Klar, modules are files. The name of the module is the name of the file.

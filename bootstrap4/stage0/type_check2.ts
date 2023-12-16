@@ -452,6 +452,14 @@ function type_check_match_pattern(
                 pattern.span,
             )
         }
+    } else if (pattern instanceof ast.AlternativeMatchPattern) {
+        let type = type_check_match_pattern(pattern.patterns[0], target_type, env, ctx)
+        for (let i = 1; i < pattern.patterns.length; i++) {
+            const type2 = type_check_match_pattern(pattern.patterns[i], target_type, env, ctx)
+            expect_equal_types(type, type2, pattern.span)
+            type = type2
+        }
+        return type
     } else if (pattern instanceof ast.RangeMatchPattern) {
         if (pattern.start instanceof ast.Number_) {
             if (!env.i32.assignable_to(target_type)) {
@@ -4327,7 +4335,7 @@ const test = {
         assert.equal(type.signature, "Foo<T=i32>.Bar")
     },
 
-    test_wildcard_pattern() {
+    test_match_wildcard_pattern() {
         const {type, env} = test.type_check(`
             match 1:
                 _ => true
@@ -4336,7 +4344,7 @@ const test = {
         assert.equal(type, env.bool)
     },
 
-    test_wildcard_pattern_with_complex_match() {
+    test_match_wildcard_pattern_with_complex_match() {
         const {type, env} = test.type_check(`
             struct BazStruct<T>:
                 baz T
@@ -4379,6 +4387,33 @@ const test = {
                 "foo" 
             end
         `)
+    },
+
+    test_match_alternative_patterns() {
+        const {type, env} = test.type_check(`
+            match 1:
+                1 | 2 => true
+                3 | 4 | 5 => false
+                _ => false
+            end
+        `)
+        assert.equal(type, env.bool)
+    },
+
+    test_match_alternative_patterns_with_option_type() {
+        const {type, env} = test.type_check(`
+            enum Option<T>:
+                Some(T)
+                None
+            end
+
+            match Some(1):
+                Some<i32>(1 | 2) => true
+                Some<i32>(3 | 4 | 5) => false
+                None => false
+            end
+        `)
+        assert.equal(type, env.bool)
     },
 
     test_interpolated_string() {

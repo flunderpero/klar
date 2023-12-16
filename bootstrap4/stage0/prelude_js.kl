@@ -88,8 +88,7 @@ trait Iterator<T>:
 
     fn for_each(self, f (fn(T))):
         loop:
-            let next = self.next()
-            match next:
+            match self.next():
                 None => break
                 Some(value) => f(value)
             end
@@ -107,6 +106,16 @@ trait Iterator<T>:
         self.for_each(fn(value T) => vec.push(value))
         vec
     end
+
+    -- fn any(self, predicate (fn(T) bool)) bool:
+    --     loop:
+    --         match self.next():
+    --             None => return false
+    --             Some(value) => if predicate(value) => break 
+    --         end
+    --     end
+    --     true
+    -- end
 end
 
 struct PeekableIterator<T>:

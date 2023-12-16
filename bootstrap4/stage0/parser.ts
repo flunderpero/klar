@@ -932,6 +932,20 @@ export abstract class MatchPattern extends ASTNode {
     }
 }
 
+export class AlternativeMatchPattern extends MatchPattern {
+    kind = "alternative match pattern"
+    patterns: MatchPattern[]
+
+    constructor(data: {patterns: MatchPattern[]}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof AlternativeMatchPattern.prototype)
+    }
+
+    contained_nodes() {
+        return this.patterns
+    }
+}
+
 export class LiteralMatchPattern extends MatchPattern {
     kind = "literal number match pattern"
     value: Number_ | Bool | Char | Str
@@ -1530,6 +1544,18 @@ export function parse(tokens: TokenStream): AST {
     }
 
     function parse_match_pattern(): MatchPattern {
+        let patterns = [parse_match_pattern_single()]
+        while (tokens.simple_peek() === "|") {
+            tokens.consume()
+            patterns.push(parse_match_pattern_single())
+        }
+        if (patterns.length === 1) {
+            return patterns[0]
+        }
+        return new AlternativeMatchPattern({patterns}, Span.combine(patterns[0], patterns.at(-1)!))
+    }
+
+    function parse_match_pattern_single(): MatchPattern {
         const token = tokens.peek()
         if (token instanceof NumberToken) {
             tokens.consume()

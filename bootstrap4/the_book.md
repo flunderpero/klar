@@ -419,6 +419,47 @@ fn main():
 end
 ```
 
+### Pattern Matching
+
+```klar
+enum Planet:
+    Earth(i32)
+    Mars
+    Venus
+end
+
+fn main():
+    let planet = Earth(15) -- Remember: Enum variants are visible automatically.
+    let name = match planet:
+        -- Capture the value of the `Earth` variant.
+        Earth(average_temp) => f"Earth (average temp: {average_temp})"
+        Mars => "Mars"
+        -- `_` matches everything.
+        _ => "Unknown"
+    end
+    assert(name == "Earth (average temp: 15)")
+end
+```
+
+Patterns must be exhaustive. This means that you have to match all possible
+values of the match expression.
+
+```klar
+enum Planet:
+    Earth
+    Mars
+    Venus
+end
+
+fn main():
+    let planet = Earth
+    let name = match planet: -- Compile error: Match is not exhaustive
+        Earth => "Earth"
+        Mars => "Mars"
+    end
+end
+```
+
 ### Modules
 
 In Klar, modules are files. The name of the module is the name of the file.

@@ -361,20 +361,43 @@ function type_check_match(node: ast.Match, env: TypeEnvironment, ctx: Context): 
         throw new TypeCheckError("Match expression has no arms", node.span)
     }
     const target_type = type_check(node.value, env, {...ctx, used_in_expression: true})
-    const arm_types: Type[] = []
+    const arm_types: {pattern_type: Type; block_type: Type}[] = []
     for (const arm of node.arms) {
         arm_types.push(type_check_match_arm(arm, target_type, env, ctx))
     }
+    // Exhaustiveness check for enums.
+    if (target_type instanceof EnumType) {
+        const enum_type = target_type.variant_parent || target_type
+        if (!node.arms.some((x) => x.pattern instanceof ast.WildcardMatchPattern)) {
+            for (const variant_type of enum_type.variants.values()) {
+                if (
+                    !arm_types.some(
+                        (x) =>
+                            x.pattern_type instanceof EnumType &&
+                            x.pattern_type.equals(variant_type) &&
+                            x.pattern_type.variant_name === variant_type.variant_name,
+                    )
+                ) {
+                    throw new TypeCheckError(
+                        `Match is not exhaustive, missing match arm for enum variant ${quote(
+                            variant_type.signature,
+                        )}`,
+                        node.span,
+                    )
+                }
+            }
+        }
+    }
     if (ctx.used_in_expression) {
-        let type = arm_types[0]!
+        let type = arm_types[0]!.block_type
         for (let i = 1; i < arm_types.length; i++) {
             if (node.arms[i].block.body.at(-1) instanceof ast.Return) {
                 // If the last statement in the block is a return, we can ignore the type.
                 continue
             }
-            expect_equal_types(type, arm_types[i], node.span)
+            expect_equal_types(type, arm_types[i].block_type, node.span)
             if (type === Type.internal_any) {
-                type = arm_types[i]
+                type = arm_types[i].block_type
             }
         }
         return type
@@ -387,10 +410,10 @@ function type_check_match_arm(
     target_type: Type,
     env: TypeEnvironment,
     ctx: Context,
-): Type {
+): {pattern_type: Type; block_type: Type} {
     const pattern_env = new TypeEnvironment(env)
-    type_check_match_pattern(node.pattern, target_type, pattern_env, ctx)
-    return type_check(node.block, pattern_env, ctx)
+    const pattern_type = type_check_match_pattern(node.pattern, target_type, pattern_env, ctx)
+    return {block_type: type_check(node.block, pattern_env, ctx), pattern_type}
 }
 
 function type_check_match_pattern(
@@ -441,9 +464,23 @@ function type_check_match_pattern(
     } else if (pattern instanceof ast.CaptureMatchPatternOrType) {
         // This might be a capture or a type.
         const type = env.get_or_null(pattern.name)
-        if (type && type.name === pattern.name) {
-            // The name can only match the type if it is a type.
-            if (type.has_type_parameters()) {
+        if (
+            type &&
+            (type.name === pattern.name ||
+                (type instanceof EnumType && type.variant_name === pattern.name))
+        ) {
+            if (type instanceof EnumType) {
+                if (!type.is_variant) {
+                    throw new TypeCheckError(
+                        `Cannot match on enum type ${quote(type.signature)}, only on variants`,
+                        pattern.span,
+                    )
+                }
+                if (type.variant_tuple_type!.fields.size === 0) {
+                    pattern.attributes.type = type
+                    return type
+                }
+            } else if (type.has_type_parameters()) {
                 throw new TypeCheckError(
                     `Cannot match on generic type ${quote(type.signature)}`,
                     pattern.span,
@@ -465,7 +502,7 @@ function type_check_match_pattern(
                 )
             }
             if (pattern_type.variant_tuple_type!.fields.size === 0) {
-                return target_type
+                return pattern_type
             }
         }
         if (target_type instanceof TypeVariable) {
@@ -475,7 +512,7 @@ function type_check_match_pattern(
                     pattern.span,
                 )
             }
-            return target_type
+            return pattern_type
         }
         const struct_type = expect_type_with_fields(target_type, pattern.span)
         if (Object.keys(pattern.fields).length !== struct_type.fields.size) {
@@ -531,7 +568,7 @@ function type_check_match_pattern(
             const sub_pattern_type = type_check_match_pattern(sub_pattern, field_type, env, ctx)
             expect_assignable_to(sub_pattern_type, field_type, sub_pattern.span)
         }
-        return target_type
+        return pattern_type
     } else if (pattern instanceof ast.WildcardMatchPattern) {
         return target_type
     } else {
@@ -1750,7 +1787,7 @@ class EnumType extends ComplexType<EnumData> {
         type_variable_map?: Map<TypeVariable, TypeVariable>,
         public variant_name?: string,
         public variant_tuple_type?: TupleType,
-        private variant_parent?: EnumType,
+        public variant_parent?: EnumType,
     ) {
         super(data, type_variables, type_arguments, type_variable_map)
     }
@@ -4196,6 +4233,54 @@ const test = {
         )
     },
 
+    test_match_enum_exhaustiveness_check() {
+        assert.throws(
+            () =>
+                test.type_check(`
+                    enum Foo:
+                        Bar
+                        Baz
+                    end
+
+                    match Foo.Bar:
+                        Foo.Bar => true
+                    end
+                `),
+            /Match is not exhaustive/,
+        )
+    },
+
+    test_match_enum_exhaustiveness_check_with_wildcard_pattern() {
+        test.type_check(`
+            enum Foo:
+                Bar
+                Baz
+            end
+
+            match Foo.Bar:
+                Foo.Bar => true
+                _ => false
+            end
+        `)
+    },
+
+    test_match_enum_with_auto_imported_variants() {
+        const {type} = test.type_check(`
+            enum Foo<T>:
+                Bar(T)
+                Baz
+            end
+
+            let a = Bar(1)
+            match a:
+                Bar(a) => a
+                Baz => 0
+            end
+            a
+        `)
+        assert.equal(type.signature, "Foo<T=i32>.Bar")
+    },
+
     test_wildcard_pattern() {
         const {type, env} = test.type_check(`
             match 1:
@@ -4539,23 +4624,6 @@ const test = {
             foo(1)
         `)
         assert.equal(type.signature, "Option<T=i32>")
-    },
-
-    test_use_on_enum() {
-        const {type} = test.type_check(`
-            enum Foo<T>:
-                Bar(T)
-                Baz
-            end
-
-            let a = Bar(1)
-            match a:
-                Bar(a) => a
-                Baz => 0
-            end
-            a
-        `)
-        assert.equal(type.signature, "Foo<T=i32>.Bar")
     },
 }
 

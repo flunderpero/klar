@@ -107,15 +107,15 @@ trait Iterator<T>:
         vec
     end
 
-    -- fn any(self, predicate (fn(T) bool)) bool:
-    --     loop:
-    --         match self.next():
-    --             None => return false
-    --             Some(value) => if predicate(value) => break 
-    --         end
-    --     end
-    --     true
-    -- end
+    fn any(self, predicate (fn(T) bool)) bool:
+        loop:
+            match self.next():
+                None => return false
+                Some(value) => if predicate(value) => break 
+            end
+        end
+        true
+    end
 end
 
 struct PeekableIterator<T>:

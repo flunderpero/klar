@@ -1,0 +1,247 @@
+struct LexStream:
+    file str
+    src str
+    iter PeekableIterator<char>
+    peeked char?
+    idx i32
+end
+
+impl LexStream:
+    fn new(file str, src str) LexStream:
+        let iter = PeekableIterator<char>.new(src.iter())
+        LexStream{file: file, src: src, iter: iter, peeked: None, idx: 0}
+    end
+
+    fn span(self) Span:
+        Span{file: self.file, src: self.src, from: self.idx, to: self.idx}
+    end
+end
+
+impl Iterator<Token> for LexStream:
+    fn next(mut self) Token?:
+        let next = match self.iter.next():
+            Some<char>(c) => c
+            None => return None
+        end
+        self.idx = self.idx + 1
+        let span = self.span()
+        match next:
+            ' ' => return Token{kind: WhiteSpace(" "), span: span}
+            '\n' => return Token{kind: WhiteSpace("\n"), span: span}
+            '\t' => return Token{kind: WhiteSpace("\t"), span: span}
+            '\r' => return Token{kind: WhiteSpace("\r"), span: span}
+            '-' =>
+                match self.iter.peek():
+                    Some<char>('-') => return self.match_comment()
+                    _ => return Token{kind: Minus, span: span.combine(self.span())}
+                end
+            '(' => return Token{kind: Lparen, span: span}
+            ')' => return Token{kind: Rparen, span: span}
+            ':' => return Token{kind: Colon, span: span}
+            '=' => return Token{kind: Equal, span: span}
+            '<' =>
+                match self.iter.peek():
+                    Some<char>('='):
+                        self.iter.next()
+                        return Token{kind: LessThanOrEqual, span: span.combine(self.span())}
+                    end
+                    _ => return Token{kind: LessThan, span: span}
+                end
+            '0'..'9':
+                mut num = "".push_char(next)
+                loop:
+                    match self.iter.peek():
+                        Some<char>('0'..'9') => num.push_char(self.iter.next().unwrap())
+                        _ => break
+                    end
+                end
+                return Token{kind: Number(num), span: span}
+            end
+            'a'..'z' | 'A'..'Z' | '_':
+                mut ident = "".push_char(next)
+                loop:
+                    match self.iter.peek():
+                        -- feat: We should not need to assign `next` first, but be able to 
+                        --       capture the range pattern like 
+                        --       `'a'..'z' as x => ident.push_char(x)`.
+                        Some<char>('a'..'z' | 'A'..'Z' | '0'..'9' | '_'):
+                            ident.push_char(self.iter.next().unwrap())
+                        end
+                        _ => break
+                    end
+                end
+                match ident:
+                    "fn" => return Token{kind: Fn, span: span}
+                    _ => return Token{kind: Ident(ident), span: span}
+                end
+                return Token{kind: Ident(ident), span: span}
+            end
+        end
+        Token{kind: Error(ParseError{msg: f"Unexpected character: {next}"}), span: span}
+    end
+
+    fn match_comment(mut self) Token:
+        let span = self.span()
+        self.iter.next()
+        -- Single- or multi-line comment.
+        mut comment = "--"
+        match self.iter.next():
+            Some<char>('-'):
+                -- Multi-line comment.
+                comment.push_char('-')
+                mut num_of_dashes = 0
+                loop:
+                    match self.iter.next():
+                        Some<char>('-'):
+                            comment.push_char('-')
+                            num_of_dashes = num_of_dashes + 1
+                            if num_of_dashes == 3:
+                                break
+                            end
+                        end
+                        Some<char>(c):
+                            comment.push_char(c)
+                            num_of_dashes = 0
+                        end
+                        None => break
+                    end
+                end
+            end
+            Some<char>(c):
+                -- Single-line comment.
+                mut comment = "--".push_char(c)
+                loop:
+                    match self.iter.peek():
+                        Some<char>('\n') => break
+                        Some<char>(c): 
+                            comment.push_char(c)
+                            self.iter.next()
+                        end
+                        None => break
+                    end
+                end
+            end
+            _ => None 
+        end
+        return Token{kind: Comment(comment), span: span}
+    end
+end
+
+struct Span:
+    file str
+    src str
+    from i32
+    to i32
+end
+
+impl Span:
+    fn combine(self, other Span) Span:
+        Span{
+            file: self.file, 
+            src: self.src, 
+            from: if self.from < other.from => self.from else => other.from, 
+            to: if self.to > other.to => self.to else => other.to
+        }
+    end
+end
+
+impl ToStr for Span:
+    fn to_str(self) str:
+        -- First, calculate the line and column numbers.
+        fn line_col(pos i32) (i32, i32):
+            mut line = 1
+            mut col = 1
+            mut iter = self.src.iter()
+            mut idx = 0
+            loop:
+                match iter.next():
+                    Some<char>('\n'):
+                        line = line + 1
+                        col = 1
+                    end
+                    Some<char>(c) => col = col + 1
+                    None => break
+                end
+                if idx == pos => break
+                idx = idx + 1
+            end
+            return (line, col)
+        end
+        let from = line_col(self.from)
+        if self.from == self.to => return f"{self.file}:{from.0}:{from.1}"
+        let to = line_col(self.to)
+        if from.0 == to.0 => return f"{self.file}:{from.0}:{from.1}-{to.1}"
+        return f"{self.file}:{from.0}:{from.1}-{to.0}:{to.1}"
+    end
+end
+
+struct ParseError:
+    msg str
+end
+
+enum TokenKind:
+    Error(ParseError)
+    WhiteSpace(str)
+    Comment(str)
+    Ident(str)
+    Minus
+    Fn
+    Lparen
+    Rparen
+    Colon
+    Equal
+    LessThan
+    GreaterThan
+    LessThanOrEqual
+    GreaterThanOrEqual
+    Number(str)
+    Bool(bool)
+    Str(str)
+end
+
+impl ToStr for TokenKind:
+    fn to_str(self) str:
+        match self:
+            Error(err) => f"Error({err.msg})"
+            WhiteSpace(ws) => f"WhiteSpace()"
+            Comment(comment) => f"Comment()"
+            Ident(ident) => f"Ident({ident})"
+            Minus => "Minus"
+            Fn => "Fn"
+            Lparen => "("
+            Rparen => ")"
+            Colon => ":"
+            Equal => "="
+            LessThan => "<"
+            GreaterThan => ">"
+            LessThanOrEqual => "<="
+            GreaterThanOrEqual => ">="
+            Number(num) => f"Number({num})"
+            Bool(b) => f"Bool({b})"
+            Str(s) => f"Str({s})"
+        end
+    end
+end
+
+struct Token:
+    kind TokenKind
+    span Span
+end
+
+impl ToStr for Token:
+    fn to_str(self) str:
+        f"{self.span} {self.kind}"
+    end
+end
+
+fn lex(src str, file str) Vector<Token>:
+    mut stream = LexStream.new(file, src)
+    mut tokens = Vector<Token>.new()
+    loop:
+        match stream.next():
+            Some<Token>(token) => tokens.push(token)
+            None => break
+        end
+    end
+    tokens
+end

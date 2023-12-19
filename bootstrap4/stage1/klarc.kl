@@ -1,0 +1,48 @@
+use .lexer.lex
+use .lexer.TokenKind
+use .lexer.Token
+
+fn main():
+    if env.args.len() < 4:
+        print("Usage: klarc <src> <dst>")
+        -- todo: set exit code
+        return
+    end
+    let debug = env.args.iter().any(fn(s str) bool => s == "--debug")
+    let src_file = env.args[2]
+    let dst_file = env.args[3]
+    let src_read = File.at(src_file).read_str()
+    if src_read.is_err():
+        print(f"Error reading file {src_file}: {src_read.unwrap_err()}")
+        -- todo: set exit code
+        return
+    end
+    let src = src_read.unwrap()
+    let tokens = lex(src, src_file)
+    let lex_errors = tokens.iter().filter(fn(t Token) bool =>
+        match t.kind:
+            TokenKind.Error(error) => true
+            _ => false
+        end
+    ).collect()
+    if debug:
+        print("Tokens:")
+        let iter = tokens.iter()
+        loop:
+            match iter.next():
+                Some<Token>(t) => print(t)
+                None => break
+            end
+        end
+    end
+    if lex_errors.len() > 0:
+        print("Lex errors:")
+        let iter = lex_errors.iter()
+        loop:
+            match iter.next():
+                Some<Token>(t) => print(t)
+                None => break
+            end
+        end
+    end
+end

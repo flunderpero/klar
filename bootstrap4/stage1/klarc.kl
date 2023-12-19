@@ -19,10 +19,12 @@ fn main():
     end
     let src = src_read.unwrap()
     let tokens = lex(src, src_file)
-    let lex_errors = tokens.iter().filter(fn(t Token) bool =>
-        match t.kind:
-            TokenKind.Error(error) => true
-            _ => false
+    let lex_errors = tokens.iter().filter(
+        fn(token Token) bool:
+            match token.kind:
+                ParseError(_) => true
+                _ => false
+            end
         end
     ).collect()
     if debug:
@@ -44,5 +46,6 @@ fn main():
                 None => break
             end
         end
+        exit(1)
     end
 end

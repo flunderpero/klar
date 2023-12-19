@@ -81,8 +81,8 @@ async function run_test(test: Test): Promise<boolean> {
     } catch (e: any) {
         if (e.message === "Expected panic") {
             throw new Error(`Expected panic at ${test.name}`)
-        } else if (e.message === "Assertion failed") {
-            throw new Error(`Assertion failed at ${test.name}`)
+        } else if (e.message.startsWith("Assertion failed")) {
+            throw e
         }
         console.log("\nTranspiled code:")
         console.log(linked)

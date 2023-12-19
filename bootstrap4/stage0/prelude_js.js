@@ -7,8 +7,14 @@ function klar_print(value) {
 // For compiler debugging purposes only.
 const klar_jsprint = console.log
 
-function klar_panic(value) {
-    throw new Error(value.to_str().value)
+function klar_panic(value, location, src) {
+    throw new Error(
+        `Panic: ${to_debug_str(value)} at ${to_debug_str(location)}:\n  ${to_debug_str(src)}`,
+    )
+}
+
+function klar_exit(code) {
+    process.exit(code.value)
 }
 
 class i32 {
@@ -218,4 +224,32 @@ function klar_ext_args() {
         result.push(new str(Bun.argv[i]))
     }
     return result
+}
+
+// Used in `compiler.ts` only.
+function to_debug_str(s) {
+    if (s.value !== undefined) {
+        s = s.value
+    }
+    if (typeof s === "number" || typeof s === "boolean") {
+        return s
+    }
+    if (typeof s !== "string") {
+        s = JSON.stringify(s).replaceAll('"', "")
+    }
+    let value = s.replace(/\\/g, "\\\\")
+    for (const [char, replacement] of Object.entries({
+        "\n": "\\n",
+        "\r": "\\r",
+        "\t": "\\t",
+        "\v": "\\v",
+        "\b": "\\b",
+        "\f": "\\f",
+        "\0": "\\0",
+        '"': '\\"',
+        "`": "\\`",
+    })) {
+        value = value.replaceAll(char, replacement)
+    }
+    return `"${value}"`
 }

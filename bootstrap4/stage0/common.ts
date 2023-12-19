@@ -39,6 +39,10 @@ export class Span {
         const {line, col} = this.pos
         return `${this.file}:${line}:${col}`
     }
+
+    get src_text() {
+        return this.src.slice(this.start, this.end)
+    }
 }
 
 export class HasKindAndSpan {

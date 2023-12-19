@@ -182,6 +182,12 @@ function code_gen(ast: AST.AST) {
             )
             return `(function () { const _ = new str(""); ${parts.join("")}; return _; })()`
         } else if (e instanceof AST.FunctionCall) {
+            if (e.target instanceof AST.IdentifierReference && e.target.name === "klar_assert") {
+                return transpile_assert(e)
+            }
+            if (e.target instanceof AST.IdentifierReference && e.target.name === "klar_panic") {
+                convert_call_to_panic(e)
+            }
             const args = e.args.map((x, i) => {
                 let s = transpile_expression(x, {...ctx, used_in_expression: true})
                 const p = (e.target.attributes?.type as any)?.parameters_without_self?.[i]
@@ -376,6 +382,63 @@ function code_gen(ast: AST.AST) {
             throw new CodeGenError(`Unexpected expression ${quote(e.kind)}`, e.span)
         }
     }
+    /**
+     * Convert calls `assert()` so that in the case of an error,
+     * the lhs and rhs are printed as well as the source location.
+     */
+    function transpile_assert(call: AST.FunctionCall) {
+        function escape_str_str(s: string) {
+            let value = s.replace(/\\/g, "\\\\")
+            for (const [char, replacement] of Object.entries(Lexer.escape_sequences)) {
+                value = value.replaceAll(char, `\\${replacement}`)
+            }
+            value = value.replace(/`/g, "\\`")
+            return value
+        }
+        const e = call.args[0]
+        const location = escape_str_str(e.span.toString())
+        const src = call.span.src_text
+        const cond = transpile_expression(e, {used_in_expression: true})
+        if (e instanceof AST.BinaryExpression) {
+            const lhs = transpile_expression(e.lhs, {used_in_expression: true})
+            const rhs = transpile_expression(e.rhs, {used_in_expression: true})
+            return `if (!(${cond}.value)) {
+const lhs = to_debug_str(${lhs});
+const rhs = to_debug_str(${rhs});
+throw new Error(
+\`Assertion failed at ${location}:
+  expected: ${escape_str_str(e.lhs.span.src_text)} ${e.operator} ${escape_str_str(
+      e.rhs.span.src_text,
+  )}
+  got:      \${lhs} ${e.operator} \${rhs}
+\`);}`
+        } else if (e instanceof AST.Not) {
+            const inner = transpile_expression(e.expression, {used_in_expression: true})
+            return `if (!(${cond}.value)) {
+const inner = to_debug_str(${inner});
+throw new Error(
+\`Assertion failed at ${location}:
+  expected: not ${escape_str_str(e.expression.span.src_text)}
+  got:      not \${inner}
+\`);}`
+        }
+        return `if (!(${cond}.value)) {
+            throw new Error(\`Assertion failed at ${location}:\n${escape_str_str(src)}\`);
+        }`
+    }
+    /**
+     * Add additional parameters to `panic()` so that the source and location
+     * can be printed.
+     */
+    function convert_call_to_panic(e: AST.FunctionCall) {
+        e.args.push(new AST.Str({value: e.span.toString(), is_multiline: false}, e.span))
+        e.args.push(
+            new AST.Str(
+                {value: e.span.src_text, is_multiline: e.span.src_text.includes("\n")},
+                e.span,
+            ),
+        )
+    }
     function wrap_return_value(value: string, ctx: Context) {
         const throws = ctx.func?.throws
         const is_option = ctx.func?.return_type.name === "Option"
@@ -550,7 +613,6 @@ function code_gen(ast: AST.AST) {
         }
         return `"${value}"`
     }
-
     function transpile_match_pattern_to_condition(
         match_expression: string,
         pattern: AST.MatchPattern,
@@ -702,15 +764,14 @@ export async function compile({
     type_check_ast(ast, env)
     transpiled += code_gen(ast)
     if (prettify) {
-        try {
-            const proc = Bun.spawn(["prettier", "--stdin-filepath", "transpiled.js"], {
-                stdin: "pipe",
-            })
-            proc.stdin.write(transpiled)
-            proc.stdin.end()
-            transpiled = await new Response(proc.stdout).text()
-        } catch (error: any) {
-            console.error(`${log_prefix} Error running prettier: ${error.message}`)
+        const proc = Bun.spawn(["prettier", "--stdin-filepath", "transpiled.js"], {
+            stdin: "pipe",
+        })
+        proc.stdin.write(transpiled)
+        proc.stdin.end()
+        transpiled = await new Response(proc.stdout).text()
+        if ((await proc.exited) !== 0) {
+            throw new Error(`Prettier failed with exit code ${proc.exitCode}`)
         }
     }
     if (debug_transpiled) {

@@ -221,7 +221,7 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
         if (relative_to) {
             return new Span(relative_to.start, i, file, src)
         }
-        return new Span(i, i, file, src)
+        return new Span(i, i + 1, file, src)
     }
     function peek(ahead = 0) {
         return src[i + ahead]

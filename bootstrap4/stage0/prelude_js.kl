@@ -57,7 +57,7 @@ end
 
 trait PartialEq:
     fn eq(self, rhs Self) bool
-    fn ne(self, rhs Self) bool
+    fn ne(self, rhs Self) bool => not self.eq(rhs)
 end
 
 -- This is just a marker trait. `PartialEq` must be implemented.
@@ -214,6 +214,8 @@ extern:
 
     fn print(s ToStr)
     fn panic(s str)
+    fn exit(code i32)
+    fn assert(cond bool)
     -- For compiler debugging purposes only.
     fn jsprint(s str)
 

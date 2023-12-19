@@ -1,5 +1,3 @@
 extern:
-    fn assert(condition bool)
-
     fn assert_panic(f (fn()))
 end

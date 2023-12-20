@@ -101,6 +101,12 @@ trait Iterator<T>:
         vec.iter()
     end
 
+    fn map<U>(self, f (fn(T) U)) Iterator<U>:
+        let vec = Vector<U>.new()
+        self.for_each(fn(value T) => vec.push(f(value)))
+        vec.iter()
+    end
+
     fn collect(self) Vector<T>:
         let vec = Vector<T>.new()
         self.for_each(fn(value T) => vec.push(value))
@@ -125,7 +131,7 @@ struct PeekableIterator<T>:
 end
 
 impl PeekableIterator<T>:
-    fn new(iter Iterator<T>) Self => PeekableIterator<T> { iter: iter, peeked: None, idx: 0 }
+    fn new(iter Iterator<T>) Self => PeekableIterator<T> { iter: iter, peeked: None, idx: -1 }
 
     fn peek(mut self) Option<T>:
         if self.peeked.is_some():
@@ -224,6 +230,7 @@ extern:
         fn iter(self) Iterator<char>
         fn push(mut self, s str) str
         fn push_char(mut self, c char) str
+        fn slice_copy(self, from i32, to i32) str
     end
 
     -- JS array helpers.
@@ -261,6 +268,21 @@ extern:
 
     fn ext_args() JSArray<str>
     fn ext_env() JSArray<(str, str)>
+end
+
+impl str:
+    fn join(self, iter Iterator<str>) str:
+        mut s = ""
+        mut first = true
+        iter.for_each(
+            fn(value str):
+                if first => first = false
+                else => s.push(self)
+                s.push(value);
+            end
+        )
+        s
+    end
 end
 
 -- Fixed size array
@@ -341,10 +363,35 @@ impl Vector<T>:
     end
 
     fn iter(self) VectorIter<T> => VectorIter<T> { vec: self, index: 0 }
+
+    fn slice_copy(self, from i32, to i32) Array<T>:
+        let arr = Array<T>.new(to - from)
+        mut i = from
+        loop:
+            if i >= to => break
+            let v = self[i]
+            arr[i - from] = v
+            i = i + 1
+        end
+        arr
+    end
 end
 
 impl Len for Vector<T>:
     fn len(self) i32 => self.data.len()
+end
+
+impl PartialEq for Vector<T>:
+    fn eq(self, rhs Vector<T>) bool:
+        if self.len() != rhs.len() => return false
+        mut i = 0
+        loop:
+            if i >= self.len() => break
+            if self[i] != rhs[i] => return false
+            i = i + 1
+        end
+        true
+    end
 end
 
 impl IndexedGet<i32, T> for Vector<T>:

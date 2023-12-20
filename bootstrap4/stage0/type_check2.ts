@@ -951,6 +951,9 @@ function type_check_function_body(
     env: TypeEnvironment,
 ) {
     const function_env = new TypeEnvironment(env)
+    for (const variable of function_type.type_variables) {
+        function_env.add(variable.name, variable, node.span)
+    }
     for (const name of function_type.parameter_names) {
         const type = function_type.parameter(name, node.span)
         function_env.add(name, type, node.span)
@@ -1188,7 +1191,20 @@ export class Type {
         } else if (declaration instanceof ast.UnitTypeDeclaration) {
             return env.unit
         }
-        return env.get_or_null(declaration.name)
+        let type = env.get_or_null(declaration.name)
+        if (!(type instanceof ComplexType)) {
+            return type
+        }
+        const type_arguments = parse_type_arguments(
+            type,
+            declaration.type_parameters,
+            env,
+            declaration.span,
+        )
+        if (type_arguments.length !== type.type_variables.length) {
+            return type
+        }
+        return type.with_type_arguments(type_arguments, declaration.span)
     }
 
     protected static known_types = new Map<string, Type>()
@@ -1454,7 +1470,9 @@ abstract class ComplexType<
         if (Array.isArray(type_arguments)) {
             if (type_arguments.length !== this.type_variables.length) {
                 throw new TypeCheckError(
-                    `Expected ${this.type_variables.length} type arguments but got ${type_arguments.length}`,
+                    `Expected ${this.type_variables.length} type arguments but got ${
+                        type_arguments.length
+                    } for ${quote(this.signature)}`,
                     span,
                 )
             }

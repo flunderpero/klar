@@ -410,7 +410,7 @@ function code_gen(ast: AST.AST) {
         if (e instanceof AST.BinaryExpression) {
             const lhs = transpile_expression(e.lhs, {used_in_expression: true})
             const rhs = transpile_expression(e.rhs, {used_in_expression: true})
-            return `if (!(${cond}.value)) {
+            return `(function() {if (!(${cond}.value)) {
 const lhs = to_debug_str(${lhs});
 const rhs = to_debug_str(${rhs});
 throw new Error(
@@ -419,20 +419,20 @@ throw new Error(
       e.rhs.span.src_text,
   )}
   got:      \${lhs} ${e.operator} \${rhs}
-\`);}`
+\`);}})();`
         } else if (e instanceof AST.Not) {
             const inner = transpile_expression(e.expression, {used_in_expression: true})
-            return `if (!(${cond}.value)) {
+            return `(function() {if (!(${cond}.value)) {
 const inner = to_debug_str(${inner});
 throw new Error(
 \`Assertion failed at ${location}:
   expected: not ${escape_str_str(e.expression.span.src_text)}
   got:      not \${inner}
-\`);}`
+\`);}})();`
         }
-        return `if (!(${cond}.value)) {
+        return `(function() {if (!(${cond}.value)) {
             throw new Error(\`Assertion failed at ${location}:\n${escape_str_str(src)}\`);
-        }`
+        }})();`
     }
     /**
      * Add additional parameters to `panic()` so that the source and location
@@ -583,6 +583,9 @@ throw new Error(
             }
         }
         s += `return __match_result;})()\n`
+        if (!ctx.used_in_expression) {
+            s += ";"
+        }
         return s
     }
     function declare_captured_variables(pattern: AST.MatchPattern) {

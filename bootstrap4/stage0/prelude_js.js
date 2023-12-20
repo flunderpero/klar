@@ -130,6 +130,10 @@ class str {
         return this
     }
 
+    slice_copy(start, end) {
+        return new str(this.value.slice(start.value, end.value))
+    }
+
     len() {
         return new usize(this.value.length)
     }
@@ -235,21 +239,21 @@ function to_debug_str(s) {
         return s
     }
     if (typeof s !== "string") {
-        s = JSON.stringify(s).replaceAll('"', "")
+        s = JSON.stringify(s, null, 2)
+    } else {
+        for (const [char, replacement] of Object.entries({
+            "\n": "\\n",
+            "\r": "\\r",
+            "\t": "\\t",
+            "\v": "\\v",
+            "\b": "\\b",
+            "\f": "\\f",
+            "\0": "\\0",
+            '"': '\\"',
+            "`": "\\`",
+        })) {
+            s = s.replaceAll(char, replacement)
+        }
     }
-    let value = s.replace(/\\/g, "\\\\")
-    for (const [char, replacement] of Object.entries({
-        "\n": "\\n",
-        "\r": "\\r",
-        "\t": "\\t",
-        "\v": "\\v",
-        "\b": "\\b",
-        "\f": "\\f",
-        "\0": "\\0",
-        '"': '\\"',
-        "`": "\\`",
-    })) {
-        value = value.replaceAll(char, replacement)
-    }
-    return `"${value}"`
+    return `"${s}"`
 }

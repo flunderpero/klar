@@ -6,7 +6,7 @@
 # stderr:
 # stdout:
 This is a string literal
-With `quotes`, newline
+With "quotes", newline
 and a tab	character
 This is a multiline
 string literal

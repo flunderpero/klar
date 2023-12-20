@@ -413,6 +413,15 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
             skip(2)
             return token
         }
+        if (c === "-" && peek(1).match(/[0-9]/)) {
+            let value = "-"
+            const start_span = span()
+            skip()
+            while (i < src.length && peek().match(/[0-9]/)) {
+                value += consume()
+            }
+            return new NumberToken(value, span(start_span))
+        }
         if (
             [
                 "(",

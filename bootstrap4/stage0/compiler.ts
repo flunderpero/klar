@@ -614,11 +614,11 @@ throw new Error(
         for (const [char, replacement] of Object.entries(Lexer.escape_sequences)) {
             value = value.replaceAll(char, `\\${replacement}`)
         }
-        value = value.replace(/"/g, '\\"')
+        value = value.replace(/`/g, "\\`")
         if (s instanceof AST.Str && s.is_multiline) {
-            value = value.replace(/`/g, "\\`")
             return `\`${value}\``
         }
+        value = value.replace(/"/g, '\\"')
         return `"${value}"`
     }
     function transpile_match_pattern_to_condition(

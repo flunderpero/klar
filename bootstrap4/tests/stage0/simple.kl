@@ -2,18 +2,18 @@
 
 # compiler output:
 # exit code:
-42
+0
 # stderr:
 # stdout:
 
 /expected ---
 
 -- This is a comment.
-fn main() i32:
+fn main():
     -- This is a comment.
     ---
        This is a block comment.
        print("Not ok")
     ---
-    return 42
+    42; -- Just an int literal, a very simple program.
 end

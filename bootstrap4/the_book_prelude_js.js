@@ -7,6 +7,6 @@ function klar_assert_panic(f) {
     f();
     global.klar_panic = old_panic;
     if (!panicked) {
-        klar_panic(new str("Expected panic"), new str(""), new str(""))
+        klar_panic(new klar_str("Expected panic"), new klar_str(""), new klar_str(""))
     }
 }

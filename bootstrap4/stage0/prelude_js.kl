@@ -234,6 +234,10 @@ extern:
         fn join(self, iter Iterator<str>) str
     end
 
+    impl i32:
+        fn from_str(s str) i32 throws
+    end
+
     -- JS array helpers.
     struct JSArray<T>:
     end

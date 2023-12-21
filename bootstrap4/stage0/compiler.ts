@@ -14,6 +14,7 @@ const debug = Bun.argv.includes("--debug")
 const debug_tokens = Bun.argv.includes("--debug-tokens") || debug
 const debug_ast = Bun.argv.includes("--debug-ast") || debug
 const debug_transpiled = Bun.argv.includes("--debug-transpiled") || debug
+const debug_errors = Bun.argv.includes("--debug-errors") || debug
 
 class CodeGenError extends Error {
     constructor(
@@ -24,81 +25,16 @@ class CodeGenError extends Error {
     }
 }
 
-function traverse_ast(ast: AST.AST, f: (e: AST.ASTNode, parent: AST.ASTNode) => void) {
-    const visited: any[] = []
-    for (const expression of ast.body) {
-        traverse(expression, ast.body)
-    }
-    function traverse(obj: any, parent: any) {
-        if (obj == null) {
-            return
-        }
-        if (visited.includes(obj)) {
-            return
-        }
-        visited.push(obj)
-        if (obj instanceof AST.ASTNode) {
-            f(obj, parent)
-        }
-        for (const key of Object.keys(obj)) {
-            const value = obj[key]
-            if (Array.isArray(value)) {
-                for (const child of value) {
-                    traverse(child, obj)
-                }
-            } else {
-                traverse(value, obj)
-            }
-        }
-    }
-}
-
-function mangle_names(ast: AST.AST) {
-    function mangle(name: string) {
+/**
+ * Transpile AST to JavaScript.
+ */
+function code_gen(ast: AST.AST) {
+    function m(name: string) {
         if (name.startsWith("klar_")) {
             return name
         }
         return `klar_${name}`
     }
-    function do_mangle(e: any, parent: any) {
-        if (
-            e instanceof AST.FunctionDefinition &&
-            !(parent instanceof AST.ImplDefinition || parent instanceof AST.TraitDeclaration)
-        ) {
-            e.declaration.name = mangle(e.declaration.name)
-        } else if (e instanceof AST.StructDeclaration) {
-            e.name = mangle(e.name)
-        } else if (e instanceof AST.EnumDeclaration) {
-            e.name = mangle(e.name)
-        } else if (e instanceof AST.StructInstantiation) {
-            e.target_struct_name = mangle(e.target_struct_name)
-        } else if (e instanceof AST.VariableDeclaration) {
-            if (e.name !== "self") {
-                e.name = mangle(e.name)
-            }
-        } else if (e instanceof AST.Parameter || e instanceof AST.ClosureParameter) {
-            if (e.name !== "self") {
-                e.name = mangle(e.name)
-            }
-        } else if (e instanceof AST.CaptureMatchPatternOrType) {
-            e.name = mangle(e.name)
-        } else if (e instanceof AST.IdentifierReference) {
-            e.name = mangle(e.name)
-        } else if (e instanceof AST.ImplDefinition) {
-            e.target_name = mangle(e.target_name)
-        }
-        if (e.attributes?.type?.declaration) {
-            do_mangle(e.attributes.type.declaration, e)
-        }
-    }
-    traverse_ast(ast, do_mangle)
-}
-
-/**
- * Transpile AST to JavaScript.
- */
-function code_gen(ast: AST.AST) {
-    mangle_names(ast)
     const binary_op_functions = {
         "==": "eq",
         "!=": "ne",
@@ -124,13 +60,13 @@ function code_gen(ast: AST.AST) {
         if (e instanceof AST.UnitOperator) {
             return transpile_expression(e.expression, {...ctx, used_in_expression: false})
         } else if (e instanceof AST.FunctionDefinition) {
-            const parameters = e.declaration.parameters.map((x) => x.name).join(",")
+            const parameters = e.declaration.parameters.map((x) => m(x.name)).join(",")
             const block = transpile_block(
                 e.block,
                 {...ctx, func: e.declaration, used_in_expression: false},
                 {return_last_expression: true},
             )
-            return `function ${e.declaration.name}(${parameters}) {
+            return `function ${m(e.declaration.name)}(${parameters}) {
                 try {
                     ${block}
                 } catch (e) {
@@ -140,7 +76,7 @@ function code_gen(ast: AST.AST) {
                     throw e
                 }}`
         } else if (e instanceof AST.ClosureDefinition) {
-            const parameters = e.parameters.map((x) => x.name).join(",")
+            const parameters = e.parameters.map((x) => m(x.name)).join(",")
             const block = transpile_block(
                 e.block,
                 {...ctx, func: e, used_in_expression: false},
@@ -163,15 +99,15 @@ function code_gen(ast: AST.AST) {
             )
             return `;(function () { const error = new Error("return"); error.value = ${value}; throw error; })()`
         } else if (e instanceof AST.Number_) {
-            return `new i32(${e.value})`
+            return `new klar_i32(${e.value})`
         } else if (e instanceof AST.Bool || e instanceof AST.Number_) {
-            return `new bool(${e.value})`
+            return `new klar_bool(${e.value})`
         } else if (e instanceof AST.Str) {
             const value = escape_str(e)
-            return `new str(${value})`
+            return `new klar_str(${value})`
         } else if (e instanceof AST.Char) {
             const value = escape_str(e)
-            return `new char(${value})`
+            return `new klar_char(${value})`
         } else if (e instanceof AST.InterpolatedStr) {
             const parts = e.expressions.map(
                 (x) =>
@@ -180,12 +116,12 @@ function code_gen(ast: AST.AST) {
                         used_in_expression: true,
                     })}.to_str());`,
             )
-            return `(function () { const _ = new str(""); ${parts.join("")}; return _; })()`
+            return `(function () { const _ = new klar_str(""); ${parts.join("")}; return _; })()`
         } else if (e instanceof AST.FunctionCall) {
-            if (e.target instanceof AST.IdentifierReference && e.target.name === "klar_assert") {
+            if (e.target instanceof AST.IdentifierReference && e.target.name === "assert") {
                 return transpile_assert(e)
             }
-            if (e.target instanceof AST.IdentifierReference && e.target.name === "klar_panic") {
+            if (e.target instanceof AST.IdentifierReference && e.target.name === "panic") {
                 convert_call_to_panic(e)
             }
             const args = e.args.map((x, i) => {
@@ -198,7 +134,7 @@ function code_gen(ast: AST.AST) {
             })
             let call
             if (e.target instanceof AST.FunctionDefinition) {
-                call = `${e.target.declaration.name}(${args.join(",")})\n`
+                call = `${m(e.target.declaration.name)}(${args.join(",")})\n`
             } else {
                 const target = transpile_expression(e.target, {...ctx, used_in_expression: true})
                 call = `${target}(${args.join(",")})\n`
@@ -220,7 +156,7 @@ function code_gen(ast: AST.AST) {
                 return `${call};`
             }
         } else if (e instanceof AST.StructInstantiation) {
-            const create_instance = `let _ = new ${e.target_struct_name}()`
+            const create_instance = `let _ = new ${m(e.target_struct_name)}()`
             const assign_members = Object.entries(e.fields).map(
                 ([name, value]) =>
                     `_.${name} = ${transpile_expression(value, {
@@ -233,9 +169,9 @@ function code_gen(ast: AST.AST) {
             const kind = e.mutable ? "let" : "const"
             if (e.value) {
                 const value = transpile_expression(e.value, {...ctx, used_in_expression: true})
-                return `${kind} ${e.name} = ${value};`
+                return `${kind} ${m(e.name)} = ${value};`
             } else {
-                return `${kind} ${e.name};`
+                return `${kind} ${m(e.name)};`
             }
         } else if (e instanceof AST.Assignment) {
             const value = transpile_expression(e.value, {...ctx, used_in_expression: true})
@@ -286,16 +222,16 @@ function code_gen(ast: AST.AST) {
         } else if (e instanceof AST.StructDeclaration) {
             const members = Object.keys(e.fields).join(";")
             const impls = transpile_impls(e)
-            return `class ${e.name} {${members}\n}${impls}`
+            return `class ${m(e.name)} {${members}\n}${impls}`
         } else if (e instanceof AST.EnumDeclaration) {
             let variants = ""
             for (const variant of e.variants) {
-                const variant_class_name = `${e.name}_${variant.name}`
+                const variant_class_name = `${m(e.name)}_${variant.name}`
                 const constructor =
                     "constructor(...values) {super();values.forEach((x, i) => {this[i] = x;});}"
-                variants += `class ${variant_class_name} extends ${e.name} {\n${constructor}};`
+                variants += `class ${variant_class_name} extends ${m(e.name)} {\n${constructor}};`
             }
-            const base_class = `class ${e.name} {}`
+            const base_class = `class ${m(e.name)} {}`
             const impls = transpile_impls(e)
             return `${base_class}${variants}${impls}`
         } else if (e instanceof AST.Loop) {
@@ -315,9 +251,9 @@ function code_gen(ast: AST.AST) {
             const lhs = transpile_expression(e.lhs, {...ctx, used_in_expression: true})
             const rhs = transpile_expression(e.rhs, {...ctx, used_in_expression: true})
             if (e.operator === "and") {
-                return `new bool(${lhs}.value && ${rhs}.value)`
+                return `new klar_bool(${lhs}.value && ${rhs}.value)`
             } else if (e.operator === "or") {
-                return `new bool(${lhs}.value || ${rhs}.value)`
+                return `new klar_bool(${lhs}.value || ${rhs}.value)`
             }
             const function_name = binary_op_functions[e.operator]
             if (!function_name) {
@@ -334,9 +270,9 @@ function code_gen(ast: AST.AST) {
                 const variant = declaration.get_variant(e.field)
                 if (variant) {
                     if (variant.fields.fields.length === 0) {
-                        return `new ${declaration.name}_${e.field}()`
+                        return `new ${m(declaration.name)}_${e.field}()`
                     }
-                    return `new ${declaration.name}_${e.field}`
+                    return `new ${m(declaration.name)}_${e.field}`
                 }
             }
             const target = transpile_expression(e.target, {...ctx, used_in_expression: true})
@@ -362,18 +298,15 @@ function code_gen(ast: AST.AST) {
         } else if (e instanceof AST.IdentifierReference) {
             if (e.attributes.type?.constructor.name === "EnumType") {
                 let enum_type = e.attributes.type as any
-                if (
-                    enum_type.is_variant &&
-                    enum_type.variant_name === e.name.replace("klar_", "")
-                ) {
-                    const constructor_name = `klar_${enum_type.name}_${enum_type.variant_name}`
+                if (enum_type.is_variant && enum_type.variant_name === e.name) {
+                    const constructor_name = `${m(enum_type.name)}_${enum_type.variant_name}`
                     if (enum_type.fields.length === 0) {
-                        return `new ${constructor_name}()`
+                        return `new ${m(constructor_name)}()`
                     }
-                    return `new ${constructor_name}`
+                    return `new ${m(constructor_name)}`
                 }
             }
-            return e.name
+            return m(e.name)
         } else if (e instanceof AST.ImplDefinition) {
             return ""
         } else if (e instanceof AST.TraitDeclaration) {
@@ -525,14 +458,16 @@ throw new Error(
             const is_static = fn.declaration.parameters[0]?.name !== "self"
             const parameters = fn.declaration.parameters
                 .filter((x) => x.name !== "self")
-                .map((x) => x.name)
+                .map((x) => m(x.name))
                 .join(",")
             const block = transpile_block(
                 fn.block,
                 {func: fn.declaration, used_in_expression: false},
                 {return_last_expression: true},
             ).replace("{", "{const klar_self = this;")
-            const prefix = is_static ? `${impl.target_name}.` : `${impl.target_name}.prototype.`
+            const prefix = is_static
+                ? `${m(impl.target_name)}.`
+                : `${m(impl.target_name)}.prototype.`
             s += `\n${prefix}${fn.declaration.name} = function(${parameters}){
                 try {
                     ${block}
@@ -572,8 +507,9 @@ throw new Error(
             ...ctx,
             used_in_expression: true,
         })};`
+        const declared_variables = new Set<string>()
         for (const arm of e.arms) {
-            s += declare_captured_variables(arm.pattern)
+            s += declare_captured_variables(arm.pattern, declared_variables)
         }
         for (const [index, arm] of e.arms.entries()) {
             s += `if (${transpile_match_pattern_to_condition("__match_expression", arm.pattern)}) `
@@ -588,24 +524,28 @@ throw new Error(
         }
         return s
     }
-    function declare_captured_variables(pattern: AST.MatchPattern) {
+    function declare_captured_variables(pattern: AST.MatchPattern, declared_variable: Set<string>) {
         if (pattern instanceof AST.CaptureMatchPatternOrType) {
             if (pattern.attributes.type?.constructor.name === "EnumType") {
                 return ""
             }
-            return `let ${pattern.name};`
+            if (declared_variable.has(pattern.name)) {
+                return ""
+            }
+            declared_variable.add(pattern.name)
+            return `let ${m(pattern.name)};`
         } else if (pattern instanceof AST.StructuredMatchPattern) {
             const {fields} = pattern
             let s = ""
             for (const field_pattern of Object.values(fields)) {
-                s += declare_captured_variables(field_pattern)
+                s += declare_captured_variables(field_pattern, declared_variable)
             }
             return s
         } else if (pattern instanceof AST.TupleMatchPattern) {
             const {values} = pattern
             let s = ""
             for (const value of values) {
-                s += declare_captured_variables(value)
+                s += declare_captured_variables(value, declared_variable)
             }
             return s
         } else {
@@ -651,10 +591,12 @@ throw new Error(
         } else if (pattern instanceof AST.CaptureMatchPatternOrType) {
             if (pattern.attributes.type?.constructor.name === "EnumType") {
                 const enum_type = pattern.attributes.type as any
-                const constructor_name = `klar_${enum_type.variant_parent.name}_${enum_type.variant_name}`
+                const constructor_name = `${m(enum_type.variant_parent.name)}_${
+                    enum_type.variant_name
+                }`
                 return `(${match_expression}.constructor.name == "${constructor_name}")`
             }
-            return `(${pattern.name} = ${match_expression})`
+            return `(${m(pattern.name)} = ${match_expression})`
         } else if (
             pattern instanceof AST.StructuredMatchPattern ||
             pattern instanceof AST.TupleMatchPattern
@@ -662,14 +604,16 @@ throw new Error(
             const {type_expression} = pattern
             let target_name
             if (type_expression instanceof AST.IdentifierReference) {
-                target_name = type_expression.name
+                target_name = m(type_expression.name)
                 if (type_expression.attributes.type?.constructor.name === "EnumType") {
                     let enum_type = type_expression.attributes.type as any
                     if (enum_type.is_variant) {
-                        const constructor_name = `klar_${enum_type.variant_parent.name}_${enum_type.variant_name}`
-                        if (enum_type.fields.length === 0) {
-                            target_name = `${constructor_name}()`
-                        }
+                        const constructor_name = `${m(enum_type.variant_parent.name)}_${
+                            enum_type.variant_name
+                        }`
+                        // if (enum_type.fields.length === 0) {
+                        //     target_name = `${constructor_name}()`
+                        // }
                         target_name = `${constructor_name}`
                     }
                 }
@@ -679,7 +623,7 @@ throw new Error(
                 type_expression.target.attributes.type?.declaration instanceof AST.EnumDeclaration
             ) {
                 const declaration = type_expression.target.attributes.type!.declaration
-                target_name = `${declaration.name}_${type_expression.field}`
+                target_name = `${m(declaration.name)}_${type_expression.field}`
             }
             let s = `(${match_expression}.constructor.name == "${target_name}")`
             if (pattern instanceof AST.TupleMatchPattern) {
@@ -842,7 +786,7 @@ async function cli() {
         const proc = Bun.spawn(["chmod", "+x", dst_file])
         await proc.exited
     } catch (error: any) {
-        if (debug || debug_ast || debug_tokens || debug_transpiled) {
+        if (debug || debug_ast || debug_tokens || debug_transpiled || debug_errors) {
             throw error
         }
         console.error(`Compile error: ${error.message}`)

@@ -252,6 +252,7 @@ function expect_equal_types(expected: Type, got: Type, span: Span) {
         return
     }
     if (!expected.equals(got)) {
+        console.log("AAA ", expected.debug_str, got.debug_str)
         throw new TypeMismatchError(expected, got, span)
     }
 }
@@ -531,11 +532,11 @@ function type_check_match_pattern(
             return pattern_type
         }
         const struct_type = expect_type_with_fields(target_type, pattern.span)
-        if (Object.keys(pattern.fields).length !== struct_type.fields.size) {
+        if (Object.keys(pattern.fields).length !== struct_type.data_fields.size) {
             throw new TypeCheckError(
-                `Expected ${struct_type.fields.size} fields but got ${
+                `Expected ${struct_type.data_fields.size} fields but got ${
                     Object.keys(pattern.fields).length
-                }`,
+                } for type ${quote(struct_type.signature)}`,
                 pattern.span,
             )
         }
@@ -1628,6 +1629,17 @@ abstract class ComplexType<
         return field
     }
 
+    get data_fields(): Map<string, Type> {
+        const res = new Map()
+        for (const [name, type] of this.fields.entries()) {
+            if (type instanceof FunctionType) {
+                continue
+            }
+            res.set(name, type)
+        }
+        return res
+    }
+
     equals(other: Type): boolean {
         if (!(other instanceof ComplexType)) {
             return false
@@ -2263,6 +2275,23 @@ class TupleType extends ComplexType<TupleData> {
         }
         s += ")"
         return s
+    }
+
+    equals(other: Type): boolean {
+        if (!(other instanceof TupleType)) {
+            return false
+        }
+        if (this.fields.size !== other.fields.size) {
+            return false
+        }
+        for (let i = 0; i < this.fields.size; i++) {
+            const this_field = this.fields.get(`${i}`)!
+            const other_field = other.fields.get(`${i}`)!
+            if (!this_field.equals(other_field)) {
+                return false
+            }
+        }
+        return true
     }
 
     assignable_to(other: Type): boolean {

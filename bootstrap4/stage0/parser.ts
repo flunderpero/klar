@@ -138,6 +138,7 @@ export class TypeDeclaration extends HasKindAndSpan {
     name: string
     type_parameters: TypeDeclaration[]
     type_parameter_default?: TypeDeclaration
+    trait_bounds: TypeDeclaration[] = []
 
     constructor(
         data: {
@@ -505,12 +506,14 @@ export class TraitDeclaration extends DeclarationOrDefinition {
     name: string
     functions: (FunctionDeclaration | FunctionDefinition)[]
     type_parameters: TypeDeclaration[]
+    trait_bounds: TypeDeclaration[]
 
     constructor(
         data: {
             name: string
             functions: (FunctionDeclaration | FunctionDefinition)[]
             type_parameters: TypeDeclaration[]
+            trait_bounds: TypeDeclaration[]
         },
         span: Span,
     ) {
@@ -1377,6 +1380,15 @@ export function parse(tokens: TokenStream): AST {
     function parse_trait_definition(): TraitDeclaration {
         const span = tokens.consume().span
         const name = tokens.expect_identifier().value
+        const trait_bounds = []
+        if (tokens.simple_peek() === "impl") {
+            tokens.consume()
+            trait_bounds.push(parse_type())
+            while (tokens.simple_peek() === "and") {
+                tokens.consume()
+                trait_bounds.push(parse_type())
+            }
+        }
         const type_parameters = try_parse_generic_type_parameters()
         tokens.expect(":")
         const functions: (FunctionDeclaration | FunctionDefinition)[] = []
@@ -1392,7 +1404,7 @@ export function parse(tokens: TokenStream): AST {
         }
         const end_span = tokens.expect("end").span
         return new TraitDeclaration(
-            {name, functions, type_parameters},
+            {name, functions, type_parameters, trait_bounds},
             Span.combine(span, end_span),
         )
     }
@@ -1941,6 +1953,14 @@ export function parse(tokens: TokenStream): AST {
                     if (!type_parameter) {
                         tokens.reset(mark)
                         return []
+                    }
+                    if (tokens.simple_peek() === "impl") {
+                        tokens.consume()
+                        type_parameter.trait_bounds.push(parse_type())
+                        while (tokens.simple_peek() === "and") {
+                            tokens.consume()
+                            type_parameter.trait_bounds.push(parse_type())
+                        }
                     }
                     if (tokens.simple_peek() === "=") {
                         tokens.consume()

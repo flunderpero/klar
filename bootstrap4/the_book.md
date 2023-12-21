@@ -202,6 +202,82 @@ fn main():
 end
 ```
 
+#### Generic Types
+
+##### Trait Bounds
+
+```klar
+struct Planet:
+    name str
+end 
+
+trait HasId:
+    fn id(self) str
+end
+
+impl HasId for Planet:
+    fn id(self) str => self.name
+end
+
+struct CelestialBody<T impl HasId>:
+    body T
+end
+
+impl ToStr for CelestialBody<T>:
+    -- We can use the trait function `HasId.id` here, because we
+    -- know that `self.body` is of a type that implements `HasId`.
+    fn to_str(self) str => self.body.id()
+end
+
+-- You can have multiple trait bounds. This means that a type
+-- has to implement _all_ traits.
+fn combine_id_and_to_str<T impl HasId and ToStr>(obj T) str:
+    let obj_id = obj.id()
+    let obj_str = obj.to_str()
+    f"{obj_id} + {obj_str}"
+end
+
+impl ToStr for Planet:
+    fn to_str(self) str => f"Planet {self.name}"
+end
+
+fn main():
+    let planet = Planet{name: "Earth"}
+    let body = CelestialBody<Planet>{body: planet}
+    assert(body.to_str() == "Earth")
+    -- todo (lang-feat): We should not need to specify the type `<Planet>` here.
+    assert(combine_id_and_to_str<Planet>(planet) == "Earth + Planet Earth")
+end
+```
+
+Traits themselves can have trait bounds.
+
+```klar
+trait HasId impl ToStr:
+    fn id(self) str
+end
+
+struct Planet:
+    name str
+end
+
+-- Now `Planet` has to implement `ToStr` as well.
+impl ToStr for Planet:
+    fn to_str(self) str => f"Planet {self.name}"
+end
+
+impl HasId for Planet:
+    fn id(self) str => self.name
+end
+
+fn main():
+    let planet = Planet{name: "Earth"}
+    let id = planet.id()
+    assert(planet.id() == "Earth")
+    assert(planet.to_str() == "Planet Earth")
+end
+```
+
 #### Compound Types
 
 ##### Tuples

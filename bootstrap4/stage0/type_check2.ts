@@ -252,7 +252,6 @@ function expect_equal_types(expected: Type, got: Type, span: Span) {
         return
     }
     if (!expected.equals(got)) {
-        console.log("AAA ", expected.debug_str, got.debug_str)
         throw new TypeMismatchError(expected, got, span)
     }
 }
@@ -265,6 +264,13 @@ function expect_function_type(type: Type, span: Span): FunctionType {
 }
 
 function expect_type_with_fields(type: Type, span: Span): ComplexType<any> {
+    if (type instanceof TypeVariable && type.trait_bounds.length > 0) {
+        if (type.trait_bounds.length === 1) {
+            return expect_type_with_fields(type.trait_bounds[0], span)
+        }
+        // Construct a new type with all the trait bounds.
+        return TraitType.from_trait_bounds(type.trait_bounds)
+    }
     if (!(type instanceof ComplexType) || type instanceof FunctionType) {
         throw new TypeCheckError(
             `Expected a type with fields but got ${quote(type.signature)}`,
@@ -909,6 +915,8 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
     }
 
     for (const node of trait_declarations) {
+        const trait_type = TraitType.from_env(node.name, env, node.span)
+        resolve_trait_bounds_for_trait(trait_type, node.span)
         type_check_trait_functions(node, env, "signatures")
     }
 
@@ -922,6 +930,19 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
 
     for (const impl of impl_definitions) {
         type_check_impl(impl.node, env, {extern: impl.extern}, "impls")
+    }
+}
+
+function resolve_trait_bounds_for_trait(trait_type: TraitType, span: Span) {
+    for (const trait_bound of trait_type.data.trait_bounds) {
+        for (const [name, type] of trait_bound.fields) {
+            const existing = trait_type.fields.get(name)
+            if (existing) {
+                expect_equal_types(existing, type, span)
+                continue
+            }
+            trait_type.add_field_immediate(name, type)
+        }
     }
 }
 
@@ -1261,13 +1282,28 @@ export class Type {
 }
 
 class TypeVariable extends Type {
-    static Self = new TypeVariable("Self", null)
+    static Self = new TypeVariable("Self", null, [])
     static from_declaration(declaration: ast.TypeDeclaration, env: TypeEnvironment): TypeVariable {
         let default_type: Type | null = null
+        let trait_bounds: TraitType[] = []
         if (declaration.type_parameter_default) {
             default_type = Type.from_env_or_declaration(declaration.type_parameter_default, env)
         }
-        const result = new TypeVariable(declaration.name, default_type)
+        if (declaration.trait_bounds.length > 0) {
+            const trait_bound_types = declaration.trait_bounds.map((t) =>
+                Type.from_env_or_declaration(t, env),
+            )
+            for (const trait of trait_bound_types) {
+                if (!(trait instanceof TraitType)) {
+                    throw new TypeCheckError(
+                        `Expected trait type but got ${quote(trait.signature)}`,
+                        declaration.span,
+                    )
+                }
+            }
+            trait_bounds = trait_bound_types as TraitType[]
+        }
+        const result = new TypeVariable(declaration.name, default_type, trait_bounds)
         let type = env.get_or_null(result.signature)
         if (type) {
             if (!(type instanceof TypeVariable)) {
@@ -1303,6 +1339,7 @@ class TypeVariable extends Type {
     private constructor(
         name: string,
         public default_type: Type | null,
+        public trait_bounds: TraitType[],
     ) {
         super(name)
     }
@@ -1312,10 +1349,14 @@ class TypeVariable extends Type {
     }
 
     get signature(): string {
-        if (this.default_type) {
-            return `${this.name} default ${this.default_type.signature}`
+        let s = this.name
+        if (this.trait_bounds.length > 0) {
+            s += ` impl ${this.trait_bounds.map((t) => t.signature).join(" and ")}`
         }
-        return this.name
+        if (this.default_type) {
+            return s + ` default ${this.default_type.signature}`
+        }
+        return s
     }
 }
 
@@ -1944,16 +1985,28 @@ export class TraitType extends ComplexType<TraitData> {
         const type_variables = declaration.type_parameters.map((p) =>
             TypeVariable.from_declaration(p, env),
         )
+        const trait_bounds: TraitType[] = declaration.trait_bounds.map((t) => {
+            const trait_type = Type.from_env_or_declaration(t, env)
+            if (!(trait_type instanceof TraitType)) {
+                throw new TypeCheckError(
+                    `Expected trait type but got ${quote(trait_type.signature)}`,
+                    declaration.span,
+                )
+            }
+            return trait_type
+        })
         const functions_with_default_impl = declaration.functions
             .filter((f) => f instanceof ast.FunctionDefinition)
             .map((f) => f.name)
-        const struct_data = new TraitData(
+        const trait_data = new TraitData(
             declaration.name,
             declaration,
             new Map(),
             functions_with_default_impl,
+            [],
+            trait_bounds,
         )
-        const trait_type = new TraitType(struct_data, type_variables)
+        const trait_type = new TraitType(trait_data, type_variables)
         return Type.add_or_get_known_type(trait_type.signature, trait_type, declaration.span)
     }
 
@@ -1963,6 +2016,31 @@ export class TraitType extends ComplexType<TraitData> {
             throw new TypeCheckError(`Expected trait type but got ${quote(type.signature)}`, span)
         }
         return type
+    }
+
+    static from_trait_bounds(trait_bounds: TraitType[]): TraitType {
+        const trait_name = trait_bounds.map((t) => t.name).join("+")
+        const trait_data = new TraitData(
+            trait_name,
+            trait_bounds[0].data.declaration,
+            new Map(),
+            [],
+        )
+        const trait_type = new TraitType(trait_data, [])
+        for (const trait of trait_bounds) {
+            for (const [name, type] of trait.fields) {
+                if (trait_type.fields.has(name)) {
+                    throw new TypeCheckError(
+                        `Trait ${quote(trait.name)} already defines field ${quote(
+                            name,
+                        )} while trying to create trait ${quote(trait_name)}`,
+                        builtin_span,
+                    )
+                }
+                trait_type.add_field_immediate(name, type)
+            }
+        }
+        return trait_type
     }
 
     private constructor(
@@ -1989,13 +2067,17 @@ export class TraitType extends ComplexType<TraitData> {
             this.data.declaration,
             new Map(),
             this.data.traits,
+            [],
+            this.data.trait_bounds,
         )
-        return this.new_instance(
+        const result = this.new_instance(
             data,
             this.type_variables,
             this.type_arguments,
             this.type_variable_map,
-        )
+        ) as this
+        resolve_trait_bounds_for_trait(result, this.data.declaration.span)
+        return result
     }
 
     get debug_str() {
@@ -2030,6 +2112,7 @@ class TraitData {
         public readonly fields: Map<string, Type> = new Map(),
         public readonly functions_with_default_impl: string[],
         public readonly traits: string[] = [],
+        public readonly trait_bounds: TraitType[] = [],
     ) {}
 }
 
@@ -2088,8 +2171,8 @@ export class FunctionType extends ComplexType<FunctionData> {
         const fields = new Map<string, Type>()
         for (const parameter of parameters) {
             const type = resolve_type(parameter.type)
-            if (!env.get_or_null(type.name)) {
-                env.add(type.name, type, parameter.type.span)
+            if (!env.get_or_null(type.signature)) {
+                env.add(type.signature, type, parameter.type.span)
             }
             fields.set(parameter.name, type)
         }
@@ -3486,6 +3569,163 @@ const test = {
         assert.equal(
             env.get("Foo", builtin_span)!.debug_str,
             "Foo<>{a: i32, foo: foo<>(Foo<>)->Foo<>}",
+        )
+    },
+
+    test_trait_bounds() {
+        const {type, env} = test.type_check(`
+            trait ToStr:
+                fn to_str(self) str
+            end
+
+            struct Foo:
+                a str
+            end
+
+            impl ToStr for Foo:
+                fn to_str(self) str => self.a
+            end
+
+            struct Bar<T impl ToStr>:
+                a T
+            end
+
+            impl ToStr for Bar<T>:
+                fn to_str(self) str => self.a.to_str()
+            end
+
+            -- We add a second example to make sure that T is not somehow 
+            -- bound to impl ToStr in the previous example.
+
+            struct Planet:
+                name str
+            end 
+
+            trait HasId:
+                fn id(self) str
+            end
+
+            impl HasId for Planet:
+                fn id(self) str => self.name
+            end
+
+            struct CelestialBody<T impl HasId>:
+                body T
+            end
+
+            impl ToStr for CelestialBody<T>:
+                fn to_str(self) str => self.body.id()
+            end
+
+            Bar<Foo>{a: Foo{a: "test"}}.to_str()
+        `)
+        assert.equal(type.signature, "str")
+        assert.equal(
+            env.get("Bar", builtin_span)!.debug_str,
+            "Bar<T impl ToStr<>>{a: T impl ToStr<>, to_str: to_str<>(Bar<T impl ToStr<>>)->str}",
+        )
+    },
+
+    test_trait_bounds_on_function() {
+        const {type, env} = test.type_check(`
+            trait ToStr:
+                fn to_str(self) str
+            end
+
+            struct Bar:
+                a str
+            end
+
+            impl ToStr for Bar:
+                fn to_str(self) str => self.a
+            end
+
+            fn foo<T impl ToStr>(v T) str:
+                v.to_str()
+            end
+
+            foo<Bar>(Bar{a: "test"})
+        `)
+        assert.equal(type.signature, "str")
+        assert.equal(
+            env.get("foo", builtin_span)!.debug_str,
+            "foo<T impl ToStr<>>(T impl ToStr<>)->str",
+        )
+    },
+
+    test_multiple_trait_bounds() {
+        const {type} = test.type_check(`
+            trait ToStr:
+                fn to_str(self) str
+            end
+
+            trait ToInt:
+                fn to_int(self) i32
+            end
+
+            struct Foo:
+                a str
+            end
+
+            impl ToStr for Foo:
+                fn to_str(self) str => self.a
+            end
+
+            impl ToInt for Foo:
+                fn to_int(self) i32 => 1
+            end
+
+            fn boo<T impl ToStr and ToInt>(v T) T:
+                v.to_str()
+                v.to_int()
+                v
+            end
+
+            boo
+
+        `)
+        assert.equal(
+            type.signature,
+            "boo<T impl ToStr<> and ToInt<>>(T impl ToStr<> and ToInt<>)->T impl ToStr<> and ToInt<>",
+        )
+    },
+
+    test_trait_bounds_on_traits() {
+        const {type} = test.type_check(`
+            trait ToStr:
+                fn to_str(self) str
+            end
+
+            trait Foo impl ToStr:
+                fn foo(self) str:
+                    self.to_str()
+                end
+            end
+
+            struct Bar:
+                a str
+            end
+
+            impl ToStr for Bar:
+                fn to_str(self) str => self.a
+            end
+
+            impl Foo for Bar:
+                fn foo(self) str => "bar"
+            end
+
+            fn boo<T impl Foo>(v T) T:
+                v.to_str()
+                v.foo()
+                v
+            end
+
+            boo<Bar>(Bar{a: "test"})
+
+        `)
+        assert.equal(
+            type.debug_str,
+            "Bar<>{a: str, to_str: to_str<>(Bar<>)->str, foo: foo<>(Bar<>)->str}",
         )
     },
 

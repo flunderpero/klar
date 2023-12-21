@@ -158,6 +158,15 @@ trait Len:
     fn len(self) i32
 end
 
+-- trait Error impl ToStr:
+--     --- Errors in Klar describe themselves with their message returned by
+--         the `ToStr.to_str()` method.
+--
+--         The error message should be a lower-case sentence without a
+--         terminating period.
+--     ---
+-- end
+
 struct Error<T=()>:
     msg str
     data T

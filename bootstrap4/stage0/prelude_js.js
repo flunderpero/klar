@@ -150,6 +150,22 @@ class str {
             },
         }
     }
+
+    join(iter) {
+        let result = ""
+        let first = true
+        let item = iter.next()
+        while (item.is_some().value) {
+            if (first) {
+                first = false
+            } else {
+                result += this.value
+            }
+            result += item.unwrap().value
+            item = iter.next()
+        }
+        return new str(result)
+    }
 }
 
 class char {

@@ -1,13 +1,13 @@
-struct LexStream:
+struct Lexer:
     file str
     src str
     iter PeekableIterator<char>
 end
 
-impl LexStream:
-    fn new(file str, src str) LexStream:
+impl Lexer:
+    fn lex(src str, file str) Iterator<Token>:
         let iter = PeekableIterator<char>.new(src.iter())
-        LexStream{file: file, src: src, iter: iter}
+        Lexer{file: file, src: src, iter: iter}
     end
 
     fn span(self) Span:
@@ -15,7 +15,7 @@ impl LexStream:
     end
 end
 
-impl Iterator<Token> for LexStream:
+impl Iterator<Token> for Lexer:
     fn next(mut self) Token?:
         let next = match self.iter.next():
             Some<char>(c) => c
@@ -525,18 +525,6 @@ impl ToStr for Token:
     end
 end
 
-fn lex(src str, file str) Vector<Token>:
-    mut stream = LexStream.new(file, src)
-    mut tokens = Vector<Token>.new()
-    loop:
-        match stream.next():
-            Some<Token>(token) => tokens.push(token)
-            None => break
-        end
-    end
-    tokens
-end
-
 fn to_src(tokens Vector<Token>) str:
     --- Convert a vector of tokens back to source code.
         `lex()` and `to_src()` should be inverses of each other.
@@ -548,7 +536,7 @@ end
 
 -- todo: Convert to proper tests once we have the feature to add tests to modules.
 fn main():
-    fn test_lex(src str) Vector<Token> => lex(src, "test.kl")
+    fn test_lex(src str) Vector<Token> => Lexer.lex(src, "test.kl").collect()
     fn test(src str, expected Array<TokenKind>):
         --- Test that `src` is lexed into `expected`. Whitespaces are ignored.
             Test that `lex()` and `to_src()` are inverses of each other.

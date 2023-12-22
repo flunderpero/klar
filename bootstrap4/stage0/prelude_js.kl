@@ -158,60 +158,37 @@ trait Len:
     fn len(self) i32
 end
 
--- trait Error impl ToStr:
---     --- Errors in Klar describe themselves with their message returned by
---         the `ToStr.to_str()` method.
---
---         The error message should be a lower-case sentence without a
---         terminating period.
---     ---
--- end
-
-struct Error<T=()>:
-    msg str
-    data T
-end
-
-impl Error<T>:
-    fn from_str(msg str) Error => Error { msg: msg, data: () }
-    fn new(msg str, data T) Error<T> => Error<T> { msg: msg, data: data }
-end
-
-impl ToStr for Error<T>:
-    fn to_str(self) str => self.msg
-end
-
-enum Result<T, E=()>:
+enum Result<T, E impl ToStr=str>:
     Ok(T)
-    Err(Error<E>)
+    Error(E)
 end
 
 impl Result<T, E>:
     fn is_ok(self) bool:
         match self:
             Result.Ok(_) => true
-            Result.Err(_) => false
+            Result.Error(_) => false
         end
     end
 
-    fn is_err(self) bool:
+    fn is_error(self) bool:
         match self:
             Result.Ok(_) => false
-            Result.Err(_) => true
+            Result.Error(_) => true
         end
     end
 
     fn unwrap(self) T:
         match self:
             Result.Ok(value) => value
-            Result.Err(err) => panic(f"called `Result.unwrap()` on an `Err` value: {err.msg}")
+            Result.Error(error) => panic(f"called `Result.unwrap()` on an `Error` value: {error}")
         end
     end
 
-    fn unwrap_err(self) Error<E>:
+    fn unwrap_error(self) E:
         match self:
             Result.Ok(value) => panic(f"called `Result.unwrap_err()` on an `Ok` value")
-            Result.Err(err) => err
+            Result.Error(error) => error
         end
     end
 end
@@ -219,8 +196,8 @@ end
 impl ToStr for Result<T, E>:
     fn to_str(self) str:
         match self:
-            Result.Ok(value) => f"Ok()"
-            Result.Err(err) => f"Err()"
+            Result.Ok(value) => f"ok: {value}"
+            Result.Error(error) => f"error: {error}"
         end
     end
 end

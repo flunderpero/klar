@@ -1756,7 +1756,11 @@ export function parse(tokens: TokenStream): AST {
         let throws: true | TypeDeclaration | undefined = undefined
         if (tokens.simple_peek() === "throws") {
             end_span = tokens.consume().span
-            throws = true
+            if (tokens.peek() instanceof Identifier) {
+                throws = parse_type()
+            } else {
+                throws = true
+            }
         }
         return new FunctionDeclaration(
             {name, type_parameters, parameters, return_type, throws},

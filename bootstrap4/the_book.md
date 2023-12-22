@@ -426,12 +426,15 @@ end
 
 In Klar, errors are values and may be returned from functions.
 
+Errors must implement the `Error` trait which only requires 
+to implement the `ToStr` trait.
+
 The canonical way of error handling is as follows:
 
 ```klar
 fn divide(divisor i32, dividend i32) i32 throws:
     if dividend == 0:
-        return Error.from_str("Division by zero")
+        return Error("division by zero")
     end
     divisor / dividend
 end
@@ -439,28 +442,33 @@ end
 fn main():
     let result = match divide(10, 2):
         Ok<i32>(value) => value
-        Err(error) => panic("Should not be reached")
+        Error(error) => panic("should not be reached")
     end
     assert(result == 5)
 
     -- Or using the `is_ok()` and `is_err()` functions.
-    assert(divide(10, 0).is_err())
+    assert(divide(10, 0).is_error())
     assert(divide(10, 2).is_ok())
 
     -- Or just `unwrap()` which will cause a runtime panic if
-    -- the result is `Result.Err`.
+    -- the result is `Result.Error`.
+    assert(divide(10, 2).unwrap() == 5)
     assert_panic(fn() => divide(10, 0).unwrap();)
+    -- The opposite of `unwrap()` is `unwrap_error()` which panics
+    -- if the result is `Result.Ok`.
+    assert(divide(10, 0).unwrap_error().to_str() == "division by zero")
+    assert_panic(fn() => divide(10, 2).unwrap_error();)
 end
 ```
 
 Note: This is syntactic sugar for this code:
 
 ```klar
-fn divide(divisor i32, dividend i32) Result<i32>:
+fn divide(divisor i32, dividend i32) Result<i32, str>:
     if dividend == 0:
-        return Result<i32>.Err(Error.from_str("Division by zero"))
+        return Result<i32, str>.Error("division by zero")
     end
-    Result<i32>.Ok(divisor / dividend)
+    Result<i32, str>.Ok(divisor / dividend)
 end
 ```
 
@@ -473,7 +481,7 @@ Errors can be propagated using the `!` operator.
 
 ```klar
 fn divide(divisor i32, dividend i32) i32 throws:
-    if dividend == 0 => return Error.from_str("Division by zero")
+    if dividend == 0 => return Error("division by zero")
     divisor / dividend
 end
 
@@ -485,13 +493,45 @@ fn number_of_orbits(total_time i32, orbit_time i32) i32 throws:
 
     -- The type of `orbits` is `i32` here, the `!` operator automatically
     -- unwraps the `Result` type.
-    if orbits < 0 => return Error.from_str("Negative number of orbits")
+    if orbits < 0 => return Error("negative number of orbits")
     orbits
 end
 
 fn main():
     assert(number_of_orbits(10, 2).unwrap() == 5)
-    assert(number_of_orbits(10, 0).is_err())
+    assert(number_of_orbits(10, 0).is_error())
+end
+```
+
+#### Custom Error Types
+
+```klar
+struct MyError:
+    code i32
+end
+
+impl ToStr for MyError:
+    fn to_str(self) str => f"MyError {self.code}"
+end
+
+fn provoke_my_error() throws MyError:
+    return Error(MyError{code: 42})
+end
+
+fn propagate_my_error() throws:
+    -- The `!` operator propagates the error.
+    -- Even though `provoke_my_error()` throws a `MyError` we can 
+    -- propagate it as the default error type, because the default
+    -- type is the trait `ToStr` which must be implemented by every
+    -- error type.
+    provoke_my_error()!
+end
+
+fn main():
+    assert(provoke_my_error().unwrap_error().code == 42)
+    -- All errors can be coerced to the default error type which
+    -- only implements the `ToStr` trait.
+    assert(propagate_my_error().unwrap_error().to_str() == "MyError 42")
 end
 ```
 

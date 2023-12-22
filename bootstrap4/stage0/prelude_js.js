@@ -23,10 +23,10 @@ class klar_i32 {
         try {
             int = parseInt(value.value)
         } catch (e) {
-            return new klar_Result_Err(new klar_Error(new klar_str(e.message)))
+            return new klar_Result_Error(new klar_str(e.message))
         }
         if (isNaN(int) || int < -2147483648 || int > 2147483647) {
-            return new klar_Result_Err(new klar_Error(new klar_str("integer out of range")))
+            return new klar_Result_Error(new klar_str("integer out of range"))
         }
         return new klar_Result_Ok(new klar_i32(parseInt(value.value)))
     }
@@ -236,7 +236,7 @@ class klar_File {
             const res = new klar_str(fs.readFileSync(this.path.value, "utf8"))
             return new klar_Result_Ok(res)
         } catch (e) {
-            return new klar_Result_Err(new klar_str(e.message))
+            return new klar_Result_Error(new klar_str(e.message))
         }
     }
 
@@ -246,7 +246,7 @@ class klar_File {
             fs.writeFileSync(this.path.value, value.value)
             return new klar_Result_Ok()
         } catch (e) {
-            return new klar_Result_Err(new klar_str(e.message))
+            return new klar_Result_Error(new klar_str(e.message))
         }
     }
 }

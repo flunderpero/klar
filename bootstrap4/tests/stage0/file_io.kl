@@ -12,13 +12,25 @@ File IO failed as expected: No such file or directory
 
 fn main():
     let file = File.at("/tmp/klar_file_io.test.txt")
-    file.write_str("Hello, World!")!
-    let contents = file.read_str()!
+    match file.write_str("Hello, World!"):
+        Error(error): 
+            print(f"File IO failed: {error}")
+            return
+        end
+        Ok(_) => ()
+    end
+    let contents = match file.read_str():
+        Error(error): 
+            print(f"File IO failed: {error}")
+            return
+        end
+        Ok<str>(contents) => contents
+    end
     if contents == "Hello, World!" => print("File IO works!")
     else => print("File IO failed!")
     let invalid_file = File.at("/tmp/\n")
     match invalid_file.read_str():
-        Result<str>.Err(error) => print(f"File IO failed as expected: {error}")
-        Result<str>.Ok(result) => print(f"File IO succeeded??? It returned: {result}")
+        Error(error) => print(f"File IO failed as expected: {error}")
+        Ok(result) => print(f"File IO succeeded??? It returned: {result}")
     end
 end

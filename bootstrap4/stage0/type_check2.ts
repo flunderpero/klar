@@ -219,16 +219,28 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
 }
 
 function type_check_return_type(expected_return_type: Type, return_type: Type, span: Span) {
-    if (expected_return_type.name === "Result" && return_type.name !== "Result") {
+    if (expected_return_type.name === "Result") {
         const result_type = expect_type_with_fields(expected_return_type, span)
-        if (return_type.name === "Error") {
-            return
+        if (return_type.name !== "Result") {
+            if (return_type instanceof EnumType && return_type.variant_name === "Error") {
+                return
+            } else {
+                expect_assignable_to(
+                    result_type.type_arguments.get(result_type.type_variables[0])!,
+                    return_type,
+                    span,
+                )
+            }
         } else {
-            expect_assignable_to(
-                result_type.type_arguments.get(result_type.type_variables[0])!,
-                return_type,
-                span,
-            )
+            assert(return_type instanceof EnumType)
+            const type_var_idx = return_type.variant_name === "Error" ? 1 : 0
+            let expected = result_type.type_arguments.get(result_type.type_variables[type_var_idx])!
+            let actual = return_type.type_arguments.get(return_type.type_variables[type_var_idx])!
+            if (expected.equals(Type.unit)) {
+                expected = result_type.type_variables[type_var_idx].default_type!
+                actual = return_type.type_variables[type_var_idx].default_type!
+            }
+            expect_assignable_to(expected, actual, span)
         }
     } else if (expected_return_type.name === "Option" && return_type.name !== "Option") {
         const option_type = expect_type_with_fields(expected_return_type, span)
@@ -286,6 +298,12 @@ function expect_to_implement_trait(
     env: TypeEnvironment,
     span: Span,
 ) {
+    if (type instanceof TypeVariable) {
+        if (type.default_type) {
+            expect_to_implement_trait(type.default_type, trait_name, env, span)
+        }
+        return
+    }
     if (!(type instanceof ComplexType)) {
         throw new TypeCheckError(`Expected complex type but got ${quote(type.signature)}`, span)
     }
@@ -318,6 +336,13 @@ function expect_assignable_to(expected: Type, got: Type, span: Span) {
     }
     if (got.assignable_to(expected)) {
         return
+    }
+    if (got instanceof TypeVariable) {
+        for (const trait_bound of got.trait_bounds) {
+            if (trait_bound.assignable_to(expected)) {
+                return
+            }
+        }
     }
     throw new TypeMismatchError(expected, got, span)
 }
@@ -396,10 +421,14 @@ function type_check_match(node: ast.Match, env: TypeEnvironment, ctx: Context): 
         }
     }
     if (ctx.used_in_expression) {
-        let type = arm_types[0]!.block_type
-        for (let i = 1; i < arm_types.length; i++) {
+        let type: Type | undefined
+        for (let i = 0; i < arm_types.length; i++) {
             if (node.arms[i].block.body.at(-1) instanceof ast.Return) {
                 // If the last statement in the block is a return, we can ignore the type.
+                continue
+            }
+            if (!type) {
+                type = arm_types[i].block_type
                 continue
             }
             expect_equal_types(type, arm_types[i].block_type, node.span)
@@ -407,7 +436,7 @@ function type_check_match(node: ast.Match, env: TypeEnvironment, ctx: Context): 
                 type = arm_types[i].block_type
             }
         }
-        return type
+        return type ?? Type.unit
     }
     return Type.unit
 }
@@ -759,7 +788,20 @@ function type_check_function_call_or_enum_instantiation(
                 node.span,
             )
         }
-        assert(return_type instanceof ComplexType)
+        assert(return_type instanceof EnumType)
+        const error_type = return_type.type_arguments.get(return_type.type_variables[1])!
+        const function_return_type = ctx.return_type
+        if (!(function_return_type instanceof EnumType)) {
+            throw new TypeCheckError(
+                `Cannot propagate error from function that does not return a Result type`,
+                node.span,
+            )
+        }
+        expect_assignable_to(
+            function_return_type.type_arguments.get(function_return_type.type_variables[1])!,
+            error_type,
+            node.span,
+        )
         return return_type.type_arguments.get(return_type.type_variables[0])!
     }
     return return_type
@@ -2003,7 +2045,7 @@ export class TraitType extends ComplexType<TraitData> {
             declaration,
             new Map(),
             functions_with_default_impl,
-            [],
+            trait_bounds.map((x) => x.name),
             trait_bounds,
         )
         const trait_type = new TraitType(trait_data, type_variables)
@@ -2066,8 +2108,8 @@ export class TraitType extends ComplexType<TraitData> {
             this.data.name,
             this.data.declaration,
             new Map(),
-            this.data.traits,
             [],
+            this.data.traits,
             this.data.trait_bounds,
         )
         const result = this.new_instance(
@@ -2179,10 +2221,14 @@ export class FunctionType extends ComplexType<FunctionData> {
         let return_type = resolve_type(declaration.return_type)
         const throws = declaration instanceof ast.FunctionDeclaration ? declaration.throws : false
         if (throws) {
+            const throws_type =
+                typeof throws === "boolean"
+                    ? env.get("ToStr", declaration.span)
+                    : Type.from_env_or_declaration(throws, env)
             return_type = expect_type_with_fields(
                 env.get("Result", declaration.span),
                 declaration.span,
-            ).with_type_arguments([return_type, env.unit], declaration.span)
+            ).with_type_arguments([return_type, throws_type], declaration.span)
         }
         fields.set("return", return_type)
         const data = new FunctionData(
@@ -2828,13 +2874,9 @@ const test = {
                 end
                 struct Array<T>:
                 end
-                struct Error<T=()>:
-                    message str
-                    data T
-                end
-                enum Result<T, E=()>:
+                enum Result<T, E=ToStr>:
                     Ok(T)
-                    Err(Error<E>)
+                    Error(E)
                 end
                 fn panic(message str):
                 end
@@ -4843,69 +4885,115 @@ const test = {
         assert.equal(type.signature, "Foo<T>")
     },
 
-    test_concise_error_handling_with_return() {
+    test_canonical_error_handling_with_return() {
         const {env} = test.type_check_with_core_types(`
             fn divide(dividend i32, divisor i32) i32 throws:
-                if divisor == 0 => return Error {message: "Division by zero", data: ()}
+                if divisor == 0 => return Error("division by zero")
                 return dividend / divisor
             end
 
             let ok = divide(10, 2)
             let err = divide(10, 0)
         `)
-        assert.equal(env.get("ok", builtin_span).signature, "Result<T=i32,E default ()=()>")
-        assert.equal(env.get("err", builtin_span).signature, "Result<T=i32,E default ()=()>")
+        assert.equal(
+            env.get("ok", builtin_span).signature,
+            "Result<T=i32,E default ToStr<>=ToStr<>>",
+        )
+        assert.equal(
+            env.get("err", builtin_span).signature,
+            "Result<T=i32,E default ToStr<>=ToStr<>>",
+        )
     },
 
-    test_concise_error_handling_with_nested_expression() {
+    test_canonical_error_handling_with_nested_expression() {
         const {env} = test.type_check_with_core_types(`
             fn divide(dividend i32, divisor i32) i32 throws:
-                if divisor == 0 => return Error {message: "Division by zero", data: ()}
+                if divisor == 0 => return Error("Division by zero")
                 if divisor > 10 => dividend / divisor else => 0
             end
 
             let ok = divide(10, 2)
             let err = divide(10, 0)
         `)
-        assert.equal(env.get("ok", builtin_span).signature, "Result<T=i32,E default ()=()>")
-        assert.equal(env.get("err", builtin_span).signature, "Result<T=i32,E default ()=()>")
+        assert.equal(
+            env.get("ok", builtin_span).signature,
+            "Result<T=i32,E default ToStr<>=ToStr<>>",
+        )
+        assert.equal(
+            env.get("err", builtin_span).signature,
+            "Result<T=i32,E default ToStr<>=ToStr<>>",
+        )
     },
 
-    test_concise_error_handling_with_result_type() {
+    test_canonical_error_with_error_type_mismatch() {
+        assert.throws(
+            () =>
+                test.type_check_with_core_types(`
+            fn divide(dividend i32, divisor i32) i32 throws i32:
+                if divisor == 0 => return Error("Division by zero")
+                if divisor > 10 => dividend / divisor else => 0
+            end
+        `),
+            /Expected `i32 \(NumericType\)` but got `str \(StrType\)`/,
+        )
+    },
+
+    test_error_handling_with_result_type() {
         const {env} = test.type_check_with_core_types(`
-            fn divide(dividend i32, divisor i32) Result<i32>:
+            fn divide(dividend i32, divisor i32) Result<i32, str>:
                 if divisor == 0 
                     -- Explicit return is tested here.
-                    => return Result<i32>.Err(Error {message: "Division by zero", data: ()})
+                    => return Result<i32, str>.Error("division by zero")
                 -- Implicit return is tested here.
-                Result<i32>.Ok(dividend / divisor)
+                Result<i32, str>.Ok(dividend / divisor)
             end
 
             let ok = divide(10, 2)
             let err = divide(10, 0)
         `)
-        assert.equal(env.get("ok", builtin_span).signature, "Result<T=i32,E default ()=()>")
-        assert.equal(env.get("err", builtin_span).signature, "Result<T=i32,E default ()=()>")
+        assert.equal(env.get("ok", builtin_span).signature, "Result<T=i32,E default ToStr<>=str>")
+        assert.equal(env.get("err", builtin_span).signature, "Result<T=i32,E default ToStr<>=str>")
     },
 
-    test_error_propagation() {
+    test_error_propagation_and_coercion() {
         const {env} = test.type_check_with_core_types(`
-            fn divide(dividend i32, divisor i32) i32 throws:
-                if divisor == 0 => return Error {message: "Division by zero", data: ()}
+            fn divide(dividend i32, divisor i32) i32 throws bool:
+                if divisor == 0 => return Error(true)
                 dividend / divisor
             end
 
             fn divide_10_by(n i32) i32 throws:
                 let result = divide(10, n)!
-                if result == 1 => return Error {message: "We did not expect 1", data: ()}
+                if result == 1 => return Error("did not expect 1")
                 result
             end
 
             let ok = divide_10_by(2)
             let err = divide_10_by(0)
         `)
-        assert.equal(env.get("ok", builtin_span).signature, "Result<T=i32,E default ()=()>")
-        assert.equal(env.get("err", builtin_span).signature, "Result<T=i32,E default ()=()>")
+        assert.equal(
+            env.get("ok", builtin_span).signature,
+            "Result<T=i32,E default ToStr<>=ToStr<>>",
+        )
+        assert.equal(
+            env.get("err", builtin_span).signature,
+            "Result<T=i32,E default ToStr<>=ToStr<>>",
+        )
+    },
+
+    test_error_propagation_with_incompatible_types() {
+        assert.throws(
+            () =>
+                test.type_check_with_core_types(`
+            fn foo() throws i32:
+            end
+
+            fn bar() throws bool:
+                foo()!
+            end
+        `),
+            /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
+        )
     },
 
     test_panic_call_is_ignored_in_function_return() {

@@ -142,7 +142,7 @@ function code_gen(ast: AST.AST) {
             if (e.propagate_error) {
                 call = `(function() {
                     let res = ${call};
-                    if (res.constructor.name == "klar_Result_Err") {
+                    if (res.constructor.name == "klar_Result_Error") {
                         const error = new Error("return")
                         error.value = res;
                         throw error;
@@ -393,10 +393,8 @@ throw new Error(
                             res = new klar_Option_Some(res);
                         }
                     }
-                    if (${throws}) {
-                        if (res.constructor.name === "klar_Error") {
-                            res = new klar_Result_Err(res);
-                        } else {
+                    if (${!!throws}) {
+                        if (!res.constructor.name.startsWith("klar_Result_")) {
                             res = new klar_Result_Ok(res)
                         }
                     }

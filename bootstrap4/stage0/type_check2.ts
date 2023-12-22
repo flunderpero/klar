@@ -74,6 +74,24 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
             }
         }
         type = ctx.used_in_expression ? then_type : Type.unit
+    } else if (node instanceof ast.IfLet) {
+        const block_env = new TypeEnvironment(env)
+        const value_type = type_check(node.value, env, {...ctx, used_in_expression: true})
+        type_check_match_pattern(node.pattern, value_type, block_env, ctx)
+        const then_type = type_check(node.then_block, block_env, {
+            ...ctx,
+            used_in_expression: !!node.else_block,
+        })
+        if (node.else_block) {
+            const else_type = type_check(node.else_block, block_env, {
+                ...ctx,
+                used_in_expression: false,
+            })
+            if (ctx.used_in_expression) {
+                expect_equal_types(then_type, else_type, node.span)
+            }
+        }
+        type = ctx.used_in_expression ? then_type : Type.unit
     } else if (node instanceof ast.Block) {
         const block_env = new TypeEnvironment(env)
         type_check_declarations_and_definitions(node, block_env)
@@ -238,7 +256,15 @@ function type_check_return_type(expected_return_type: Type, return_type: Type, s
             let actual = return_type.type_arguments.get(return_type.type_variables[type_var_idx])!
             if (expected.equals(Type.unit)) {
                 expected = result_type.type_variables[type_var_idx].default_type!
+            }
+            if (actual.equals(Type.unit)) {
                 actual = return_type.type_variables[type_var_idx].default_type!
+            }
+            if (!expected) {
+                throw new TypeCheckError(
+                    `Expected a type in result type: ${quote(result_type.signature)}`,
+                    span,
+                )
             }
             expect_assignable_to(expected, actual, span)
         }
@@ -5080,6 +5106,19 @@ const test = {
             foo(1)
         `)
         assert.equal(type.signature, "Option<T=i32>")
+    },
+
+    test_if_let() {
+        const {type} = test.type_check(`
+            enum Option<T>:
+                Some(T)
+                None
+            end
+
+            let a = Some<i32>(1)
+            if let Some<i32>(value) = a => value
+        `)
+        assert.equal(type.signature, "i32")
     },
 }
 

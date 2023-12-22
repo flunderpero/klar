@@ -576,6 +576,30 @@ fn main():
 end
 ```
 
+#### Single Pattern Matches With `if let`
+
+Sometimes you just want to match a single pattern. In this case you can use
+the `if let` expression.
+
+```klar
+fn main():
+    let a = Some(42)
+    if let Some<i32>(value) = a:
+        assert(value == 42)
+    else:
+        panic("should not be reached")
+    end
+
+    -- `if let` is a regular expression.
+    let b = if let Some<i32>(value) = a:
+        value
+    else:
+        panic("should not be reached")
+    end
+    assert(b == 42)
+end
+```
+
 #### Range Patterns
 
 Match a numeric range:

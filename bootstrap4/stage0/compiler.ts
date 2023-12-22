@@ -219,6 +219,32 @@ function code_gen(ast: AST.AST) {
             } else {
                 return `;${s};`
             }
+        } else if (e instanceof AST.IfLet) {
+            const condition = transpile_match_pattern_to_condition(
+                transpile_expression(e.value, {...ctx, used_in_expression: true}),
+                e.pattern,
+            )
+            const then = transpile_block(
+                e.then_block,
+                {...ctx, used_in_expression: true},
+                {assign_last_expression_to: "__if_result"},
+            )
+            let s = `(${condition}.value) ? (function() {let __if_result;${then} return __if_result})()`
+            if (e.else_block) {
+                const else_ = transpile_block(
+                    e.else_block,
+                    {...ctx, used_in_expression: true},
+                    {assign_last_expression_to: "__if_result"},
+                )
+                s += ` : (function() {let if_result;${else_} return __if_result})()`
+            } else {
+                s += ": undefined"
+            }
+            if (ctx.used_in_expression) {
+                return s
+            } else {
+                return `;${s};`
+            }
         } else if (e instanceof AST.StructDeclaration) {
             const members = Object.keys(e.fields).join(";")
             const impls = transpile_impls(e)

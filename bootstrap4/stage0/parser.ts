@@ -897,12 +897,33 @@ export class If extends Expression {
     }
 }
 
+export class IfLet extends Expression {
+    kind = "if let"
+    pattern: MatchPattern
+    value: Expression
+    then_block: Block
+    else_block?: Block
+
+    constructor(
+        data: {pattern: MatchPattern; value: Expression; then_block: Block; else_block?: Block},
+        span: Span,
+    ) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof IfLet.prototype)
+    }
+
+    contained_nodes() {
+        return [this.value, this.then_block, ...(this.else_block ? [this.else_block] : [])]
+    }
+}
+
 export class Match extends Expression {
     kind = "match"
     value: Expression
     arms: MatchArm[]
+    must_exhaust: boolean
 
-    constructor(data: {value: Expression; arms: MatchArm[]; else_block?: Block}, span: Span) {
+    constructor(data: {value: Expression; arms: MatchArm[]; must_exhaust: boolean}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Match.prototype)
     }
@@ -1173,7 +1194,7 @@ export function parse(tokens: TokenStream): AST {
                 const value = parse_expression()
                 expression = new Not({expression: value}, Span.combine(span, value))
             } else if (simple_token === "if") {
-                expression = parse_if()
+                expression = parse_if_or_if_let()
             } else if (simple_token === "loop") {
                 expression = parse_loop()
             } else if (simple_token === "(") {
@@ -1534,7 +1555,7 @@ export function parse(tokens: TokenStream): AST {
             arms.push(new MatchArm({pattern, block}, Span.combine(pattern, block.span)))
         }
         const end_span = tokens.expect("end").span
-        return new Match({value, arms}, Span.combine(span, end_span))
+        return new Match({value, arms, must_exhaust: true}, Span.combine(span, end_span))
     }
 
     function parse_range(start: Number_ | Char): RangeMatchPattern {
@@ -1690,21 +1711,40 @@ export function parse(tokens: TokenStream): AST {
         return new Loop({block}, Span.combine(span, block.span))
     }
 
-    function parse_if(): If {
+    function parse_if_or_if_let(): If | IfLet {
         const span = tokens.expect("if").span
-        const condition = parse_expression()
-        const single_block = tokens.simple_peek() === "=>"
-        const if_ = new If(
-            {condition, then_block: parse_block("if_else")},
-            Span.combine(span, condition.span),
-        )
-        if (tokens.simple_peek() === "else") {
+        if (tokens.simple_peek() === "let") {
             tokens.consume()
-            if_.else_block = parse_block("normal")
-        } else if (!single_block && tokens.simple_peek() === "end") {
-            tokens.consume()
+            const pattern = parse_match_pattern()
+            tokens.expect("=")
+            const value = parse_expression()
+            const blocks = parse_blocks()
+            return new IfLet(
+                {pattern, value, then_block: blocks[0], else_block: blocks[1]},
+                Span.combine(span, blocks[2]),
+            )
+        } else {
+            const condition = parse_expression()
+            const blocks = parse_blocks()
+            return new If(
+                {condition, then_block: blocks[0], else_block: blocks[1]},
+                Span.combine(span, blocks[2]),
+            )
         }
-        return if_
+        function parse_blocks(): [Block, Block | undefined, Span] {
+            const single_block = tokens.simple_peek() === "=>"
+            const then_block = parse_block("if_else")
+            let span = then_block.span
+            let else_block: Block | undefined
+            if (tokens.simple_peek() === "else") {
+                tokens.consume()
+                else_block = parse_block("normal")
+                span = else_block.span
+            } else if (!single_block && tokens.simple_peek() === "end") {
+                span = tokens.consume().span
+            }
+            return [then_block, else_block, span]
+        }
     }
 
     function parse_variable_declaration(): VariableDeclaration {

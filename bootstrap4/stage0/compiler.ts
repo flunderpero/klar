@@ -365,30 +365,44 @@ function code_gen(ast: AST.AST) {
         const e = call.args[0]
         const location = escape_str_str(e.span.toString())
         const src = call.span.src_text
-        const cond = transpile_expression(e, {used_in_expression: true})
         if (e instanceof AST.BinaryExpression) {
             const lhs = transpile_expression(e.lhs, {used_in_expression: true})
             const rhs = transpile_expression(e.rhs, {used_in_expression: true})
-            return `(function() {if (!(${cond}.value)) {
-const lhs = to_debug_str(${lhs});
-const rhs = to_debug_str(${rhs});
+            let cond
+            if (e.operator === "and") {
+                cond = `(lhs.value && rhs.value)`
+            } else if (e.operator === "or") {
+                cond = `(lhs.value || rhs.value)`
+            } else {
+                const function_name = binary_op_functions[e.operator]
+                cond = `(lhs.${function_name}(rhs).value)`
+            }
+            return `(function() {
+const lhs = ${lhs};
+const rhs = ${rhs};
+const lhs_str = to_debug_str(lhs);
+const rhs_str = to_debug_str(rhs);
+if (!${cond}) {
 throw new Error(
 \`Assertion failed at ${location}:
   expected: ${escape_str_str(e.lhs.span.src_text)} ${e.operator} ${escape_str_str(
       e.rhs.span.src_text,
   )}
-  got:      \${lhs} ${e.operator} \${rhs}
+  got:      \${lhs_str} ${e.operator} \${rhs_str}
 \`);}})();`
         } else if (e instanceof AST.Not) {
             const inner = transpile_expression(e.expression, {used_in_expression: true})
-            return `(function() {if (!(${cond}.value)) {
-const inner = to_debug_str(${inner});
+            return `(function() {
+let cond = ${inner};
+if (!!(cond.value)) {
+const inner = to_debug_str(cond);
 throw new Error(
 \`Assertion failed at ${location}:
   expected: not ${escape_str_str(e.expression.span.src_text)}
-  got:      not \${inner}
+  got:      \${cond.value}
 \`);}})();`
         }
+        const cond = transpile_expression(e, {used_in_expression: true})
         return `(function() {if (!(${cond}.value)) {
             throw new Error(\`Assertion failed at ${location}:\n${escape_str_str(src)}\`);
         }})();`

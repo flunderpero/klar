@@ -764,7 +764,9 @@ function type_check_function_call_or_enum_instantiation(
                 node.span,
             )
         }
-        const arg_types = node.args.map((x) => type_check(x, env, {used_in_expression: true}))
+        const arg_types = node.args.map((x) =>
+            type_check(x, env, {...ctx, used_in_expression: true}),
+        )
         if (
             node.args
                 .map((_, i) => variant_type.field(`${i}`, node.span))
@@ -799,7 +801,7 @@ function type_check_function_call_or_enum_instantiation(
     function_type = function_type.with_type_arguments(type_arguments, node.span)
     parameters = function_type.parameters_without_self
     for (let i = 0; i < node.args.length; i++) {
-        const arg_type = type_check(node.args[i], env, {used_in_expression: true})
+        const arg_type = type_check(node.args[i], env, {...ctx, used_in_expression: true})
         expect_assignable_to(parameters[i], arg_type, node.span)
     }
     if (function_type.name === "panic") {
@@ -819,7 +821,9 @@ function type_check_function_call_or_enum_instantiation(
         const function_return_type = ctx.return_type
         if (!(function_return_type instanceof EnumType)) {
             throw new TypeCheckError(
-                `Cannot propagate error from function that does not return a Result type`,
+                `Cannot propagate error from function that does not return a Result type, got: ${quote(
+                    function_return_type?.signature,
+                )}`,
                 node.span,
             )
         }
@@ -1119,10 +1123,6 @@ function type_check_impl(
             node.span,
         )
     }
-    // Add impl to the target type's attributes for later use.
-    if (complex_type instanceof StructType || complex_type instanceof EnumType) {
-        complex_type.data.declaration?.attributes.impls.push(node)
-    }
     const impl_env = new TypeEnvironment(env)
     impl_env.add("Self", complex_type, node.span)
     const type_variables = node.type_parameters.map((p) =>
@@ -1138,6 +1138,10 @@ function type_check_impl(
         impl_env.add(type_variables[i].name, complex_type.type_variables[i], node.span)
     }
     if (mode === "signatures") {
+        // Add impl to the target type's attributes for later use.
+        if (complex_type instanceof StructType || complex_type instanceof EnumType) {
+            complex_type.data.declaration?.attributes.impls.push(node)
+        }
         for (const func of node.functions) {
             const declaration = func instanceof ast.FunctionDeclaration ? func : func.declaration
             const function_type = FunctionType.from_declaration(declaration, impl_env)

@@ -95,6 +95,8 @@ export const escape_sequences: Record<string, string> = {
     "\t": "t",
     "\v": "v",
     "\b": "b",
+    "{": "{",
+    "}": "}",
 }
 
 export class StringToken extends Token {

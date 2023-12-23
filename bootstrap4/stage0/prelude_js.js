@@ -148,7 +148,7 @@ class klar_str {
     }
 
     len() {
-        return new usize(this.value.length)
+        return new klar_i32(this.value.length)
     }
 
     iter() {
@@ -258,6 +258,11 @@ function klar_ext_args() {
     }
     return result
 }
+
+function klar_i32_next() {
+    return new klar_i32(klar_i32_next.counter++)
+}
+klar_i32_next.counter = 0
 
 // Used in `compiler.ts` only.
 function to_debug_str(s) {

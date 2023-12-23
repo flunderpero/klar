@@ -97,11 +97,27 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         type_check_declarations_and_definitions(node, block_env)
         let block_type: Type = Type.unit
         for (let i = 0; i < node.body.length; i++) {
-            block_type = type_check(node.body[i], block_env, {
+            const body_node = node.body[i]
+            block_type = type_check(body_node, block_env, {
                 ...ctx,
                 // The last expression in a block is used as the block's type.
                 used_in_expression: ctx.used_in_expression && i === node.body.length - 1,
             })
+            if (body_node instanceof ast.FunctionCall) {
+                const target_type = body_node.target.attributes.type!
+                if (!(target_type instanceof FunctionType)) {
+                    continue
+                }
+                assert(target_type instanceof FunctionType)
+                if (target_type.return_type.name === "Result") {
+                    if (!body_node.propagate_error) {
+                        throw new TypeCheckError(
+                            `The function being called might return an error and it must be handled.`,
+                            body_node.span,
+                        )
+                    }
+                }
+            }
         }
         type = block_type
     } else if (node instanceof ast.VariableDeclaration) {
@@ -5023,6 +5039,22 @@ const test = {
             end
         `),
             /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
+        )
+    },
+
+    test_call_to_function_that_throws_must_be_handled() {
+        assert.throws(
+            () =>
+                test.type_check_with_core_types(`
+            fn foo() throws:
+            end
+
+            fn bar() i32:
+                foo()
+                1
+            end
+        `),
+            /The function being called might return an error/,
         )
     },
 

@@ -503,6 +503,19 @@ fn main():
 end
 ```
 
+#### Errors Must Be Handled
+
+```klar 
+fn divide(divisor i32, dividend i32) i32 throws:
+    if dividend == 0 => return Error("division by zero")
+    divisor / dividend
+end
+
+fn main():
+    divide(10, 0) -- Compile error: The function being called might return an error
+end
+```
+
 #### Custom Error Types
 
 ```klar

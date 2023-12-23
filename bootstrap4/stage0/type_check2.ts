@@ -2267,12 +2267,16 @@ export class FunctionType extends ComplexType<FunctionData> {
         let return_type = resolve_type(declaration.return_type)
         const throws = declaration instanceof ast.FunctionDeclaration ? declaration.throws : false
         if (throws) {
+            const throws_env = new TypeEnvironment(env)
+            for (const type_variable of type_variables) {
+                throws_env.add(type_variable.name, type_variable, declaration.span)
+            }
             const throws_type =
                 typeof throws === "boolean"
-                    ? env.get("ToStr", declaration.span)
-                    : Type.from_env_or_declaration(throws, env)
+                    ? throws_env.get("ToStr", declaration.span)
+                    : Type.from_env_or_declaration(throws, throws_env)
             return_type = expect_type_with_fields(
-                env.get("Result", declaration.span),
+                throws_env.get("Result", declaration.span),
                 declaration.span,
             ).with_type_arguments([return_type, throws_type], declaration.span)
         }

@@ -129,7 +129,7 @@ impl Iterator<Token> for Lexer:
                     _ => Token{kind: Ident(ident), span: ident_span}
                 end
             end
-            _ => Token{kind: ParseError(f"Unexpected character: {next}"), span: span}
+            _ => Token{kind: LexError(f"Unexpected character: {next}"), span: span}
         end
     end
 
@@ -174,7 +174,7 @@ impl Iterator<Token> for Lexer:
                 end
                 Some<char>('\\') => 
                     match match_escape_sequence(self.iter.next()):
-                        Err(err) => return Token{kind: ParseError(err.msg), span: span}
+                        Error(err) => return Token{kind: LexError(err.to_str()), span: span}
                         Ok<char>(c) => s.push_char(c)
                     end
                 Some<char>('{'):
@@ -193,7 +193,7 @@ impl Iterator<Token> for Lexer:
                                 self.iter.next()
                                 break
                             end
-                            None => return Token{kind: ParseError("Unexpected end of file."), span: self.span()}
+                            None => return Token{kind: LexError("Unexpected end of file."), span: self.span()}
                             _ => item_tokens.push(self.next().unwrap())
                         end
                     end
@@ -201,9 +201,9 @@ impl Iterator<Token> for Lexer:
                 end
                 Some<char>('\n') => 
                     if multi_line => s.push_char('\n')
-                    else => return Token{kind: ParseError("Unexpected end of line."), span: self.span()}
+                    else => return Token{kind: LexError("Unexpected end of line."), span: self.span()}
                 Some<char>(c) => s.push_char(c)
-                None => return Token{kind: ParseError("Unexpected end of file."), span: self.span()}
+                None => return Token{kind: LexError("Unexpected end of file."), span: self.span()}
             end
             quotes = ""
         end
@@ -214,10 +214,6 @@ impl Iterator<Token> for Lexer:
             FStr(fstr_items, multi_line)
         else => Str(s, multi_line)
         Token{kind: kind, span: span.combine(self.span())}
-    end
-
-    fn match_fstr_tokens_item(mut self, span Span) FStrItem throws:
-        Error.from_str("Unexpected end of file.")
     end
 
     fn match_comment(mut self) Token:
@@ -275,7 +271,7 @@ fn match_escape_sequence(c char?) char throws:
         Some<char>('"') => '"'
         Some<char>('\'') => '\''
         Some<char>('\\') => '\\'
-        _ => return Error.from_str("Invalid escape sequence.")
+        _ => return Error("Invalid escape sequence.")
     end
 end
 
@@ -374,7 +370,7 @@ enum TokenKind:
     Not
     NotEqual
     Or
-    ParseError(str)
+    LexError(str)
     Plus
     RBrace
     RBracket
@@ -448,7 +444,7 @@ impl ToStr for TokenKind:
             Not => "not"
             NotEqual => "!="
             Or => "or"
-            ParseError(msg) => f"ParseError: {msg}"
+            LexError(message) => f"LexError: {message}"
             Plus => "+"
             RBrace => "}"
             RBracket => "]"
@@ -546,12 +542,12 @@ fn main():
         mut idx = 0
         mut has_expected_parse_errors = expected.iter().any(
             fn(kind TokenKind) bool => match(kind):
-                ParseError(_) => true
+                LexError(_) => true
                 _ => false
             end
         )
         tokens.iter().filter(
-            fn(token Token) bool => match(token.kind):
+            fn(token Token) bool => match token.kind:
                 WhiteSpace(_) => false
                 _ => true
             end
@@ -662,10 +658,10 @@ x
         end
         _ => panic("Expected FStr.")
     end
-    test("\"string literal eof", [ParseError("Unexpected end of file.")])
-    test("\"string literal \n", [ParseError("Unexpected end of line.")])
-    test("f\"string {a} literal eof", [ParseError("Unexpected end of file.")])
-    test("f\"string {a} literal \n", [ParseError("Unexpected end of line.")])
+    test("\"string literal eof", [LexError("Unexpected end of file.")])
+    test("\"string literal \n", [LexError("Unexpected end of line.")])
+    test("f\"string {a} literal eof", [LexError("Unexpected end of file.")])
+    test("f\"string {a} literal \n", [LexError("Unexpected end of line.")])
     -- Identifiers and keywords
     test("x Y _ a1 _a1 A1 _A1 a_1", [
         Ident("x"), Ident("Y"), Ident("_"), Ident("a1"), Ident("_a1"), 

@@ -1,0 +1,176 @@
+use .lexer.Token
+
+trait ToDebugStr:
+    --- Convert the item to a string representation that does retain
+        all information, but is easier to test / reason about.
+    ---
+    fn to_debug_str(self) str
+end
+
+enum ParseErrorKind:
+    UnexpectedToken(Token)
+    UnexpectedEOF
+    InvalidIntLiteral(Token)
+    ExprExpected(Token)
+end
+
+struct ParseError:
+    kind ParseErrorKind
+    meta Meta
+end
+
+enum LiteralKind:
+    Int(i32)
+    Bool(bool)
+    Unit
+end
+
+struct Literal:
+    kind LiteralKind
+    meta Meta
+end
+
+enum Expr:
+    Literal(Literal)
+end
+
+struct FnDecl:
+    name str
+    meta Meta
+end
+
+struct FnDef:
+    decl FnDecl
+    body Block
+    meta Meta
+end
+
+struct Block:
+    items Vector<BlockItem>
+    meta Meta
+end
+
+enum BlockItem:
+    Expr(Expr)
+    FnDef(FnDef)
+end
+
+enum Item:
+    FnDef(FnDef)
+end
+
+struct Id:
+    --- Each item in the AST is assigned a unique ID. 
+    ---
+    -- todo (lang-feat): This should be private.
+    id i32
+end
+
+struct Meta:
+    id Id
+    --- The tokens taken from the source code. These tokens never
+        change even if the item is desugared.
+    ---
+    tokens Vector<Token>
+    --- Whether this item has been altered by the parser as part
+        of desugaring.
+    ---
+    is_synthetic bool
+end
+
+impl Meta:
+    fn new(tokens Vector<Token>, is_synthetic bool) Meta:
+        let id = Id{id: i32_next()} 
+        Meta{id: id, tokens: tokens, is_synthetic: is_synthetic}
+    end
+end
+
+fn indent_str(indent i32, s str) str:
+    mut result = ""
+    mut i = 0
+    loop:
+        if i >= indent => break
+        result.push(" ")
+        i = i + 1
+    end
+    f"{result}{s}"
+end
+
+impl ToDebugStr for Meta:
+    fn to_debug_str(self) str:
+        if self.is_synthetic => ":syn"
+        else => ""
+    end
+end
+
+impl ToDebugStr for FnDecl:
+    fn to_debug_str(self) str => f"(@fndecl{self.meta.to_debug_str()} {self.name})"
+end
+
+impl ToDebugStr for Item:
+    fn to_debug_str(self) str:
+        match self:
+            Item.FnDef(x) => x.to_debug_str()
+        end
+    end
+end
+
+impl ToDebugStr for BlockItem:
+    fn to_debug_str(self) str:
+        match self:
+            BlockItem.Expr(x) => x.to_debug_str()
+            BlockItem.FnDef(x) => x.to_debug_str()
+        end
+    end
+end
+
+impl ToDebugStr for FnDef:
+    fn to_debug_str(self) str:
+        let body = self.body.to_debug_str()
+        let decl = self.decl.to_debug_str()
+        f"(@fndef {decl} {body})"
+    end
+end
+
+impl ToDebugStr for Block:
+    fn to_debug_str(self) str:
+        let body = " ".join(
+            self.items.iter().map<str>(fn(it BlockItem) str => it.to_debug_str())
+        )
+        f"(@block{body})"
+    end
+end
+
+impl ToDebugStr for ParseErrorKind:
+    fn to_debug_str(self) str:
+        match self:
+            UnexpectedToken(token) => f"(@error unexpected_token_`{token}`)"
+            UnexpectedEOF => "(@error eof)"
+            InvalidIntLiteral(token) => "(@error invalid_int_literal)"
+            ExprExpected(token) => "(@error expr_expected)"
+        end
+    end
+end
+
+impl ToDebugStr for Literal:
+    fn to_debug_str(self) str:
+        let lit = match self.kind:
+            Int(value) => f"(@int {value})"
+            Bool(value) => f"(@bool {value})"
+            Unit=> "(unit)"
+        end
+        f"{lit}{self.meta.to_debug_str()}"
+    end
+end
+
+impl ToDebugStr for Expr:
+    fn to_debug_str(self) str:
+        match self:
+            Expr.Literal(value) => value.to_debug_str()
+        end
+    end
+end
+
+impl ToDebugStr for ParseError:
+    fn to_debug_str(self) str => self.kind.to_debug_str()
+end

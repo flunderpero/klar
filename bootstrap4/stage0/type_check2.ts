@@ -855,9 +855,12 @@ function type_check_function_call_or_enum_instantiation(
 
 function struct_instantiation(node: ast.StructInstantiation, env: TypeEnvironment): StructType {
     let struct_type = StructType.from_env(node.target_struct_name, env, node.span)
-    const value_types = Object.values(node.fields).map((v) =>
-        type_check(v, env, {used_in_expression: true}),
-    )
+    const value_types = Object.entries(node.fields).map(([k, v]) => {
+        if (!v) {
+            return env.get(k, node.span)
+        }
+        return type_check(v, env, {used_in_expression: true})
+    })
     if (
         struct_type.has_type_parameters() &&
         node.type_arguments.length === 0 &&
@@ -876,7 +879,9 @@ function struct_instantiation(node: ast.StructInstantiation, env: TypeEnvironmen
     struct_type = struct_type.with_type_arguments(type_arguments, node.span)
     for (const [name, value] of Object.entries(node.fields)) {
         const field_type = struct_type.field(name, node.span)
-        const value_type = type_check(value, env, {used_in_expression: true})
+        const value_type = value
+            ? type_check(value, env, {used_in_expression: true})
+            : env.get(name, node.span)
         expect_assignable_to(field_type, value_type, node.span)
     }
     return struct_type

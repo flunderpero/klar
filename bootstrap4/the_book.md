@@ -280,6 +280,22 @@ end
 
 #### Compound Types
 
+##### Structs
+
+```klar
+struct Planet:
+    name str
+    circumference i32
+end
+
+fn main():
+    let name = "Earth"
+    let earth = Planet{name, circumference: 40075}
+    assert(earth.name == "Earth")
+    assert(earth.circumference == 40075)
+end
+```
+
 ##### Tuples
 
 ```klar
@@ -662,7 +678,7 @@ fn main():
     let planet = Some(Planet{name: "Earth"})
     let result = match planet:
         Some<Planet>(Planet{name: "Earth" | "Venus" | "Mars" | "Mercury"}) => "inner planet"
-        Some<Planet>(Planet{name: name}) => name
+        Some<Planet>(Planet{name}) => name
         _ => "unknown"
     end
     assert(result == "inner planet")

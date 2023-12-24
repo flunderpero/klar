@@ -7,7 +7,7 @@ end
 impl Lexer:
     fn lex(src str, file str) Iterator<Token>:
         let iter = PeekableIterator<char>.new(src.iter())
-        Lexer{file: file, src: src, iter: iter}
+        Lexer{file, src, iter}
     end
 
     fn span(self) Span:
@@ -23,32 +23,32 @@ impl Iterator<Token> for Lexer:
         end
         let span = self.span()
         match next:
-            ' ' | '\n' | '\t' | '\r' => Token{kind: WhiteSpace(next), span: span}
+            ' ' | '\n' | '\t' | '\r' => Token{kind: WhiteSpace(next), span}
             '-' =>
                 match self.iter.peek():
                     Some<char>('-') => self.match_comment()
                     Some<char>('0'..'9') => self.match_integer(next, span)
                     _ => Token{kind: Minus, span: span.combine(self.span())}
                 end
-            '(' => Token{kind: LParen, span: span}
-            ')' => Token{kind: RParen, span: span}
-            '{' => Token{kind: LBrace, span: span}
-            '}' => Token{kind: RBrace, span: span}
-            '[' => Token{kind: LBracket, span: span}
-            ']' => Token{kind: RBracket, span: span}
-            '.' => Token{kind: Dot, span: span}
-            ',' => Token{kind: Comma, span: span}
-            ':' => Token{kind: Colon, span: span}
-            '+' => Token{kind: Plus, span: span}
-            '*' => Token{kind: Star, span: span}
-            '/' => Token{kind: Slash, span: span}
+            '(' => Token{kind: LParen, span}
+            ')' => Token{kind: RParen, span}
+            '{' => Token{kind: LBrace, span}
+            '}' => Token{kind: RBrace, span}
+            '[' => Token{kind: LBracket, span}
+            ']' => Token{kind: RBracket, span}
+            '.' => Token{kind: Dot, span}
+            ',' => Token{kind: Comma, span}
+            ':' => Token{kind: Colon, span}
+            '+' => Token{kind: Plus, span}
+            '*' => Token{kind: Star, span}
+            '/' => Token{kind: Slash, span}
             '!' => 
                 match self.iter.peek():
                     Some<char>('='):
                         self.iter.next()
                         Token{kind: NotEqual, span: span.combine(self.span())}
                     end
-                    _ => Token{kind: Exclamation, span: span}
+                    _ => Token{kind: Exclamation, span}
                 end
             '=' => 
                 match self.iter.peek():
@@ -60,7 +60,7 @@ impl Iterator<Token> for Lexer:
                         self.iter.next()
                         Token{kind: FatArrow, span: span.combine(self.span())}
                     end
-                    _ => Token{kind: Equal, span: span}
+                    _ => Token{kind: Equal, span}
                 end
             '<' =>
                 match self.iter.peek():
@@ -68,7 +68,7 @@ impl Iterator<Token> for Lexer:
                         self.iter.next()
                         Token{kind: LessThanOrEqual, span: span.combine(self.span())}
                     end
-                    _ => Token{kind: LessThan, span: span}
+                    _ => Token{kind: LessThan, span}
                 end
             '>' =>
                 match self.iter.peek():
@@ -76,7 +76,7 @@ impl Iterator<Token> for Lexer:
                         self.iter.next()
                         Token{kind: GreaterThanOrEqual, span: span.combine(self.span())}
                     end
-                    _ => Token{kind: GreaterThan, span: span}
+                    _ => Token{kind: GreaterThan, span}
                 end
             '0'..'9' => self.match_integer(next, span)
             '"' => self.match_string(false)
@@ -129,7 +129,7 @@ impl Iterator<Token> for Lexer:
                     _ => Token{kind: Ident(ident), span: ident_span}
                 end
             end
-            _ => Token{kind: LexError(f"Unexpected character: {next}"), span: span}
+            _ => Token{kind: LexError(f"Unexpected character: {next}"), span}
         end
     end
 
@@ -141,7 +141,7 @@ impl Iterator<Token> for Lexer:
                 _ => break
             end
         end
-        Token{kind: Integer(num), span: span}
+        Token{kind: Integer(num), span}
     end
 
     fn match_string(mut self, is_fstr bool) Token:
@@ -174,7 +174,7 @@ impl Iterator<Token> for Lexer:
                 end
                 Some<char>('\\') => 
                     match match_escape_sequence(self.iter.next()):
-                        Error(err) => return Token{kind: LexError(err.to_str()), span: span}
+                        Error(err) => return Token{kind: LexError(err.to_str()), span}
                         Ok<char>(c) => s.push_char(c)
                     end
                 Some<char>('{'):
@@ -213,7 +213,7 @@ impl Iterator<Token> for Lexer:
             end
             FStr(fstr_items, multi_line)
         else => Str(s, multi_line)
-        Token{kind: kind, span: span.combine(self.span())}
+        Token{kind, span: span.combine(self.span())}
     end
 
     fn match_comment(mut self) Token:
@@ -259,7 +259,7 @@ impl Iterator<Token> for Lexer:
             end
             _ => None 
         end
-        Token{kind: Comment(comment), span: span}
+        Token{kind: Comment(comment), span}
     end
 end
 

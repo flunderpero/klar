@@ -742,13 +742,13 @@ export class StructInstantiation extends Expression {
     kind = "struct instantiation"
     type_arguments: TypeDeclaration[]
     target_struct_name: string
-    fields: Record<string, Expression>
+    fields: Record<string, Expression | undefined>
 
     constructor(
         data: {
             type_arguments: TypeDeclaration[]
             target_struct_name: string
-            fields: Record<string, Expression>
+            fields: Record<string, Expression | undefined>
         },
         span: Span,
     ) {
@@ -761,7 +761,7 @@ export class StructInstantiation extends Expression {
     }
 
     contained_nodes() {
-        return Object.values(this.fields)
+        return Object.values(this.fields).filter((x) => !!x) as Expression[]
     }
 }
 
@@ -1915,14 +1915,17 @@ export function parse(tokens: TokenStream): AST {
                 return
             }
             tokens.consume()
-            const args: Record<string, Expression> = {}
+            const args: Record<string, Expression | undefined> = {}
             while (!tokens.at_end() && tokens.simple_peek() !== "}") {
                 if (Object.keys(args).length > 0) {
                     tokens.expect(",")
                 }
                 const name = tokens.expect_identifier().value
-                tokens.expect(":")
-                const value = parse_expression()
+                let value: Expression | undefined
+                if (tokens.simple_peek() === ":") {
+                    tokens.expect(":")
+                    value = parse_expression()
+                }
                 args[name] = value
             }
             const span = Span.combine(tokens.expect("}").span, token.span)

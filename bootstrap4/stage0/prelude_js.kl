@@ -131,7 +131,7 @@ struct PeekableIterator<T>:
 end
 
 impl PeekableIterator<T>:
-    fn new(iter Iterator<T>) Self => PeekableIterator<T> { iter: iter, peeked: None, idx: -1 }
+    fn new(iter Iterator<T>) Self => PeekableIterator<T> { iter, peeked: None, idx: -1 }
 
     fn peek(mut self) Option<T>:
         if self.peeked.is_some():
@@ -471,7 +471,7 @@ impl Env:
             args.push(arg)
             i = i + 1
         end
-        Env { args: args }
+        Env{args}
     end
 end
 

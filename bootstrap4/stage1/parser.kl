@@ -123,7 +123,7 @@ end
 impl Parser:
 
     fn new(iter TokenIter) Parser:
-        Parser{iter: iter}
+        Parser{iter}
     end
 
     fn parse(iter TokenIter) Item throws ParseError:
@@ -166,9 +166,9 @@ impl Parser:
         let name = self.iter.expect_ident()!
         self.iter.expect_lexical_token(TokenKind.LParen)!
         self.iter.expect_lexical_token(TokenKind.RParen)!
-        let decl = FnDecl{name: name, meta: self.meta(mark, false)}
+        let decl = FnDecl{name, meta: self.meta(mark, false)}
         let body = self.parse_block()!
-        FnDef{decl: decl, body: body, meta: self.meta(mark, false)}
+        FnDef{decl, body, meta: self.meta(mark, false)}
     end
 
     fn parse_block(mut self) Block throws ParseError:
@@ -186,5 +186,5 @@ end
 
 fn parse_error(kind ParseErrorKind, token Token?) Error<(), ParseError>:
     let tokens = if token.is_some() => Vector<Token>.from([token.unwrap()]) else => Vector<Token>.new()
-    Error(ParseError{meta: Meta.new(tokens, false), kind: kind})
+    Error(ParseError{meta: Meta.new(tokens, false), kind})
 end

@@ -159,10 +159,14 @@ function code_gen(ast: AST.AST) {
             const create_instance = `let _ = new ${m(e.target_struct_name)}()`
             const assign_members = Object.entries(e.fields).map(
                 ([name, value]) =>
-                    `_.${name} = ${transpile_expression(value, {
-                        ...ctx,
-                        used_in_expression: true,
-                    })};`,
+                    `_.${name} = ${
+                        value
+                            ? transpile_expression(value, {
+                                  ...ctx,
+                                  used_in_expression: true,
+                              })
+                            : m(name)
+                    };`,
             )
             return `(() => {${create_instance};${assign_members.join("\n")} return _})()`
         } else if (e instanceof AST.VariableDeclaration) {

@@ -18,6 +18,7 @@ use .ast.FnDef
 use .ast.Literal
 use .ast.Item
 use .ast.Expr
+use .ast.ParseError
 use .ast.ParseErrorKind
 use .ast.Block
 use .ast.Meta
@@ -47,7 +48,14 @@ impl Iterator<Token> for TokenIter:
         end
     end
 
-    fn force_peek(mut self) Token throws ParseErrorKind:
+    fn force_next(mut self) Token throws ParseError:
+        match self.next():
+            Some<Token>(token) => Ok(token)
+            None => return parse_error(UnexpectedEOF, None)
+        end
+    end
+
+    fn force_peek(mut self) Token throws ParseError:
         match self.peeked:
             Some<Token>(token) => token
             None:
@@ -58,7 +66,9 @@ impl Iterator<Token> for TokenIter:
         end
     end
 
-    fn mark(self) i32 => self.idx
+    fn mark(self) i32 => self.idx 
+
+    fn mark_prev(self) i32 => self.idx - 1
 
     fn reset(mut self, mark i32):
         self.peeked = None
@@ -72,27 +82,21 @@ impl Iterator<Token> for TokenIter:
         self.tokens.slice_copy(mark, self.idx)
     end
 
-    fn force_next(mut self) Token throws ParseErrorKind:
-        match self.next():
-            Some<Token>(token) => Ok(token)
-            None => Error(UnexpectedEOF)
-        end
-    end
 
-    fn expect_ident(mut self) str throws ParseErrorKind:
+    fn expect_ident(mut self) str throws ParseError:
         match self.force_next()!:
             Token{kind: Ident(name), span: _ } => Ok(name)
-            token => Error(ParseErrorKind.UnexpectedToken(token))
+            token => return parse_error(UnexpectedToken(token), token)
         end
     end
 
-    fn expect_token(mut self, predicate (fn(Token) bool)) Token throws ParseErrorKind:
+    fn expect_token(mut self, predicate (fn(Token) bool)) Token throws ParseError:
         let token = self.force_next()!
-        if not predicate(token) => return Error(ParseErrorKind.UnexpectedToken(token))
+        if not predicate(token) => return parse_error(UnexpectedToken(token), token)
         token
     end
 
-    fn expect_lexical_token(mut self, kind TokenKind) Token throws ParseErrorKind:
+    fn expect_lexical_token(mut self, kind TokenKind) Token throws ParseError:
         --- This only works with token that don't have any associated data.
         ---
         self.expect_token(fn(token Token) bool => token.kind == kind)!
@@ -122,39 +126,43 @@ impl Parser:
         Parser{iter: iter}
     end
 
-    fn parse(iter TokenIter) Item throws ParseErrorKind:
+    fn parse(iter TokenIter) Item throws ParseError:
         -- The main entry point to parse a Klar module.
-        Parser.new(iter).parse_item()!
-    end
-
-    fn parse_item(mut self) Item throws ParseErrorKind:
-        let mark = self.iter.mark()
-        let token = self.iter.force_next()!
-        match token.kind:
-            TokenKind.Fn => Item.FnDef(self.parse_fn()!)
-            _ => return Error(UnexpectedToken(token))
+        let parser = Parser.new(iter)
+        let token = parser.iter.force_next()!
+        match parser.parse_item(token)!: 
+            Some<Item>(item) => Ok(item)
+            None => return parse_error(UnexpectedToken(token), token)
         end
     end
 
-    fn parse_expr(mut self) Expr throws ParseErrorKind:
-        let mark = self.iter.mark()
-        let token = self.iter.force_next()!
+    fn parse_item(mut self, token Token) Item? throws ParseError:
+        match token.kind:
+            TokenKind.Fn => Item.FnDef(self.parse_fn(token)!)
+            _ => return None
+        end
+    end
+
+    fn parse_expr(mut self, token Token) Expr? throws ParseError:
         match token.kind:
             Integer(i) => Expr.Literal(self.parse_integer(i, token)!)
-            _ => return Error(UnexpectedToken(token))
+            _ => return None
         end
     end
 
-    fn parse_integer(self, value str, token Token) Literal throws ParseErrorKind:
-        let mark = self.iter.mark()
+    fn parse_integer(self, value str, token Token) Literal throws ParseError:
+        let mark = self.iter.mark_prev()
         match i32.from_str(value):
             Ok<i32>(i) => Literal{kind: LiteralKind.Int(i), meta: self.meta(mark, false)}
-            Error(_) => return Error(InvalidIntLiteral(token))
+            -- todo (lang-feat): The `return` should not be needed here. The stage0 type-checker
+            --                   cannot infer that the result of the match is the return value 
+            --                   of the function.
+            Error(_) => return parse_error(InvalidIntLiteral(token), token)
         end
     end
 
-    fn parse_fn(mut self) FnDef throws ParseErrorKind: 
-        let mark = self.iter.mark()
+    fn parse_fn(mut self, token Token) FnDef throws ParseError: 
+        let mark = self.iter.mark_prev()
         let name = self.iter.expect_ident()!
         self.iter.expect_lexical_token(TokenKind.LParen)!
         self.iter.expect_lexical_token(TokenKind.RParen)!
@@ -163,7 +171,7 @@ impl Parser:
         FnDef{decl: decl, body: body, meta: self.meta(mark, false)}
     end
 
-    fn parse_block(mut self) Block throws ParseErrorKind:
+    fn parse_block(mut self) Block throws ParseError:
         let mark = self.iter.mark()
         self.iter.expect_lexical_token(TokenKind.Colon)!
         self.iter.expect_lexical_token(TokenKind.End)!
@@ -174,4 +182,9 @@ impl Parser:
     fn meta(self, mark i32, is_synthetic bool) Meta:
         Meta.new(self.iter.tokens_since(mark), is_synthetic)
     end
+end
+
+fn parse_error(kind ParseErrorKind, token Token?) Error<(), ParseError>:
+    let tokens = if token.is_some() => Vector<Token>.from([token.unwrap()]) else => Vector<Token>.new()
+    Error(ParseError{meta: Meta.new(tokens, false), kind: kind})
 end

@@ -98,12 +98,13 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         let block_type: Type = Type.unit
         for (let i = 0; i < node.body.length; i++) {
             const body_node = node.body[i]
+            const used_in_expression = i === node.body.length - 1 && ctx.used_in_expression
             block_type = type_check(body_node, block_env, {
                 ...ctx,
                 // The last expression in a block is used as the block's type.
-                used_in_expression: ctx.used_in_expression && i === node.body.length - 1,
+                used_in_expression,
             })
-            if (body_node instanceof ast.FunctionCall) {
+            if (body_node instanceof ast.FunctionCall && !used_in_expression) {
                 const target_type = body_node.target.attributes.type!
                 if (!(target_type instanceof FunctionType)) {
                     continue
@@ -465,7 +466,12 @@ function type_check_match(node: ast.Match, env: TypeEnvironment, ctx: Context): 
     if (ctx.used_in_expression) {
         let type: Type | undefined
         for (let i = 0; i < arm_types.length; i++) {
-            if (node.arms[i].block.body.at(-1) instanceof ast.Return) {
+            const last_item = node.arms[i].block.body.at(-1)
+            if (
+                last_item instanceof ast.Return ||
+                last_item instanceof ast.Break ||
+                last_item instanceof ast.Continue
+            ) {
                 // If the last statement in the block is a return, we can ignore the type.
                 continue
             }
@@ -1305,6 +1311,8 @@ export class Type {
             return type
         } else if (declaration instanceof ast.UnitTypeDeclaration) {
             return env.unit
+        } else if (declaration instanceof ast.FunctionTypeDeclaration) {
+            return FunctionType.from_declaration(declaration, env)
         }
         let type = env.get_or_null(declaration.name)
         if (!(type instanceof ComplexType)) {
@@ -2270,7 +2278,11 @@ export class FunctionType extends ComplexType<FunctionData> {
             fields.set(parameter.name, type)
         }
         let return_type = resolve_type(declaration.return_type)
-        const throws = declaration instanceof ast.FunctionDeclaration ? declaration.throws : false
+        const throws =
+            declaration instanceof ast.FunctionDeclaration ||
+            declaration instanceof ast.ClosureDefinition
+                ? declaration.throws
+                : false
         if (throws) {
             const throws_env = new TypeEnvironment(env)
             for (const type_variable of type_variables) {

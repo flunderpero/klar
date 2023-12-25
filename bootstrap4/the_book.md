@@ -529,6 +529,7 @@ end
 
 fn main():
     divide(10, 0) -- Compile error: The function being called might return an error
+    panic("expected a compile error")
 end
 ```
 

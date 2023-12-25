@@ -1079,11 +1079,15 @@ export class ClosureDefinition extends Expression {
     parameters: ClosureParameter[]
     return_type: TypeDeclaration
     block: Block
-    // FIXME: Parse this
     throws?: true | TypeDeclaration
 
     constructor(
-        data: {parameters: ClosureParameter[]; return_type: TypeDeclaration; block: Block},
+        data: {
+            parameters: ClosureParameter[]
+            return_type: TypeDeclaration
+            block: Block
+            throws?: true | TypeDeclaration
+        },
         span: Span,
     ) {
         super(span)
@@ -1857,9 +1861,18 @@ export function parse(tokens: TokenStream): AST {
         }
         tokens.expect(")")
         const return_type = try_parse_type() || unit_type
+        let throws: true | TypeDeclaration | undefined = undefined
+        if (tokens.simple_peek() === "throws") {
+            tokens.consume()
+            if (tokens.peek() instanceof Identifier) {
+                throws = parse_type()
+            } else {
+                throws = true
+            }
+        }
         const block = parse_block("normal")
         return new ClosureDefinition(
-            {parameters, return_type, block},
+            {parameters, return_type, block, throws},
             Span.combine(span, block.span),
         )
     }

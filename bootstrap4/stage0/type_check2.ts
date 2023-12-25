@@ -351,6 +351,9 @@ function expect_to_implement_trait(
         throw new TypeCheckError(`Expected complex type but got ${quote(type.signature)}`, span)
     }
     const trait_type = TraitType.from_env(trait_name, env, span)
+    if (trait_type.equals(type)) {
+        return
+    }
     if (!type.traits.includes(trait_name)) {
         throw new TypeCheckError(
             `Expected ${quote(type.signature)} to implement ${quote(trait_type.signature)}`,
@@ -370,7 +373,8 @@ function expect_assignable_to(expected: Type, got: Type, span: Span) {
             return
         } else {
             expect_assignable_to(
-                option_type.type_arguments.get(option_type.type_variables[0])!,
+                option_type.type_arguments.get(option_type.type_variables[0]) ??
+                    option_type.type_variables[0],
                 got,
                 span,
             )
@@ -664,7 +668,10 @@ function type_check_match_pattern(
         }
         for (let i = 0; i < pattern.values.length; i++) {
             const sub_pattern = pattern.values[i]
-            const field_type = tuple_type.field(`${i}`, sub_pattern.span)
+            let field_type = tuple_type.field(`${i}`, sub_pattern.span)
+            if (field_type instanceof TypeVariable) {
+                field_type = find_type_arg(field_type, target_type, target_type) ?? field_type
+            }
             const sub_pattern_type = type_check_match_pattern(sub_pattern, field_type, env, ctx)
             expect_assignable_to(sub_pattern_type, field_type, sub_pattern.span)
         }
@@ -759,6 +766,26 @@ function type_check_binary_expression(
     return function_type.return_type
 }
 
+function find_type_arg(v: TypeVariable, arg_type: Type, parameter_type: Type) {
+    if (parameter_type.equals(v)) {
+        return arg_type
+    }
+    if (!(parameter_type instanceof ComplexType)) {
+        return null
+    }
+    return (
+        parameter_type.type_variables
+            .map((v2) => {
+                if (v2.equals(v)) {
+                    assert(arg_type instanceof ComplexType)
+                    return arg_type.type_arguments.get(v2)!
+                }
+                return null
+            })
+            .find((x) => !!x) ?? null
+    )
+}
+
 function type_check_function_call_or_enum_instantiation(
     node: ast.FunctionCall,
     env: TypeEnvironment,
@@ -811,6 +838,7 @@ function type_check_function_call_or_enum_instantiation(
         }
         return target
     }
+    const arg_types = node.args.map((x) => type_check(x, env, {...ctx, used_in_expression: true}))
     let function_type = expect_function_type(target, node.span)
     let parameters = function_type.parameters_without_self
     if (parameters.length !== node.args.length) {
@@ -819,12 +847,60 @@ function type_check_function_call_or_enum_instantiation(
             node.span,
         )
     }
-    const type_arguments = parse_type_arguments(function_type, node.type_arguments, env, node.span)
+    let type_arguments = parse_type_arguments(function_type, node.type_arguments, env, node.span)
+    function find_type_argument(v: TypeVariable) {
+        for (let i = 0; i < parameters.length; i++) {
+            const parameter = parameters[i]
+            const arg_type = arg_types[i]
+            const result = find_type_arg(v, arg_type, parameter)
+            if (result) {
+                return result
+            }
+        }
+        return find_type_arg(v, function_type.return_type, function_type.return_type)
+    }
+    if (type_arguments.length === 0 && function_type.type_variables.length > 0) {
+        type_arguments = function_type.type_variables.map((v) => find_type_argument(v) ?? v)
+    }
+    if (node.target instanceof ast.FieldAccess) {
+        let target_type = expect_type_with_fields(
+            node.target.attributes.target_type as Type,
+            node.span,
+        )
+        if (
+            target_type instanceof ComplexType &&
+            target_type.type_arguments.size !== target_type.type_variables.length
+        ) {
+            const target_type_arguments = target_type.type_arguments
+            const new_target_type_arguments = []
+            for (const type_var of target_type.type_variables) {
+                if (!(type_var instanceof TypeVariable)) {
+                    new_target_type_arguments.push(type_var)
+                    continue
+                }
+                if (target_type_arguments.has(type_var)) {
+                    new_target_type_arguments.push(target_type_arguments.get(type_var)!)
+                } else {
+                    const type = find_type_argument(type_var)
+                    if (type && !(type instanceof TypeVariable) && !type.equals(target_type)) {
+                        new_target_type_arguments.push(type)
+                    } else {
+                        new_target_type_arguments.push(target_type_arguments.get(type_var) || null)
+                    }
+                }
+            }
+            target_type = target_type.with_type_arguments(new_target_type_arguments, node.span)
+            node.target.attributes.target_type = target_type
+            function_type = expect_function_type(
+                target_type.field(node.target.field, node.span),
+                node.span,
+            )
+        }
+    }
     function_type = function_type.with_type_arguments(type_arguments, node.span)
     parameters = function_type.parameters_without_self
     for (let i = 0; i < node.args.length; i++) {
-        const arg_type = type_check(node.args[i], env, {...ctx, used_in_expression: true})
-        expect_assignable_to(parameters[i], arg_type, node.span)
+        expect_assignable_to(parameters[i], arg_types[i], node.span)
     }
     if (function_type.name === "panic") {
         // `panic` is a special function that never returns.
@@ -856,6 +932,7 @@ function type_check_function_call_or_enum_instantiation(
         )
         return return_type.type_arguments.get(return_type.type_variables[0])!
     }
+    // console.log("AAA ret", function_type.signature, return_type.signature)
     return return_type
 }
 
@@ -882,7 +959,9 @@ function struct_instantiation(node: ast.StructInstantiation, env: TypeEnvironmen
         return struct_type.with_type_arguments(type_arguments, node.span)
     }
     const type_arguments = parse_type_arguments(struct_type, node.type_arguments, env, node.span)
-    struct_type = struct_type.with_type_arguments(type_arguments, node.span)
+    if (type_arguments.length > 0) {
+        struct_type = struct_type.with_type_arguments(type_arguments, node.span)
+    }
     for (const [name, value] of Object.entries(node.fields)) {
         const field_type = struct_type.field(name, node.span)
         const value_type = value
@@ -5135,6 +5214,47 @@ const test = {
 
             let foo = Foo{a: 1}
             foo
+        `)
+        assert.equal(type.signature, "Foo<T=i32>")
+    },
+
+    test_infer_generic_type_in_function_call() {
+        const {type, env} = test.type_check(`
+            fn foo<T>(a T) T: 
+                a
+            end
+
+            foo(1)
+        `)
+        assert.equal(type, env.i32)
+    },
+
+    test_infer_generic_type_in_function_call_if_nested() {
+        const {type, env} = test.type_check(`
+            struct Container<T>:
+                value T
+            end
+
+            fn foo<T>(a Container<T>) T: 
+                a.value
+            end
+
+            foo(Container{value: 1})
+        `)
+        assert.equal(type, env.i32)
+    },
+
+    test_infer_generic_type_in_static_method_call() {
+        const {type} = test.type_check(`
+            struct Foo<T>:
+                a T
+            end
+
+            impl Foo<T>:
+                fn new(a T) Self => Foo{a}
+            end
+
+            Foo.new(1)
         `)
         assert.equal(type.signature, "Foo<T=i32>")
     },

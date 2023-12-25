@@ -243,10 +243,10 @@ end
 
 fn main():
     let planet = Planet{name: "Earth"}
-    let body = CelestialBody<Planet>{body: planet}
+    let body = CelestialBody{body: planet}
     assert(body.to_str() == "Earth")
     -- todo (lang-feat): We should not need to specify the type `<Planet>` here.
-    assert(combine_id_and_to_str<Planet>(planet) == "Earth + Planet Earth")
+    assert(combine_id_and_to_str(planet) == "Earth + Planet Earth")
 end
 ```
 
@@ -457,7 +457,7 @@ end
 
 fn main():
     let result = match divide(10, 2):
-        Ok<i32>(value) => value
+        Ok(value) => value
         Error(error) => panic("should not be reached")
     end
     assert(result == 5)
@@ -614,14 +614,14 @@ the `if let` expression.
 ```klar
 fn main():
     let a = Some(42)
-    if let Some<i32>(value) = a:
+    if let Some(value) = a:
         assert(value == 42)
     else:
         panic("should not be reached")
     end
 
     -- `if let` is a regular expression.
-    let b = if let Some<i32>(value) = a:
+    let b = if let Some(value) = a:
         value
     else:
         panic("should not be reached")
@@ -678,8 +678,8 @@ end
 fn main():
     let planet = Some(Planet{name: "Earth"})
     let result = match planet:
-        Some<Planet>(Planet{name: "Earth" | "Venus" | "Mars" | "Mercury"}) => "inner planet"
-        Some<Planet>(Planet{name}) => name
+        Some(Planet{name: "Earth" | "Venus" | "Mars" | "Mercury"}) => "inner planet"
+        Some(Planet{name}) => name
         _ => "unknown"
     end
     assert(result == "inner planet")

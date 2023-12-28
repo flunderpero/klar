@@ -251,8 +251,7 @@ function code_gen(ast: AST.AST) {
             }
         } else if (e instanceof AST.StructDeclaration) {
             const members = Object.keys(e.fields).join(";")
-            const impls = transpile_impls(e)
-            return `class ${m(e.name)} {${members}\n}${impls}`
+            return `class ${m(e.name)} {${members}\n}`
         } else if (e instanceof AST.EnumDeclaration) {
             let variants = ""
             for (const variant of e.variants) {
@@ -262,8 +261,7 @@ function code_gen(ast: AST.AST) {
                 variants += `class ${variant_class_name} extends ${m(e.name)} {\n${constructor}};`
             }
             const base_class = `class ${m(e.name)} {}`
-            const impls = transpile_impls(e)
-            return `${base_class}${variants}${impls}`
+            return `${base_class}${variants}`
         } else if (e instanceof AST.Loop) {
             const block = transpile_block(e.block, ctx)
             // The `try / catch` is a bit of a hack to be able to break out of a match
@@ -338,7 +336,7 @@ function code_gen(ast: AST.AST) {
             }
             return m(e.name)
         } else if (e instanceof AST.ImplDefinition) {
-            return ""
+            return transpile_impl(e)
         } else if (e instanceof AST.TraitDeclaration) {
             return ""
         } else if (e instanceof AST.ExternBlock) {
@@ -346,7 +344,7 @@ function code_gen(ast: AST.AST) {
         } else if (e instanceof AST.Match) {
             return transpile_match(e, ctx)
         } else if (e instanceof AST.UnitLiteral) {
-            return "undefined"
+            return "new klar_unit()"
         } else if (e instanceof AST.Use) {
             return ""
         } else {
@@ -431,6 +429,9 @@ throw new Error(
             // Wrap the return value in a `Result` or `Option` constructor.
             return `(function(){
                     let res = ${value}; 
+                    if (res === undefined) {
+                        res = new klar_unit();
+                    }
                     if (${is_option}) {
                         if (res.constructor.name !== "klar_Option_Some" 
                             && res.constructor.name !== "klar_Option_None") {
@@ -462,11 +463,11 @@ throw new Error(
             .join("\n")
         const last_expression_code =
             block.body.length === 0
-                ? "undefined"
+                ? "new klar_unit()"
                 : transpile_expression(block.body.at(-1)!, {...ctx, used_in_expression: true})
         if (opts?.assign_last_expression_to) {
             if (block.body.length === 0) {
-                return `{${opts.assign_last_expression_to} = undefined;}`
+                return `{${opts.assign_last_expression_to} = new klar_unit();}`
             }
             if (
                 block.body.at(-1) instanceof AST.Loop ||
@@ -480,7 +481,7 @@ throw new Error(
         }
         if (
             opts?.return_last_expression &&
-            (ctx.func?.return_type !== AST.unit_type || ctx.func?.throws) &&
+            (ctx.func?.attributes?.type?.return_type.name !== "()" || ctx.func?.throws) &&
             !(
                 block.body.at(-1) instanceof AST.Return ||
                 block.body.at(-1) instanceof AST.Break ||
@@ -494,7 +495,7 @@ throw new Error(
         }
         return `${body}`
     }
-    function transpile_impls(e: AST.StructDeclaration | AST.EnumDeclaration) {
+    function transpile_impl(impl: AST.ImplDefinition) {
         let s = ""
         function transpile_impl_function(impl: AST.ImplDefinition, fn: AST.FunctionDefinition) {
             const is_static = fn.declaration.parameters[0]?.name !== "self"
@@ -520,25 +521,23 @@ throw new Error(
                     throw e
                 }}`
         }
-        for (const impl of e.attributes.impls) {
-            for (const fn of impl.functions) {
-                if (fn instanceof AST.FunctionDefinition) {
-                    transpile_impl_function(impl, fn)
-                }
+        for (const fn of impl.functions) {
+            if (fn instanceof AST.FunctionDefinition) {
+                transpile_impl_function(impl, fn)
             }
-            if (impl.trait_name) {
-                const trait = impl.attributes.trait_declaration
-                if (!trait) {
-                    throw new CodeGenError(`Trait ${quote(impl.trait_name)} not found`, e.span)
+        }
+        if (impl.trait_name) {
+            const trait = impl.attributes.trait_declaration
+            if (!trait) {
+                throw new CodeGenError(`Trait ${quote(impl.trait_name)} not found`, impl.span)
+            }
+            for (const fn of trait.functions.filter(
+                (x) => x instanceof AST.FunctionDefinition,
+            ) as AST.FunctionDefinition[]) {
+                if (impl.functions.find((x) => x.name === fn.name)) {
+                    continue
                 }
-                for (const fn of trait.functions.filter(
-                    (x) => x instanceof AST.FunctionDefinition,
-                ) as AST.FunctionDefinition[]) {
-                    if (impl.functions.find((x) => x.name === fn.name)) {
-                        continue
-                    }
-                    transpile_impl_function(impl, fn)
-                }
+                transpile_impl_function(impl, fn)
             }
         }
         return s

@@ -97,19 +97,19 @@ trait Iterator<T>:
 
     fn filter(self, f (fn(T) bool)) Self:
         let vec = Vector<T>.new()
-        self.for_each(fn(value T) => if f(value) => vec.push(value))
+        self.for_each(fn(value) => if f(value) => vec.push(value))
         vec.iter()
     end
 
     fn map<U>(self, f (fn(T) U)) Iterator<U>:
         let vec = Vector<U>.new()
-        self.for_each(fn(value T) => vec.push(f(value)))
+        self.for_each(fn(value) => vec.push(f(value)))
         vec.iter()
     end
 
     fn collect(self) Vector<T>:
         let vec = Vector<T>.new()
-        self.for_each(fn(value T) => vec.push(value))
+        self.for_each(fn(value) => vec.push(value))
         vec
     end
 
@@ -214,6 +214,7 @@ extern:
     fn i32_next() i32
 
     impl Len for str
+    impl IndexedGet<i32, char> for str
     impl str:
         fn iter(self) Iterator<char>
         fn push(mut self, s str) str
@@ -261,6 +262,42 @@ extern:
 
     fn ext_args() JSArray<str>
     fn ext_env() JSArray<(str, str)>
+end
+
+impl str:
+    fn repeat(self, n i32) str:
+        mut s = ""
+        mut i = 0
+        loop:
+            if i >= n => break
+            s.push(self)
+            i = i + 1
+        end
+        s
+    end
+
+    fn replace(self, from str, to str) str:
+        mut s = ""
+        mut i = 0
+        mut cur_match = ""
+        loop:
+            if i >= self.len() => break
+            let c = self[i]
+            if c == from[cur_match.len()]:
+                cur_match.push_char(c)
+                if cur_match == from:
+                    s.push(to)
+                    cur_match = ""
+                end
+            else:
+                s.push(cur_match)
+                s.push_char(c)
+                cur_match = ""
+            end
+            i = i + 1
+        end
+        s
+    end
 end
 
 -- Fixed size array

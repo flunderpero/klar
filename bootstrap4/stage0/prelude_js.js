@@ -17,6 +17,8 @@ function klar_exit(code) {
     process.exit(code.value)
 }
 
+class klar_unit {}
+
 class klar_i32 {
     static from_str(value) {
         let int
@@ -178,6 +180,17 @@ class klar_str {
             item = iter.next()
         }
         return new klar_str(result)
+    }
+
+    get(index) {
+        if (index.value > this.len().value || index.value < 0) {
+            panic(
+                `index out of bound in \`str[${index.value}]\`, str has length \`${
+                    this.len().value
+                }`,
+            )
+        }
+        return new klar_char(this.value[index.value])
     }
 }
 

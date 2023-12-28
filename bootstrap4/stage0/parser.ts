@@ -207,11 +207,13 @@ export class FunctionTypeDeclaration extends TypeDeclaration {
     kind = "function type"
     arg_types: TypeDeclaration[]
     return_type: TypeDeclaration
+    throws?: true | TypeDeclaration
 
     constructor(
         data: {
             arg_types: TypeDeclaration[]
             return_type: TypeDeclaration
+            throws?: true | TypeDeclaration
         },
         span: Span,
     ) {
@@ -243,6 +245,7 @@ export class FunctionDeclaration extends DeclarationOrDefinition {
     parameters: Parameter[]
     return_type: TypeDeclaration
     throws?: true | TypeDeclaration
+    declare attributes: ASTNodeAttributes & {type?: TypeInterface & {return_type: TypeInterface}}
 
     constructor(
         data: {
@@ -296,10 +299,10 @@ export class Parameter extends ASTNode {
 export class ClosureParameter extends ASTNode {
     kind = "closure parameter"
     name: string
-    type: TypeDeclaration
+    type?: TypeDeclaration
     mutable: boolean
 
-    constructor(data: {name: string; type: TypeDeclaration; mutable: boolean}, span: Span) {
+    constructor(data: {name: string; type?: TypeDeclaration; mutable: boolean}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Parameter.prototype)
     }
@@ -380,7 +383,6 @@ export class StructDeclaration extends DeclarationOrDefinition {
     name: string
     fields: Record<string, TypeDeclaration>
     type_parameters: TypeDeclaration[]
-    attributes: ASTNodeAttributes & {impls: ImplDefinition[]} = {impls: []}
 
     constructor(
         data: {
@@ -412,7 +414,6 @@ export class EnumDeclaration extends DeclarationOrDefinition {
     name: string
     variants: EnumVariant[]
     type_parameters: TypeDeclaration[]
-    attributes: ASTNodeAttributes & {impls: ImplDefinition[]} = {impls: []}
 
     constructor(
         data: {
@@ -1080,6 +1081,7 @@ export class ClosureDefinition extends Expression {
     return_type: TypeDeclaration
     block: Block
     throws?: true | TypeDeclaration
+    declare attributes: ASTNodeAttributes & {type?: TypeInterface & {return_type: TypeInterface}}
 
     constructor(
         data: {
@@ -1824,7 +1826,12 @@ export function parse(tokens: TokenStream): AST {
         }
         tokens.expect(")")
         const return_type = try_parse_type() || unit_type
-        return new FunctionTypeDeclaration({arg_types: parameter_types, return_type}, span)
+        let throws: true | TypeDeclaration | undefined = undefined
+        if (tokens.simple_peek() === "throws") {
+            tokens.consume()
+            throws = try_parse_type() || true
+        }
+        return new FunctionTypeDeclaration({arg_types: parameter_types, return_type, throws}, span)
     }
 
     function parse_function_body(declaration: FunctionDeclaration): FunctionDefinition {
@@ -1851,7 +1858,7 @@ export function parse(tokens: TokenStream): AST {
                 tokens.expect(",")
             }
             const name_token = tokens.expect_identifier()
-            const type = parse_type()
+            const type = try_parse_type()
             parameters.push(
                 new ClosureParameter(
                     {name: name_token.value, type: type, mutable: false},

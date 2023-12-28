@@ -430,11 +430,11 @@ fn main():
     -- The following would not compile, because `x + 1` is an expression
     -- of the type `i32` but `apply` expects a closure that returns
     -- the unit type `()`.
-    --   apply(fn(x i32) => x + 1)
+    --   apply(fn(x) => x + 1)
 
     -- Using the unit operator `;` we can convert the expression to a
     -- statement. Statements always have the unit type `()`.
-    apply(fn(x i32) => x + 1;)
+    apply(fn(x) => x + 1;)
 end
 ```
 

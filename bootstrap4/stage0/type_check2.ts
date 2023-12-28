@@ -838,8 +838,23 @@ function type_check_function_call_or_enum_instantiation(
         }
         return target
     }
-    const arg_types = node.args.map((x) => type_check(x, env, {...ctx, used_in_expression: true}))
     let function_type = expect_function_type(target, node.span)
+    const arg_types = node.args.map((x, i) => {
+        if (x instanceof ast.ClosureDefinition) {
+            const function_param = function_type.parameters_without_self[i]
+            assert(function_param instanceof FunctionType)
+            const function_param_decl = function_param.data.declaration
+            assert(function_param_decl instanceof ast.FunctionTypeDeclaration)
+            for (let p = 0; p < function_param_decl.arg_types.length; p++) {
+                const ft = function_param_decl.arg_types[p]
+                const at = x.parameters[p].type
+                if (!at) {
+                    x.parameters[p].type = ft
+                }
+            }
+        }
+        return type_check(x, env, {...ctx, used_in_expression: true})
+    })
     let parameters = function_type.parameters_without_self
     if (parameters.length !== node.args.length) {
         throw new TypeCheckError(
@@ -932,7 +947,6 @@ function type_check_function_call_or_enum_instantiation(
         )
         return return_type.type_arguments.get(return_type.type_variables[0])!
     }
-    // console.log("AAA ret", function_type.signature, return_type.signature)
     return return_type
 }
 
@@ -1030,10 +1044,13 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
             const function_type = FunctionType.from_declaration(node.declaration, env)
             env.add(function_type.name, function_type, node.span)
             function_declarations.push(node.declaration)
+            node.attributes.type = function_type
+            node.declaration.attributes.type = function_type
         } else if (node instanceof ast.FunctionDeclaration) {
             const function_type = FunctionType.from_declaration(node, env)
             env.add(function_type.name, function_type, node.span)
             function_declarations.push(node)
+            node.attributes.type = function_type
         } else if (node instanceof ast.TraitDeclaration) {
             const trait_type = TraitType.from_declaration(node, env)
             env.add(trait_type.name, trait_type, node.span)
@@ -1158,7 +1175,7 @@ function type_check_function_body(
         const type = function_type.parameter(name, node.span)
         function_env.add(name, type, node.span)
     }
-    const return_type = function_type.return_type
+    let return_type = function_type.return_type
     const block_type = type_check(node.block, function_env, {
         return_type,
         used_in_expression: true,
@@ -1167,7 +1184,26 @@ function type_check_function_body(
         // The last expression is a return statement, so we don't need to check the return type.
         // We already checked that the return type is correct in the return statement.
     } else {
-        type_check_return_type(return_type, block_type, node.span)
+        if (node instanceof ast.ClosureDefinition) {
+            const declaration = node
+            const throws = declaration.throws
+            if (throws) {
+                const throws_env = new TypeEnvironment(env)
+                const throws_type =
+                    typeof throws === "boolean"
+                        ? throws_env.get("ToStr", declaration.span)
+                        : Type.from_env_or_declaration(throws, throws_env)
+                return_type = expect_type_with_fields(
+                    throws_env.get("Result", declaration.span),
+                    declaration.span,
+                ).with_type_arguments([block_type, throws_type], declaration.span)
+            } else {
+                return_type = block_type
+            }
+            function_type.data.fields.set("return", return_type)
+        } else {
+            type_check_return_type(return_type, block_type, node.span)
+        }
     }
 }
 
@@ -1244,10 +1280,6 @@ function type_check_impl(
         impl_env.add(type_variables[i].name, complex_type.type_variables[i], node.span)
     }
     if (mode === "signatures") {
-        // Add impl to the target type's attributes for later use.
-        if (complex_type instanceof StructType || complex_type instanceof EnumType) {
-            complex_type.data.declaration?.attributes.impls.push(node)
-        }
         for (const func of node.functions) {
             const declaration = func instanceof ast.FunctionDeclaration ? func : func.declaration
             const function_type = FunctionType.from_declaration(declaration, impl_env)
@@ -2350,18 +2382,14 @@ export class FunctionType extends ComplexType<FunctionData> {
                 : declaration.arg_types.map((type, i) => ({name: `${i}`, type}))
         const fields = new Map<string, Type>()
         for (const parameter of parameters) {
-            const type = resolve_type(parameter.type)
+            const type = resolve_type(parameter.type!)
             if (!env.get_or_null(type.signature)) {
-                env.add(type.signature, type, parameter.type.span)
+                env.add(type.signature, type, parameter.type!.span)
             }
             fields.set(parameter.name, type)
         }
         let return_type = resolve_type(declaration.return_type)
-        const throws =
-            declaration instanceof ast.FunctionDeclaration ||
-            declaration instanceof ast.ClosureDefinition
-                ? declaration.throws
-                : false
+        const throws = declaration.throws
         if (throws) {
             const throws_env = new TypeEnvironment(env)
             for (const type_variable of type_variables) {
@@ -2381,9 +2409,10 @@ export class FunctionType extends ComplexType<FunctionData> {
             declaration instanceof ast.ClosureDefinition ? "<closure>" : declaration.name,
             fields,
             parameters.map((p) => p.name),
+            [],
+            declaration,
         )
-        const type = new FunctionType(data, type_variables)
-        return Type.add_or_get_known_type(type.signature, type, declaration.span)
+        return new FunctionType(data, type_variables)
     }
 
     static from_env(name: string, env: TypeEnvironment, span: Span): FunctionType {
@@ -2488,6 +2517,10 @@ class FunctionData extends Type {
         public readonly fields: Map<string, Type>,
         public readonly parameter_names: string[],
         public readonly traits: string[] = [],
+        public readonly declaration?:
+            | ast.FunctionDeclaration
+            | ast.ClosureDefinition
+            | ast.FunctionTypeDeclaration,
     ) {
         super(name)
     }
@@ -3173,8 +3206,7 @@ const test = {
     },
 
     test_closure_captures_variables() {
-        const {type} = test.type_check(
-            `
+        const {type} = test.type_check(`
             fn foo(a i32) i32: 
                 let b = 1
                 let bar = fn() i32:
@@ -3183,9 +3215,19 @@ const test = {
                 bar()
             end
             foo
-        `,
-        )
+        `)
         assert.strictEqual(type.signature, "foo<>(i32)->i32")
+    },
+
+    test_closure_type_inference() {
+        const {type} = test.type_check(`
+            fn foo(f (fn(i32) i32)) i32:
+                f(1)
+            end
+
+            foo(fn(a) => 0)
+        `)
+        assert.strictEqual(type.signature, "i32")
     },
 
     test_struct() {

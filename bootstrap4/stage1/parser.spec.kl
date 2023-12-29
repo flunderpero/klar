@@ -3,63 +3,71 @@ use .lexer.Token
 use .parser.Parser
 use .parser.TokenIter
 use .ast.ParseError
+use .ast.ToDebugStr
 use .ast.Item
 use .ast.Expr
-
-fn test_literals():
-    assert(expr("42") == "(@int 42)")
-    assert(expr("-42") == "(@int -42)")
-    assert(expr("2147483647") == "(@int 2147483647)")
-    assert(expr("2147483648") == "(@error invalid_int_literal)")
-end
-
-fn test_comments_and_whitespace_are_ignored():
-    assert(expr("\n 42 // comment") == "(@int 42)")
-end
-
-fn test_fn_definition():
-    assert(item("fn main(): end") == "(@fndef (@fndecl main) (@block))")
-end
-
-fn parse_item(src str) Item throws ParseError:
-    let tokens = Lexer.lex(src, "test.kl").collect()
-    let parser = Parser.new(TokenIter.new(tokens))
-    match parser.parse_item(parser.iter.force_next()!)!:
-        Some<Item>(item) => item
-        None<Item> => panic("expected an item")
-    end
-end
-
-fn parse_expr(src str) Expr throws ParseError:
-    let tokens = Lexer.lex(src, "test.kl").collect()
-    let parser = Parser.new(TokenIter.new(tokens))
-    match parser.parse_expr(parser.iter.force_next()!)!:
-        Some<Expr>(expr) => expr
-        None<Expr> => panic("expected an expression")
-    end
-end
-
-fn item(src str) str:
-    print(f"Testing item: {src}")
-    match parse_item(src):
-        Ok<Item>(item) => item.to_debug_str()
-        Error<(), ParseError>(err) => err.to_debug_str()
-    end
-end
-
-fn expr(src str) str:
-    print(f"Testing expr: {src}")
-    match parse_expr(src):
-        Ok<Item>(item) => item.to_debug_str()
-        Error<(), ParseError>(err) => err.to_debug_str()
-    end
-end
+use .test.Test
 
 fn main():
-    test_literals()
-    test_comments_and_whitespace_are_ignored()
-    test_fn_definition()
-    print("All tests passed")
+    mut test = Test.new("parser", false)
+    test.it("parses literals", fn() throws:
+        assert(expr("42") == "(@int 42)")
+        assert(expr("-42") == "(@int -42)")
+        assert(expr("2147483647") == "(@int 2147483647)")
+        assert(expr("2147483648") == "(@error invalid_int_literal)")
+        return ()
+    end)
+    test.it("ignores comments and whitespace", fn() throws:
+        assert(expr("\n 42 // comment") == "(@int 42)")
+        return ()
+    end)
+    test.it("parses multi-line blocks", fn() throws:
+        assert(block(": end") == "(@block)")
+        assert(block(": 42 end") == "(@block (@int 42))")
+        return ()
+    end)
+    test.it("parses fn definitions", fn() throws:
+        assert(item("fn main(): end") == "(@fndef (@fndecl main) (@block))")
+        assert(item("fn main(): 42 end") == "(@fndef (@fndecl main) (@block (@int 42)))")
+        return ()
+    end)
+
+    enum ParseFn:
+        ParseItem
+        ParseExpr
+        ParseBlock
+    end
+
+    fn parse(src str, parse_fn ParseFn) str:
+        test.log(f"testing: {src}")
+        let tokens = Lexer.lex(src, "test.kl").collect()
+        let parser = Parser.new(TokenIter.new(tokens))
+        let res = match parse_fn:
+            ParseItem => parser.parse_item(parser.iter.force_next().unwrap())
+            ParseExpr => parser.parse_expr(parser.iter.force_next().unwrap())
+            ParseBlock: 
+                let res = parser.parse_block()
+                if res.is_error():
+                    return res.unwrap_error().to_debug_str()
+                end
+                return res.unwrap().to_debug_str()
+            end
+        end
+        if res.is_error():
+            return res.unwrap_error().to_debug_str()
+        end
+        let opt = res.unwrap()
+        if (opt.is_none()):
+            return "no result"
+        end
+        return opt.unwrap().to_debug_str()
+    end
+
+    fn expr(src str) str => parse(src, ParseFn.ParseExpr)
+
+    fn item(src str) str => parse(src, ParseFn.ParseItem)
+
+    fn block(src str) str => parse(src, ParseFn.ParseBlock)
+
+    test.run()
 end
-
-

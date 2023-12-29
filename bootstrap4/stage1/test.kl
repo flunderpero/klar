@@ -1,0 +1,111 @@
+--- A little test "framework".
+---
+
+struct Test:
+    name str
+    tests Vector<(str, (fn() throws))>
+    groups Vector<Test>
+    logger TestLogger
+    verbose bool
+    failed i32
+end
+
+struct TestLogger:
+    indent_ i32
+end
+
+impl TestLogger:
+    fn new() TestLogger:
+        TestLogger{indent_: 0}
+    end
+
+    fn log(self, msg str):
+        let indent = " ".repeat(self.indent_ * 2)
+        let indented_msg = msg.replace("\n", "\\n")
+        print(f"{indent}{indented_msg}")
+    end
+
+    fn indent(self) TestLogger:
+        TestLogger{indent_: self.indent_ + 1}
+    end
+end
+
+impl Test:
+    fn new(name str, verbose bool) Test:
+        Test{
+            name, 
+            tests: Vector<(str, (fn() throws))>.new(), 
+            groups: Vector<Test>.new(),
+            logger: TestLogger.new(),
+            verbose,
+            failed: 0
+        }
+    end
+
+    fn it(self, name str, f (fn() throws)):
+        --- Add a test to the current group.
+        ---
+        self.tests.push((name, f))
+    end
+
+    fn group(self, name str) Test:
+        --- Create a new group of tests.
+        ---
+        mut group = Test.new(name, self.verbose)
+        group.logger = self.logger.indent()
+        self.groups.push(group)
+        group
+    end
+
+    fn log(self, msg str):
+        --- Log a message to the current group's logger so that it will be
+            indented properly.
+        ---
+        if self.verbose => self.logger.log(msg)
+    end
+
+    fn run_internal(mut self):
+        self.failed = 0
+        let logger = self.logger
+        -- Set the internal logger to the group's logger indented once.
+        -- This is so that `test.log()` calls will be indented correctly.
+        self.logger = self.logger.indent()
+        self.tests.iter().for_each(fn(test (str, (fn() throws))):
+            let name = f"it {test.0}"
+            if self.verbose => logger.log(f"[{self.name}] RUN  {name}")
+            match test.1():
+                Ok(_) => logger.log(f"[{self.name}] PASS {name}")
+                Error(error):
+                    self.failed = self.failed + 1
+                    logger.log(f"[{self.name}] FAIL {name}: {error}")
+                end
+            end
+        end)
+        self.logger = logger
+    end
+
+    fn total_and_failed(self) (i32, i32):
+        mut total_tests = self.tests.len() 
+        mut total_failed = self.failed
+        self.groups.iter().for_each(fn(group Test):
+            let group_numbers = group.total_and_failed()
+            total_tests = total_tests + group_numbers.0
+            total_failed = total_failed + group_numbers.1
+        end)
+        return (total_tests, total_failed)
+    end
+    
+    fn run(mut self):
+        --- Run all collected tests.
+        ---
+        self.run_internal()
+        self.groups.iter().for_each(fn(group Test):
+            group.run()
+        end)
+        let res = self.total_and_failed()
+        if res.1 > 0 =>
+            self.logger.log(f"[{self.name}] {res.1} / {res.0} tests failed")
+        else =>
+            self.logger.log(f"[{self.name}] ALL  {res.0} tests passed")
+    end
+end

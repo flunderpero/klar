@@ -1,0 +1,185 @@
+use .lexer.Lexer
+use .lexer.Token
+use .lexer.TokenKind
+use .lexer.FStrItem
+use .lexer.to_src
+use .test.Test
+
+fn main():
+    mut test = Test.new("lexer", false)
+
+    test.it("lexes identifiers", fn() throws:
+        lex_run("x", [Ident("x")])
+        lex_run("x y", [Ident("x"), Ident("y")])
+        lex_run("x Y _ a1 _a1 A1 _A1 a_1", [
+            Ident("x"), Ident("Y"), Ident("_"), Ident("a1"), Ident("_a1"), 
+            Ident("A1"), Ident("_A1"), Ident("a_1")
+        ])
+    end)
+
+    test.it("lexes comments and minus (-)", fn() throws:
+        lex_run("-- comment", [Comment("-- comment")])
+        lex_run("--- multi-line\ncomment --- x", [Comment("--- multi-line\ncomment ---"), Ident("x")])
+        -- todo (lang-feat): Multi-line strings should be dedented automatically and have to option to be raw.
+        lex_run("""
+--- Multi-line comment 
+- with a dash
+-- and a double dash
+---
+x
+            """,
+            [Comment("--- Multi-line comment \n- with a dash\n-- and a double dash\n---"), Ident("x")]
+        )
+        lex_run("- -- comment", [Minus, Comment("-- comment")])
+    end)
+
+    test.it("lexes operators and brackets", fn() throws:
+        lex_run("= == =>", [Equal, DoubleEqual, FatArrow])
+        lex_run("< <=", [LessThan, LessThanOrEqual])
+        lex_run("> >=", [GreaterThan, GreaterThanOrEqual])
+        lex_run("+ * /", [Plus, Star, Slash])
+        lex_run("! !=", [Exclamation, NotEqual])
+        lex_run("( ) { } [ ]", [LParen, RParen, LBrace, RBrace, LBracket, RBracket])
+    end)
+
+    test.it("lexes integer literals", fn() throws:
+        lex_run("123 12 -42", [Integer("123"), Integer("12"), Integer("-42")])
+    end)
+
+    test.it("lexes all keywords", fn() throws:
+        lex_run(
+            """
+            and break continue else end enum extern false fn for if impl 
+            let loop match mut not or return struct throws trait true use
+            """, [
+            And, Break, Continue, Else, End, Enum, Extern, Bool(false), Fn, For, If, Impl, 
+            Let, Loop, Match, Mut, Not, Or, Return, Struct, Throws, Trait, Bool(true), Use
+        ])
+    end)
+
+    mut str_test = test.group("string and f-string literals")
+
+    str_test.it("lexes string literals", fn() throws:
+        lex_run("\"hello\"", [Str("hello", false)])
+        -- Note: We can't distinguish between `\n` and `\\n` in the source code.
+        --       That's not a shortcoming of the lexer, but the nature of things.
+        lex_run("\"\"\"hello\n\\nworld\"\"\"", [Str("hello\n\nworld", true)])
+        lex_run("\"escape \\n \\\"\"", [Str("escape \n \"", false)])
+    end)
+
+    str_test.it("lexes single-line f-strings", fn() throws:
+        let f_str = lex_only("f\"the {question.answer} is {42}\"")
+        assert(f_str.len() == 1)
+        match f_str[0].kind:
+            FStr(items, is_multi_line):
+                assert(is_multi_line == false)
+                assert(items.len() == 4)
+                match items[0]:
+                    FStrStrItem(s) => assert(s == "the ")
+                    _ => panic("expected FStrStrItem.")
+                end
+                match items[1]:
+                    FStrTokensItem(tokens):
+                        let kinds = tokens.iter().map<TokenKind>(
+                            fn(token Token) => token.kind).collect()
+                        assert(kinds == Vector<TokenKind>.from(
+                            [Ident("question"), Dot, Ident("answer")])
+                        )
+                    end
+                    _ => panic("expected FStrTokensItem.")
+                end
+                match items[2]:
+                    FStrStrItem(s) => assert(s == " is ")
+                    _ => panic("expected FStrStrItem.")
+                end
+                match items[3]:
+                    FStrTokensItem(tokens):
+                        let kinds = tokens.iter().map<TokenKind>(
+                            fn(token Token) => token.kind).collect()
+                        assert(kinds == Vector<TokenKind>.from([Integer("42")]))
+                    end
+                    _ => panic("expected FStrTokensItem.")
+                end
+            end
+            _ => panic("expected FStr.")
+        end
+    end)
+
+    str_test.it("lexes multi-line f-strings", fn() throws:
+        let f_str_multi_line = lex_only("f\"\"\"the \n{question.\nanswer} is {42}\"\"\"")
+        assert(f_str_multi_line.len() == 1)
+        match f_str_multi_line[0].kind:
+            FStr(items, is_multi_line):
+                assert(is_multi_line == true)
+                assert(items.len() == 4)
+                match items[0]:
+                    FStrStrItem(s) => assert(s == "the \n")
+                    _ => panic("expected FStrStrItem.")
+                end
+                match items[1]:
+                    FStrTokensItem(tokens):
+                        let kinds = tokens.iter().map<TokenKind>(
+                            fn(token Token) => token.kind).collect()
+                        assert(kinds == Vector<TokenKind>.from(
+                            [Ident("question"), Dot, WhiteSpace('\n'), Ident("answer")])
+                        )
+                    end
+                    _ => panic("expected FStrTokensItem.")
+                end
+                match items[2]:
+                    FStrStrItem(s) => assert(s == " is ")
+                    _ => panic("expected FStrStrItem.")
+                end
+                match items[3]:
+                    FStrTokensItem(tokens):
+                        let kinds = tokens.iter().map<TokenKind>(
+                            fn(token Token) => token.kind).collect()
+                        assert(kinds == Vector<TokenKind>.from([Integer("42")]))
+                    end
+                    _ => panic("expected FStrTokensItem.")
+                end
+            end
+            _ => panic("expected FStr.")
+        end
+    end)
+
+    str_test.it("detects unterminated strings and f-string", fn() throws:
+        lex_run("\"string literal eof", [LexError("Unexpected end of file.")])
+        lex_run("\"string literal \n", [LexError("Unexpected end of line.")])
+        lex_run("f\"string {a} literal eof", [LexError("Unexpected end of file.")])
+        lex_run("f\"string {a} literal \n", [LexError("Unexpected end of line.")])
+    end)
+
+    fn lex_only(src str) Vector<Token> => Lexer.lex(src, "test.kl").collect()
+
+    fn lex_run(src str, expected Array<TokenKind>):
+        --- Test that `src` is lexed into `expected`. Whitespaces are ignored.
+            Test that `lex()` and `to_src()` are inverses of each other.
+        ---
+        test.log(f"testing: {src}")
+        let tokens = lex_only(src)
+        mut idx = 0
+        mut has_expected_parse_errors = expected.iter().any(
+            fn(kind TokenKind) bool => match(kind):
+                LexError(_) => true
+                _ => false
+            end
+        )
+        tokens.iter().filter(
+            fn(token Token) bool => match token.kind:
+                WhiteSpace(_) => false
+                _ => true
+            end
+        ).for_each(
+            fn(token Token): 
+                assert(idx < expected.len())
+                assert(token.kind == expected[idx]) 
+                idx = idx + 1
+            end
+        )
+        assert(idx == expected.len())
+        if not has_expected_parse_errors => assert(to_src(tokens) == src)
+    end
+
+    test.run()
+end

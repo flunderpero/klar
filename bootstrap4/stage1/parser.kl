@@ -173,10 +173,23 @@ impl Parser:
 
     fn parse_block(mut self) Block throws ParseError:
         let mark = self.iter.mark()
+        let items = Vector<BlockItem>.new() 
         self.iter.expect_lexical_token(TokenKind.Colon)!
-        self.iter.expect_lexical_token(TokenKind.End)!
-        
-        Block{meta: self.meta(mark, false), items: Vector<BlockItem>.new()}
+        loop:
+            let token = self.iter.force_next()!
+            let item = match token.kind:
+                TokenKind.End => break
+                _ => self.parse_block_item(token)!
+            end
+            items.push(item)
+        end
+        Block{meta: self.meta(mark, false), items}
+    end
+
+    fn parse_block_item(mut self, token Token) BlockItem throws ParseError:
+        let expr = self.parse_expr(token)!
+        if expr.is_some() => return BlockItem.Expr(expr.unwrap())
+        return parse_error(UnexpectedToken(token), token)
     end
 
     fn meta(self, mark i32, is_synthetic bool) Meta:

@@ -7,12 +7,11 @@ shopt -s nullglob
 # bash build_compiler.sh
 
 # echo "Testing lexer ..."
-# bun ../stage0/compiler.ts lexer.kl build/lexer
-# build/lexer
+bun ../stage0/compiler.ts lexer.spec.kl build/lexer.spec.js --debug-errors
+build/lexer.spec.js
 
-echo "Testing parser ..."
-bun ../stage0/compiler.ts parser.spec.kl build/parser.js --debug-errors
-build/parser.js
+bun ../stage0/compiler.ts parser.spec.kl build/parser.spec.js --debug-errors
+build/parser.spec.js
 
 # echo "Testing all source files under ../tests/stage0 ..."
 # mkdir -p build

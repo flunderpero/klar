@@ -134,10 +134,11 @@ end
 
 impl ToDebugStr for Block:
     fn to_debug_str(self) str:
+        if self.items.len() == 0 => return "(@block)"
         let body = " ".join(
             self.items.iter().map<str>(fn(it BlockItem) str => it.to_debug_str())
         )
-        f"(@block{body})"
+        f"(@block {body})"
     end
 end
 
@@ -173,4 +174,8 @@ end
 
 impl ToDebugStr for ParseError:
     fn to_debug_str(self) str => self.kind.to_debug_str()
+end
+
+impl ToStr for ParseError:
+    fn to_str(self) str => self.to_debug_str()
 end

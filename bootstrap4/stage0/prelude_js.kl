@@ -208,6 +208,7 @@ extern:
     fn panic(s str)
     fn exit(code i32)
     fn assert(cond bool)
+    fn register_panic_handler(handler (fn(str, str, str))) (fn(str, str, str))
 
     -- todo: We should not need this function. We use it to work around
     --       the fact that Klar does not support global variables.

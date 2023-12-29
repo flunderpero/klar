@@ -7,10 +7,16 @@ function klar_print(value) {
 // For compiler debugging purposes only.
 const klar_jsprint = console.log
 
-function klar_panic(value, location, src) {
+let klar_panic = (value, location, src) => {
     throw new Error(
         `Panic: ${to_debug_str(value)} at ${to_debug_str(location)}:\n  ${to_debug_str(src)}`,
     )
+}
+
+function klar_register_panic_handler(f) {
+    const old_panic = klar_panic
+    klar_panic = f
+    return old_panic
 }
 
 function klar_exit(code) {

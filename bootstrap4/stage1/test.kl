@@ -21,7 +21,7 @@ impl TestLogger:
 
     fn log(self, msg str):
         let indent = " ".repeat(self.indent_ * 2)
-        let indented_msg = msg.replace("\n", "\\n")
+        let indented_msg = msg.replace("\n", f"\n{indent}")
         print(f"{indent}{indented_msg}")
     end
 
@@ -73,13 +73,33 @@ impl Test:
         self.tests.iter().for_each(fn(test (str, (fn() throws))):
             let name = f"it {test.0}"
             if self.verbose => logger.log(f"[{self.name}] RUN  {name}")
-            match test.1():
-                Ok(_) => logger.log(f"[{self.name}] PASS {name}")
-                Error(error):
-                    self.failed = self.failed + 1
-                    logger.log(f"[{self.name}] FAIL {name}: {error}")
+            mut panicked = 0
+            mut panic_message = ""
+            mut panic_location = ""
+            let old_panic_handler = register_panic_handler(fn(message, location, src):
+                panicked = panicked + 1
+                -- Only record values for the first panic.
+                if panicked > 1 => return ()
+                panic_message = message
+                panic_location = location
+            end)
+            let res = test.1()
+            if panicked > 0:
+                self.failed = self.failed + 1
+                logger.log(f"[{self.name}] FAIL {name}: panicked with")
+                logger.indent().log(f"{panic_message}\nat {panic_location}")
+                if panicked > 1:
+                    logger.indent().log(f"(panicked {panicked} times)")
                 end
-            end
+            else =>
+                match res:
+                    Ok(_) => logger.log(f"[{self.name}] PASS {name}")
+                    Error(error):
+                        self.failed = self.failed + 1
+                        logger.log(f"[{self.name}] FAIL {name}: {error}")
+                    end
+                end
+            register_panic_handler(old_panic_handler);
         end)
         self.logger = logger
     end

@@ -385,28 +385,32 @@ const rhs = ${rhs};
 const lhs_str = to_debug_str(lhs);
 const rhs_str = to_debug_str(rhs);
 if (!${cond}) {
-throw new Error(
-\`Assertion failed at ${location}:
-  expected: ${escape_str_str(e.lhs.span.src_text)} ${e.operator} ${escape_str_str(
-      e.rhs.span.src_text,
-  )}
-  got:      \${lhs_str} ${e.operator} \${rhs_str}
-\`);}})();`
+klar_panic(
+new klar_str(\`Assertion failed:
+
+expected: ${escape_str_str(e.lhs.span.src_text)} ${e.operator} ${escape_str_str(
+                e.rhs.span.src_text,
+            )}
+got:      \${lhs_str} ${e.operator} \${rhs_str}
+\`), new klar_str("${location}"), new klar_str(""));}})();`
         } else if (e instanceof AST.Not) {
             const inner = transpile_expression(e.expression, {used_in_expression: true})
             return `(function() {
 let cond = ${inner};
 if (!!(cond.value)) {
 const inner = to_debug_str(cond);
-throw new Error(
-\`Assertion failed at ${location}:
-  expected: not ${escape_str_str(e.expression.span.src_text)}
-  got:      \${cond.value}
-\`);}})();`
+klar_panic(
+new klar_str(\`Assertion failed at ${location}:
+
+expected: not ${escape_str_str(e.expression.span.src_text)}
+got:      \${cond.value}
+\`), new klar_str("${location}"), new klar_str(""));}})();`
         }
         const cond = transpile_expression(e, {used_in_expression: true})
         return `(function() {if (!(${cond}.value)) {
-            throw new Error(\`Assertion failed at ${location}:\n${escape_str_str(src)}\`);
+            klar_panic(new klar_str(\`Assertion failed:\n${escape_str_str(
+                src,
+            )}\`), new klar_str("${location}"), new klar_str(""));
         }})();`
     }
     /**

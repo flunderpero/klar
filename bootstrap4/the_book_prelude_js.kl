@@ -1,3 +1,9 @@
-extern:
-    fn assert_panic(f (fn()))
+fn assert_panic(f (fn())):
+    mut panicked = false
+    let old_handler = register_panic_handler(fn(msg, location, src) => panicked = true)
+    f()
+    register_panic_handler(old_handler)
+    if not panicked:
+        panic("a panic was expected but none occurred")
+    end
 end

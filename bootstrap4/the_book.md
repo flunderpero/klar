@@ -565,6 +565,31 @@ fn main():
 end
 ```
 
+#### Runtime Errors with `panic`
+
+```klar
+fn main():
+    assert_panic(fn() => panic("This is a runtime error");)
+end
+```
+
+You can register a panic handler with `register_panic_handler`. It will be called
+when a panic occurs.
+
+```klar
+fn main():
+    mut panic_count = 0
+    let old_handler = register_panic_handler(fn(message, location, src): 
+        panic_count = panic_count + 1
+    end)
+    panic("This is a runtime error")
+    assert(panic_count == 1)
+    -- Restore the old panic handler.
+    register_panic_handler(old_handler);
+end
+```
+
+
 ### Pattern Matching
 
 ```klar

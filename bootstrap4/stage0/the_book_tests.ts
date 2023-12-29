@@ -70,10 +70,7 @@ async function run_test(test: Test): Promise<boolean> {
     }
     const linked = await link({
         compiled,
-        prelude:
-            default_prelude.prelude +
-            the_book_prelude.prelude +
-            (await Bun.file(`${dir}/../the_book_prelude_js.js`).text()),
+        prelude: default_prelude.prelude + the_book_prelude.prelude,
         epilogue: await Bun.file(`${dir}/../the_book_epilogue_js.js`).text(),
     })
     try {

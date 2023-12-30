@@ -726,8 +726,9 @@ export async function compile({
     }
     let ast = AST.parse(new AST.TokenStream(tokens))
     let transpiled = ""
-    // Resolve top-level use statements.
-    for (const use of ast.body.filter((x) => x instanceof AST.Use) as AST.Use[]) {
+    for (const use of ast.body.filter(
+        (x) => x instanceof AST.Use && x.path[0] === ".",
+    ) as AST.Use[]) {
         const path = use.path.join("/")
         // Find the file to import.
         let cwd = file.split("/").slice(0, -1).join("/") || "."

@@ -40,6 +40,8 @@ use .ast.Item
 use .lexer.Token
 use .lexer.TokenKind
 
+use ParseErrorKind.*
+
 struct TokenIter:
     --- An iterator over tokens that can be peeked and rewound.
     ---
@@ -55,7 +57,9 @@ impl Iterator<Token> for TokenIter:
         loop:
             let token = self.immediate()
             match token:
-                Some(Token{kind: WhiteSpace(_) | Comment(_), span: _}) => continue
+                Some(
+                    Token{kind: TokenKind.WhiteSpace(_) | TokenKind.Comment(_), span: _}
+                ) => continue
                 _ => return token
             end
         end
@@ -201,8 +205,8 @@ impl Parser:
 
     fn parse_expr(mut self, token Token) Expr? throws ParseError:
         mut expr = match token.kind:
-            Integer(i) => Expr.Literal(self.parse_integer(i, token)!)
-            LParen => self.parse_unit_or_tuple(token)!
+            TokenKind.IntLiteral(i) => Expr.Literal(self.parse_integer(i, token)!)
+            TokenKind.LParen => self.parse_unit_or_tuple(token)!
             TokenKind.Ident(name) => Expr.Ident(self.parse_ident(name)!)
             _ => return None
         end

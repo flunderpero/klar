@@ -589,7 +589,7 @@ export class Continue extends Statement {
     }
 }
 
-export class Use extends Statement {
+export class Use extends DeclarationOrDefinition {
     kind = "use"
     path: string[]
 
@@ -1276,11 +1276,22 @@ export function parse(tokens: TokenStream): AST {
 
     function parse_use(): Use {
         let span = tokens.consume().span
-        // For now, we only support local paths.
-        const path = ["."]
-        let end_span = tokens.expect(".").span
+        let end_span = span
+        const path = []
+        if (tokens.simple_peek() === ".") {
+            end_span = tokens.expect(".").span
+            path.push(".")
+        }
         while (true) {
-            const token = tokens.expect_identifier()
+            const token = tokens.consume()
+            if (
+                !(
+                    token instanceof Identifier ||
+                    (token instanceof LexicalToken && token.value === "*")
+                )
+            ) {
+                throw new ParseError(`Expected identifier or *`, token.span)
+            }
             end_span = token.span
             path.push(token.value)
             if (tokens.simple_peek() !== ".") {

@@ -711,7 +711,9 @@ fn main():
 end
 ```
 
-### Modules
+### Imports
+
+#### Modules
 
 In Klar, modules are files. The name of the module is the name of the file.
 
@@ -729,9 +731,27 @@ fn main():
 
     let e = SomeEnum.SomeA
     assert(e.to_str() == "some a")
-    -- As always, enum variants are auto imported.
-    let some_b = SomeB
-    assert(some_b.to_str() == "some b")
+end
+```
+
+#### Importing Enum Variants
+
+```klar
+enum Planets:
+    Earth
+    Mars
+    Venus
+end
+
+fn main():
+    -- Import `Planets.Earth` into the current scope, so we can refer to 
+    -- it as `Earth`.
+    use Planets.Earth
+    let earth = Earth
+
+    -- Import all variants of `Planets` into the current scope.
+    use Planets.*
+    let mars = Mars
 end
 ```
 

@@ -5,6 +5,9 @@ use .lexer.FStrItem
 use .lexer.to_src
 use .test.Test
 
+use TokenKind.*
+use FStrItem.*
+
 fn main():
     mut test = Test.new_from_args("lexer", env.args)
 
@@ -42,8 +45,8 @@ x
         lex_run("( ) { } [ ]", [LParen, RParen, LBrace, RBrace, LBracket, RBracket])
     end)
 
-    test.it("lexes integer literals", fn() throws:
-        lex_run("123 12 -42", [Integer("123"), Integer("12"), Integer("-42")])
+    test.it("lexes int literals", fn() throws:
+        lex_run("123 12 -42", [IntLiteral("123"), IntLiteral("12"), IntLiteral("-42")])
     end)
 
     test.it("lexes all keywords", fn() throws:
@@ -95,7 +98,7 @@ x
                         FStrTokensItem(tokens):
                             let kinds = tokens.iter().map<TokenKind>(
                                 fn(token Token) => token.kind).collect()
-                            assert(kinds == Vector<TokenKind>.from([Integer("42")]))
+                            assert(kinds == Vector<TokenKind>.from([IntLiteral("42")]))
                         end
                         _ => return Error("expected FStrTokensItem.")
                     end
@@ -133,7 +136,7 @@ x
                         FStrTokensItem(tokens):
                             let kinds = tokens.iter().map<TokenKind>(
                                 fn(token Token) => token.kind).collect()
-                            assert(kinds == Vector<TokenKind>.from([Integer("42")]))
+                            assert(kinds == Vector<TokenKind>.from([IntLiteral("42")]))
                         end
                         _ => return Error("expected FStrTokensItem.")
                     end

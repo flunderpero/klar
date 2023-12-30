@@ -1055,6 +1055,32 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
         } else if (node instanceof ast.ImplDefinition) {
             // Will be evaluated next.
             impl_definitions.push({node, extern})
+        } else if (node instanceof ast.Use) {
+            if (node.path[0] !== ".") {
+                if (node.path.length !== 3 || node.path[1] !== ".") {
+                    throw new TypeCheckError(
+                        `Expected a \`use\` statement with two segments but got ${node.path.length}`,
+                        node.span,
+                    )
+                }
+                const enum_type = EnumType.from_env(node.path[0], env, node.span)
+                if (node.path[2] === "*") {
+                    for (const variant of enum_type.variants.values()) {
+                        env.add_enum_variant(variant, node.span)
+                    }
+                } else {
+                    const variant = enum_type.variants.get(node.path[2])
+                    if (!variant) {
+                        throw new TypeCheckError(
+                            `Enum ${quote(enum_type.signature)} has no variant ${quote(
+                                node.path[2],
+                            )}`,
+                            node.span,
+                        )
+                    }
+                    env.add_enum_variant(variant, node.span)
+                }
+            }
         } else if (node instanceof ast.ExternBlock) {
             // Forward declare functions last because they might depend on other types.
             for (const extern_node of node
@@ -2947,15 +2973,6 @@ export class TypeEnvironment {
 
     import(name: string, type: Type, span: Span) {
         this.add(name, type, span)
-        if (type instanceof EnumType) {
-            if (type.is_variant) {
-                this.add_enum_variant(type, span)
-            } else {
-                for (const variant of type.variants.values()) {
-                    this.add_enum_variant(variant, span)
-                }
-            }
-        }
     }
 
     get(name: string, span: Span): Type {
@@ -5307,6 +5324,22 @@ const test = {
             if let Some<i32>(value) = a => value
         `)
         assert.equal(type.signature, "i32")
+    },
+
+    test_use_to_import_enum_variants() {
+        const {env} = test.type_check(`
+            enum Option<T>:
+                Some(T)
+                None
+            end
+
+            use Option.*
+
+            let a = Some<i32>(1)
+            let b = None
+        `)
+        assert.equal(env.get("a", builtin_span).signature, "Option<T=i32>.Some")
+        assert.equal(env.get("b", builtin_span).signature, "Option<T>.None")
     },
 }
 

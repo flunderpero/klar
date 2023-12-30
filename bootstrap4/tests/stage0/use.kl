@@ -14,6 +14,7 @@ b
 
 use .use1.Point
 use .use1.ImportedEnum
+use ImportedEnum.B
 
 fn main():
     let p = Point.new(1, 2)
@@ -21,7 +22,7 @@ fn main():
     print(p.y)
     let enum_ = ImportedEnum.A
     enum_.print()
-    -- Enum variants should be auto-imported.
+    -- Enum variant has been imported.
     let b = B
     b.print()
 end

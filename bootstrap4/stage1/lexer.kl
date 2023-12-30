@@ -27,7 +27,7 @@ impl Iterator<Token> for Lexer:
             '-' =>
                 match self.iter.peek():
                     Some<char>('-') => self.match_comment()
-                    Some<char>('0'..'9') => self.match_integer(next, span)
+                    Some<char>('0'..'9') => self.match_int_literal(next, span)
                     _ => Token{kind: Minus, span: span.combine(self.span())}
                 end
             '(' => Token{kind: LParen, span}
@@ -78,7 +78,7 @@ impl Iterator<Token> for Lexer:
                     end
                     _ => Token{kind: GreaterThan, span}
                 end
-            '0'..'9' => self.match_integer(next, span)
+            '0'..'9' => self.match_int_literal(next, span)
             '"' => self.match_string(false)
             'a'..'z' | 'A'..'Z' | '_':
                 if next == 'f':
@@ -133,7 +133,7 @@ impl Iterator<Token> for Lexer:
         end
     end
 
-    fn match_integer(mut self, first char, span Span) Token:
+    fn match_int_literal(mut self, first char, span Span) Token:
         mut num = "".push_char(first)
         loop:
             match self.iter.peek():
@@ -141,7 +141,7 @@ impl Iterator<Token> for Lexer:
                 _ => break
             end
         end
-        Token{kind: Integer(num), span}
+        Token{kind: IntLiteral(num), span}
     end
 
     fn match_string(mut self, is_fstr bool) Token:
@@ -356,7 +356,7 @@ enum TokenKind:
     Ident(str)
     If
     Impl
-    Integer(str)
+    IntLiteral(str)
     LBrace
     LBracket
     LParen
@@ -385,6 +385,8 @@ enum TokenKind:
     Use
     WhiteSpace(char)
 end
+
+use TokenKind.*
 
 impl ToStr for TokenKind:
     fn to_str(self) str:
@@ -430,7 +432,7 @@ impl ToStr for TokenKind:
             Ident(ident) => f"Ident({ident})"
             If => "if"
             Impl => "impl"
-            Integer(num) => f"Integer({num})"
+            IntLiteral(num) => f"IntLiteral({num})"
             LBrace => "{"
             LBracket => "["
             LParen => "("
@@ -502,7 +504,7 @@ impl Token:
                 else => f"\"{items_str}\""
             end
             Ident(ident) => ident
-            Integer(num) => num
+            IntLiteral(num) => num
             Str(s, multi_line) =>
                 -- We use the actual source code to get the string literal
                 -- as it was written in the source code. We need to do this

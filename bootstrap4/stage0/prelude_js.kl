@@ -5,6 +5,8 @@ enum Option<T>:
     Some(T)
 end
 
+use Option.*
+
 impl Option<T>:
     fn is_none(self) bool:
         match self:
@@ -162,6 +164,8 @@ enum Result<T, E impl ToStr=str>:
     Ok(T)
     Error(E)
 end
+
+use Result.*
 
 impl Result<T, E>:
     fn is_ok(self) bool:

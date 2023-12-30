@@ -55,18 +55,18 @@ x
             and break continue else end enum extern false fn for if impl 
             let loop match mut not or return struct throws trait true use
             """, [
-            And, Break, Continue, Else, End, Enum, Extern, Bool(false), Fn, For, If, Impl, 
-            Let, Loop, Match, Mut, Not, Or, Return, Struct, Throws, Trait, Bool(true), Use
+            And, Break, Continue, Else, End, Enum, Extern, BoolLiteral(false), Fn, For, If, Impl, 
+            Let, Loop, Match, Mut, Not, Or, Return, Struct, Throws, Trait, BoolLiteral(true), Use
         ])
     end)
 
     test.group("string and f-string literals", fn():
         test.it("lexes string literals", fn() throws:
-            lex_run("\"hello\"", [Str("hello", false)])
+            lex_run("\"hello\"", [StrLiteral("hello", false)])
             -- Note: We can't distinguish between `\n` and `\\n` in the source code.
             --       That's not a shortcoming of the lexer, but the nature of things.
-            lex_run("\"\"\"hello\n\\nworld\"\"\"", [Str("hello\n\nworld", true)])
-            lex_run("\"escape \\n \\\"\"", [Str("escape \n \"", false)])
+            lex_run("\"\"\"hello\n\\nworld\"\"\"", [StrLiteral("hello\n\nworld", true)])
+            lex_run("\"escape \\n \\\"\"", [StrLiteral("escape \n \"", false)])
         end)
 
         test.it("lexes single-line f-strings", fn() throws:

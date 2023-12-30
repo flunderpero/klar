@@ -303,6 +303,13 @@ impl str:
         end
         s
     end
+
+    fn when(self, condition bool) str:
+        --- Returns `self` if the condition is met, otherwise an empty string.
+            This is useful in f-strings to insert a space only if a condition is met.
+        ---
+        if condition => self else => ""
+    end
 end
 
 -- Fixed size array

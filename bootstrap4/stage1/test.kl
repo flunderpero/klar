@@ -184,7 +184,7 @@ impl TestGroup:
         if result.failed > 0 =>
             logger.log(f"[{self.name}] {result.failed} / {result.total()} tests failed")
         else =>
-            logger.log(f"[{self.name}] ALL  {result.total()} tests passed")
+            logger.log(f"[{self.name}] {result.total()} tests passed")
         result
     end
 end

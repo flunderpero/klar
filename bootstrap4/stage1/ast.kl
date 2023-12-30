@@ -22,6 +22,7 @@ end
 enum LiteralKind:
     Int(i32)
     Bool(bool)
+    Str(str)
     Unit
 end
 
@@ -41,10 +42,16 @@ struct Ident:
     meta Meta
 end
 
+struct FStr:
+    exprs Vector<Expr>
+    meta Meta
+end
+
 enum Expr:
     Literal(Literal)
     Call(Call)
     Ident(Ident)
+    FStr(FStr)
 end
 
 struct FnDecl:
@@ -147,10 +154,10 @@ end
 impl ToDebugStr for ParseErrorKind:
     fn to_debug_str(self) str:
         match self:
-            UnexpectedToken(token) => f"(@error unexpected token: `{token}`)"
-            UnexpectedEOF => "(@error eof)"
-            InvalidIntLiteral(token) => "(@error invalid int literal)"
             ExprExpected(token) => "(@error expr expected)"
+            InvalidIntLiteral(token) => "(@error invalid int literal)"
+            UnexpectedEOF => "(@error eof)"
+            UnexpectedToken(token) => f"(@error unexpected token: `{token}`)"
         end
     end
 end
@@ -158,8 +165,9 @@ end
 impl ToDebugStr for Literal:
     fn to_debug_str(self) str:
         let lit = match self.kind:
-            Int(value) => f"(@int {value})"
             Bool(value) => f"(@bool {value})"
+            Int(value) => f"(@int {value})"
+            Str(value) => f"(@str{" ".when(value.len() > 0)}{value.replace("\n", "\\n")})"
             Unit=> "(@unit)"
         end
         f"{lit}{self.meta.to_debug_str()}"
@@ -171,8 +179,7 @@ impl ToDebugStr for Call:
         let args = " ".join(
             self.args.iter().map<str>(fn(it Expr) str => it.to_debug_str())
         )
-        let args_sep = if args.len() > 0 => " " else => ""
-        f"(@call {self.target.to_debug_str()}{args_sep}{args}{self.meta.to_debug_str()})"
+        f"(@call {self.target.to_debug_str()}{" ".when(args.len() > 0)}{args}{self.meta.to_debug_str()})"
     end
 end
 
@@ -180,12 +187,22 @@ impl ToDebugStr for Ident:
     fn to_debug_str(self) str => f"(@ident {self.name}{self.meta.to_debug_str()})"
 end
 
+impl ToDebugStr for FStr:
+    fn to_debug_str(self) str:
+        let exprs = " ".join(
+            self.exprs.iter().map<str>(fn(it Expr) str => it.to_debug_str())
+        )
+        f"(@fstr{" ".when(exprs.len() > 0)}{exprs}{self.meta.to_debug_str()})"
+    end
+end
+
 impl ToDebugStr for Expr:
     fn to_debug_str(self) str:
         match self:
-            Expr.Literal(value) => value.to_debug_str()
             Expr.Call(value) => value.to_debug_str()
+            Expr.FStr(value) => value.to_debug_str()
             Expr.Ident(value) => value.to_debug_str()
+            Expr.Literal(value) => value.to_debug_str()
         end
     end
 end

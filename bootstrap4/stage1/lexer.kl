@@ -109,7 +109,7 @@ impl Iterator<Token> for Lexer:
                     "end" => Token{kind: End, span: ident_span}
                     "enum" => Token{kind: Enum, span: ident_span}
                     "extern" => Token{kind: Extern, span: ident_span}
-                    "false" => Token{kind: Bool(false), span: ident_span}
+                    "false" => Token{kind: BoolLiteral(false), span: ident_span}
                     "fn" => Token{kind: Fn, span: ident_span}
                     "for" => Token{kind: For, span: ident_span}
                     "if" => Token{kind: If, span: ident_span}
@@ -124,7 +124,7 @@ impl Iterator<Token> for Lexer:
                     "struct" => Token{kind: Struct, span: ident_span}
                     "throws" => Token{kind: Throws, span: ident_span}
                     "trait" => Token{kind: Trait, span: ident_span}
-                    "true" => Token{kind: Bool(true), span: ident_span}
+                    "true" => Token{kind: BoolLiteral(true), span: ident_span}
                     "use" => Token{kind: Use, span: ident_span}
                     _ => Token{kind: Ident(ident), span: ident_span}
                 end
@@ -212,7 +212,7 @@ impl Iterator<Token> for Lexer:
                 fstr_items.push(FStrStrItem(s))
             end
             FStr(fstr_items, multi_line)
-        else => Str(s, multi_line)
+        else => StrLiteral(s, multi_line)
         Token{kind, span: span.combine(self.span())}
     end
 
@@ -333,7 +333,7 @@ end
 
 enum TokenKind:
     And
-    Bool(bool)
+    BoolLiteral(bool)
     Break
     Colon
     Comma
@@ -378,7 +378,7 @@ enum TokenKind:
     Return
     Slash
     Star
-    Str(str, bool)
+    StrLiteral(str, bool)
     Struct
     Throws
     Trait
@@ -393,7 +393,7 @@ impl ToStr for TokenKind:
         match self:
             -- todo (lang-feat): We should be able to generate most of this code automatically.
             And => "and"
-            Bool(b) => f"Bool({b})"
+            BoolLiteral(b) => f"BoolLiteral({b})"
             Break => "break"
             Colon => ":"
             Comma => ","
@@ -455,7 +455,7 @@ impl ToStr for TokenKind:
             Slash => "/"
             Star => "*"
             -- todo: escape string
-            Str(s, multi_line) => f"Str({s}, {multi_line})"
+            StrLiteral(s, multi_line) => f"StrLiteral({s}, {multi_line})"
             Struct => "struct"
             Throws => "throws"
             Trait => "trait"
@@ -483,7 +483,7 @@ impl Token:
             slice the source code.
         ---
         match self.kind:
-            Bool(b) => f"{b}"
+            BoolLiteral(b) => f"{b}"
             Comment(comment) => comment
             FStr(items, is_multi_line):
                 let items = items<FStrItem>.iter().map<str>(
@@ -505,7 +505,7 @@ impl Token:
             end
             Ident(ident) => ident
             IntLiteral(num) => num
-            Str(s, multi_line) =>
+            StrLiteral(s, multi_line) =>
                 -- We use the actual source code to get the string literal
                 -- as it was written in the source code. We need to do this
                 -- because we can't distinguish between `\n` and `\\n` 

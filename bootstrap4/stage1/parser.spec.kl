@@ -22,6 +22,7 @@ fn main():
     test.it("parses multi-line blocks", fn() throws:
         assert(block(": end") == "(@block)")
         assert(block(": 42 end") == "(@block (@int 42))")
+        assert(block(": foo() 42 end") == "(@block (@call (@ident foo)) (@int 42))")
     end)
 
     test.it("parses fn definitions", fn() throws:
@@ -30,12 +31,24 @@ fn main():
     end)
 
     test.group("literals", fn():
-        test.it("parses unit", fn() throws:
+        test.it("parses unit literals", fn() throws:
             assert(expr("()") == "(@unit)")
         end)
 
-        test.it("parses unit only if `)` immediately follows `(`", fn() throws:
+        test.it("parses unit literals only if `)` immediately follows `(`", fn() throws:
+            -- It's not required for ambiguity reasons, but having whitespace in between
+            -- obscures the intent of the code.
             assert(expr("()") == "(@unit)")
+        end)
+
+        test.it("parses bool literals", fn() throws:
+            assert(expr("true") == "(@bool true)")
+            assert(expr("false") == "(@bool false)")
+        end)
+
+        test.it("parses string literals", fn() throws:
+            assert(expr("\"\"") == "(@str)")
+            assert(expr("\"\"\"foo\nbar\"\"\"") == "(@str foo\\nbar)")
         end)
 
         test.group("int", fn():
@@ -53,6 +66,19 @@ fn main():
         end)
     end)
 
+    test.group("f-string", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(expr("f\"\"") == "(@fstr)")
+            assert(expr("f\"foo\"") == "(@fstr (@str foo))")
+            assert(expr("f\"foo {42}\"") == "(@fstr (@str foo ) (@int 42))")
+        end)
+
+        test.it("detects errors in f-string expressions", fn() throws:
+            -- `for` is a keyword and not an expression.
+            assert(expr("f\"{for}\"") == "(@error expr expected)")
+        end)
+    end)
+
     test.group("calls", fn():
         test.it("passes the happy path", fn() throws:
             assert(expr("main()") == "(@call (@ident main))")
@@ -66,6 +92,7 @@ fn main():
         end)
 
         test.it("requires `(` to be an immediate token after the call target", fn() throws:
+            -- This is to resolve ambiguity between calls, tuples, and the unit literal.
             assert(expr("main ()") == "(@ident main)")
             assert(expr("main--- comment ---()") == "(@ident main)")
         end)
@@ -103,7 +130,7 @@ fn main():
         if (opt.is_none()):
             return "no result"
         end
-        return opt.unwrap().to_debug_str()
+        opt.unwrap().to_debug_str()
     end
 
     fn expr(src str) str => parse(src, ParseFn.ParseExpr)

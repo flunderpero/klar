@@ -7,7 +7,11 @@
     to their canonical form by the parser:
 
     - `throws` will convert the return type to `Result<T, Error>`
-    - `<type>?` will convert to `Option<type>`
+      as well as converting the return expression (both explicit and implicit)
+      to `Ok(expr)`.
+    - `<type>?` will convert to `Option<type>` as well as converting
+      the return expression (both explicit and implicit) to `Some(expr)`.
+      All optional call arguments will be converted to `Some(expr)` as well.
 
     `Item.is_synthetic` is used to indicate whether the item
     has been altered by the parser as part of desugaring.
@@ -24,19 +28,21 @@
           value in any case. The above would then be written as
           `if true => return () func()` which would be unambiguous.
 ---
+use .ast.Block
+use .ast.BlockItem
+use .ast.Call
+use .ast.Expr
+use .ast.FnDecl
 use .ast.FnDef
+use .ast.FStr
+use .ast.Ident
+use .ast.Item
 use .ast.Literal
+use .ast.LiteralKind
+use .ast.Meta
 use .ast.ParseError
 use .ast.ParseErrorKind
-use .ast.Block
-use .ast.Meta
-use .ast.FnDecl
-use .ast.Call
-use .ast.Ident
-use .ast.Expr
-use .ast.LiteralKind
-use .ast.BlockItem
-use .ast.Item
+use .lexer.FStrItem
 use .lexer.Token
 use .lexer.TokenKind
 
@@ -83,7 +89,7 @@ impl Iterator<Token> for TokenIter:
         v
     end
 
-    fn peek_immediate(self) Token?:
+    fn peek_immediate(mut self) Token?:
         --- Peek the next token (including whitespace and comments).
         ---
         if self.peeked.is_some() => return self.peeked
@@ -149,7 +155,6 @@ impl Iterator<Token> for TokenIter:
 
     fn expect_lexical_token(mut self, kind TokenKind) Token throws ParseError:
         --- Expect the next token (without whitespace and comments) to match the given kind.
-            This only works with token that don't have any associated data.
         ---
         self.expect_token(fn(token Token) bool => token.kind == kind)!
     end
@@ -164,7 +169,6 @@ impl Iterator<Token> for TokenIter:
 
     fn expect_immediate_lexical_token(mut self, kind TokenKind) Token throws ParseError:
         --- Expect the next token (including whitespace and comments) to match the given kind.
-            This only works with token that don't have any associated data.
         ---
         self.expect_immediate_token(fn(token Token) bool => token.kind == kind)!
     end
@@ -204,10 +208,16 @@ impl Parser:
     end
 
     fn parse_expr(mut self, token Token) Expr? throws ParseError:
+        let mark = self.iter.mark_prev()
         mut expr = match token.kind:
-            TokenKind.IntLiteral(i) => Expr.Literal(self.parse_integer(i, token)!)
+            TokenKind.IntLiteral(i) => Expr.Literal(self.parse_int(i, token)!)
+            TokenKind.BoolLiteral(b) => 
+                Expr.Literal(Literal{kind: LiteralKind.Bool(b), meta: self.meta(mark, false)})
+            TokenKind.StrLiteral(s, _) => 
+                Expr.Literal(Literal{kind: LiteralKind.Str(s), meta: self.meta(mark, false)})
             TokenKind.LParen => self.parse_unit_or_tuple(token)!
-            TokenKind.Ident(name) => Expr.Ident(self.parse_ident(name)!)
+            TokenKind.Ident(name) => Expr.Ident(Ident{name, meta: self.meta(mark, false)})
+            TokenKind.FStr(items, _) => Expr.FStr(self.parse_fstr(items)!)
             _ => return None
         end
         loop:
@@ -220,7 +230,7 @@ impl Parser:
         expr
     end
 
-    fn parse_integer(self, value str, token Token) Literal throws ParseError:
+    fn parse_int(self, value str, token Token) Literal throws ParseError:
         let mark = self.iter.mark_prev()
         match i32.from_str(value):
             Ok<i32>(i) => Literal{kind: LiteralKind.Int(i), meta: self.meta(mark, false)}
@@ -242,9 +252,32 @@ impl Parser:
         end 
     end
 
-    fn parse_ident(mut self, name str) Ident throws ParseError:
-        let mark = self.iter.mark()
-        Ident{name, meta: self.meta(mark, false)}
+    fn parse_fstr(mut self, items Vector<FStrItem>) FStr throws ParseError:
+        let mark = self.iter.mark_prev()
+        mut exprs = Vector<Expr>.new()
+        mut idx = 0
+        -- todo (lang-feat): We tried to implement this with `items.iter().map()` but
+        --                   we were not able to propagate errors from the map closure.
+        loop:
+            if idx >= items.len() => break
+            let item = items[idx]
+            idx = idx + 1
+            let expr = match item:
+                FStrItem.FStrTokensItem(tokens):
+                    mut parser = Parser.new(TokenIter.new(tokens))
+                    let expr = parser.parse_expr(parser.iter.force_next()!)!
+                    match expr:
+                        Some<Expr>(value) => value
+                        None => return parse_error(ExprExpected(tokens[0]), tokens[0])
+                    end
+                end
+                FStrItem.FStrStrItem(s):
+                    Expr.Literal(Literal{kind: LiteralKind.Str(s), meta: self.meta(mark, false)})
+                end
+            end
+            exprs.push(expr)
+        end
+        FStr{exprs, meta: self.meta(mark, false)}
     end
 
     fn parse_fn_def(mut self, token Token) FnDef throws ParseError: 

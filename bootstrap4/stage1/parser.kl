@@ -11,20 +11,34 @@
 
     `Item.is_synthetic` is used to indicate whether the item
     has been altered by the parser as part of desugaring.
+
+    == TODO: Ambiguity
+
+    These constructs are still ambiguous:
+
+    - `if true => return func()`
+        - Is this a return statement or a return expression? 
+          Writing it as `if true: return end func()` or
+          `if true: return func() end` would make it unambiguous.
+        - We could remove the ambiguity here by requiring a return
+          value in any case. The above would then be written as
+          `if true => return () func()` which would be unambiguous.
 ---
-use .lexer.Token
-use .lexer.TokenKind
 use .ast.FnDef
 use .ast.Literal
-use .ast.Item
-use .ast.Expr
 use .ast.ParseError
 use .ast.ParseErrorKind
 use .ast.Block
 use .ast.Meta
 use .ast.FnDecl
+use .ast.Call
+use .ast.Ident
+use .ast.Expr
 use .ast.LiteralKind
 use .ast.BlockItem
+use .ast.Item
+use .lexer.Token
+use .lexer.TokenKind
 
 struct TokenIter:
     --- An iterator over tokens that can be peeked and rewound.
@@ -36,35 +50,65 @@ end
 
 impl Iterator<Token> for TokenIter:
     fn next(mut self) Token?:
+        --- Return the next token or `None` ignoring whitespace and comments.
+        ---
+        loop:
+            let token = self.immediate()
+            match token:
+                Some(Token{kind: WhiteSpace(_) | Comment(_), span: _}) => continue
+                _ => return token
+            end
+        end
+        -- todo (lang-feat): Semantic analysis should be able to infer that this is unreachable.
+        None
+    end
+
+    fn immediate(mut self) Token?:
+        --- Return the next token or `None` but including whitespace and comments.
+        ---
         if self.idx >= self.tokens.len() => return None
-        if self.peeked.is_some():
+        let v = if self.peeked.is_some():
             let value = self.peeked.unwrap()
             self.peeked = None
             value
         else:
             let value = self.tokens[self.idx]
-            self.idx = self.idx + 1
             value
         end
+        self.idx = self.idx + 1
+        v
+    end
+
+    fn peek_immediate(self) Token?:
+        --- Peek the next token (including whitespace and comments).
+        ---
+        if self.peeked.is_some() => return self.peeked
+        if self.idx >= self.tokens.len() => return None
+        let value = self.tokens[self.idx]
+        self.peeked = Some(value)
+        value
     end
 
     fn force_next(mut self) Token throws ParseError:
+        --- Return the next token (excluding whitespace and commetns) or 
+            an error if there are no more tokens.
+        ---
         match self.next():
             Some<Token>(token) => Ok(token)
             None => return parse_error(UnexpectedEOF, None)
         end
     end
 
-    fn force_peek(mut self) Token throws ParseError:
-        match self.peeked:
-            Some<Token>(token) => token
-            None:
-                let peeked = self.force_next()!
-                self.peeked = Some<Token>(peeked)
-                peeked
-            end
+    fn force_immediate(mut self) Token throws ParseError:
+        --- Return the next token (including whitespace and commetns) or 
+            an error if there are no more tokens.
+        ---
+        match self.immediate():
+            Some<Token>(token) => Ok(token)
+            None => return parse_error(UnexpectedEOF, None)
         end
     end
+
 
     fn mark(self) i32 => self.idx 
 
@@ -82,37 +126,49 @@ impl Iterator<Token> for TokenIter:
         self.tokens.slice_copy(mark, self.idx)
     end
 
-
     fn expect_ident(mut self) str throws ParseError:
+        --- Expect the next token (without whitespace and comments) to be an identifier.
+        ---
         match self.force_next()!:
-            Token{kind: Ident(name), span: _ } => Ok(name)
+            Token{kind: TokenKind.Ident(name), span: _ } => Ok(name)
             token => return parse_error(UnexpectedToken(token), token)
         end
     end
 
     fn expect_token(mut self, predicate (fn(Token) bool)) Token throws ParseError:
+        --- Expect the next token (without whitespace and comments) to match the given predicate.
+        ---
         let token = self.force_next()!
         if not predicate(token) => return parse_error(UnexpectedToken(token), token)
         token
     end
 
     fn expect_lexical_token(mut self, kind TokenKind) Token throws ParseError:
-        --- This only works with token that don't have any associated data.
+        --- Expect the next token (without whitespace and comments) to match the given kind.
+            This only works with token that don't have any associated data.
         ---
         self.expect_token(fn(token Token) bool => token.kind == kind)!
+    end
+
+    fn expect_immediate_token(mut self, predicate (fn(Token) bool)) Token throws ParseError:
+        --- Expect the next token (including whitespace and comments) to match the given predicate.
+        ---
+        let token = self.force_immediate()!
+        if not predicate(token) => return parse_error(UnexpectedToken(token), token)
+        token
+    end
+
+    fn expect_immediate_lexical_token(mut self, kind TokenKind) Token throws ParseError:
+        --- Expect the next token (including whitespace and comments) to match the given kind.
+            This only works with token that don't have any associated data.
+        ---
+        self.expect_immediate_token(fn(token Token) bool => token.kind == kind)!
     end
 end
 
 impl TokenIter:
     fn new(tokens Vector<Token>) TokenIter:
-        -- Ignore all whitespace and comment tokens for now.
-        let filtered_tokens = tokens.iter().filter(
-            fn(token Token) bool => match token.kind:
-                WhiteSpace(_) | Comment(_) => false
-                _ => true
-            end
-        )
-        TokenIter{tokens: filtered_tokens.collect(), peeked: None, idx: 0}
+        TokenIter{tokens, peeked: None, idx: 0}
     end
 end
 
@@ -138,16 +194,26 @@ impl Parser:
 
     fn parse_item(mut self, token Token) Item? throws ParseError:
         match token.kind:
-            TokenKind.Fn => Item.FnDef(self.parse_fn(token)!)
+            TokenKind.Fn => Item.FnDef(self.parse_fn_def(token)!)
             _ => return None
         end
     end
 
     fn parse_expr(mut self, token Token) Expr? throws ParseError:
-        match token.kind:
+        mut expr = match token.kind:
             Integer(i) => Expr.Literal(self.parse_integer(i, token)!)
+            LParen => self.parse_unit_or_tuple(token)!
+            TokenKind.Ident(name) => Expr.Ident(self.parse_ident(name)!)
             _ => return None
         end
+        loop:
+            expr = match self.iter.peek_immediate():
+                Some(Token{kind: TokenKind.LParen, span: _}) => 
+                    Expr.Call(self.parse_call(expr)!)
+                _ => break
+            end
+        end
+        expr
     end
 
     fn parse_integer(self, value str, token Token) Literal throws ParseError:
@@ -161,7 +227,23 @@ impl Parser:
         end
     end
 
-    fn parse_fn(mut self, token Token) FnDef throws ParseError: 
+    fn parse_unit_or_tuple(mut self, token Token) Expr throws ParseError:
+        let mark = self.iter.mark_prev()
+        let immediate = self.iter.immediate()
+        match immediate:
+            Some(Token{kind: TokenKind.RParen, span: _}):
+                Expr.Literal(Literal{kind: LiteralKind.Unit, meta: self.meta(mark, false)})
+            end
+            _ => return parse_error(UnexpectedToken(immediate.unwrap()), immediate.unwrap())
+        end 
+    end
+
+    fn parse_ident(mut self, name str) Ident throws ParseError:
+        let mark = self.iter.mark()
+        Ident{name, meta: self.meta(mark, false)}
+    end
+
+    fn parse_fn_def(mut self, token Token) FnDef throws ParseError: 
         let mark = self.iter.mark_prev()
         let name = self.iter.expect_ident()!
         self.iter.expect_lexical_token(TokenKind.LParen)!
@@ -169,6 +251,34 @@ impl Parser:
         let decl = FnDecl{name, meta: self.meta(mark, false)}
         let body = self.parse_block()!
         FnDef{decl, body, meta: self.meta(mark, false)}
+    end
+
+    fn parse_call(mut self, target Expr) Call throws ParseError:
+        let mark = self.iter.mark()
+        self.iter.expect_immediate_lexical_token(TokenKind.LParen)!
+        let args = Vector<Expr>.new()
+        mut got_comma = false
+        loop:
+            let next_token = self.iter.force_next()!
+            match next_token.kind:
+                TokenKind.RParen => break
+                TokenKind.Comma:
+                    if got_comma => return parse_error(ExprExpected(next_token), next_token)
+                    got_comma = true
+                    continue
+                end
+                _: 
+                    if args.len() > 0 and not got_comma => 
+                        return parse_error(UnexpectedToken(next_token), next_token)
+                    got_comma = false
+                    match self.parse_expr(next_token)!:
+                        Some<Expr>(expr) => args.push(expr)
+                        None => return parse_error(ExprExpected(next_token), next_token)
+                    end
+                end
+            end
+        end
+        Call{target, args, meta: self.meta(mark, false)}
     end
 
     fn parse_block(mut self) Block throws ParseError:

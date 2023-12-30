@@ -10,26 +10,69 @@ use .test.Test
 
 fn main():
     mut test = Test.new("parser", false)
-    test.it("parses literals", fn() throws:
-        assert(expr("42") == "(@int 42)")
-        assert(expr("-42") == "(@int -42)")
-        assert(expr("2147483647") == "(@int 2147483647)")
-        assert(expr("2147483648") == "(@error invalid_int_literal)")
-        return ()
-    end)
+
     test.it("ignores comments and whitespace", fn() throws:
         assert(expr("\n 42 // comment") == "(@int 42)")
-        return ()
     end)
+
+    test.it("parses identifiers", fn() throws:
+        assert(expr("a") == "(@ident a)")
+    end)
+
     test.it("parses multi-line blocks", fn() throws:
         assert(block(": end") == "(@block)")
         assert(block(": 42 end") == "(@block (@int 42))")
-        return ()
     end)
+
     test.it("parses fn definitions", fn() throws:
         assert(item("fn main(): end") == "(@fndef (@fndecl main) (@block))")
         assert(item("fn main(): 42 end") == "(@fndef (@fndecl main) (@block (@int 42)))")
-        return ()
+    end)
+
+    let test_literals = test.group("literals")
+
+    let test_int = test_literals.group("int")
+
+    test_int.it("passes the happy path", fn() throws:
+        assert(expr("42") == "(@int 42)")
+        assert(expr("-42") == "(@int -42)")
+    end)
+
+    test_int.it("detects integer overflow", fn() throws:
+        assert(expr("2147483647") == "(@int 2147483647)")
+        assert(expr("2147483648") == "(@error invalid int literal)")
+        assert(expr("-2147483648") == "(@int -2147483648)")
+        assert(expr("-2147483649") == "(@error invalid int literal)")
+    end)
+
+    test_literals.it("parses unit", fn() throws:
+        assert(expr("()") == "(@unit)")
+    end)
+
+    test_literals.it("parses unit only if `)` immediately follows `(`", fn() throws:
+        assert(expr("()") == "(@unit)")
+    end)
+
+    let call_test = test.group("calls")
+
+    call_test.it("passes the happy path", fn() throws:
+        assert(expr("main()") == "(@call (@ident main))")
+        assert(expr("main(42)") == "(@call (@ident main) (@int 42))")
+        assert(expr("main(42, 43)") == "(@call (@ident main) (@int 42) (@int 43))")
+    end)
+
+    call_test.it("ignores trailing comma in argument list", fn() throws:
+        assert(expr("main(42,)") == "(@call (@ident main) (@int 42))")
+        assert(expr("main(42, 43,)") == "(@call (@ident main) (@int 42) (@int 43))")
+    end)
+
+    call_test.it("requires `(` to be an immediate token after the call target", fn() throws:
+        assert(expr("main ()") == "(@ident main)")
+        assert(expr("main--- comment ---()") == "(@ident main)")
+    end)
+
+    call_test.it("can chain calls", fn() throws:
+        assert(expr("main()()") == "(@call (@call (@ident main)))")
     end)
 
     enum ParseFn:

@@ -8,10 +8,10 @@ shopt -s nullglob
 
 # echo "Testing lexer ..."
 bun ../stage0/compiler.ts lexer.spec.kl build/lexer.spec.js --debug-errors
-build/lexer.spec.js
+build/lexer.spec.js $@
 
 bun ../stage0/compiler.ts parser.spec.kl build/parser.spec.js --debug-errors
-build/parser.spec.js
+build/parser.spec.js $@
 
 # echo "Testing all source files under ../tests/stage0 ..."
 # mkdir -p build

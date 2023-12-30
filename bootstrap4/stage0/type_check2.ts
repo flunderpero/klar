@@ -400,11 +400,6 @@ function expect_type_can_be_used_in_assignments(type: Type, env: TypeEnvironment
         const unresolved_type_variables = type
             .unresolved_type_variables()
             .filter((v) => env.get_or_null(v.name) === null)
-        if (type instanceof EnumType) {
-            if (!type.is_variant) {
-                throw new TypeCheckError(`Cannot assign enum type ${quote(type.signature)}`, span)
-            }
-        }
         if (unresolved_type_variables.length > 0) {
             if (type instanceof EnumType) {
                 if (type.variant_tuple_type!.fields.size === 0) {
@@ -4417,32 +4412,6 @@ const test = {
                     Foo<i32>.Baz(true)
                 `),
             /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
-        )
-    },
-
-    test_enum_type_cannot_be_assigned_in_variable_declaration() {
-        assert.throws(
-            () =>
-                test.type_check(`
-                    enum Foo:
-                    end
-                    let a = Foo
-                `),
-            /Cannot assign enum type/,
-        )
-    },
-
-    test_enum_type_cannot_be_assigned() {
-        assert.throws(
-            () =>
-                test.type_check(`
-                    enum Foo:
-                        Bar
-                    end
-                    mut a = Foo.Bar
-                    a = Foo
-                `),
-            /Cannot assign enum type/,
         )
     },
 

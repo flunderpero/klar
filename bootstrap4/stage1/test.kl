@@ -2,12 +2,48 @@
 ---
 
 struct Test:
+    verbose bool
+    root_group TestGroup
+    collect_group TestGroup
+    logger TestLogger
+end
+
+struct TestCase:
     name str
-    tests Vector<(str, (fn() throws))>
-    groups Vector<Test>
+    f (fn() throws)
+end
+
+struct TestGroup:
+    name str
+    tests Vector<TestCase>
+    groups Vector<TestGroup>
+end
+
+struct TestRunConfig:
     logger TestLogger
     verbose bool
+end
+
+struct TestRunResult:
+    passed i32
     failed i32
+end
+
+impl TestRunResult:
+    fn new() TestRunResult:
+        TestRunResult{passed: 0, failed: 0}
+    end
+
+    fn update(mut self, other TestRunResult):
+        self.passed = self.passed + other.passed
+        self.failed = self.failed + other.failed
+    end
+
+    fn inc_passed(mut self) => self.passed = self.passed + 1
+
+    fn inc_failed(mut self) => self.failed = self.failed + 1
+
+    fn total(self) i32 => self.passed + self.failed
 end
 
 struct TestLogger:
@@ -25,54 +61,83 @@ impl TestLogger:
         print(f"{indent}{indented_msg}")
     end
 
-    fn indent(self) TestLogger:
-        TestLogger{indent_: self.indent_ + 1}
-    end
+    fn indent(mut self) => self.indent_ = self.indent_ + 1
+
+    fn dedent(mut self) => self.indent_ = self.indent_ - 1
 end
 
 impl Test:
     fn new(name str, verbose bool) Test:
-        Test{
-            name, 
-            tests: Vector<(str, (fn() throws))>.new(), 
-            groups: Vector<Test>.new(),
-            logger: TestLogger.new(),
-            verbose,
-            failed: 0
-        }
+        let root_group = TestGroup.new(name)
+        Test{verbose, root_group, collect_group: root_group, logger: TestLogger.new()}
+    end
+
+    fn new_from_args(name str, args Vector<str>) Test:
+        --- Create a new test from command line arguments.
+
+            Command line arguments:
+              * `--verbose`: print test logs to stdout.
+        ---
+        let verbose = args.iter().any(fn(arg str) => arg == "--verbose") 
+        Test.new(name, verbose)
     end
 
     fn it(self, name str, f (fn() throws)):
         --- Add a test to the current group.
         ---
-        self.tests.push((name, f))
+        self.collect_group.tests.push(TestCase{name, f})
     end
 
-    fn group(self, name str) Test:
-        --- Create a new group of tests.
+    fn group(mut self, name str, collect (fn())):
+        --- Create a new group of tests. All tests and groups added within the 
+            `collect` function will be added to the new group. 
         ---
-        mut group = Test.new(name, self.verbose)
-        group.logger = self.logger.indent()
-        self.groups.push(group)
-        group
+        let collect_group = self.collect_group
+        mut group = TestGroup.new(name)
+        self.collect_group = group
+        collect()
+        self.collect_group = collect_group
+        collect_group.groups.push(group)
     end
 
     fn log(self, msg str):
-        --- Log a message to the current group's logger so that it will be
+        --- Log a message to the currently tested group's logger so that it will be
             indented properly.
         ---
         if self.verbose => self.logger.log(msg)
     end
 
-    fn run_internal(mut self):
-        self.failed = 0
-        let logger = self.logger
-        -- Set the internal logger to the group's logger indented once.
-        -- This is so that `test.log()` calls will be indented correctly.
-        self.logger = self.logger.indent()
-        self.tests.iter().for_each(fn(test (str, (fn() throws))):
-            let name = f"it {test.0}"
-            if self.verbose => logger.log(f"[{self.name}] RUN  {name}")
+    fn run(self) TestRunResult:
+        --- Run all collected tests.
+        ---
+        let config = TestRunConfig{logger: self.logger, verbose: self.verbose}
+        self.root_group.run(config)
+    end
+
+    fn run_and_exit(self):
+        --- Run all collected tests and exit the program with the appropriate exit
+            code.
+        ---
+        let result = self.run()
+        if result.failed > 0 => exit(1)
+        exit(0)
+    end
+end
+
+impl TestGroup:
+    fn new(name str) TestGroup:
+        TestGroup{ name, tests: Vector<TestCase>.new(), groups: Vector<TestGroup>.new() }
+    end
+
+    fn run(self, mut config TestRunConfig) TestRunResult:
+        mut result = TestRunResult.new()
+        mut logger = config.logger
+        self.tests.iter().for_each(fn(test TestCase):
+            let name = f"it {test.name}"
+            if config.verbose:
+                logger.log(f"[{self.name}] RUN  {name}")
+            end
+            logger.indent()
             mut panicked = 0
             mut panic_message = ""
             mut panic_location = ""
@@ -83,49 +148,43 @@ impl Test:
                 panic_message = message
                 panic_location = location
             end)
-            let res = test.1()
+            let res = test.f()
+            logger.dedent()
             if panicked > 0:
-                self.failed = self.failed + 1
+                result.inc_failed()
                 logger.log(f"[{self.name}] FAIL {name}: panicked with")
-                logger.indent().log(f"{panic_message}\nat {panic_location}")
+                logger.indent()
+                logger.log(f"{panic_message}\nat {panic_location}")
                 if panicked > 1:
-                    logger.indent().log(f"(panicked {panicked} times)")
+                    logger.log(f"(panicked {panicked} times)")
                 end
+                logger.dedent()
             else =>
                 match res:
-                    Ok(_) => logger.log(f"[{self.name}] PASS {name}")
+                    Ok(_):
+                        result.inc_passed()
+                        logger.log(f"[{self.name}] PASS {name}")
+                    end
                     Error(error):
-                        self.failed = self.failed + 1
-                        logger.log(f"[{self.name}] FAIL {name}: {error}")
+                        result.inc_failed()
+                        logger.log(f"[{self.name}] FAIL {name}")
+                        logger.indent()
+                        logger.log(f"{error}")
+                        logger.dedent()
                     end
                 end
             register_panic_handler(old_panic_handler);
         end)
-        self.logger = logger
-    end
-
-    fn total_and_failed(self) (i32, i32):
-        mut total_tests = self.tests.len() 
-        mut total_failed = self.failed
-        self.groups.iter().for_each(fn(group Test):
-            let group_numbers = group.total_and_failed()
-            total_tests = total_tests + group_numbers.0
-            total_failed = total_failed + group_numbers.1
+        self.groups.iter().for_each(fn(group TestGroup):
+            logger.indent()
+            let group_result = group.run(config)
+            result.update(group_result)
+            logger.dedent()
         end)
-        return (total_tests, total_failed)
-    end
-    
-    fn run(mut self):
-        --- Run all collected tests.
-        ---
-        self.run_internal()
-        self.groups.iter().for_each(fn(group Test):
-            group.run()
-        end)
-        let res = self.total_and_failed()
-        if res.1 > 0 =>
-            self.logger.log(f"[{self.name}] {res.1} / {res.0} tests failed")
+        if result.failed > 0 =>
+            logger.log(f"[{self.name}] {result.failed} / {result.total()} tests failed")
         else =>
-            self.logger.log(f"[{self.name}] ALL  {res.0} tests passed")
+            logger.log(f"[{self.name}] ALL  {result.total()} tests passed")
+        result
     end
 end

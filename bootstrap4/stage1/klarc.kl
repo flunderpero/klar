@@ -1,7 +1,7 @@
 use .lexer.Lexer
 use .lexer.TokenKind
 use .lexer.Token
-use .ast.Item
+use .ast.Module
 use .parser.Parser
 use .parser.TokenIter
 use .ast.ParseErrorKind
@@ -36,7 +36,7 @@ fn lex(src str, file str, debug_level DebugLevel) Vector<Token>:
     let lex_errors = tokens.iter().filter(
         fn(token Token) bool:
             match token.kind:
-                LexError(_) => true
+                TokenKind.LexError(_) => true
                 _ => false
             end
         end
@@ -51,7 +51,7 @@ fn lex(src str, file str, debug_level DebugLevel) Vector<Token>:
             end
         end
     end
-    if debug_level == DebugLevel.Warn:
+    if debug_level == DebugLevel.Warn or debug_level == DebugLevel.Debug:
         if lex_errors.len() > 0:
             print("Lex errors:")
             let iter = lex_errors.iter()
@@ -66,8 +66,8 @@ fn lex(src str, file str, debug_level DebugLevel) Vector<Token>:
     tokens
 end
 
-fn parse(tokens Vector<Token>) Item throws ParseErrorKind:
-    Parser.parse(TokenIter.new(tokens))
+fn parse(tokens Vector<Token>) Module throws ParseErrorKind:
+    Parser.new(TokenIter.new(tokens)).parse_module()
 end
 
 fn main():
@@ -76,7 +76,7 @@ fn main():
         exit(1)
         return
     end
-    -- todo (lang-feat) We should be able to replace this with a simple block instead of a IIFE.
+    -- todo (lang-feat) We should be able to replace this with a simple block instead of an IIFE.
     let debug_level = (fn () DebugLevel:
         if env.args.iter().any(fn(s str) bool => s == "--debug") => return DebugLevel.Debug
         else => if env.args.iter().any(fn(s str) bool => s == "--warn") => return DebugLevel.Warn
@@ -93,7 +93,10 @@ fn main():
     let src = src_read.unwrap()
     let tokens = lex(src, src_file, debug_level)
     match parse(tokens):
-        Ok<Item>(item) => print(item.to_debug_str())
-        Error<(), ParseErrorKind>(error) => print(error.to_debug_str())
+        Ok<Module>(module) => print(module.to_debug_str())
+        Error<(), ParseErrorKind>(error):
+            print(error.to_debug_str())
+            exit(3)
+        end
     end
 end

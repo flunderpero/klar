@@ -12,6 +12,7 @@ enum ParseErrorKind:
     UnexpectedEOF
     InvalidIntLiteral(Token)
     ExprExpected(Token)
+    IdentExpected(Token)
 end
 
 struct ParseError:
@@ -54,12 +55,50 @@ enum Expr:
     FStr(FStr)
 end
 
-struct FnDecl:
-    name str
+struct GenericArg:
+    type Type
     meta Meta
 end
 
-struct FnDef:
+struct NameSegment:
+    ident Ident
+    args Vector<GenericArg>?
+    meta Meta
+end
+
+struct Name:
+    --- A name is a series of segments, separated by `.`.
+        A segment can have generic arguments.
+        Example: `module.Enum<T>.Variant`.
+    ---
+    segments Vector<NameSegment>
+    meta Meta
+end
+
+enum TypeKind:
+    Name(Name)
+    Unit
+end
+
+struct Type:
+    kind TypeKind
+    meta Meta
+end
+
+struct Param:
+    ident Ident
+    type Type
+    meta Meta
+end
+
+struct FnDecl:
+    ident Ident
+    params Vector<Param>
+    return_type Type
+    meta Meta
+end
+
+struct Fn:
     decl FnDecl
     body Block
     meta Meta
@@ -72,11 +111,26 @@ end
 
 enum BlockItem:
     Expr(Expr)
-    FnDef(FnDef)
+    Fn(Fn)
+    -- Enum(Enum)
+    -- Impl(Impl)
+    -- Struct(Struct)
+    -- Trait(Trait)
 end
 
-enum Item:
-    FnDef(FnDef)
+enum ModuleItem:
+    Fn(Fn)
+    -- Use(Use)
+    -- Extern(Extern)
+    -- Enum(Enum)
+    -- Impl(Impl)
+    -- Struct(Struct)
+    -- Trait(Trait)
+end
+
+struct Module:
+    items Vector<ModuleItem>
+    meta Meta
 end
 
 struct Id:
@@ -112,15 +166,64 @@ impl ToDebugStr for Meta:
     end
 end
 
-impl ToDebugStr for FnDecl:
-    fn to_debug_str(self) str => f"(@fndecl{self.meta.to_debug_str()} {self.name})"
+impl ToDebugStr for NameSegment:
+    fn to_debug_str(self) str:
+        let args = match self.args:
+            Some(args) => " ".join(
+                args.iter().map<str>(fn(it GenericArg) str => it.type.to_debug_str())
+            )
+            None => ""
+        end
+        f"(@seg {self.ident.to_debug_str()}{self.meta.to_debug_str()}{args})"
+    end
 end
 
-impl ToDebugStr for Item:
+impl ToDebugStr for Name:
+    fn to_debug_str(self) str:
+        let segments = " ".join(
+            self.segments.iter().map<str>(fn(it NameSegment) str => it.to_debug_str())
+        )
+        f"(@name {segments}{self.meta.to_debug_str()})"
+    end
+end
+
+impl ToDebugStr for Type:
+    fn to_debug_str(self) str:
+        match self.kind:
+            TypeKind.Name(x) => x.to_debug_str()
+            TypeKind.Unit => "(@unit)"
+        end
+    end
+end
+
+impl ToDebugStr for Param:
+    fn to_debug_str(self) str => f"(@param {self.ident.to_debug_str()}{self.meta.to_debug_str()} {self.type.to_debug_str()})"
+end
+
+impl ToDebugStr for FnDecl:
+    fn to_debug_str(self) str:
+        let params = " ".join(
+            self.params.iter().map<str>(fn(it Param) str => it.to_debug_str())
+        )
+        let return_type = self.return_type.to_debug_str()
+        f"(@fndecl {self.ident.to_debug_str()}{self.meta.to_debug_str()}{" ".when(params.len() > 0)}{params} {return_type})"
+    end
+end
+
+impl ToDebugStr for ModuleItem:
     fn to_debug_str(self) str:
         match self:
-            Item.FnDef(x) => x.to_debug_str()
+            ModuleItem.Fn(x) => x.to_debug_str()
         end
+    end
+end
+
+impl ToDebugStr for Module:
+    fn to_debug_str(self) str:
+        let items = " ".join(
+            self.items.iter().map<str>(fn(it ModuleItem) str => it.to_debug_str())
+        )
+        f"(@mod{" ".when(items.len() > 0)}{items})"
     end
 end
 
@@ -128,16 +231,16 @@ impl ToDebugStr for BlockItem:
     fn to_debug_str(self) str:
         match self:
             BlockItem.Expr(x) => x.to_debug_str()
-            BlockItem.FnDef(x) => x.to_debug_str()
+            BlockItem.Fn(x) => x.to_debug_str()
         end
     end
 end
 
-impl ToDebugStr for FnDef:
+impl ToDebugStr for Fn:
     fn to_debug_str(self) str:
         let body = self.body.to_debug_str()
         let decl = self.decl.to_debug_str()
-        f"(@fndef {decl} {body})"
+        f"(@fn {decl} {body})"
     end
 end
 
@@ -155,6 +258,7 @@ impl ToDebugStr for ParseErrorKind:
     fn to_debug_str(self) str:
         match self:
             ExprExpected(token) => "(@error expr expected)"
+            IdentExpected(token) => "(@error ident expected)"
             InvalidIntLiteral(token) => "(@error invalid int literal)"
             UnexpectedEOF => "(@error eof)"
             UnexpectedToken(token) => f"(@error unexpected token: `{token}`)"
@@ -165,10 +269,10 @@ end
 impl ToDebugStr for Literal:
     fn to_debug_str(self) str:
         let lit = match self.kind:
-            Bool(value) => f"(@bool {value})"
-            Int(value) => f"(@int {value})"
-            Str(value) => f"(@str{" ".when(value.len() > 0)}{value.replace("\n", "\\n")})"
-            Unit=> "(@unit)"
+            LiteralKind.Bool(value) => f"(@bool {value})"
+            LiteralKind.Int(value) => f"(@int {value})"
+            LiteralKind.Str(value) => f"(@str{" ".when(value.len() > 0)}{value.replace("\n", "\\n")})"
+            LiteralKind.Unit=> "(@unit)"
         end
         f"{lit}{self.meta.to_debug_str()}"
     end

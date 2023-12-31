@@ -2,9 +2,9 @@ use .lexer.Lexer
 use .lexer.Token
 use .parser.Parser
 use .parser.TokenIter
+use .parser.ParseItem
 use .ast.ParseError
 use .ast.ToDebugStr
-use .ast.Item
 use .ast.Expr
 use .test.Test
 
@@ -19,15 +19,34 @@ fn main():
         assert(expr("a") == "(@ident a)")
     end)
 
-    test.it("parses multi-line blocks", fn() throws:
-        assert(block(": end") == "(@block)")
-        assert(block(": 42 end") == "(@block (@int 42))")
-        assert(block(": foo() 42 end") == "(@block (@call (@ident foo)) (@int 42))")
+    test.group("blocks", fn():
+        test.it("parses multi-line blocks", fn() throws:
+            assert(block(": end") == "(@block)")
+            assert(block(": 42 end") == "(@block (@int 42))")
+            assert(block(": foo() 42 end") == "(@block (@call (@ident foo)) (@int 42))")
+        end)
+
+        test.it("parses items (like Fn) in multi-line blocks", fn() throws:
+            assert(block(": fn main(): end end") == "(@block (@fn (@fndecl (@ident main) (@unit)) (@block)))")
+        end)
+
+        test.it("parses single-line blocks", fn() throws:
+            assert(block("=> 42") == "(@block (@int 42))")
+            assert(block("=> foo() 42") == "(@block (@call (@ident foo)))")
+        end)
     end)
 
-    test.it("parses fn definitions", fn() throws:
-        assert(item("fn main(): end") == "(@fndef (@fndecl main) (@block))")
-        assert(item("fn main(): 42 end") == "(@fndef (@fndecl main) (@block (@int 42)))")
+    test.group("fndecl", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(fndecl("fn main()") == "(@fndecl (@ident main) (@unit))")
+        end)
+    end)
+
+    test.group("fn", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(item("fn main(): end") == "(@fn (@fndecl (@ident main) (@unit)) (@block))")
+            assert(item("fn main(): 42 end") == "(@fn (@fndecl (@ident main) (@unit)) (@block (@int 42)))")
+        end)
     end)
 
     test.group("literals", fn():
@@ -35,7 +54,7 @@ fn main():
             assert(expr("()") == "(@unit)")
         end)
 
-        test.it("parses unit literals only if `)` immediately follows `(`", fn() throws:
+        test.it("parses unit literals only if `(` is immediately followed by `)`", fn() throws:
             -- It's not required for ambiguity reasons, but having whitespace in between
             -- obscures the intent of the code.
             assert(expr("()") == "(@unit)")
@@ -102,10 +121,25 @@ fn main():
         end)
     end)
 
+    test.group("module", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(
+                module("""
+                    fn main():
+                    end
+                    """) 
+                == 
+                "(@mod (@fn (@fndecl (@ident main) (@unit)) (@block)))"
+            )
+        end)
+    end)
+
     enum ParseFn:
-        ParseItem
-        ParseExpr
-        ParseBlock
+        Item
+        Expr
+        Block
+        FnDecl
+        Module
     end
 
     fn parse(src str, parse_fn ParseFn) str:
@@ -113,9 +147,23 @@ fn main():
         let tokens = Lexer.lex(src, "test.kl").collect()
         let parser = Parser.new(TokenIter.new(tokens))
         let res = match parse_fn:
-            ParseItem => parser.parse_item(parser.iter.force_next().unwrap())
-            ParseExpr => parser.parse_expr(parser.iter.force_next().unwrap())
-            ParseBlock: 
+            ParseFn.Item => parser.parse_item(parser.iter.force_next().unwrap())
+            ParseFn.Expr => parser.parse_expr(parser.iter.force_next().unwrap())
+            ParseFn.Module:
+                let res = parser.parse_module()
+                if res.is_error():
+                    return res.unwrap_error().to_debug_str()
+                end
+                return res.unwrap().to_debug_str()
+            end
+            ParseFn.FnDecl:
+                let res = parser.parse_fn_decl(parser.iter.force_next().unwrap())
+                if res.is_error():
+                    return res.unwrap_error().to_debug_str()
+                end
+                return res.unwrap().to_debug_str()
+            end
+            ParseFn.Block: 
                 let res = parser.parse_block()
                 if res.is_error():
                     return res.unwrap_error().to_debug_str()
@@ -133,11 +181,15 @@ fn main():
         opt.unwrap().to_debug_str()
     end
 
-    fn expr(src str) str => parse(src, ParseFn.ParseExpr)
+    fn expr(src str) str => parse(src, ParseFn.Expr)
 
-    fn item(src str) str => parse(src, ParseFn.ParseItem)
+    fn item(src str) str => parse(src, ParseFn.Item)
 
-    fn block(src str) str => parse(src, ParseFn.ParseBlock)
+    fn block(src str) str => parse(src, ParseFn.Block)
+
+    fn fndecl(src str) str => parse(src, ParseFn.FnDecl)
+
+    fn module(src str) str => parse(src, ParseFn.Module)
 
     test.run_and_exit()
 end

@@ -13,7 +13,7 @@ enum DebugLevel:
 end
 
 impl PartialEq for DebugLevel:
-    fn eq(self, other DebugLevel) bool:
+    fn eq(self, other DebugLevel) Bool:
         match self:
             DebugLevel.Off => match other:
                 DebugLevel.Off => true
@@ -31,10 +31,10 @@ impl PartialEq for DebugLevel:
     end
 end
 
-fn lex(src str, file str, debug_level DebugLevel) Vector<Token>:
+fn lex(src Str, file Str, debug_level DebugLevel) Vector<Token>:
     let tokens = Lexer.lex(src, file).collect()
     let lex_errors = tokens.iter().filter(
-        fn(token Token) bool:
+        fn(token Token) Bool:
             match token.kind:
                 TokenKind.LexError(_) => true
                 _ => false
@@ -78,8 +78,8 @@ fn main():
     end
     -- todo (lang-feat) We should be able to replace this with a simple block instead of an IIFE.
     let debug_level = (fn () DebugLevel:
-        if env.args.iter().any(fn(s str) bool => s == "--debug") => return DebugLevel.Debug
-        else => if env.args.iter().any(fn(s str) bool => s == "--warn") => return DebugLevel.Warn
+        if env.args.iter().any(fn(s Str) Bool => s == "--debug") => return DebugLevel.Debug
+        else => if env.args.iter().any(fn(s Str) Bool => s == "--warn") => return DebugLevel.Warn
         DebugLevel.Off
     end)()
     let src_file = env.args[2]

@@ -24,7 +24,7 @@ fn main():
             print(f"File IO failed: {error}")
             return
         end
-        Ok<str>(contents) => contents
+        Ok<Str>(contents) => contents
     end
     if contents == "Hello, World!" => print("File IO works!")
     else => print("File IO failed!")

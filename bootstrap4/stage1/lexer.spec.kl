@@ -153,9 +153,9 @@ x
         end)
     end)
 
-    fn lex_only(src str) Vector<Token> => Lexer.lex(src, "test.kl").collect()
+    fn lex_only(src Str) Vector<Token> => Lexer.lex(src, "test.kl").collect()
 
-    fn lex_run(src str, expected Array<TokenKind>):
+    fn lex_run(src Str, expected Array<TokenKind>):
         --- Test that `src` is lexed into `expected`. Whitespaces are ignored.
             Test that `lex()` and `to_src()` are inverses of each other.
         ---
@@ -163,13 +163,13 @@ x
         let tokens = lex_only(src)
         mut idx = 0
         mut has_expected_parse_errors = expected.iter().any(
-            fn(kind TokenKind) bool => match(kind):
+            fn(kind TokenKind) Bool => match(kind):
                 LexError(_) => true
                 _ => false
             end
         )
         tokens.iter().filter(
-            fn(token Token) bool => match token.kind:
+            fn(token Token) Bool => match token.kind:
                 WhiteSpace(_) => false
                 _ => true
             end

@@ -1,8 +1,8 @@
 --- This is only used by `use.kl` to test imports.
 ---
 struct Point:
-    x i32
-    y i32
+    x Int
+    y Int
 end
 
 enum ImportedEnum:
@@ -22,7 +22,7 @@ impl ImportedEnum:
 end
 
 impl Point:
-    fn new(x i32, y i32) Point:
+    fn new(x Int, y Int) Point:
         Point{x: x, y: y}
     end
 end

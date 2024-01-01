@@ -60,7 +60,7 @@ fn main():
             assert(expr("()") == "(@unit)")
         end)
 
-        test.it("parses bool literals", fn() throws:
+        test.it("parses boolean literals", fn() throws:
             assert(expr("true") == "(@bool true)")
             assert(expr("false") == "(@bool false)")
         end)
@@ -77,6 +77,8 @@ fn main():
             end)
 
             test.it("detects integer overflow", fn() throws:
+                -- todo: for now `Int` is defined as 32-but, but it should be 
+                --       the platform's native int size (64-bit in most cases).
                 assert(expr("2147483647") == "(@int 2147483647)")
                 assert(expr("2147483648") == "(@error invalid int literal)")
                 assert(expr("-2147483648") == "(@int -2147483648)")
@@ -142,7 +144,7 @@ fn main():
         Module
     end
 
-    fn parse(src str, parse_fn ParseFn) str:
+    fn parse(src Str, parse_fn ParseFn) Str:
         test.log(f"testing: {src}")
         let tokens = Lexer.lex(src, "test.kl").collect()
         let parser = Parser.new(TokenIter.new(tokens))
@@ -181,15 +183,15 @@ fn main():
         opt.unwrap().to_debug_str()
     end
 
-    fn expr(src str) str => parse(src, ParseFn.Expr)
+    fn expr(src Str) Str => parse(src, ParseFn.Expr)
 
-    fn item(src str) str => parse(src, ParseFn.Item)
+    fn item(src Str) Str => parse(src, ParseFn.Item)
 
-    fn block(src str) str => parse(src, ParseFn.Block)
+    fn block(src Str) Str => parse(src, ParseFn.Block)
 
-    fn fndecl(src str) str => parse(src, ParseFn.FnDecl)
+    fn fndecl(src Str) Str => parse(src, ParseFn.FnDecl)
 
-    fn module(src str) str => parse(src, ParseFn.Module)
+    fn module(src Str) Str => parse(src, ParseFn.Module)
 
     test.run_and_exit()
 end

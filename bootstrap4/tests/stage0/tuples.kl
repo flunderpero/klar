@@ -12,12 +12,12 @@
 
 /expected ---
 
-fn print_first_element(tuple (i32, i32, i32)):
+fn print_first_element(tuple (Int, Int, Int)):
     print(tuple.0)
 end
 
 struct Color:
-    rgb (i32, i32, i32)
+    rgb (Int, Int, Int)
 end
 
 fn main():

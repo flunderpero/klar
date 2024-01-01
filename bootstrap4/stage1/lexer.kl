@@ -1,12 +1,12 @@
 struct Lexer:
-    file str
-    src str
-    iter PeekableIterator<char>
+    file Str
+    src Str
+    iter PeekableIterator<Char>
 end
 
 impl Lexer:
-    fn lex(src str, file str) Iterator<Token>:
-        let iter = PeekableIterator<char>.new(src.iter())
+    fn lex(src Str, file Str) Iterator<Token>:
+        let iter = PeekableIterator<Char>.new(src.iter())
         Lexer{file, src, iter}
     end
 
@@ -18,7 +18,7 @@ end
 impl Iterator<Token> for Lexer:
     fn next(mut self) Token?:
         let next = match self.iter.next():
-            Some<char>(c) => c
+            Some<Char>(c) => c
             None => return None
         end
         let span = self.span()
@@ -26,8 +26,8 @@ impl Iterator<Token> for Lexer:
             ' ' | '\n' | '\t' | '\r' => Token{kind: WhiteSpace(next), span}
             '-' =>
                 match self.iter.peek():
-                    Some<char>('-') => self.match_comment()
-                    Some<char>('0'..'9') => self.match_int_literal(next, span)
+                    Some<Char>('-') => self.match_comment()
+                    Some<Char>('0'..'9') => self.match_int_literal(next, span)
                     _ => Token{kind: Minus, span: span.combine(self.span())}
                 end
             '(' => Token{kind: LParen, span}
@@ -44,7 +44,7 @@ impl Iterator<Token> for Lexer:
             '/' => Token{kind: Slash, span}
             '!' => 
                 match self.iter.peek():
-                    Some<char>('='):
+                    Some<Char>('='):
                         self.iter.next()
                         Token{kind: NotEqual, span: span.combine(self.span())}
                     end
@@ -52,11 +52,11 @@ impl Iterator<Token> for Lexer:
                 end
             '=' => 
                 match self.iter.peek():
-                    Some<char>('='):
+                    Some<Char>('='):
                         self.iter.next()
                         Token{kind: DoubleEqual, span: span.combine(self.span())}
                     end
-                    Some<char>('>'):
+                    Some<Char>('>'):
                         self.iter.next()
                         Token{kind: FatArrow, span: span.combine(self.span())}
                     end
@@ -64,7 +64,7 @@ impl Iterator<Token> for Lexer:
                 end
             '<' =>
                 match self.iter.peek():
-                    Some<char>('='):
+                    Some<Char>('='):
                         self.iter.next()
                         Token{kind: LessThanOrEqual, span: span.combine(self.span())}
                     end
@@ -72,7 +72,7 @@ impl Iterator<Token> for Lexer:
                 end
             '>' =>
                 match self.iter.peek():
-                    Some<char>('='):
+                    Some<Char>('='):
                         self.iter.next()
                         Token{kind: GreaterThanOrEqual, span: span.combine(self.span())}
                     end
@@ -83,7 +83,7 @@ impl Iterator<Token> for Lexer:
             'a'..'z' | 'A'..'Z' | '_':
                 if next == 'f':
                     match self.iter.peek():
-                        Some<char>('"'):
+                        Some<Char>('"'):
                             self.iter.next()
                             return self.match_string(true)
                         end
@@ -93,7 +93,7 @@ impl Iterator<Token> for Lexer:
                 mut ident = "".push_char(next)
                 loop:
                     match self.iter.peek():
-                        Some<char>('a'..'z' | 'A'..'Z' | '0'..'9' | '_'):
+                        Some<Char>('a'..'z' | 'A'..'Z' | '0'..'9' | '_'):
                             ident.push_char(self.iter.next().unwrap())
                         end
                         _ => break
@@ -133,27 +133,27 @@ impl Iterator<Token> for Lexer:
         end
     end
 
-    fn match_int_literal(mut self, first char, span Span) Token:
+    fn match_int_literal(mut self, first Char, span Span) Token:
         mut num = "".push_char(first)
         loop:
             match self.iter.peek():
-                Some<char>('0'..'9') => num.push_char(self.iter.next().unwrap())
+                Some<Char>('0'..'9') => num.push_char(self.iter.next().unwrap())
                 _ => break
             end
         end
         Token{kind: IntLiteral(num), span}
     end
 
-    fn match_string(mut self, is_fstr bool) Token:
+    fn match_string(mut self, is_fstr Bool) Token:
         let span = self.span()
         mut s = ""
         mut fstr_items = Vector<FStrItem>.new()
         mut quotes = ""
         let required_closing_quotes = match self.iter.peek():
-            Some<char>('"'):
+            Some<Char>('"'):
                 self.iter.next()
                 match self.iter.peek():
-                    Some<char>('"'):
+                    Some<Char>('"'):
                         self.iter.next()
                         3
                     end
@@ -168,16 +168,16 @@ impl Iterator<Token> for Lexer:
                 break
             end
             match self.iter.next():
-                Some<char>('"'):
+                Some<Char>('"'):
                     quotes.push_char('"')
                     continue
                 end
-                Some<char>('\\') => 
+                Some<Char>('\\') => 
                     match match_escape_sequence(self.iter.next()):
                         Error(err) => return Token{kind: LexError(err.to_str()), span}
-                        Ok<char>(c) => s.push_char(c)
+                        Ok<Char>(c) => s.push_char(c)
                     end
-                Some<char>('{'):
+                Some<Char>('{'):
                     if not is_fstr:
                         s.push_char('{')
                         continue
@@ -189,7 +189,7 @@ impl Iterator<Token> for Lexer:
                     mut item_tokens = Vector<Token>.new()
                     loop:
                         match self.iter.peek():
-                            Some<char>('}'): 
+                            Some<Char>('}'): 
                                 self.iter.next()
                                 break
                             end
@@ -199,10 +199,10 @@ impl Iterator<Token> for Lexer:
                     end
                     fstr_items.push(FStrTokensItem(item_tokens))
                 end
-                Some<char>('\n') => 
+                Some<Char>('\n') => 
                     if multi_line => s.push_char('\n')
                     else => return Token{kind: LexError("Unexpected end of line."), span: self.span()}
-                Some<char>(c) => s.push_char(c)
+                Some<Char>(c) => s.push_char(c)
                 None => return Token{kind: LexError("Unexpected end of file."), span: self.span()}
             end
             quotes = ""
@@ -222,20 +222,20 @@ impl Iterator<Token> for Lexer:
         -- Single- or multi-line comment.
         mut comment = "--"
         match self.iter.next():
-            Some<char>('-'):
+            Some<Char>('-'):
                 -- Multi-line comment.
                 comment.push_char('-')
                 mut num_of_dashes = 0
                 loop:
                     match self.iter.next():
-                        Some<char>('-'):
+                        Some<Char>('-'):
                             comment.push_char('-')
                             num_of_dashes = num_of_dashes + 1
                             if num_of_dashes == 3:
                                 break
                             end
                         end
-                        Some<char>(c):
+                        Some<Char>(c):
                             comment.push_char(c)
                             num_of_dashes = 0
                         end
@@ -243,13 +243,13 @@ impl Iterator<Token> for Lexer:
                     end
                 end
             end
-            Some<char>(c):
+            Some<Char>(c):
                 -- Single-line comment.
                 comment.push_char(c)
                 loop:
                     match self.iter.peek():
-                        Some<char>('\n') => break
-                        Some<char>(c): 
+                        Some<Char>('\n') => break
+                        Some<Char>(c): 
                             comment.push_char(c)
                             self.iter.next()
                         end
@@ -263,23 +263,23 @@ impl Iterator<Token> for Lexer:
     end
 end
 
-fn match_escape_sequence(c char?) char throws:
+fn match_escape_sequence(c Char?) Char throws:
     match c:
-        Some<char>('n') => '\n'
-        Some<char>('r') => '\r'
-        Some<char>('t') => '\t'
-        Some<char>('"') => '"'
-        Some<char>('\'') => '\''
-        Some<char>('\\') => '\\'
+        Some<Char>('n') => '\n'
+        Some<Char>('r') => '\r'
+        Some<Char>('t') => '\t'
+        Some<Char>('"') => '"'
+        Some<Char>('\'') => '\''
+        Some<Char>('\\') => '\\'
         _ => return Error("Invalid escape sequence.")
     end
 end
 
 struct Span:
-    file str
-    src str
-    from i32
-    to i32
+    file Str
+    src Str
+    from Int
+    to Int
 end
 
 impl Span:
@@ -294,20 +294,20 @@ impl Span:
 end
 
 impl ToStr for Span:
-    fn to_str(self) str:
+    fn to_str(self) Str:
         -- First, calculate the line and column numbers.
-        fn line_col(pos i32) (i32, i32):
+        fn line_col(pos Int) (Int, Int):
             mut line = 1
             mut col = 1
             mut iter = self.src.iter()
             mut idx = 0
             loop:
                 match iter.next():
-                    Some<char>('\n'):
+                    Some<Char>('\n'):
                         line = line + 1
                         col = 1
                     end
-                    Some<char>(c) => col = col + 1
+                    Some<Char>(c) => col = col + 1
                     None => break
                 end
                 if idx == pos => break
@@ -328,16 +328,16 @@ enum FStrItem:
     --                   Allowing arbitrary expressions leads to complex code. Perhaps this check
     --                   should be done in the parser instead.
     FStrTokensItem(Vector<Token>)
-    FStrStrItem(str)
+    FStrStrItem(Str)
 end
 
 enum TokenKind:
     And
-    BoolLiteral(bool)
+    BoolLiteral(Bool)
     Break
     Colon
     Comma
-    Comment(str)
+    Comment(Str)
     Continue
     Dot
     DoubleEqual
@@ -350,13 +350,13 @@ enum TokenKind:
     FatArrow
     Fn
     For
-    FStr(Vector<FStrItem>, bool)
+    FStr(Vector<FStrItem>, Bool)
     GreaterThan
     GreaterThanOrEqual
-    Ident(str)
+    Ident(Str)
     If
     Impl
-    IntLiteral(str)
+    IntLiteral(Str)
     LBrace
     LBracket
     LParen
@@ -370,7 +370,7 @@ enum TokenKind:
     Not
     NotEqual
     Or
-    LexError(str)
+    LexError(Str)
     Plus
     RBrace
     RBracket
@@ -378,18 +378,18 @@ enum TokenKind:
     Return
     Slash
     Star
-    StrLiteral(str, bool)
+    StrLiteral(Str, Bool)
     Struct
     Throws
     Trait
     Use
-    WhiteSpace(char)
+    WhiteSpace(Char)
 end
 
 use TokenKind.*
 
 impl ToStr for TokenKind:
-    fn to_str(self) str:
+    fn to_str(self) Str:
         match self:
             -- todo (lang-feat): We should be able to generate most of this code automatically.
             And => "and"
@@ -411,13 +411,13 @@ impl ToStr for TokenKind:
             Fn => "fn"
             For => "for"
             FStr(items, is_multi_line):
-                let items = items<FStrItem>.iter().map<str>(
-                    fn(token FStrItem) str:
+                let items = items<FStrItem>.iter().map<Str>(
+                    fn(token FStrItem) Str:
                         match token:
                             FStrTokensItem(tokens) => 
                                 " ".join(
-                                    tokens<Token>.iter().map<str>(
-                                        fn(token Token) str => token.to_str()
+                                    tokens<Token>.iter().map<Str>(
+                                        fn(token Token) Str => token.to_str()
                                     )
                                 )
                             FStrStrItem(s) => s
@@ -466,7 +466,7 @@ impl ToStr for TokenKind:
 end
 
 impl PartialEq for TokenKind:
-    fn eq(self, other TokenKind) bool:
+    fn eq(self, other TokenKind) Bool:
         -- todo: This is a hack, we should be able to derive `PartialEq`.
         self.to_str() == other.to_str()
     end
@@ -478,7 +478,7 @@ struct Token:
 end
 
 impl Token:
-    fn to_src(self) str:
+    fn to_src(self) Str:
         --- Convert a token back to source code. This is done using the span to 
             slice the source code.
         ---
@@ -486,13 +486,13 @@ impl Token:
             BoolLiteral(b) => f"{b}"
             Comment(comment) => comment
             FStr(items, is_multi_line):
-                let items = items<FStrItem>.iter().map<str>(
-                    fn(token FStrItem) str:
+                let items = items<FStrItem>.iter().map<Str>(
+                    fn(token FStrItem) Str:
                         match token:
                             FStrTokensItem(tokens) => 
                                 "".join(
-                                    tokens<Token>.iter().map<str>(
-                                        fn(token Token) str => token.to_str()
+                                    tokens<Token>.iter().map<Str>(
+                                        fn(token Token) Str => token.to_str()
                                     )
                                 )
                             FStrStrItem(s) => s
@@ -518,12 +518,12 @@ impl Token:
 end
 
 impl ToStr for Token:
-    fn to_str(self) str:
+    fn to_str(self) Str:
         f"{self.kind}"
     end
 end
 
-fn to_src(tokens Vector<Token>) str:
+fn to_src(tokens Vector<Token>) Str:
     --- Convert a vector of tokens back to source code.
         `lex()` and `to_src()` should be inverses of each other.
     ---

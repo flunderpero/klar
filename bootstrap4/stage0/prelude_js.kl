@@ -8,14 +8,14 @@ end
 use Option.*
 
 impl Option<T>:
-    fn is_none(self) bool:
+    fn is_none(self) Bool:
         match self:
             None => true
             Some(_) => false
         end
     end
 
-    fn is_some(self) bool:
+    fn is_some(self) Bool:
         match self:
             None => false
             Some(_) => true
@@ -38,7 +38,7 @@ impl Option<T>:
 end
 
 trait ToStr:
-    fn to_str(self) str
+    fn to_str(self) Str
 end
 
 trait Add:
@@ -58,8 +58,8 @@ trait Div:
 end
 
 trait PartialEq:
-    fn eq(self, rhs Self) bool
-    fn ne(self, rhs Self) bool => not self.eq(rhs)
+    fn eq(self, rhs Self) Bool
+    fn ne(self, rhs Self) Bool => not self.eq(rhs)
 end
 
 -- This is just a marker trait. `PartialEq` must be implemented.
@@ -67,10 +67,10 @@ trait Eq:
 end
 
 trait PartialOrd:
-    fn lt(self, rhs Self) bool
-    fn le(self, rhs Self) bool
-    fn gt(self, rhs Self) bool
-    fn ge(self, rhs Self) bool
+    fn lt(self, rhs Self) Bool
+    fn le(self, rhs Self) Bool
+    fn gt(self, rhs Self) Bool
+    fn ge(self, rhs Self) Bool
 end
 
 -- This is just a marker trait. `PartialOrd` must be implemented.
@@ -97,7 +97,7 @@ trait Iterator<T>:
         end
     end
 
-    fn filter(self, f (fn(T) bool)) Self:
+    fn filter(self, f (fn(T) Bool)) Self:
         let vec = Vector<T>.new()
         self.for_each(fn(value) => if f(value) => vec.push(value))
         vec.iter()
@@ -115,7 +115,7 @@ trait Iterator<T>:
         vec
     end
 
-    fn any(self, predicate (fn(T) bool)) bool:
+    fn any(self, predicate (fn(T) Bool)) Bool:
         loop:
             match self.next():
                 None => return false
@@ -129,7 +129,7 @@ end
 struct PeekableIterator<T>:
     iter Iterator<T>
     peeked T?
-    idx i32
+    idx Int
 end
 
 impl PeekableIterator<T>:
@@ -157,10 +157,10 @@ impl Iterator<T> for PeekableIterator<T>:
 end
 
 trait Len:
-    fn len(self) i32
+    fn len(self) Int
 end
 
-enum Result<T, E impl ToStr=str>:
+enum Result<T, E impl ToStr=Str>:
     Ok(T)
     Error(E)
 end
@@ -168,14 +168,14 @@ end
 use Result.*
 
 impl Result<T, E>:
-    fn is_ok(self) bool:
+    fn is_ok(self) Bool:
         match self:
             Result.Ok(_) => true
             Result.Error(_) => false
         end
     end
 
-    fn is_error(self) bool:
+    fn is_error(self) Bool:
         match self:
             Result.Ok(_) => false
             Result.Error(_) => true
@@ -198,7 +198,7 @@ impl Result<T, E>:
 end
 
 impl ToStr for Result<T, E>:
-    fn to_str(self) str:
+    fn to_str(self) Str:
         match self:
             Result.Ok(value) => f"ok: {value}"
             Result.Error(error) => f"error: {error}"
@@ -209,27 +209,27 @@ end
 extern:
 
     fn print(s ToStr)
-    fn panic(s str)
-    fn exit(code i32)
-    fn assert(cond bool)
-    fn register_panic_handler(handler (fn(str, str, str))) (fn(str, str, str))
+    fn panic(s Str)
+    fn exit(code Int)
+    fn assert(cond Bool)
+    fn register_panic_handler(handler (fn(Str, Str, Str))) (fn(Str, Str, Str))
 
     -- todo: We should not need this function. We use it to work around
     --       the fact that Klar does not support global variables.
-    fn i32_next() i32
+    fn int_next() Int
 
-    impl Len for str
-    impl IndexedGet<i32, char> for str
-    impl str:
-        fn iter(self) Iterator<char>
-        fn push(mut self, s str) str
-        fn push_char(mut self, c char) str
-        fn slice_copy(self, from i32, to i32) str
-        fn join(self, iter Iterator<str>) str
+    impl Len for Str
+    impl IndexedGet<Int, Char> for Str
+    impl Str:
+        fn iter(self) Iterator<Char>
+        fn push(mut self, s Str) Str
+        fn push_char(mut self, c Char) Str
+        fn slice_copy(self, from Int, to Int) Str
+        fn join(self, iter Iterator<Str>) Str
     end
 
-    impl i32:
-        fn from_str(s str) i32 throws
+    impl Int:
+        fn from_str(s Str) Int throws
     end
 
     -- JS array helpers.
@@ -237,40 +237,40 @@ extern:
     end
 
     impl JSArray<T>:
-        fn new(size i32) Self
-        fn len(self) i32
+        fn new(size Int) Self
+        fn len(self) Int
         fn push(mut self, s T) 
-        fn get(self, i i32) T
-        fn set(mut self, i i32, v T)
+        fn get(self, i Int) T
+        fn set(mut self, i Int, v T)
     end
 
     -- File IO.
     struct File:
-        path str
+        path Str
     end
 
     impl File:
-        fn at(path str) Self
+        fn at(path Str) Self
 
         fn cwd() Self
 
         --- Open the file and read its contests as a string.
             Close the file in any case.
         ---
-        fn read_str(self) str throws 
+        fn read_str(self) Str throws 
 
         --- Open the file and write the given string to it.
             Close the file in any case.
         ---
-        fn write_str(mut self, data str) throws 
+        fn write_str(mut self, data Str) throws 
     end
 
-    fn ext_args() JSArray<str>
-    fn ext_env() JSArray<(str, str)>
+    fn ext_args() JSArray<Str>
+    fn ext_env() JSArray<(Str, Str)>
 end
 
-impl str:
-    fn repeat(self, n i32) str:
+impl Str:
+    fn repeat(self, n Int) Str:
         mut s = ""
         mut i = 0
         loop:
@@ -281,7 +281,7 @@ impl str:
         s
     end
 
-    fn replace(self, from str, to str) str:
+    fn replace(self, from Str, to Str) Str:
         mut s = ""
         mut i = 0
         mut cur_match = ""
@@ -304,7 +304,7 @@ impl str:
         s
     end
 
-    fn when(self, condition bool) str:
+    fn when(self, condition Bool) Str:
         --- Returns `self` if the condition is met, otherwise an empty string.
             This is useful in f-strings to insert a space only if a condition is met.
         ---
@@ -320,16 +320,16 @@ struct Array<T>:
 end
 
 impl Array<T>:
-    fn new(size i32) Array<T> => Array<T> { data: JSArray<T>.new(size) }
+    fn new(size Int) Array<T> => Array<T> { data: JSArray<T>.new(size) }
     fn iter(self) ArrayIter<T> => ArrayIter<T> { arr: self, index: 0 }
 end
 
 impl Len for Array<T>:
-    fn len(self) i32 => self.data.len()
+    fn len(self) Int => self.data.len()
 end
 
-impl IndexedGet<i32, T> for Array<T>:
-    fn get(self, i i32) T:
+impl IndexedGet<Int, T> for Array<T>:
+    fn get(self, i Int) T:
         if i >= self.len():
             panic("Array index out of bounds")
         end
@@ -337,8 +337,8 @@ impl IndexedGet<i32, T> for Array<T>:
     end
 end
 
-impl IndexedSet<i32, T> for Array<T>:
-    fn set(mut self, i i32, v T):
+impl IndexedSet<Int, T> for Array<T>:
+    fn set(mut self, i Int, v T):
         if i >= self.len():
             panic("Array index out of bounds")
         end
@@ -348,7 +348,7 @@ end
 
 struct ArrayIter<T>:
     arr Array<T>
-    index i32
+    index Int
 end
 
 impl Iterator<T> for ArrayIter<T>:
@@ -391,7 +391,7 @@ impl Vector<T>:
 
     fn iter(self) VectorIter<T> => VectorIter<T> { vec: self, index: 0 }
 
-    fn slice_copy(self, from i32, to i32) Vector<T>:
+    fn slice_copy(self, from Int, to Int) Vector<T>:
         let vec = Vector<T>.new()
         mut i = from
         loop:
@@ -404,11 +404,11 @@ impl Vector<T>:
 end
 
 impl Len for Vector<T>:
-    fn len(self) i32 => self.data.len()
+    fn len(self) Int => self.data.len()
 end
 
 impl PartialEq for Vector<T>:
-    fn eq(self, rhs Vector<T>) bool:
+    fn eq(self, rhs Vector<T>) Bool:
         if self.len() != rhs.len() => return false
         mut i = 0
         loop:
@@ -420,8 +420,8 @@ impl PartialEq for Vector<T>:
     end
 end
 
-impl IndexedGet<i32, T> for Vector<T>:
-    fn get(self, i i32) T:
+impl IndexedGet<Int, T> for Vector<T>:
+    fn get(self, i Int) T:
         if i >= self.len():
             panic("Vector index out of bounds")
         end
@@ -429,8 +429,8 @@ impl IndexedGet<i32, T> for Vector<T>:
     end
 end
 
-impl IndexedSet<i32, T> for Vector<T>:
-    fn set(mut self, i i32, v T):
+impl IndexedSet<Int, T> for Vector<T>:
+    fn set(mut self, i Int, v T):
         if i >= self.len():
             panic("Vector index out of bounds")
         end
@@ -440,7 +440,7 @@ end
 
 struct VectorIter<T>:
     vec Vector<T>
-    index i32
+    index Int
 end
 
 impl Iterator<T> for VectorIter<T>:
@@ -500,18 +500,18 @@ impl IndexedSet<K, V> for Map<K, V>:
 end
 
 impl Len for Map<K, V>:
-    fn len(self) i32 => self.data.len()
+    fn len(self) Int => self.data.len()
 end
 
 struct Env:
-    args Vector<str>
+    args Vector<Str>
 end
 
 impl Env:
     fn new() Env:
         mut i = 0
         let src = ext_args()
-        mut args = Vector<str>.new()
+        mut args = Vector<Str>.new()
         loop:
             if i == src.len():
                 break

@@ -23,7 +23,7 @@
 
 /expected ---
 
-fn match_number(x i32) i32:
+fn match_number(x Int) Int:
     return match x:
         0 => x + 1
         1 => x + 2
@@ -41,7 +41,7 @@ enum Color:
     Blue
 end
 
-fn match_enum(c Color) i32:
+fn match_enum(c Color) Int:
     return match c:
         Color.Red => 10
         Color.Green => 11
@@ -50,11 +50,11 @@ fn match_enum(c Color) i32:
 end
 
 struct Point:
-    x i32
-    y i32
+    x Int
+    y Int
 end
 
-fn match_struct(p Point) i32:
+fn match_struct(p Point) Int:
     return match p:
         Point {x: 1, y: 2} => 20
         Point {x: 1, y: _} => 21
@@ -67,7 +67,7 @@ struct Line:
     end_ Point
 end
 
-fn match_nested_struct(l Line) i32:
+fn match_nested_struct(l Line) Int:
     return match l:
         Line {start: Point {x: 1, y: 2}, end_: Point {x: 3, y: 4}} => 30
         Line {start: Point {x: 1, y: 2}, end_: Point {x: 3, y: _}} => 31

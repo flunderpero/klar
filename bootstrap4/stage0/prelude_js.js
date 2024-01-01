@@ -25,18 +25,18 @@ function klar_exit(code) {
 
 class klar_unit {}
 
-class klar_i32 {
+class klar_Int {
     static from_str(value) {
         let int
         try {
             int = parseInt(value.value)
         } catch (e) {
-            return new klar_Result_Error(new klar_str(e.message))
+            return new klar_Result_Error(new klar_Str(e.message))
         }
         if (isNaN(int) || int < -2147483648 || int > 2147483647) {
-            return new klar_Result_Error(new klar_str("integer out of range"))
+            return new klar_Result_Error(new klar_Str("integer out of range"))
         }
-        return new klar_Result_Ok(new klar_i32(parseInt(value.value)))
+        return new klar_Result_Ok(new klar_Int(parseInt(value.value)))
     }
 
     constructor(value) {
@@ -44,87 +44,85 @@ class klar_i32 {
     }
 
     to_str() {
-        return new klar_str(this.value.toString())
+        return new klar_Str(this.value.toString())
     }
 
     eq(other) {
-        return new klar_bool(this.value === other.value)
+        return new klar_Bool(this.value === other.value)
     }
 
     ne(other) {
-        return new klar_bool(this.value !== other.value)
+        return new klar_Bool(this.value !== other.value)
     }
 
     lt(other) {
-        return new klar_bool(this.value < other.value)
+        return new klar_Bool(this.value < other.value)
     }
 
     le(other) {
-        return new klar_bool(this.value <= other.value)
+        return new klar_Bool(this.value <= other.value)
     }
 
     gt(other) {
-        return new klar_bool(this.value > other.value)
+        return new klar_Bool(this.value > other.value)
     }
 
     ge(other) {
-        return new klar_bool(this.value >= other.value)
+        return new klar_Bool(this.value >= other.value)
     }
 
     add(other) {
-        return new klar_i32(this.value + other.value)
+        return new klar_Int(this.value + other.value)
     }
 
     sub(other) {
-        return new klar_i32(this.value - other.value)
+        return new klar_Int(this.value - other.value)
     }
 
     mul(other) {
-        return new klar_i32(this.value * other.value)
+        return new klar_Int(this.value * other.value)
     }
 
     div(other) {
-        return new klar_i32(Math.ceil(this.value / other.value))
+        return new klar_Int(Math.ceil(this.value / other.value))
     }
 }
 
-const klar_usize = klar_i32
-
-class klar_bool {
+class klar_Bool {
     constructor(value) {
         this.value = value
     }
 
     to_str() {
-        return new klar_str(this.value.toString())
+        return new klar_Str(this.value.toString())
     }
 
     eq(other) {
-        return new klar_bool(this.value === other.value)
+        return new klar_Bool(this.value === other.value)
     }
 
     ne(other) {
-        return new klar_bool(this.value !== other.value)
+        return new klar_Bool(this.value !== other.value)
     }
 
     lt(other) {
-        return new klar_bool(this.value < other.value)
+        return new klar_Bool(this.value < other.value)
     }
 
     le(other) {
-        return new klar_bool(this.value <= other.value)
+        return new klar_Bool(this.value <= other.value)
     }
 
     gt(other) {
-        return new klar_bool(this.value > other.value)
+        return new klar_Bool(this.value > other.value)
     }
 
     ge(other) {
-        return new klar_bool(this.value >= other.value)
+        return new klar_Bool(this.value >= other.value)
     }
 }
 
-class klar_str {
+class klar_Str {
     constructor(value) {
         this.value = value
     }
@@ -134,11 +132,11 @@ class klar_str {
     }
 
     eq(other) {
-        return new klar_bool(this.value === other.value)
+        return new klar_Bool(this.value === other.value)
     }
 
     ne(other) {
-        return new klar_bool(this.value !== other.value)
+        return new klar_Bool(this.value !== other.value)
     }
 
     push(other) {
@@ -152,11 +150,11 @@ class klar_str {
     }
 
     slice_copy(start, end) {
-        return new klar_str(this.value.slice(start.value, end.value))
+        return new klar_Str(this.value.slice(start.value, end.value))
     }
 
     len() {
-        return new klar_i32(this.value.length)
+        return new klar_Int(this.value.length)
     }
 
     iter() {
@@ -164,7 +162,7 @@ class klar_str {
         return {
             next: () => {
                 if (idx < this.value.length) {
-                    return new klar_Option_Some(new klar_char(this.value[idx++]))
+                    return new klar_Option_Some(new klar_Char(this.value[idx++]))
                 } else {
                     return new klar_Option_None()
                 }
@@ -185,36 +183,36 @@ class klar_str {
             result += item.unwrap().value
             item = iter.next()
         }
-        return new klar_str(result)
+        return new klar_Str(result)
     }
 
     get(index) {
         if (index.value > this.len().value || index.value < 0) {
             panic(
-                `index out of bound in \`str[${index.value}]\`, str has length \`${
+                `index out of bound in \`Str[${index.value}]\`, Str has length \`${
                     this.len().value
                 }`,
             )
         }
-        return new klar_char(this.value[index.value])
+        return new klar_Char(this.value[index.value])
     }
 }
 
-class klar_char {
+class klar_Char {
     constructor(value) {
         this.value = value
     }
 
     to_str() {
-        return new klar_str(this.value)
+        return new klar_Str(this.value)
     }
 
     eq(other) {
-        return new klar_bool(this.value === other.value)
+        return new klar_Bool(this.value === other.value)
     }
 
     ne(other) {
-        return new klar_bool(this.value !== other.value)
+        return new klar_Bool(this.value !== other.value)
     }
 }
 
@@ -224,7 +222,7 @@ class klar_JSArray extends Array {
     }
 
     len() {
-        return new klar_i32(this.length)
+        return new klar_Int(this.length)
     }
 
     get(index) {
@@ -246,16 +244,16 @@ class klar_File {
     }
 
     to_str() {
-        return new klar_str(this.path)
+        return new klar_Str(this.path)
     }
 
     read_str() {
         const fs = require("fs")
         try {
-            const res = new klar_str(fs.readFileSync(this.path.value, "utf8"))
+            const res = new klar_Str(fs.readFileSync(this.path.value, "utf8"))
             return new klar_Result_Ok(res)
         } catch (e) {
-            return new klar_Result_Error(new klar_str(e.message))
+            return new klar_Result_Error(new klar_Str(e.message))
         }
     }
 
@@ -265,7 +263,7 @@ class klar_File {
             fs.writeFileSync(this.path.value, value.value)
             return new klar_Result_Ok()
         } catch (e) {
-            return new klar_Result_Error(new klar_str(e.message))
+            return new klar_Result_Error(new klar_Str(e.message))
         }
     }
 }
@@ -273,15 +271,15 @@ class klar_File {
 function klar_ext_args() {
     const result = new klar_JSArray(0)
     for (let i = 0; i < Bun.argv.length; i++) {
-        result.push(new klar_str(Bun.argv[i]))
+        result.push(new klar_Str(Bun.argv[i]))
     }
     return result
 }
 
-function klar_i32_next() {
-    return new klar_i32(klar_i32_next.counter++)
+function klar_int_next() {
+    return new klar_Int(klar_Int.counter++)
 }
-klar_i32_next.counter = 0
+klar_Int.counter = 0
 
 // Used in `compiler.ts` only.
 function to_debug_str(s) {
@@ -294,7 +292,7 @@ function to_debug_str(s) {
     if (typeof s !== "string") {
         s = JSON.stringify(s, null, 2)
     } else {
-        for (const [char, replacement] of Object.entries({
+        for (const [Char, replacement] of Object.entries({
             "\n": "\\n",
             "\r": "\\r",
             "\t": "\\t",
@@ -305,7 +303,7 @@ function to_debug_str(s) {
             '"': '\\"',
             "`": "\\`",
         })) {
-            s = s.replaceAll(char, replacement)
+            s = s.replaceAll(Char, replacement)
         }
     }
     return `"${s}"`

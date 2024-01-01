@@ -16,16 +16,16 @@
 /expected ---
 
 struct RGB:
-    red i32
-    green i32
-    blue i32
+    red Int
+    green Int
+    blue Int
 end
 
 enum Color:
     Red
     Green
     Blue
-    Gray(i32)
+    Gray(Int)
     RGB(RGB)
 end
 

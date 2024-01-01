@@ -1,7 +1,7 @@
 -- No function overloading.
-fn fun(a i32) i32
+fn fun(a Int) Int
 
-fn fun(a i64) i32 -- Error: function 'fun' already defined
+fn fun(a i64) Int -- Error: function 'fun' already defined
 
 -- Implementing traits for different types.
 trait Into<T>:
@@ -11,8 +11,8 @@ end
 struct A:
 end
 
-impl Into<i32> for A:
-    fn into(self) i32:
+impl Into<Int> for A:
+    fn into(self) Int:
         1
     end
 end
@@ -23,10 +23,10 @@ impl Into<i64> for A:
     end
 end
 
-fn main() i32:
+fn main() Int:
     let a = A()
     a.into() -- Error: ambiguous call to function 'into'
-    a.into<i32>() -- Ok: 1
+    a.into<Int>() -- Ok: 1
     a.into<i64>() -- Ok: 2
     0
 end
@@ -35,25 +35,25 @@ end
 -- Type checking generic structs.
 
 struct A<T>:
-    a i32
+    a Int
     b T
 end
 
 impl A<U>:
-    fn new(a i32, b U) A<U>:
+    fn new(a Int, b U) A<U>:
     end
 
     fn to_str(self) string:
     end
 end
 
-let a = A<i32>(1, 2)
+let a = A<Int>(1, 2)
 
 ---
 
 - match U to A (because they are the first type parameter each)
-- parse new(a i32, b U) A<U> as new(a i32, b A<T>) A<T>
+- parse new(a Int, b U) A<U> as new(a Int, b A<T>) A<T>
 
-- instantiate a as ConcreteType("A", [i32])
+- instantiate a as ConcreteType("A", [Int])
 ---
 

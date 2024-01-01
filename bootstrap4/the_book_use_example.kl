@@ -2,11 +2,11 @@
 ---
 
 struct SomeStruct:
-    value i32
+    value Int
 end
 
 impl SomeStruct:
-    fn new(value i32) SomeStruct:
+    fn new(value Int) SomeStruct:
         SomeStruct{value: value}
     end
 
@@ -22,7 +22,7 @@ enum SomeEnum:
 end
 
 impl ToStr for SomeEnum:
-    fn to_str(self) str:
+    fn to_str(self) Str:
         match self:
             SomeA => "some a"
             SomeB => "some b"

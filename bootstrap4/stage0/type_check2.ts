@@ -33,36 +33,36 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
     if (node instanceof ast.Use) {
         type = Type.unit
     } else if (node instanceof ast.Number_) {
-        type = env.i32
+        type = env.Int
     } else if (node instanceof ast.Bool) {
-        type = env.bool
+        type = env.Bool
     } else if (node instanceof ast.Str) {
-        type = env.str
+        type = env.Str
     } else if (node instanceof ast.Char) {
-        type = env.char
+        type = env.Char
     } else if (node instanceof ast.InterpolatedStr) {
         for (const e of node.expressions) {
             const expression_type = type_check(e, env, {...ctx, used_in_expression: true})
             expect_to_implement_trait(expression_type, "ToStr", env, e.span)
         }
-        type = env.str
+        type = env.Str
     } else if (node instanceof ast.ArrayLiteral) {
         type = type_check_array_literal(node, env, ctx)
     } else if (node instanceof ast.UnitLiteral) {
         type = env.unit
     } else if (node instanceof ast.Not) {
         expect_equal_types(
-            env.bool,
+            env.Bool,
             type_check(node.expression, env, {...ctx, used_in_expression: true}),
             node.span,
         )
-        type = env.bool
+        type = env.Bool
     } else if (node instanceof ast.UnitOperator) {
         type_check(node.expression, env, {...ctx, used_in_expression: false})
         type = env.unit
     } else if (node instanceof ast.If) {
         const condition_type = type_check(node.condition, env, {...ctx, used_in_expression: true})
-        expect_equal_types(env.bool, condition_type, node.span)
+        expect_equal_types(env.Bool, condition_type, node.span)
         const then_type = type_check(node.then_block, env, {
             ...ctx,
             used_in_expression: !!node.else_block,
@@ -172,7 +172,7 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
             type_check_return_type(ctx.return_type, return_type, node.span)
             // `return` is a statement, but we give it the type because it makes it easier
             // to type-check nested blocks like:
-            //     fn foo(): i32
+            //     fn foo(): Int
             //         if bar => return 1 else => return 2
             //     end
             type = ctx.return_type
@@ -507,28 +507,28 @@ function type_check_match_pattern(
 ): Type {
     if (pattern instanceof ast.LiteralMatchPattern) {
         if (pattern.value instanceof ast.Number_) {
-            if (!env.i32.assignable_to(target_type)) {
+            if (!env.Int.assignable_to(target_type)) {
                 // Note how the order in the exception is reversed.
                 // We did not expect to find a number but `target_type`.
                 // This logic differs from `expect_assignable_to`.
-                throw new TypeMismatchError(target_type, env.i32, pattern.span)
+                throw new TypeMismatchError(target_type, env.Int, pattern.span)
             }
-            return env.i32
+            return env.Int
         } else if (pattern.value instanceof ast.Bool) {
-            if (!env.bool.assignable_to(target_type)) {
-                throw new TypeMismatchError(target_type, env.bool, pattern.span)
+            if (!env.Bool.assignable_to(target_type)) {
+                throw new TypeMismatchError(target_type, env.Bool, pattern.span)
             }
-            return env.bool
+            return env.Bool
         } else if (pattern.value instanceof ast.Str) {
-            if (!env.str.assignable_to(target_type)) {
-                throw new TypeMismatchError(target_type, env.str, pattern.span)
+            if (!env.Str.assignable_to(target_type)) {
+                throw new TypeMismatchError(target_type, env.Str, pattern.span)
             }
-            return env.str
+            return env.Str
         } else if (pattern.value instanceof ast.Char) {
-            if (!env.char.assignable_to(target_type)) {
-                throw new TypeMismatchError(target_type, env.char, pattern.span)
+            if (!env.Char.assignable_to(target_type)) {
+                throw new TypeMismatchError(target_type, env.Char, pattern.span)
             }
-            return env.char
+            return env.Char
         } else {
             throw new TypeCheckError(
                 `Not implemented for literal type ${quote(pattern.value)}`,
@@ -545,15 +545,15 @@ function type_check_match_pattern(
         return type
     } else if (pattern instanceof ast.RangeMatchPattern) {
         if (pattern.start instanceof ast.Number_) {
-            if (!env.i32.assignable_to(target_type)) {
-                throw new TypeMismatchError(target_type, env.i32, pattern.span)
+            if (!env.Int.assignable_to(target_type)) {
+                throw new TypeMismatchError(target_type, env.Int, pattern.span)
             }
-            return env.i32
+            return env.Int
         } else if (pattern.start instanceof ast.Char) {
-            if (!env.char.assignable_to(target_type)) {
-                throw new TypeMismatchError(target_type, env.char, pattern.span)
+            if (!env.Char.assignable_to(target_type)) {
+                throw new TypeMismatchError(target_type, env.Char, pattern.span)
             }
-            return env.char
+            return env.Char
         } else {
             throw new TypeCheckError(
                 `Not implemented for literal type ${quote(pattern.start)}`,
@@ -727,9 +727,9 @@ function type_check_binary_expression(
     const lhs = type_check(node.lhs, env, {...ctx, used_in_expression: true})
     const rhs = type_check(node.rhs, env, {...ctx, used_in_expression: true})
     if (["and", "or"].includes(node.operator)) {
-        expect_equal_types(env.bool, lhs, node.span)
-        expect_equal_types(env.bool, rhs, node.span)
-        return env.bool
+        expect_equal_types(env.Bool, lhs, node.span)
+        expect_equal_types(env.Bool, rhs, node.span)
+        return env.Bool
     }
     if (!(node.operator in trait_based)) {
         throw new TypeCheckError(
@@ -2656,7 +2656,7 @@ const builtin_span = new Span(0, 0, "<builtin>", "")
 
 export class StrType extends ComplexType<StrData> {
     static default() {
-        const type = new StrType("str")
+        const type = new StrType("Str")
         return Type.add_or_get_known_type(type.signature, type, builtin_span)
     }
 
@@ -2679,7 +2679,7 @@ class StrData {
 
 export class CharType extends ComplexType<CharData> {
     static default() {
-        const type = new CharType("char")
+        const type = new CharType("Char")
         return Type.add_or_get_known_type(type.signature, type, builtin_span)
     }
 
@@ -2702,7 +2702,7 @@ class CharData {
 
 export class BoolType extends ComplexType<BoolData> {
     static default() {
-        const type = new BoolType("bool")
+        const type = new BoolType("Bool")
         return Type.add_or_get_known_type(type.signature, type, builtin_span)
     }
 
@@ -2900,14 +2900,14 @@ export class TypeEnvironment {
     static global() {
         Type.clear_known_types()
         const env = new TypeEnvironment()
-        const bool = BoolType.default()
-        const str = StrType.default()
+        const Bool = BoolType.default()
+        const Str = StrType.default()
         env.add(
-            "i32",
+            "Int",
             add_core_traits(
-                NumericType.from_name("i32"),
-                bool,
-                str,
+                NumericType.from_name("Int"),
+                Bool,
+                Str,
                 "PartialEq",
                 "PartialOrd",
                 "ToStr",
@@ -2919,14 +2919,14 @@ export class TypeEnvironment {
             builtin_span,
         )
         env.add(
-            "bool",
-            add_core_traits(bool, bool, str, "PartialEq", "PartialOrd", "ToStr"),
+            "Bool",
+            add_core_traits(Bool, Bool, Str, "PartialEq", "PartialOrd", "ToStr"),
             builtin_span,
         )
-        env.add("str", add_core_traits(str, bool, str, "PartialEq", "ToStr"), builtin_span)
+        env.add("Str", add_core_traits(Str, Bool, Str, "PartialEq", "ToStr"), builtin_span)
         env.add(
-            "char",
-            add_core_traits(CharType.default(), bool, str, "PartialEq", "ToStr"),
+            "Char",
+            add_core_traits(CharType.default(), Bool, Str, "PartialEq", "ToStr"),
             builtin_span,
         )
         env.add("()", Type.unit, builtin_span)
@@ -2987,24 +2987,24 @@ export class TypeEnvironment {
         return this.types_by_name.get(name) ?? this.parent?.get_or_null(name) ?? null
     }
 
-    get i32() {
-        return this.get("i32", builtin_span)
+    get Int() {
+        return this.get("Int", builtin_span)
     }
 
-    get bool() {
-        return this.get("bool", builtin_span)
+    get Bool() {
+        return this.get("Bool", builtin_span)
     }
 
     get unit() {
         return this.get("()", builtin_span)
     }
 
-    get str() {
-        return this.get("str", builtin_span)
+    get Str() {
+        return this.get("Str", builtin_span)
     }
 
-    get char() {
-        return this.get("char", builtin_span)
+    get Char() {
+        return this.get("Char", builtin_span)
     }
 
     debug_str(indent = 0): string {
@@ -3043,19 +3043,19 @@ const test = {
                     fn div(self, rhs Self) Self
                 end
                 trait PartialEq:
-                    fn eq(self, rhs Self) bool
-                    fn ne(self, rhs Self) bool
+                    fn eq(self, rhs Self) Bool
+                    fn ne(self, rhs Self) Bool
                 end
                 trait PartialOrd:
-                    fn lt(self, rhs Self) bool
-                    fn le(self, rhs Self) bool
-                    fn gt(self, rhs Self) bool
-                    fn ge(self, rhs Self) bool
+                    fn lt(self, rhs Self) Bool
+                    fn le(self, rhs Self) Bool
+                    fn gt(self, rhs Self) Bool
+                    fn ge(self, rhs Self) Bool
                 end
                 trait Ord:
                 end
                 trait ToStr:
-                    fn to_str(self) str
+                    fn to_str(self) Str
                 end
                 trait IndexedGet<K, V>:
                     fn get(self, key K) V
@@ -3069,7 +3069,7 @@ const test = {
                     Ok(T)
                     Error(E)
                 end
-                fn panic(message str):
+                fn panic(message Str):
                 end
             ` + src
         }
@@ -3095,20 +3095,20 @@ const test = {
             let c = "foo"
         `,
         )
-        assert.equal(env.get("a", builtin_span), env.i32)
-        assert.equal(env.get("b", builtin_span), env.bool)
-        assert.equal(env.get("c", builtin_span), env.str)
+        assert.equal(env.get("a", builtin_span), env.Int)
+        assert.equal(env.get("b", builtin_span), env.Bool)
+        assert.equal(env.get("c", builtin_span), env.Str)
     },
 
     test_let_with_type_declaration() {
-        const {type} = test.type_check("let a i32 = 1")
+        const {type} = test.type_check("let a Int = 1")
         assert.strictEqual(type, Type.unit)
     },
 
     test_let_with_mismatching_type_declaration() {
         assert.throws(
-            () => test.type_check("let a bool = 1"),
-            /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
+            () => test.type_check("let a Bool = 1"),
+            /Expected `Bool \(BoolType\)` but got `Int \(NumericType\)`/,
         )
     },
 
@@ -3127,7 +3127,7 @@ const test = {
 
     test_identifier_reference_variable() {
         const {type, env} = test.type_check("let a = 1 a")
-        assert.strictEqual(type, env.i32)
+        assert.strictEqual(type, env.Int)
     },
 
     test_identifier_reference_unknown_variable() {
@@ -3135,37 +3135,37 @@ const test = {
     },
 
     test_identifier_reference_simple_type() {
-        const {type, env} = test.type_check("i32")
-        assert.strictEqual(type, env.i32)
+        const {type, env} = test.type_check("Int")
+        assert.strictEqual(type, env.Int)
     },
 
     test_identifier_reference_struct_type() {
-        const {type} = test.type_check("struct Foo: a i32 end Foo")
+        const {type} = test.type_check("struct Foo: a Int end Foo")
         assert.equal(type.signature, "Foo<>")
     },
 
     test_identifier_reference_function_type() {
-        const {type} = test.type_check("fn foo(a i32, b bool): end foo")
-        assert.equal(type.signature, "foo<>(i32,bool)->()")
+        const {type} = test.type_check("fn foo(a Int, b Bool): end foo")
+        assert.equal(type.signature, "foo<>(Int,Bool)->()")
     },
 
     test_function_definition() {
-        const {env} = test.type_check("fn foo(a i32, b bool): end")
+        const {env} = test.type_check("fn foo(a Int, b Bool): end")
         const type = env.get("foo", builtin_span)
-        assert.strictEqual(type.signature, "foo<>(i32,bool)->()")
+        assert.strictEqual(type.signature, "foo<>(Int,Bool)->()")
     },
 
     test_nested_function_definition() {
         const {env} = test.type_check(`
-            fn foo(a i32) i32: 
-                fn bar() bool: 
+            fn foo(a Int) Int: 
+                fn bar() Bool: 
                     true
                 end
                 if bar() => 1 else => 2 
             end
         `)
         const type = env.get("foo", builtin_span)
-        assert.strictEqual(type.signature, "foo<>(i32)->i32")
+        assert.strictEqual(type.signature, "foo<>(Int)->Int")
         // `bar` is not visible outside of `foo`.
         assert.equal(env.get_or_null("bar"), null)
     },
@@ -3174,9 +3174,9 @@ const test = {
         assert.throws(
             () =>
                 test.type_check(`
-            fn foo(a i32) i32: 
+            fn foo(a Int) Int: 
                 if true:
-                    fn bar() bool:
+                    fn bar() Bool:
                         true
                     end
                     if bar() => 1 else => 2 
@@ -3191,21 +3191,21 @@ const test = {
 
     test_nested_function_definition_captures_variables() {
         const {env} = test.type_check(`
-            fn foo(a i32) i32: 
+            fn foo(a Int) Int: 
                 let b = true
-                fn bar() bool: 
+                fn bar() Bool: 
                     b 
                 end
                 if bar() => 1 else => 2 
             end
         `)
         const type = env.get("foo", builtin_span)
-        assert.strictEqual(type.signature, "foo<>(i32)->i32")
+        assert.strictEqual(type.signature, "foo<>(Int)->Int")
     },
 
     test_function_duplication() {
         assert.throws(
-            () => test.type_check("fn foo(): end fn foo(a i32): end"),
+            () => test.type_check("fn foo(): end fn foo(a Int): end"),
             /`foo` already defined/,
         )
     },
@@ -3219,31 +3219,31 @@ const test = {
 
     test_closure_captures_variables() {
         const {type} = test.type_check(`
-            fn foo(a i32) i32: 
+            fn foo(a Int) Int: 
                 let b = 1
-                let bar = fn() i32:
+                let bar = fn() Int:
                     b 
                 end
                 bar()
             end
             foo
         `)
-        assert.strictEqual(type.signature, "foo<>(i32)->i32")
+        assert.strictEqual(type.signature, "foo<>(Int)->Int")
     },
 
     test_closure_type_inference() {
         const {type} = test.type_check(`
-            fn foo(f (fn(i32) i32)) i32:
+            fn foo(f (fn(Int) Int)) Int:
                 f(1)
             end
 
             foo(fn(a) => 0)
         `)
-        assert.strictEqual(type.signature, "i32")
+        assert.strictEqual(type.signature, "Int")
     },
 
     test_struct() {
-        const {env} = test.type_check("struct Foo: a i32 end")
+        const {env} = test.type_check("struct Foo: a Int end")
         const foo = env.get("Foo", builtin_span)
         assert.equal(foo.signature, "Foo<>")
         assert(foo instanceof StructType)
@@ -3251,14 +3251,14 @@ const test = {
     },
 
     test_struct_with_tuple_field() {
-        const {env} = test.type_check("struct Foo: a (i32, bool) end")
+        const {env} = test.type_check("struct Foo: a (Int, Bool) end")
         const foo = env.get("Foo", builtin_span)
-        assert.equal(foo.debug_str, "Foo<>{a: (i32,bool)}")
+        assert.equal(foo.debug_str, "Foo<>{a: (Int,Bool)}")
     },
 
     test_struct_duplicate_struct() {
         assert.throws(
-            () => test.type_check("struct Foo: a i32 end struct Foo: a i32 end"),
+            () => test.type_check("struct Foo: a Int end struct Foo: a Int end"),
             /`Foo` already defined/,
         )
     },
@@ -3275,21 +3275,21 @@ const test = {
 
     test_generic_struct_with_default_type() {
         const {env} = test.type_check(`
-            struct Foo<T=i32>: 
+            struct Foo<T=Int>: 
                 a T
             end
             
             let foo_default = Foo{a: 1}
-            let foo_bool = Foo<bool>{a: true}
+            let foo_bool = Foo<Bool>{a: true}
         `)
-        assert.equal(env.get("foo_default", builtin_span).signature, "Foo<T default i32=i32>")
-        assert.equal(env.get("foo_bool", builtin_span).signature, "Foo<T default i32=bool>")
+        assert.equal(env.get("foo_default", builtin_span).signature, "Foo<T default Int=Int>")
+        assert.equal(env.get("foo_bool", builtin_span).signature, "Foo<T default Int=Bool>")
     },
 
     test_generic_struct_with_trailing_default_type() {
         const {env} = test.type_check(`
             struct Error<T=()>:
-                message str
+                message Str
                 data T
             end
 
@@ -3298,11 +3298,11 @@ const test = {
                 Err(Error<E>)
             end
 
-            let a = Result<i32>.Ok(1)
-            let b = Result<i32>.Err(Error{message: "foo", data: ()})
+            let a = Result<Int>.Ok(1)
+            let b = Result<Int>.Err(Error{message: "foo", data: ()})
         `)
-        assert.equal(env.get("a", builtin_span).signature, "Result<T=i32,E default ()=()>.Ok")
-        assert.equal(env.get("b", builtin_span).signature, "Result<T=i32,E default ()=()>.Err")
+        assert.equal(env.get("a", builtin_span).signature, "Result<T=Int,E default ()=()>.Ok")
+        assert.equal(env.get("b", builtin_span).signature, "Result<T=Int,E default ()=()>.Err")
     },
 
     test_generic_struct_with_type_parameter_that_is_not_a_type_variable() {
@@ -3322,7 +3322,7 @@ const test = {
     test_impl_for_struct() {
         const {env} = test.type_check(`
             struct Foo:
-            a i32 
+            a Int 
             end
 
             impl Foo:
@@ -3333,7 +3333,7 @@ const test = {
         const foo = env.get("Foo", builtin_span)
         assert.equal(foo.signature, "Foo<>")
         assert(foo instanceof StructType)
-        assert.equal(foo.debug_str, "Foo<>{a: i32, foo: foo<>()->()}")
+        assert.equal(foo.debug_str, "Foo<>{a: Int, foo: foo<>()->()}")
     },
 
     test_impl_for_struct_fails_if_field_exists() {
@@ -3341,7 +3341,7 @@ const test = {
             () =>
                 test.type_check(`
             struct Foo:
-            a i32 
+            a Int 
             end
 
             impl Foo:
@@ -3375,7 +3375,7 @@ const test = {
     test_impl_with_self_type() {
         const {env} = test.type_check(`
             struct Foo:
-            a i32 
+            a Int 
             end
 
             impl Foo:
@@ -3389,7 +3389,7 @@ const test = {
         assert.equal(foo.signature, "Foo<>")
         assert(foo instanceof StructType)
         assert.equal(foo.fields.get("foo")?.signature, "foo<>(Foo<>)->Foo<>")
-        assert.equal(foo.debug_str, "Foo<>{a: i32, foo: foo<>(Foo<>)->Foo<>}")
+        assert.equal(foo.debug_str, "Foo<>{a: Int, foo: foo<>(Foo<>)->Foo<>}")
     },
 
     test_impl_with_self_type_for_generic_struct() {
@@ -3414,14 +3414,14 @@ const test = {
     test_impl_with_inner_function() {
         const {env} = test.type_check(`
             struct Foo: 
-                a i32 
+                a Int 
             end
 
             impl Foo: 
                 fn foo(self) Self: 
                     let b = true
 
-                    fn bar() i32: 
+                    fn bar() Int: 
                         self.a
                     end
 
@@ -3433,13 +3433,13 @@ const test = {
         assert.equal(foo.signature, "Foo<>")
         assert(foo instanceof StructType)
         assert.equal(foo.fields.get("foo")?.signature, "foo<>(Foo<>)->Foo<>")
-        assert.equal(foo.debug_str, "Foo<>{a: i32, foo: foo<>(Foo<>)->Foo<>}")
+        assert.equal(foo.debug_str, "Foo<>{a: Int, foo: foo<>(Foo<>)->Foo<>}")
     },
 
     test_struct_instantiation() {
         const {type} = test.type_check(`
             struct Foo: 
-                a i32 
+                a Int 
             end
 
             let foo = Foo{a: 1}
@@ -3453,12 +3453,12 @@ const test = {
             () =>
                 test.type_check(`
             struct Foo: 
-                a i32 
+                a Int 
             end
 
             let foo = Foo{a: true}
         `),
-            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
     },
 
@@ -3474,12 +3474,12 @@ const test = {
                 end
             end
 
-            let foo = Foo<i32>{a: 1}
+            let foo = Foo<Int>{a: 1}
             foo
         `)
-        assert.equal(type.signature, "Foo<T=i32>")
+        assert.equal(type.signature, "Foo<T=Int>")
         assert(type instanceof StructType)
-        assert.equal(type.debug_str, "Foo<T=i32>{a: i32, foo: foo<>(i32)->i32}")
+        assert.equal(type.debug_str, "Foo<T=Int>{a: Int, foo: foo<>(Int)->Int}")
         assert.equal(env.get("Foo", builtin_span)!.debug_str, "Foo<T>{a: T, foo: foo<>(T)->T}")
     },
 
@@ -3491,10 +3491,10 @@ const test = {
                 a T
             end
 
-            let foo = Foo<i32>{a: 1}
-            let bar Foo<bool> = foo
+            let foo = Foo<Int>{a: 1}
+            let bar Foo<Bool> = foo
         `),
-            /Expected `Foo<T=bool> \(StructType\)` but got `Foo<T=i32> \(StructType\)`/,
+            /Expected `Foo<T=Bool> \(StructType\)` but got `Foo<T=Int> \(StructType\)`/,
         )
     },
 
@@ -3514,20 +3514,20 @@ const test = {
                 end
             end
 
-            let bar = Bar<i32>{foo: Foo<i32>{a: 1}}
+            let bar = Bar<Int>{foo: Foo<Int>{a: 1}}
             let bar_foo = bar.foo
             let bar_foo_do_foo = bar_foo.do_foo
             bar
         `)
-        assert.equal(type.signature, "Bar<T=i32>")
+        assert.equal(type.signature, "Bar<T=Int>")
         assert(type instanceof StructType)
-        assert.equal(type.debug_str, "Bar<T=i32>{foo: Foo<T=i32>}")
+        assert.equal(type.debug_str, "Bar<T=Int>{foo: Foo<T=Int>}")
         assert.equal(env.get("Bar", builtin_span)!.debug_str, "Bar<T>{foo: Foo<T>}")
         assert.equal(
             env.get("Foo", builtin_span)!.debug_str,
             "Foo<T>{a: T, do_foo: do_foo<>(T)->T}",
         )
-        assert.equal(env.get("bar_foo_do_foo", builtin_span)!.signature, "do_foo<>(i32)->i32")
+        assert.equal(env.get("bar_foo_do_foo", builtin_span)!.signature, "do_foo<>(Int)->Int")
     },
 
     test_static_struct_function() {
@@ -3542,40 +3542,40 @@ const test = {
                 end
             end
 
-            let foo = Foo<i32>.new(1)
+            let foo = Foo<Int>.new(1)
             foo
         `)
-        assert.equal(type.signature, "Foo<T=i32>")
+        assert.equal(type.signature, "Foo<T=Int>")
     },
 
     test_function_call() {
         const {type} = test.type_check(`
-            fn foo(a i32, b bool) bool: 
+            fn foo(a Int, b Bool) Bool: 
                 true
             end
             foo(1, true)
         `)
-        assert.equal(type.signature, "bool")
+        assert.equal(type.signature, "Bool")
     },
 
     test_function_call_generic() {
         const {type} = test.type_check(`
-            fn foo<T>(a T, b bool) T: 
+            fn foo<T>(a T, b Bool) T: 
                 a
             end
-            foo<i32>(1, true)
+            foo<Int>(1, true)
         `)
-        assert.equal(type.signature, "i32")
+        assert.equal(type.signature, "Int")
     },
 
     test_struct_function_call() {
         const {type} = test.type_check(`
             struct Foo: 
-                a i32
+                a Int
             end
 
             impl Foo: 
-                fn foo(self) i32: 
+                fn foo(self) Int: 
                     self.a
                 end
             end
@@ -3583,14 +3583,14 @@ const test = {
             let foo = Foo{a: 1}
             foo.foo()
         `)
-        assert.equal(type.signature, "i32")
+        assert.equal(type.signature, "Int")
     },
 
     test_recursive_generic() {
         const {env} = test.type_check(`
             struct Foo<T>: 
                 a Foo<T>
-                bar Bar<T, i32>
+                bar Bar<T, Int>
             end
 
             impl Foo<A>:
@@ -3610,7 +3610,7 @@ const test = {
         )
         assert.equal(
             env.get("Foo", builtin_span)!.debug_str,
-            "Foo<T>{a: Foo<T>, bar: Bar<T,V=i32>, foo: foo<B>(T,Foo<B>)->Foo<B>}",
+            "Foo<T>{a: Foo<T>, bar: Bar<T,V=Int>, foo: foo<B>(T,Foo<B>)->Foo<B>}",
         )
     },
 
@@ -3626,11 +3626,11 @@ const test = {
                 end
             end
 
-            let foo = Foo<i32>{a: 1}
-            foo.foo<bool>(1, true)
+            let foo = Foo<Int>{a: 1}
+            foo.foo<Bool>(1, true)
 
         `)
-        assert.equal(type.signature, "bool")
+        assert.equal(type.signature, "Bool")
     },
 
     test_trait() {
@@ -3713,7 +3713,7 @@ const test = {
                 end
             end
 
-            let a = Foo<i32>{a: 1}
+            let a = Foo<Int>{a: 1}
             a.foo(1)
         `)
         assert.equal(
@@ -3744,7 +3744,7 @@ const test = {
     test_trait_impl_accessing_function_of_another_struct() {
         test.type_check(`
             struct Foo:
-                a i32
+                a Int
             end
 
             trait Bar: 
@@ -3764,7 +3764,7 @@ const test = {
     test_trait_impl_with_generic_struct() {
         const {env} = test.type_check(`
             trait IndexedGet<T>:
-                fn get(self, i i32) T
+                fn get(self, i Int) T
             end
 
             extern:
@@ -3772,7 +3772,7 @@ const test = {
                 end
 
                 impl JSArray<X>:
-                    fn get(self, i i32) X
+                    fn get(self, i Int) X
                 end
             end
 
@@ -3781,21 +3781,21 @@ const test = {
             end
 
             impl IndexedGet<T> for array<T>:
-                fn get(self, i i32) T:
+                fn get(self, i Int) T:
                     self.data.get(i)
                 end
             end
         `)
         assert.equal(
             env.get("array", builtin_span)!.debug_str,
-            "array<A>{data: JSArray<A>, get: get<>(array<A>,i32)->A}",
+            "array<A>{data: JSArray<A>, get: get<>(array<A>,Int)->A}",
         )
     },
 
     test_generic_trait_impl_with_concrete_type() {
         const {env} = test.type_check(`
             struct Foo:
-                a i32
+                a Int
             end
 
             trait Trait<B>: 
@@ -3810,22 +3810,22 @@ const test = {
         `)
         assert.equal(
             env.get("Foo", builtin_span)!.debug_str,
-            "Foo<>{a: i32, foo: foo<>(Foo<>)->Foo<>}",
+            "Foo<>{a: Int, foo: foo<>(Foo<>)->Foo<>}",
         )
     },
 
     test_trait_bounds() {
         const {type, env} = test.type_check(`
             trait ToStr:
-                fn to_str(self) str
+                fn to_str(self) Str
             end
 
             struct Foo:
-                a str
+                a Str
             end
 
             impl ToStr for Foo:
-                fn to_str(self) str => self.a
+                fn to_str(self) Str => self.a
             end
 
             struct Bar<T impl ToStr>:
@@ -3833,22 +3833,22 @@ const test = {
             end
 
             impl ToStr for Bar<T>:
-                fn to_str(self) str => self.a.to_str()
+                fn to_str(self) Str => self.a.to_str()
             end
 
             -- We add a second example to make sure that T is not somehow 
             -- bound to impl ToStr in the previous example.
 
             struct Planet:
-                name str
+                name Str
             end 
 
             trait HasId:
-                fn id(self) str
+                fn id(self) Str
             end
 
             impl HasId for Planet:
-                fn id(self) str => self.name
+                fn id(self) Str => self.name
             end
 
             struct CelestialBody<T impl HasId>:
@@ -3856,65 +3856,65 @@ const test = {
             end
 
             impl ToStr for CelestialBody<T>:
-                fn to_str(self) str => self.body.id()
+                fn to_str(self) Str => self.body.id()
             end
 
             Bar<Foo>{a: Foo{a: "test"}}.to_str()
         `)
-        assert.equal(type.signature, "str")
+        assert.equal(type.signature, "Str")
         assert.equal(
             env.get("Bar", builtin_span)!.debug_str,
-            "Bar<T impl ToStr<>>{a: T impl ToStr<>, to_str: to_str<>(Bar<T impl ToStr<>>)->str}",
+            "Bar<T impl ToStr<>>{a: T impl ToStr<>, to_str: to_str<>(Bar<T impl ToStr<>>)->Str}",
         )
     },
 
     test_trait_bounds_on_function() {
         const {type, env} = test.type_check(`
             trait ToStr:
-                fn to_str(self) str
+                fn to_str(self) Str
             end
 
             struct Bar:
-                a str
+                a Str
             end
 
             impl ToStr for Bar:
-                fn to_str(self) str => self.a
+                fn to_str(self) Str => self.a
             end
 
-            fn foo<T impl ToStr>(v T) str:
+            fn foo<T impl ToStr>(v T) Str:
                 v.to_str()
             end
 
             foo<Bar>(Bar{a: "test"})
         `)
-        assert.equal(type.signature, "str")
+        assert.equal(type.signature, "Str")
         assert.equal(
             env.get("foo", builtin_span)!.debug_str,
-            "foo<T impl ToStr<>>(T impl ToStr<>)->str",
+            "foo<T impl ToStr<>>(T impl ToStr<>)->Str",
         )
     },
 
     test_multiple_trait_bounds() {
         const {type} = test.type_check(`
             trait ToStr:
-                fn to_str(self) str
+                fn to_str(self) Str
             end
 
             trait ToInt:
-                fn to_int(self) i32
+                fn to_int(self) Int
             end
 
             struct Foo:
-                a str
+                a Str
             end
 
             impl ToStr for Foo:
-                fn to_str(self) str => self.a
+                fn to_str(self) Str => self.a
             end
 
             impl ToInt for Foo:
-                fn to_int(self) i32 => 1
+                fn to_int(self) Int => 1
             end
 
             fn boo<T impl ToStr and ToInt>(v T) T:
@@ -3935,25 +3935,25 @@ const test = {
     test_trait_bounds_on_traits() {
         const {type} = test.type_check(`
             trait ToStr:
-                fn to_str(self) str
+                fn to_str(self) Str
             end
 
             trait Foo impl ToStr:
-                fn foo(self) str:
+                fn foo(self) Str:
                     self.to_str()
                 end
             end
 
             struct Bar:
-                a str
+                a Str
             end
 
             impl ToStr for Bar:
-                fn to_str(self) str => self.a
+                fn to_str(self) Str => self.a
             end
 
             impl Foo for Bar:
-                fn foo(self) str => "bar"
+                fn foo(self) Str => "bar"
             end
 
             fn boo<T impl Foo>(v T) T:
@@ -3967,7 +3967,7 @@ const test = {
         `)
         assert.equal(
             type.debug_str,
-            "Bar<>{a: str, to_str: to_str<>(Bar<>)->str, foo: foo<>(Bar<>)->str}",
+            "Bar<>{a: Str, to_str: to_str<>(Bar<>)->Str, foo: foo<>(Bar<>)->Str}",
         )
     },
 
@@ -3976,34 +3976,34 @@ const test = {
             if true => 1 else => 2
         `)
         // The expression is "used" because it's the last expression in the block.
-        assert.equal(type.signature, "i32")
+        assert.equal(type.signature, "Int")
     },
 
     test_if_with_condition_type_mismatch() {
         assert.throws(
             () => test.type_check("if 1 => 1 else => 2"),
-            /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
+            /Expected `Bool \(BoolType\)` but got `Int \(NumericType\)`/,
         )
     },
 
     test_if_with_branch_type_mismatch() {
         assert.throws(
             () => test.type_check("let a = if true => 1 else => true"),
-            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
     },
 
     test_if_with_branch_type_mismatch_when_used_as_condition_in_if() {
         assert.throws(
             () => test.type_check("if (if true => 1 else => true) => 1 else => 2"),
-            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
     },
 
     test_if_with_branch_type_mismatch_when_used_in_function_call() {
         assert.throws(
-            () => test.type_check("fn foo(a i32): end foo(if true => 1 else => true)"),
-            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+            () => test.type_check("fn foo(a Int): end foo(if true => 1 else => true)"),
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
     },
 
@@ -4011,10 +4011,10 @@ const test = {
         assert.throws(
             () =>
                 test.type_check(`
-            struct Foo: a i32 end
+            struct Foo: a Int end
             Foo{a: if true => 1 else => true}
         `),
-            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
     },
 
@@ -4022,11 +4022,11 @@ const test = {
         assert.throws(
             () =>
                 test.type_check(`
-            fn foo() i32:
+            fn foo() Int:
                 if true => 1 else => true
             end
         `),
-            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
     },
 
@@ -4036,7 +4036,7 @@ const test = {
                 if true => 1 else => 2 
             else => 2
         `)
-        assert.equal(type.signature, "i32")
+        assert.equal(type.signature, "Int")
     },
 
     test_if_branch_types_do_not_have_to_match_if_expression_is_not_used() {
@@ -4045,7 +4045,7 @@ const test = {
             1 -- We add this expression so the if expression is 
               -- not the last expression in the block.
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.Int)
     },
 
     test_return_without_value() {
@@ -4060,54 +4060,54 @@ const test = {
 
     test_return_with_value() {
         const {type, env} = test.type_check(`
-            fn foo() i32: 
+            fn foo() Int: 
                 return 1
             end
             foo()
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.Int)
     },
 
     test_nested_return() {
         const {type, env} = test.type_check(`
-            fn foo(b bool) i32: 
+            fn foo(b Bool) Int: 
                 if b => return 1 else => return 2
             end
                 
             foo(true)
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.Int)
     },
 
     test_nested_return_with_only_one_branch_actually_returning() {
         const {type, env} = test.type_check(`
-            fn foo(b bool) i32: 
+            fn foo(b Bool) Int: 
                 if b => return 1 else => 2
             end
                 
             foo(true)
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.Int)
     },
 
     test_nested_return_must_return_same_type() {
         assert.throws(
             () =>
                 test.type_check(`
-            fn foo(b bool) i32: 
+            fn foo(b Bool) Int: 
                 if b => return 1 else => return true
             end
                 
             foo(true)
         `),
-            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
     },
 
     test_return_in_nested_function() {
         const {type, env} = test.type_check(`
-            fn foo(b bool) i32: 
-                fn bar() bool: 
+            fn foo(b Bool) Int: 
+                fn bar() Bool: 
                     return true
                 end
                 if bar() => return 1 else => return 2
@@ -4115,84 +4115,84 @@ const test = {
                 
             foo(true)
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.Int)
     },
 
     test_if_with_branch_type_mismatch_when_used_in_return() {
         assert.throws(
             () =>
                 test.type_check(`
-            fn foo() i32:
+            fn foo() Int:
                 return if true => 1 else => true
             end
         `),
-            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
     },
 
-    expect_binary(expression: string, expected: "bool" | "i32") {
+    expect_binary(expression: string, expected: "Bool" | "Int") {
         const {type, env} = test.type_check_with_core_types(expression)
         assert.equal(type, env.get(expected, builtin_span))
     },
 
     test_binary_and_or() {
-        test.expect_binary("true and false", "bool")
-        test.expect_binary("true or false", "bool")
-        test.expect_binary("true and false or true", "bool")
+        test.expect_binary("true and false", "Bool")
+        test.expect_binary("true or false", "Bool")
+        test.expect_binary("true and false or true", "Bool")
     },
 
     test_binary_and_or_with_type_mismatch() {
         assert.throws(
             () => test.type_check_with_core_types("true or 1"),
-            /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
+            /Expected `Bool \(BoolType\)` but got `Int \(NumericType\)`/,
         )
         assert.throws(
             () => test.type_check_with_core_types("1 or true"),
-            /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
+            /Expected `Bool \(BoolType\)` but got `Int \(NumericType\)`/,
         )
     },
 
-    test_binary_comparison_i32() {
-        test.expect_binary("1 == 1", "bool")
-        test.expect_binary("1 != 1", "bool")
-        test.expect_binary("1 < 1", "bool")
-        test.expect_binary("1 <= 1", "bool")
-        test.expect_binary("1 > 1", "bool")
-        test.expect_binary("1 >= 1", "bool")
+    test_binary_comparison_Int() {
+        test.expect_binary("1 == 1", "Bool")
+        test.expect_binary("1 != 1", "Bool")
+        test.expect_binary("1 < 1", "Bool")
+        test.expect_binary("1 <= 1", "Bool")
+        test.expect_binary("1 > 1", "Bool")
+        test.expect_binary("1 >= 1", "Bool")
     },
 
-    test_binary_comparison_i32_with_type_mismatch() {
+    test_binary_comparison_Int_with_type_mismatch() {
         assert.throws(
             () => test.type_check_with_core_types("1 == true"),
-            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
         assert.throws(
             () => test.type_check_with_core_types("true == 1"),
-            /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
+            /Expected `Bool \(BoolType\)` but got `Int \(NumericType\)`/,
         )
     },
 
     test_binary_comparison_bool() {
-        test.expect_binary("true == true", "bool")
-        test.expect_binary("true != true", "bool")
-        test.expect_binary("true < true", "bool")
-        test.expect_binary("true <= true", "bool")
-        test.expect_binary("true > true", "bool")
-        test.expect_binary("true >= true", "bool")
+        test.expect_binary("true == true", "Bool")
+        test.expect_binary("true != true", "Bool")
+        test.expect_binary("true < true", "Bool")
+        test.expect_binary("true <= true", "Bool")
+        test.expect_binary("true > true", "Bool")
+        test.expect_binary("true >= true", "Bool")
     },
 
     test_binary_comparison_struct() {
         const {type, env} = test.type_check_with_core_types(`
             struct Foo: 
-                a i32
+                a Int
             end
 
             impl PartialEq for Foo: 
-                fn eq(self, rhs Self) bool: 
+                fn eq(self, rhs Self) Bool: 
                     self.a == rhs.a
                 end
 
-                fn ne(self, rhs Self) bool:
+                fn ne(self, rhs Self) Bool:
                     self.a != rhs.a
                 end
             end
@@ -4201,14 +4201,14 @@ const test = {
             let b = Foo{a: 1}
             a == b
         `)
-        assert.equal(type, env.bool)
+        assert.equal(type, env.Bool)
     },
 
-    test_binary_math_i32() {
-        test.expect_binary("1 + 1", "i32")
-        test.expect_binary("1 - 1", "i32")
-        test.expect_binary("1 * 1", "i32")
-        test.expect_binary("1 / 1", "i32")
+    test_binary_math_Int() {
+        test.expect_binary("1 + 1", "Int")
+        test.expect_binary("1 - 1", "Int")
+        test.expect_binary("1 * 1", "Int")
+        test.expect_binary("1 / 1", "Int")
     },
 
     test_assignment() {
@@ -4217,7 +4217,7 @@ const test = {
             a = 2
         `)
         assert.equal(type, env.unit)
-        assert.equal(env.get("a", builtin_span), env.i32)
+        assert.equal(env.get("a", builtin_span), env.Int)
     },
 
     test_assignment_with_type_mismatch() {
@@ -4227,7 +4227,7 @@ const test = {
             mut a = 1
             a = true
         `),
-            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
     },
 
@@ -4245,7 +4245,7 @@ const test = {
     test_struct_field_assignment() {
         const {type, env} = test.type_check(`
             struct Foo: 
-                a i32
+                a Int
             end
 
             mut foo = Foo{a: 1}
@@ -4261,16 +4261,16 @@ const test = {
             end
 
             extern:
-                fn foo(a i32, b bool) bool
+                fn foo(a Int, b Bool) Bool
 
                 struct Foo:
-                    a i32
+                    a Int
                 end
 
                 impl A for Foo
 
                 impl Foo:
-                    fn bar() i32
+                    fn bar() Int
                 end
             end
 
@@ -4279,10 +4279,10 @@ const test = {
             let c = b.foo
             let d = b.bar()
         `)
-        assert.equal(env.get("a", builtin_span), env.bool)
+        assert.equal(env.get("a", builtin_span), env.Bool)
         assert.equal(env.get("b", builtin_span).signature, "Foo<>")
         assert.equal(env.get("c", builtin_span).signature, "foo<>()->()")
-        assert.equal(env.get("d", builtin_span), env.i32)
+        assert.equal(env.get("d", builtin_span), env.Int)
     },
 
     test_tuples() {
@@ -4291,9 +4291,9 @@ const test = {
             let b = a.0
             let c = a.1
         `)
-        assert.equal(env.get("a", builtin_span).signature, "(i32,bool)")
-        assert.equal(env.get("b", builtin_span), env.i32)
-        assert.equal(env.get("c", builtin_span), env.bool)
+        assert.equal(env.get("a", builtin_span).signature, "(Int,Bool)")
+        assert.equal(env.get("b", builtin_span), env.Int)
+        assert.equal(env.get("c", builtin_span), env.Bool)
     },
 
     test_nested_tuples() {
@@ -4303,35 +4303,35 @@ const test = {
             let c = a.1.0
             let d = a.1.1
         `)
-        assert.equal(env.get("a", builtin_span).signature, "(i32,(bool,i32))")
-        assert.equal(env.get("b", builtin_span), env.i32)
-        assert.equal(env.get("c", builtin_span), env.bool)
-        assert.equal(env.get("d", builtin_span), env.i32)
+        assert.equal(env.get("a", builtin_span).signature, "(Int,(Bool,Int))")
+        assert.equal(env.get("b", builtin_span), env.Int)
+        assert.equal(env.get("c", builtin_span), env.Bool)
+        assert.equal(env.get("d", builtin_span), env.Int)
     },
 
     test_tuples_as_function_parameters() {
         const {env} = test.type_check(`
-            fn foo(a (i32, bool)): 
+            fn foo(a (Int, Bool)): 
             end
 
             foo((1, true))
         `)
-        assert.equal(env.get("foo", builtin_span).signature, "foo<>((i32,bool))->()")
+        assert.equal(env.get("foo", builtin_span).signature, "foo<>((Int,Bool))->()")
     },
 
     test_nested_tuples_as_function_parameters() {
         const {env} = test.type_check(`
-            fn foo(a (i32, (bool, i32))): 
+            fn foo(a (Int, (Bool, Int))): 
             end
 
             foo((1, (true, 1)))
         `)
-        assert.equal(env.get("foo", builtin_span).signature, "foo<>((i32,(bool,i32)))->()")
+        assert.equal(env.get("foo", builtin_span).signature, "foo<>((Int,(Bool,Int)))->()")
     },
 
     test_tuples_as_function_return_type() {
         const {env} = test.type_check(`
-            fn foo() (i32, bool): 
+            fn foo() (Int, Bool): 
                 (1, true)
             end
 
@@ -4339,15 +4339,15 @@ const test = {
             let b = a.0
             let c = a.1
         `)
-        assert.equal(env.get("foo", builtin_span).signature, "foo<>()->(i32,bool)")
-        assert.equal(env.get("a", builtin_span).signature, "(i32,bool)")
-        assert.equal(env.get("b", builtin_span), env.i32)
-        assert.equal(env.get("c", builtin_span), env.bool)
+        assert.equal(env.get("foo", builtin_span).signature, "foo<>()->(Int,Bool)")
+        assert.equal(env.get("a", builtin_span).signature, "(Int,Bool)")
+        assert.equal(env.get("b", builtin_span), env.Int)
+        assert.equal(env.get("c", builtin_span), env.Bool)
     },
 
     test_tuples_as_function_return_type_with_nested_tuples() {
         const {env} = test.type_check(`
-            fn foo() (i32, (bool, i32)): 
+            fn foo() (Int, (Bool, Int)): 
                 (1, (true, 1))
             end
 
@@ -4356,11 +4356,11 @@ const test = {
             let c = a.1.0
             let d = a.1.1
         `)
-        assert.equal(env.get("foo", builtin_span).signature, "foo<>()->(i32,(bool,i32))")
-        assert.equal(env.get("a", builtin_span).signature, "(i32,(bool,i32))")
-        assert.equal(env.get("b", builtin_span), env.i32)
-        assert.equal(env.get("c", builtin_span), env.bool)
-        assert.equal(env.get("d", builtin_span), env.i32)
+        assert.equal(env.get("foo", builtin_span).signature, "foo<>()->(Int,(Bool,Int))")
+        assert.equal(env.get("a", builtin_span).signature, "(Int,(Bool,Int))")
+        assert.equal(env.get("b", builtin_span), env.Int)
+        assert.equal(env.get("c", builtin_span), env.Bool)
+        assert.equal(env.get("d", builtin_span), env.Int)
     },
 
     test_tuple_as_type_parameter() {
@@ -4369,17 +4369,17 @@ const test = {
                 a T
             end
 
-            let foo = Foo<(i32, bool)>{a: (1, true)}
+            let foo = Foo<(Int, Bool)>{a: (1, true)}
             foo
         `)
-        assert.equal(type.signature, "Foo<T=(i32,bool)>")
+        assert.equal(type.signature, "Foo<T=(Int,Bool)>")
     },
 
     test_enum() {
         const {env} = test.type_check(`
             enum Foo:
                 Bar
-                Baz(i32)
+                Baz(Int)
             end
 
             fn foo(a Foo):
@@ -4392,7 +4392,7 @@ const test = {
         `)
         const enum_type = env.get("Foo", builtin_span)
         assert.equal(enum_type.signature, "Foo<>")
-        assert.equal(enum_type.debug_str, "Foo<>{Bar: (), Baz: (i32)}")
+        assert.equal(enum_type.debug_str, "Foo<>{Bar: (), Baz: (Int)}")
         assert.equal(env.get("a", builtin_span).signature, "Foo<>.Bar")
         assert.equal(env.get("b", builtin_span).signature, "Foo<>.Baz")
     },
@@ -4404,18 +4404,18 @@ const test = {
                 Baz(T)
             end
 
-            fn foo(a Foo<i32>):
+            fn foo(a Foo<Int>):
             end
 
-            let a = Foo<i32>.Bar
-            let b = Foo<i32>.Baz(1)
-            foo(Foo<i32>.Baz(1))
+            let a = Foo<Int>.Bar
+            let b = Foo<Int>.Baz(1)
+            foo(Foo<Int>.Baz(1))
         `)
         const enum_type = env.get("Foo", builtin_span)
         assert.equal(enum_type.signature, "Foo<T>")
         assert.equal(enum_type.debug_str, "Foo<T>{Bar: (), Baz: (T)}")
-        assert.equal(env.get("a", builtin_span).signature, "Foo<T=i32>.Bar")
-        assert.equal(env.get("b", builtin_span).signature, "Foo<T=i32>.Baz")
+        assert.equal(env.get("a", builtin_span).signature, "Foo<T=Int>.Bar")
+        assert.equal(env.get("b", builtin_span).signature, "Foo<T=Int>.Baz")
     },
 
     test_enum_with_generic_type_and_type_mismatch() {
@@ -4426,9 +4426,9 @@ const test = {
                         Baz(T)
                     end
 
-                    Foo<i32>.Baz(true)
+                    Foo<Int>.Baz(true)
                 `),
-            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
     },
 
@@ -4437,7 +4437,7 @@ const test = {
             () =>
                 test.type_check(`
                     enum Foo:
-                        Bar(i32)
+                        Bar(Int)
                     end
                     let a = Foo.Bar
                 `),
@@ -4449,11 +4449,11 @@ const test = {
         const {env} = test.type_check(`
             enum Foo:
                 Bar
-                Baz(i32)
+                Baz(Int)
             end
 
             impl Foo:
-                fn foo(self) i32:
+                fn foo(self) Int:
                     match self:
                         Foo.Bar => 1
                         Foo.Baz(a) => a
@@ -4466,47 +4466,47 @@ const test = {
         `)
         const enum_type = env.get("Foo", builtin_span)
         assert.equal(enum_type.signature, "Foo<>")
-        assert.equal(enum_type.debug_str, "Foo<>{Bar: (), Baz: (i32), foo: foo<>(Foo<>)->i32}")
-        assert.equal(env.get("a", builtin_span).signature, "foo<>(Foo<>)->i32")
-        assert.equal(env.get("b", builtin_span).signature, "foo<>(Foo<>)->i32")
+        assert.equal(enum_type.debug_str, "Foo<>{Bar: (), Baz: (Int), foo: foo<>(Foo<>)->Int}")
+        assert.equal(env.get("a", builtin_span).signature, "foo<>(Foo<>)->Int")
+        assert.equal(env.get("b", builtin_span).signature, "foo<>(Foo<>)->Int")
     },
 
     test_function_type_as_function_parameter() {
         const {env} = test.type_check(`
-            fn foo(a (fn(i32, bool) bool)): 
+            fn foo(a (fn(Int, Bool) Bool)): 
             end
 
-            fn bar(a i32, b bool) bool:
+            fn bar(a Int, b Bool) Bool:
                 b
             end
 
             foo(bar)
 
         `)
-        assert.equal(env.get("foo", builtin_span).signature, "foo<>(fn<>(i32,bool)->bool)->()")
+        assert.equal(env.get("foo", builtin_span).signature, "foo<>(fn<>(Int,Bool)->Bool)->()")
     },
 
     test_function_type_as_parameter_type_mismatch() {
         assert.throws(
             () =>
                 test.type_check(`
-                    fn foo(a (fn(i32, bool) bool)): 
+                    fn foo(a (fn(Int, Bool) Bool)): 
                     end
 
-                    fn bar(a bool, b i32) bool:
+                    fn bar(a Bool, b Int) Bool:
                         a
                     end
 
                     foo(bar)
                 `),
-            /Expected `fn<>\(i32,bool\)->bool \(FunctionType\)` but got `bar<>\(bool,i32\)->bool \(FunctionType\)/,
+            /Expected `fn<>\(Int,Bool\)->Bool \(FunctionType\)` but got `bar<>\(Bool,Int\)->Bool \(FunctionType\)/,
         )
     },
 
     test_function_type_as_function_return_type() {
         const {env, type} = test.type_check(`
-            fn foo() (fn(i32, bool) bool): 
-                fn bar(a i32, b bool) bool:
+            fn foo() (fn(Int, Bool) Bool): 
+                fn bar(a Int, b Bool) Bool:
                     b
                 end
                 bar
@@ -4515,17 +4515,17 @@ const test = {
             let a = foo()
             a(1, true)
         `)
-        assert.equal(type, env.bool)
-        assert.equal(env.get("foo", builtin_span).signature, "foo<>()->fn<>(i32,bool)->bool")
-        assert.equal(env.get("a", builtin_span).signature, "fn<>(i32,bool)->bool")
+        assert.equal(type, env.Bool)
+        assert.equal(env.get("foo", builtin_span).signature, "foo<>()->fn<>(Int,Bool)->Bool")
+        assert.equal(env.get("a", builtin_span).signature, "fn<>(Int,Bool)->Bool")
     },
 
     test_function_type_as_function_return_type_mismatch() {
         assert.throws(
             () =>
                 test.type_check(`
-                    fn foo() (fn(i32, bool) bool): 
-                        fn bar(a bool, b i32) bool:
+                    fn foo() (fn(Int, Bool) Bool): 
+                        fn bar(a Bool, b Int) Bool:
                             a
                         end
                         bar
@@ -4534,7 +4534,7 @@ const test = {
                     let a = foo()
                     a(1, true)
                 `),
-            /Expected `fn<>\(i32,bool\)->bool \(FunctionType\)` but got `bar<>\(bool,i32\)->bool \(FunctionType\)/,
+            /Expected `fn<>\(Int,Bool\)->Bool \(FunctionType\)` but got `bar<>\(Bool,Int\)->Bool \(FunctionType\)/,
         )
     },
 
@@ -4576,7 +4576,7 @@ const test = {
                 2 => false
             end
         `)
-        assert.equal(type, env.bool)
+        assert.equal(type, env.Bool)
     },
 
     test_match_literal_bool() {
@@ -4586,7 +4586,7 @@ const test = {
                 false => 2
             end
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.Int)
     },
 
     test_match_literal_string() {
@@ -4596,7 +4596,7 @@ const test = {
                 "bar" => 2
             end
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.Int)
     },
 
     test_match_literal_char() {
@@ -4606,7 +4606,7 @@ const test = {
                 'b' => 2
             end
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.Int)
     },
 
     test_match_range_number() {
@@ -4617,7 +4617,7 @@ const test = {
                 _ => false
             end
         `)
-        assert.equal(type, env.bool)
+        assert.equal(type, env.Bool)
     },
 
     test_match_range_char() {
@@ -4628,7 +4628,7 @@ const test = {
                 'b' => 3
             end
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.Int)
     },
 
     test_match_range_with_option_type() {
@@ -4639,18 +4639,18 @@ const test = {
             end
 
             match Some(1):
-                Some<i32>(1..10) => true
-                Some<i32>(2) => false
+                Some<Int>(1..10) => true
+                Some<Int>(2) => false
                 None => false
             end
         `)
-        assert.equal(type, env.bool)
+        assert.equal(type, env.Bool)
     },
 
     test_match_struct() {
         const {type, env} = test.type_check(`
             struct Foo: 
-                a i32
+                a Int
             end
 
             match Foo{a: 1}:
@@ -4658,13 +4658,13 @@ const test = {
                 Foo{a: 2} => false
             end
         `)
-        assert.equal(type, env.bool)
+        assert.equal(type, env.Bool)
     },
 
     test_match_nested_struct() {
         const {type, env} = test.type_check(`
             struct Foo: 
-                a i32
+                a Int
             end
 
             struct Bar:
@@ -4676,7 +4676,7 @@ const test = {
                 Bar{foo: Foo{a: 2}} => false
             end
         `)
-        assert.equal(type, env.bool)
+        assert.equal(type, env.Bool)
     },
 
     test_match_struct_with_generic_type() {
@@ -4685,12 +4685,12 @@ const test = {
                 a T
             end
 
-            match Foo<i32>{a: 1}:
-                Foo<i32>{a: 1} => true
-                Foo<i32>{a: 2} => false
+            match Foo<Int>{a: 1}:
+                Foo<Int>{a: 1} => true
+                Foo<Int>{a: 2} => false
             end
         `)
-        assert.equal(type, env.bool)
+        assert.equal(type, env.Bool)
     },
 
     test_match_struct_with_generic_type_and_type_mismatch() {
@@ -4701,12 +4701,12 @@ const test = {
                         a T
                     end
 
-                    match Foo<i32>{a: 1}:
-                        Foo<i32>{a: 1} => true
-                        Foo<i32>{a: true} => false
+                    match Foo<Int>{a: 1}:
+                        Foo<Int>{a: 1} => true
+                        Foo<Int>{a: true} => false
                     end
                 `),
-            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
     },
 
@@ -4718,12 +4718,12 @@ const test = {
                         a T
                     end
 
-                    match Foo<i32>{a: 1}:
-                        Foo<i32>{a: 1} => true
-                        Foo<i32>{a: true} => false
+                    match Foo<Int>{a: 1}:
+                        Foo<Int>{a: 1} => true
+                        Foo<Int>{a: true} => false
                     end
                 `),
-            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
     },
 
@@ -4739,7 +4739,7 @@ const test = {
                 Foo.Baz => false
             end
         `)
-        assert.equal(type, env.bool)
+        assert.equal(type, env.Bool)
     },
 
     test_match_enum_with_generic_type() {
@@ -4749,12 +4749,12 @@ const test = {
                 Baz(T)
             end
 
-            match Foo<i32>.Bar:
-                Foo<i32>.Bar => true
-                Foo<i32>.Baz(1) => false
+            match Foo<Int>.Bar:
+                Foo<Int>.Bar => true
+                Foo<Int>.Baz(1) => false
             end
         `)
-        assert.equal(type, env.bool)
+        assert.equal(type, env.Bool)
     },
 
     test_match_enum_with_generic_type_on_parameterized_variant() {
@@ -4764,12 +4764,12 @@ const test = {
                 Baz(T)
             end
 
-            match Foo<i32>.Baz(1): -- This is the difference from the previous test.
-                Foo<i32>.Bar => true
-                Foo<i32>.Baz(1) => false
+            match Foo<Int>.Baz(1): -- This is the difference from the previous test.
+                Foo<Int>.Bar => true
+                Foo<Int>.Baz(1) => false
             end
         `)
-        assert.equal(type, env.bool)
+        assert.equal(type, env.Bool)
     },
 
     test_match_enum_with_generic_type_and_type_mismatch() {
@@ -4781,12 +4781,12 @@ const test = {
                         Baz(T)
                     end
 
-                    match Foo<i32>.Bar:
-                        Foo<i32>.Bar => true
-                        Foo<i32>.Baz(true) => false
+                    match Foo<Int>.Bar:
+                        Foo<Int>.Bar => true
+                        Foo<Int>.Baz(true) => false
                     end
                 `),
-            /Expected `i32 \(NumericType\)` but got `bool \(BoolType\)`/,
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
     },
 
@@ -4835,7 +4835,7 @@ const test = {
             end
             a
         `)
-        assert.equal(type.signature, "Foo<T=i32>.Bar")
+        assert.equal(type.signature, "Foo<T=Int>.Bar")
     },
 
     test_match_wildcard_pattern() {
@@ -4844,7 +4844,7 @@ const test = {
                 _ => true
             end
         `)
-        assert.equal(type, env.bool)
+        assert.equal(type, env.Bool)
     },
 
     test_match_wildcard_pattern_with_complex_match() {
@@ -4862,13 +4862,13 @@ const test = {
                 foo Foo<T>
             end
 
-            match FooStruct<i32>{foo: Foo<i32>.Baz(BazStruct<i32>{baz: 1})}:
-                FooStruct<i32>{foo: _} => true
-                FooStruct<i32>{foo: Foo<i32>.Baz(BazStruct<i32>{baz: _})} => false
+            match FooStruct<Int>{foo: Foo<Int>.Baz(BazStruct<Int>{baz: 1})}:
+                FooStruct<Int>{foo: _} => true
+                FooStruct<Int>{foo: Foo<Int>.Baz(BazStruct<Int>{baz: _})} => false
                 _ => false
             end
         `)
-        assert.equal(type, env.bool)
+        assert.equal(type, env.Bool)
     },
 
     test_match_with_variable_capture() {
@@ -4877,12 +4877,12 @@ const test = {
                 a => a
             end
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.Int)
     },
 
     test_match_arms_with_return_are_ignored() {
         test.type_check(`
-            fn foo() str:
+            fn foo() Str:
                 let s = match 1:
                     1 => 42
                     2 => return "bar"
@@ -4900,7 +4900,7 @@ const test = {
                 _ => false
             end
         `)
-        assert.equal(type, env.bool)
+        assert.equal(type, env.Bool)
     },
 
     test_match_alternative_patterns_with_option_type() {
@@ -4911,12 +4911,12 @@ const test = {
             end
 
             match Some(1):
-                Some<i32>(1 | 2) => true
-                Some<i32>(3 | 4 | 5) => false
+                Some<Int>(1 | 2) => true
+                Some<Int>(3 | 4 | 5) => false
                 None => false
             end
         `)
-        assert.equal(type, env.bool)
+        assert.equal(type, env.Bool)
     },
 
     test_interpolated_string() {
@@ -4924,7 +4924,7 @@ const test = {
             let a = 1
             f"foo: {a}"
         `)
-        assert.equal(type, env.str)
+        assert.equal(type, env.Str)
     },
 
     test_interpolated_string_expressions_must_implement_to_str() {
@@ -4944,13 +4944,13 @@ const test = {
             let a = true
             not a
         `)
-        assert.equal(type, env.bool)
+        assert.equal(type, env.Bool)
     },
 
     test_not_only_works_on_bool() {
         assert.throws(
             () => test.type_check("not 1"),
-            /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
+            /Expected `Bool \(BoolType\)` but got `Int \(NumericType\)`/,
         )
     },
 
@@ -4959,19 +4959,19 @@ const test = {
             let a = [1, 2, 3]
             a
         `)
-        assert.equal(type.signature, "Array<T=i32>")
+        assert.equal(type.signature, "Array<T=Int>")
     },
 
     test_indexed_access() {
         const {type, env} = test.type_check_with_core_types(`
             struct Foo:
-                a1 i32
-                a2 i32
-                a3 i32
+                a1 Int
+                a2 Int
+                a3 Int
             end
 
-            impl IndexedGet<i32, i32> for Foo:
-                fn get(self, i i32) i32 =>
+            impl IndexedGet<Int, Int> for Foo:
+                fn get(self, i Int) Int =>
                     match i:
                         0 => self.a1
                         1 => self.a2
@@ -4979,8 +4979,8 @@ const test = {
                     end
             end
 
-            impl IndexedSet<i32, i32> for Foo:
-                fn set(mut self, i i32, v i32):
+            impl IndexedSet<Int, Int> for Foo:
+                fn set(mut self, i Int, v Int):
                     match i:
                         0 => self.a1 = v
                         1 => self.a2 = v
@@ -5030,18 +5030,18 @@ const test = {
                 end
             end
 
-            let map = Map<str, i32>{k1: "a", k2: "b", v1: 1, v2: 2}
+            let map = Map<Str, Int>{k1: "a", k2: "b", v1: 1, v2: 2}
             map["a"] = 3
             map["a"]
         `)
         const map_type = env.get("map", builtin_span)
         assert(map_type instanceof ComplexType)
-        assert.equal(map_type.signature, "Map<K=str,V=i32>")
+        assert.equal(map_type.signature, "Map<K=Str,V=Int>")
         assert.equal(
             map_type.field("get", builtin_span)!.signature,
-            "get<>(Map<K=str,V=i32>,str)->Option<V=i32>",
+            "get<>(Map<K=Str,V=Int>,Str)->Option<V=Int>",
         )
-        assert.equal(type.signature, "Option<V=i32>")
+        assert.equal(type.signature, "Option<V=Int>")
     },
 
     test_indexed_access_on_generic_type_with_concrete_type() {
@@ -5050,8 +5050,8 @@ const test = {
                 v T
             end
 
-            impl IndexedGet<i32, T> for Foo<T>:
-                fn get(self, i i32) T => self.v
+            impl IndexedGet<Int, T> for Foo<T>:
+                fn get(self, i Int) T => self.v
             end
 
             Foo
@@ -5061,7 +5061,7 @@ const test = {
 
     test_canonical_error_handling_with_return() {
         const {env} = test.type_check_with_core_types(`
-            fn divide(dividend i32, divisor i32) i32 throws:
+            fn divide(dividend Int, divisor Int) Int throws:
                 if divisor == 0 => return Error("division by zero")
                 return dividend / divisor
             end
@@ -5071,17 +5071,17 @@ const test = {
         `)
         assert.equal(
             env.get("ok", builtin_span).signature,
-            "Result<T=i32,E default ToStr<>=ToStr<>>",
+            "Result<T=Int,E default ToStr<>=ToStr<>>",
         )
         assert.equal(
             env.get("err", builtin_span).signature,
-            "Result<T=i32,E default ToStr<>=ToStr<>>",
+            "Result<T=Int,E default ToStr<>=ToStr<>>",
         )
     },
 
     test_canonical_error_handling_with_nested_expression() {
         const {env} = test.type_check_with_core_types(`
-            fn divide(dividend i32, divisor i32) i32 throws:
+            fn divide(dividend Int, divisor Int) Int throws:
                 if divisor == 0 => return Error("Division by zero")
                 if divisor > 10 => dividend / divisor else => 0
             end
@@ -5091,11 +5091,11 @@ const test = {
         `)
         assert.equal(
             env.get("ok", builtin_span).signature,
-            "Result<T=i32,E default ToStr<>=ToStr<>>",
+            "Result<T=Int,E default ToStr<>=ToStr<>>",
         )
         assert.equal(
             env.get("err", builtin_span).signature,
-            "Result<T=i32,E default ToStr<>=ToStr<>>",
+            "Result<T=Int,E default ToStr<>=ToStr<>>",
         )
     },
 
@@ -5103,40 +5103,40 @@ const test = {
         assert.throws(
             () =>
                 test.type_check_with_core_types(`
-            fn divide(dividend i32, divisor i32) i32 throws i32:
+            fn divide(dividend Int, divisor Int) Int throws Int:
                 if divisor == 0 => return Error("Division by zero")
                 if divisor > 10 => dividend / divisor else => 0
             end
         `),
-            /Expected `i32 \(NumericType\)` but got `str \(StrType\)`/,
+            /Expected `Int \(NumericType\)` but got `Str \(StrType\)`/,
         )
     },
 
     test_error_handling_with_result_type() {
         const {env} = test.type_check_with_core_types(`
-            fn divide(dividend i32, divisor i32) Result<i32, str>:
+            fn divide(dividend Int, divisor Int) Result<Int, Str>:
                 if divisor == 0 
                     -- Explicit return is tested here.
-                    => return Result<i32, str>.Error("division by zero")
+                    => return Result<Int, Str>.Error("division by zero")
                 -- Implicit return is tested here.
-                Result<i32, str>.Ok(dividend / divisor)
+                Result<Int, Str>.Ok(dividend / divisor)
             end
 
             let ok = divide(10, 2)
             let err = divide(10, 0)
         `)
-        assert.equal(env.get("ok", builtin_span).signature, "Result<T=i32,E default ToStr<>=str>")
-        assert.equal(env.get("err", builtin_span).signature, "Result<T=i32,E default ToStr<>=str>")
+        assert.equal(env.get("ok", builtin_span).signature, "Result<T=Int,E default ToStr<>=Str>")
+        assert.equal(env.get("err", builtin_span).signature, "Result<T=Int,E default ToStr<>=Str>")
     },
 
     test_error_propagation_and_coercion() {
         const {env} = test.type_check_with_core_types(`
-            fn divide(dividend i32, divisor i32) i32 throws bool:
+            fn divide(dividend Int, divisor Int) Int throws Bool:
                 if divisor == 0 => return Error(true)
                 dividend / divisor
             end
 
-            fn divide_10_by(n i32) i32 throws:
+            fn divide_10_by(n Int) Int throws:
                 let result = divide(10, n)!
                 if result == 1 => return Error("did not expect 1")
                 result
@@ -5147,11 +5147,11 @@ const test = {
         `)
         assert.equal(
             env.get("ok", builtin_span).signature,
-            "Result<T=i32,E default ToStr<>=ToStr<>>",
+            "Result<T=Int,E default ToStr<>=ToStr<>>",
         )
         assert.equal(
             env.get("err", builtin_span).signature,
-            "Result<T=i32,E default ToStr<>=ToStr<>>",
+            "Result<T=Int,E default ToStr<>=ToStr<>>",
         )
     },
 
@@ -5159,14 +5159,14 @@ const test = {
         assert.throws(
             () =>
                 test.type_check_with_core_types(`
-            fn foo() throws i32:
+            fn foo() throws Int:
             end
 
-            fn bar() throws bool:
+            fn bar() throws Bool:
                 foo()!
             end
         `),
-            /Expected `bool \(BoolType\)` but got `i32 \(NumericType\)`/,
+            /Expected `Bool \(BoolType\)` but got `Int \(NumericType\)`/,
         )
     },
 
@@ -5177,7 +5177,7 @@ const test = {
             fn foo() throws:
             end
 
-            fn bar() i32:
+            fn bar() Int:
                 foo()
                 1
             end
@@ -5188,12 +5188,12 @@ const test = {
 
     test_panic_call_is_ignored_in_function_return() {
         const {type, env} = test.type_check_with_core_types(`
-            fn foo() i32: 
+            fn foo() Int: 
                 panic("foo") -- This does not violate the return type.
             end
             foo()
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.Int)
     },
 
     test_panic_call_is_ignored_in_match() {
@@ -5203,7 +5203,7 @@ const test = {
                 2 => 2
             end
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.Int)
     },
 
     test_semicolon_transforms_expression_into_statement() {
@@ -5231,7 +5231,7 @@ const test = {
             let bar = Foo.Bar
             foo
         `)
-        assert.equal(type.signature, "Foo<T=i32>.Baz")
+        assert.equal(type.signature, "Foo<T=Int>.Baz")
     },
 
     test_infer_generic_type_from_struct_instantiation() {
@@ -5243,7 +5243,7 @@ const test = {
             let foo = Foo{a: 1}
             foo
         `)
-        assert.equal(type.signature, "Foo<T=i32>")
+        assert.equal(type.signature, "Foo<T=Int>")
     },
 
     test_infer_generic_type_in_function_call() {
@@ -5254,7 +5254,7 @@ const test = {
 
             foo(1)
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.Int)
     },
 
     test_infer_generic_type_in_function_call_if_nested() {
@@ -5269,7 +5269,7 @@ const test = {
 
             foo(Container{value: 1})
         `)
-        assert.equal(type, env.i32)
+        assert.equal(type, env.Int)
     },
 
     test_infer_generic_type_in_static_method_call() {
@@ -5284,7 +5284,7 @@ const test = {
 
             Foo.new(1)
         `)
-        assert.equal(type.signature, "Foo<T=i32>")
+        assert.equal(type.signature, "Foo<T=Int>")
     },
 
     test_option_type() {
@@ -5295,7 +5295,7 @@ const test = {
             end
 
             impl Option<T>:
-                fn is_none(self) bool:
+                fn is_none(self) Bool:
                     match self:
                         Option<T>.Some(_) => false
                         Option<T>.None => true
@@ -5303,14 +5303,14 @@ const test = {
                 end
             end
 
-            fn foo(a i32?) i32?:
+            fn foo(a Int?) Int?:
                 if a.is_none() => return 0
                 a
             end
 
             foo(1)
         `)
-        assert.equal(type.signature, "Option<T=i32>")
+        assert.equal(type.signature, "Option<T=Int>")
     },
 
     test_if_let() {
@@ -5320,10 +5320,10 @@ const test = {
                 None
             end
 
-            let a = Some<i32>(1)
-            if let Some<i32>(value) = a => value
+            let a = Some<Int>(1)
+            if let Some<Int>(value) = a => value
         `)
-        assert.equal(type.signature, "i32")
+        assert.equal(type.signature, "Int")
     },
 
     test_use_to_import_enum_variants() {
@@ -5335,10 +5335,10 @@ const test = {
 
             use Option.*
 
-            let a = Some<i32>(1)
+            let a = Some<Int>(1)
             let b = None
         `)
-        assert.equal(env.get("a", builtin_span).signature, "Option<T=i32>.Some")
+        assert.equal(env.get("a", builtin_span).signature, "Option<T=Int>.Some")
         assert.equal(env.get("b", builtin_span).signature, "Option<T>.None")
     },
 }

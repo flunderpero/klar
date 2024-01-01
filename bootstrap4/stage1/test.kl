@@ -2,31 +2,31 @@
 ---
 
 struct Test:
-    verbose bool
+    verbose Bool
     root_group TestGroup
     collect_group TestGroup
     logger TestLogger
 end
 
 struct TestCase:
-    name str
+    name Str
     f (fn() throws)
 end
 
 struct TestGroup:
-    name str
+    name Str
     tests Vector<TestCase>
     groups Vector<TestGroup>
 end
 
 struct TestRunConfig:
     logger TestLogger
-    verbose bool
+    verbose Bool
 end
 
 struct TestRunResult:
-    passed i32
-    failed i32
+    passed Int
+    failed Int
 end
 
 impl TestRunResult:
@@ -43,11 +43,11 @@ impl TestRunResult:
 
     fn inc_failed(mut self) => self.failed = self.failed + 1
 
-    fn total(self) i32 => self.passed + self.failed
+    fn total(self) Int => self.passed + self.failed
 end
 
 struct TestLogger:
-    indent_ i32
+    indent_ Int
 end
 
 impl TestLogger:
@@ -55,7 +55,7 @@ impl TestLogger:
         TestLogger{indent_: 0}
     end
 
-    fn log(self, msg str):
+    fn log(self, msg Str):
         let indent = " ".repeat(self.indent_ * 2)
         let indented_msg = msg.replace("\n", f"\n{indent}")
         print(f"{indent}{indented_msg}")
@@ -67,28 +67,28 @@ impl TestLogger:
 end
 
 impl Test:
-    fn new(name str, verbose bool) Test:
+    fn new(name Str, verbose Bool) Test:
         let root_group = TestGroup.new(name)
         Test{verbose, root_group, collect_group: root_group, logger: TestLogger.new()}
     end
 
-    fn new_from_args(name str, args Vector<str>) Test:
+    fn new_from_args(name Str, args Vector<Str>) Test:
         --- Create a new test from command line arguments.
 
             Command line arguments:
               * `--verbose`: print test logs to stdout.
         ---
-        let verbose = args.iter().any(fn(arg str) => arg == "--verbose") 
+        let verbose = args.iter().any(fn(arg Str) => arg == "--verbose") 
         Test.new(name, verbose)
     end
 
-    fn it(self, name str, f (fn() throws)):
+    fn it(self, name Str, f (fn() throws)):
         --- Add a test to the current group.
         ---
         self.collect_group.tests.push(TestCase{name, f})
     end
 
-    fn group(mut self, name str, collect (fn())):
+    fn group(mut self, name Str, collect (fn())):
         --- Create a new group of tests. All tests and groups added within the 
             `collect` function will be added to the new group. 
         ---
@@ -100,7 +100,7 @@ impl Test:
         collect_group.groups.push(group)
     end
 
-    fn log(self, msg str):
+    fn log(self, msg Str):
         --- Log a message to the currently tested group's logger so that it will be
             indented properly.
         ---
@@ -125,7 +125,7 @@ impl Test:
 end
 
 impl TestGroup:
-    fn new(name str) TestGroup:
+    fn new(name Str) TestGroup:
         TestGroup{ name, tests: Vector<TestCase>.new(), groups: Vector<TestGroup>.new() }
     end
 

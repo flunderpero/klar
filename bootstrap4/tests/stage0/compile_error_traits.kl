@@ -13,10 +13,10 @@ trait Doubler<T>:
 end
 
 struct Num:
-    value i32
+    value Int
 end
 
-impl Doubler<i32> for Num:
+impl Doubler<Int> for Num:
     -- Expect a compile error because `double` is not implemented.
 end
 

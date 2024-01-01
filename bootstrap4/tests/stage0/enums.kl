@@ -17,11 +17,11 @@ enum Color:
 end
 
 trait ColorNum:
-    fn to_num(self) i32
+    fn to_num(self) Int
 end
 
 impl ColorNum for Color:
-    fn to_num(self) i32:
+    fn to_num(self) Int:
         -- We currently cannot match, so this function is kinda useless.
         -- But we want to demonstrate that traits can be implemented for enums.
         return 1
@@ -29,7 +29,7 @@ impl ColorNum for Color:
 end
 
 impl Color:
-    fn some_function(self) i32:
+    fn some_function(self) Int:
         return 2
     end
 end

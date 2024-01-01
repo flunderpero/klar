@@ -17,16 +17,16 @@ fn foo():
     print(1)
 end
 
-fn foo_with_arg(x i32):
+fn foo_with_arg(x Int):
     print(x)
 end
 
-fn foo_with_multiple_args(x i32, y i32):
+fn foo_with_multiple_args(x Int, y Int):
     print(x)
     print(y)
 end
 
-fn foo_with_return_value(x i32) i32:
+fn foo_with_return_value(x Int) Int:
     x + 1
 end
 

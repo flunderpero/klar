@@ -666,7 +666,7 @@ export class Str extends Expression {
 }
 
 export class Char extends Expression {
-    kind = "char"
+    kind = "Char"
     value: string
 
     constructor(data: {value: string}, span: Span) {
@@ -691,7 +691,7 @@ export class InterpolatedStr extends Expression {
 }
 
 export class Bool extends Expression {
-    kind = "bool"
+    kind = "Bool"
     value: boolean
 
     constructor(data: {value: boolean}, span: Span) {

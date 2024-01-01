@@ -121,7 +121,7 @@ export class StringToken extends Token {
 }
 
 export class CharToken extends Token {
-    kind = "char"
+    kind = "Char"
 
     constructor(
         public value: string,
@@ -132,7 +132,7 @@ export class CharToken extends Token {
 
     toString() {
         const escape_sequence = escape_sequences[this.value]
-        return `${escape_sequence ? `\\${escape_sequence}` : this.value} (char)`
+        return `${escape_sequence ? `\\${escape_sequence}` : this.value} (Char)`
     }
 }
 

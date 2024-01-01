@@ -26,8 +26,8 @@ impl MayHaveValue<T>:
 end
 
 fn main():
-    let some = MayHaveValue<i32>.Some(1)
+    let some = MayHaveValue<Int>.Some(1)
     some.print()
-    let none = MayHaveValue<i32>.None
+    let none = MayHaveValue<Int>.None
     none.print()
 end

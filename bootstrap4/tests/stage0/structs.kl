@@ -22,13 +22,13 @@
 /expected ---
 
 struct Point:
-    x i32
-    y i32
+    x Int
+    y Int
 end
 
 impl Point:
     -- This is a static method.
-    fn new(x i32, y i32) Point:
+    fn new(x Int, y Int) Point:
         return Point{ x: x, y: y }
     end
 
@@ -37,7 +37,7 @@ impl Point:
         print(self.y)
     end
 
-    fn add_to_y(mut self, value i32):
+    fn add_to_y(mut self, value Int):
         self.y = self.y + value
         return
     end

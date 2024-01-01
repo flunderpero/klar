@@ -58,7 +58,7 @@ struct TokenIter:
     ---
     tokens Vector<Token>
     peeked Token?
-    idx i32
+    idx Int
 end
 
 impl Iterator<Token> for TokenIter:
@@ -125,23 +125,23 @@ impl Iterator<Token> for TokenIter:
     end
 
 
-    fn mark(self) i32 => self.idx 
+    fn mark(self) Int => self.idx 
 
-    fn mark_prev(self) i32 => self.idx - 1
+    fn mark_prev(self) Int => self.idx - 1
 
-    fn reset(mut self, mark i32):
+    fn reset(mut self, mark Int):
         self.peeked = None
         self.idx = mark
     end
 
-    fn tokens_since(mut self, mark i32) Vector<Token>:
+    fn tokens_since(mut self, mark Int) Vector<Token>:
         --- Returns all tokens since the given mark (inclusive).
         ---
         if mark >= self.idx or mark < 0 => return Vector<Token>.new()
         self.tokens.slice_copy(mark, self.idx)
     end
 
-    fn expect_ident(mut self) str throws ParseError:
+    fn expect_ident(mut self) Str throws ParseError:
         --- Expect the next token (without whitespace and comments) to be an identifier.
         ---
         match self.force_next()!:
@@ -150,7 +150,7 @@ impl Iterator<Token> for TokenIter:
         end
     end
 
-    fn expect_token(mut self, predicate (fn(Token) bool)) Token throws ParseError:
+    fn expect_token(mut self, predicate (fn(Token) Bool)) Token throws ParseError:
         --- Expect the next token (without whitespace and comments) to match the given predicate.
         ---
         let token = self.force_next()!
@@ -161,10 +161,10 @@ impl Iterator<Token> for TokenIter:
     fn expect_lexical_token(mut self, kind TokenKind) Token throws ParseError:
         --- Expect the next token (without whitespace and comments) to match the given kind.
         ---
-        self.expect_token(fn(token Token) bool => token.kind == kind)!
+        self.expect_token(fn(token Token) Bool => token.kind == kind)!
     end
 
-    fn expect_immediate_token(mut self, predicate (fn(Token) bool)) Token throws ParseError:
+    fn expect_immediate_token(mut self, predicate (fn(Token) Bool)) Token throws ParseError:
         --- Expect the next token (including whitespace and comments) to match the given predicate.
         ---
         let token = self.force_immediate()!
@@ -175,7 +175,7 @@ impl Iterator<Token> for TokenIter:
     fn expect_immediate_lexical_token(mut self, kind TokenKind) Token throws ParseError:
         --- Expect the next token (including whitespace and comments) to match the given kind.
         ---
-        self.expect_immediate_token(fn(token Token) bool => token.kind == kind)!
+        self.expect_immediate_token(fn(token Token) Bool => token.kind == kind)!
     end
 end
 
@@ -227,9 +227,9 @@ impl Parser:
         mut expr = match token.kind:
             TokenKind.IntLiteral(i) => Expr.Literal(self.parse_int_literal(i, token)!)
             TokenKind.BoolLiteral(b) => 
-                Expr.Literal(Literal{kind: LiteralKind.Bool(b), meta: self.meta(mark, false)})
+                Expr.Literal(Literal{kind: LiteralKind.BoolLiteral(b), meta: self.meta(mark, false)})
             TokenKind.StrLiteral(s, _) => 
-                Expr.Literal(Literal{kind: LiteralKind.Str(s), meta: self.meta(mark, false)})
+                Expr.Literal(Literal{kind: LiteralKind.StrLiteral(s), meta: self.meta(mark, false)})
             TokenKind.LParen => self.parse_unit_or_tuple_literal(token)!
             TokenKind.Ident(name) => Expr.Ident(self.parse_ident(token)!)
             TokenKind.FStr(items, _) => Expr.FStr(self.parse_fstr(items)!)
@@ -253,10 +253,10 @@ impl Parser:
         end
     end
 
-    fn parse_int_literal(self, value str, token Token) Literal throws ParseError:
+    fn parse_int_literal(self, value Str, token Token) Literal throws ParseError:
         let mark = self.iter.mark_prev()
-        match i32.from_str(value):
-            Ok<i32>(i) => Literal{kind: LiteralKind.Int(i), meta: self.meta(mark, false)}
+        match Int.from_str(value):
+            Ok<Int>(i) => Literal{kind: LiteralKind.IntLiteral(i), meta: self.meta(mark, false)}
             -- todo (lang-feat): The `return` should not be needed here. The stage0 type-checker
             --                   cannot infer that the result of the match is the return value 
             --                   of the function.
@@ -269,7 +269,7 @@ impl Parser:
         let immediate = self.iter.immediate()
         match immediate:
             Some(Token{kind: TokenKind.RParen, span: _}):
-                Expr.Literal(Literal{kind: LiteralKind.Unit, meta: self.meta(mark, false)})
+                Expr.Literal(Literal{kind: LiteralKind.UnitLiteral, meta: self.meta(mark, false)})
             end
             _ => return parse_error(UnexpectedToken(immediate.unwrap()), immediate.unwrap())
         end 
@@ -295,7 +295,7 @@ impl Parser:
                     end
                 end
                 FStrItem.FStrStrItem(s):
-                    Expr.Literal(Literal{kind: LiteralKind.Str(s), meta: self.meta(mark, false)})
+                    Expr.Literal(Literal{kind: LiteralKind.StrLiteral(s), meta: self.meta(mark, false)})
                 end
             end
             exprs.push(expr)
@@ -389,7 +389,7 @@ impl Parser:
         end
     end
 
-    fn meta(self, mark i32, is_synthetic bool) Meta:
+    fn meta(self, mark Int, is_synthetic Bool) Meta:
         Meta.new(self.iter.tokens_since(mark), is_synthetic)
     end
 end
@@ -407,7 +407,7 @@ enum ParseItem:
 end
 
 impl ToDebugStr for ParseItem:
-    fn to_debug_str(self) str:
+    fn to_debug_str(self) Str:
         match self:
             ParseItem.Fn(f) => f.to_debug_str()
         end

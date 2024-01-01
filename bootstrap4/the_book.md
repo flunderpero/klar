@@ -29,14 +29,14 @@ struct Planet:
 
     --- The mass in kg.
     ---
-    mass i32 -- TODO: change to u64
+    mass Int -- TODO: change to U64
 
     --- The circumference in km.
     ---
-    circumference i32
+    circumference Int
 
     -- This is a regular comment and not a documentation comment.
-    name str
+    name Str
 end
 
 trait Orbit:
@@ -45,15 +45,25 @@ trait Orbit:
 
     --- This is just a declaration, so we document above it.
     ---
-    fn mean_distance(self) i32
+    fn mean_distance(self) Int
 end
 
-fn calculate_radius(planet Planet) i32:
+fn calculate_radius(planet Planet) Int:
     --- Calculate the radius of a planet.
     ---
     planet.circumference / 2
 end
 ```
+
+### Identifiers
+
+Rules for identifiers:
+
+- Must start with a letter and must not start with an underscore.
+- Can contain letters, numbers, and underscores.
+- Must not be a keyword.
+- Type identifiers must start with an uppercase letter. 
+- Function, variable, and field identifiers must start with a lowercase letter.
 
 ### Types
 
@@ -61,16 +71,21 @@ end
 
 ##### Number types
 
-Unsigned integers: `u8`, `u16`, `u32`, `u64`, `u128`, `usize`
-Signed integers: `i8`, `i16`, `i32`, `i64`, `i128`, `isize`
-Floating point numbers: `f32`, `f64`
+Unsigned integers: `UInt`, `U8`, `U16`, `U32`, `U64`
+Signed integers: `Int`, `I8`, `I16`, `I32`, `I64`
+Floating point numbers: `F32`, `F64`
+
+`Int` and `UInt` are aliases for the platform dependent integer types.
+On 32-bit platforms they are 32-bit integers, on 64-bit platforms they are 64-bit integers.
+Unless you need a specific integer type, you should always use `Int` and `UInt`. This
+reduces the need for type conversions and allows the compiler to optimize your code better.
 
 ```klar
-
 fn main():
     let a = 2
+    let b Int = 2
 
-    assert(a == 2)
+    assert(a == b)
 end
 ```
 
@@ -79,7 +94,7 @@ end
 ```klar
 fn main():
     let a = true
-    let b bool = false
+    let b Bool = false
 end
 ```
 
@@ -90,7 +105,7 @@ A character is a single [Unicode](https://www.unicode.org/glossary/#unicode_scal
 ```klar
 fn main():
     let a = 'a'
-    let b char = '\n' -- Escape sequences are supported.
+    let b Char = '\n' -- Escape sequences are supported.
 end
 ```
 
@@ -99,7 +114,7 @@ end
 ```klar
 fn main():
     let a = "Hello, World!"
-    let b str = """
+    let b Str = """
         This is a
         multi-line string.
         """
@@ -187,7 +202,7 @@ The idiomatic way of using `Option` is to append a `?` to the type.
 Within functions you don't need to wrap the return value in `Option` anymore.
 
 ```klar
-fn divide(divisor i32, dividend i32?) i32?:
+fn divide(divisor Int, dividend Int?) Int?:
     if dividend.is_some():
         if (dividend.unwrap() == 0):
             return None
@@ -208,15 +223,15 @@ end
 
 ```klar
 struct Planet:
-    name str
+    name Str
 end 
 
 trait HasId:
-    fn id(self) str
+    fn id(self) Str
 end
 
 impl HasId for Planet:
-    fn id(self) str => self.name
+    fn id(self) Str => self.name
 end
 
 struct CelestialBody<T impl HasId>:
@@ -226,19 +241,19 @@ end
 impl ToStr for CelestialBody<T>:
     -- We can use the trait function `HasId.id` here, because we
     -- know that `self.body` is of a type that implements `HasId`.
-    fn to_str(self) str => self.body.id()
+    fn to_str(self) Str => self.body.id()
 end
 
 -- You can have multiple trait bounds. This means that a type
 -- has to implement _all_ traits.
-fn combine_id_and_to_str<T impl HasId and ToStr>(obj T) str:
+fn combine_id_and_to_str<T impl HasId and ToStr>(obj T) Str:
     let obj_id = obj.id()
     let obj_str = obj.to_str()
     f"{obj_id} + {obj_str}"
 end
 
 impl ToStr for Planet:
-    fn to_str(self) str => f"Planet {self.name}"
+    fn to_str(self) Str => f"Planet {self.name}"
 end
 
 fn main():
@@ -254,20 +269,20 @@ Traits themselves can have trait bounds.
 
 ```klar
 trait HasId impl ToStr:
-    fn id(self) str
+    fn id(self) Str
 end
 
 struct Planet:
-    name str
+    name Str
 end
 
 -- Now `Planet` has to implement `ToStr` as well.
 impl ToStr for Planet:
-    fn to_str(self) str => f"Planet {self.name}"
+    fn to_str(self) Str => f"Planet {self.name}"
 end
 
 impl HasId for Planet:
-    fn id(self) str => self.name
+    fn id(self) Str => self.name
 end
 
 fn main():
@@ -284,8 +299,8 @@ end
 
 ```klar
 struct Planet:
-    name str
-    circumference i32
+    name Str
+    circumference Int
 end
 
 fn main():
@@ -315,7 +330,7 @@ end
 
 ```klar
 fn main():
-    mut vector = Vector<i32>.new()
+    mut vector = Vector<Int>.new()
     vector.push(1)
     vector.push(2)
     vector.push(3)
@@ -338,7 +353,7 @@ end
 
 ```klar
 fn main():
-    mut map = Map<str, i32>.new()
+    mut map = Map<Str, Int>.new()
     map["one"] = 1  -- Idiomatic way of setting elements.
     map.set("two", 2) -- Alternative way of setting elements.
     map["three"] = 3
@@ -346,7 +361,7 @@ fn main():
 
     -- Accessing elements by key.
     let two = map["two"] -- Idiomatic way of getting elements.
-    -- `two` is of type `Option<i32>`.
+    -- `two` is of type `Option<Int>`.
     assert(two.is_some())
 
     let four = map.get("four") -- Alternative way of getting elements.
@@ -379,22 +394,22 @@ Statements are:
 
 ```klar
     struct Planet:
-        mass i32
-        circumference i32
-        name str
+        mass Int
+        circumference Int
+        name Str
     end
 
     trait Orbit:
-        fn mean_distance(self) i32
+        fn mean_distance(self) Int
     end
 
     impl Orbit for Planet:
-        fn mean_distance(self) i32:
+        fn mean_distance(self) Int:
             self.circumference / 2
         end
     end
 
-    fn calculate_radius(planet Planet) i32:
+    fn calculate_radius(planet Planet) Int:
         planet.circumference / 2
     end
 ```
@@ -422,13 +437,13 @@ Sometimes you need to convert an expression to a statement like in
 this example:
 
 ```klar
-fn apply(func (fn(i32))):
+fn apply(func (fn(Int))):
     func(42)
 end
 
 fn main():
     -- The following would not compile, because `x + 1` is an expression
-    -- of the type `i32` but `apply` expects a closure that returns
+    -- of the type `Int` but `apply` expects a closure that returns
     -- the unit type `()`.
     --   apply(fn(x) => x + 1)
 
@@ -448,7 +463,7 @@ to implement the `ToStr` trait.
 The canonical way of error handling is as follows:
 
 ```klar
-fn divide(divisor i32, dividend i32) i32 throws:
+fn divide(divisor Int, dividend Int) Int throws:
     if dividend == 0:
         return Error("division by zero")
     end
@@ -480,11 +495,11 @@ end
 Note: This is syntactic sugar for this code:
 
 ```klar
-fn divide(divisor i32, dividend i32) Result<i32, str>:
+fn divide(divisor Int, dividend Int) Result<Int, Str>:
     if dividend == 0:
-        return Result<i32, str>.Error("division by zero")
+        return Result<Int, Str>.Error("division by zero")
     end
-    Result<i32, str>.Ok(divisor / dividend)
+    Result<Int, Str>.Ok(divisor / dividend)
 end
 ```
 
@@ -496,18 +511,18 @@ always transform your code to the idiomatic form.
 Errors can be propagated using the `!` operator.
 
 ```klar
-fn divide(divisor i32, dividend i32) i32 throws:
+fn divide(divisor Int, dividend Int) Int throws:
     if dividend == 0 => return Error("division by zero")
     divisor / dividend
 end
 
-fn number_of_orbits(total_time i32, orbit_time i32) i32 throws:
+fn number_of_orbits(total_time Int, orbit_time Int) Int throws:
     --- Staying with the space theme, we calculate the number of orbits
         of an object in a given time.
     ---
     let orbits = divide(total_time, orbit_time)!  -- Propagate the error.
 
-    -- The type of `orbits` is `i32` here, the `!` operator automatically
+    -- The type of `orbits` is `Int` here, the `!` operator automatically
     -- unwraps the `Result` type.
     if orbits < 0 => return Error("negative number of orbits")
     orbits
@@ -522,7 +537,7 @@ end
 #### Errors Must Be Handled
 
 ```klar 
-fn divide(divisor i32, dividend i32) i32 throws:
+fn divide(divisor Int, dividend Int) Int throws:
     if dividend == 0 => return Error("division by zero")
     divisor / dividend
 end
@@ -537,11 +552,11 @@ end
 
 ```klar
 struct MyError:
-    code i32
+    code Int
 end
 
 impl ToStr for MyError:
-    fn to_str(self) str => f"MyError {self.code}"
+    fn to_str(self) Str => f"MyError {self.code}"
 end
 
 fn provoke_my_error() throws MyError:
@@ -594,7 +609,7 @@ end
 
 ```klar
 enum Planet:
-    Earth(i32)
+    Earth(Int)
     Mars
     Venus
 end
@@ -697,7 +712,7 @@ end
 
 ```klar
 struct Planet:
-    name str
+    name Str
 end
 
 fn main():

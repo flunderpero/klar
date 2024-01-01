@@ -99,15 +99,15 @@ function code_gen(ast: AST.AST) {
             )
             return `;(function () { const error = new Error("return"); error.value = ${value}; throw error; })()`
         } else if (e instanceof AST.Number_) {
-            return `new klar_i32(${e.value})`
+            return `new klar_Int(${e.value})`
         } else if (e instanceof AST.Bool || e instanceof AST.Number_) {
-            return `new klar_bool(${e.value})`
+            return `new klar_Bool(${e.value})`
         } else if (e instanceof AST.Str) {
             const value = escape_str(e)
-            return `new klar_str(${value})`
+            return `new klar_Str(${value})`
         } else if (e instanceof AST.Char) {
             const value = escape_str(e)
-            return `new klar_char(${value})`
+            return `new klar_Char(${value})`
         } else if (e instanceof AST.InterpolatedStr) {
             const parts = e.expressions.map(
                 (x) =>
@@ -116,7 +116,7 @@ function code_gen(ast: AST.AST) {
                         used_in_expression: true,
                     })}.to_str());`,
             )
-            return `(function () { const _ = new klar_str(""); ${parts.join("")}; return _; })()`
+            return `(function () { const _ = new klar_Str(""); ${parts.join("")}; return _; })()`
         } else if (e instanceof AST.FunctionCall) {
             if (e.target instanceof AST.IdentifierReference && e.target.name === "assert") {
                 return transpile_assert(e)
@@ -279,9 +279,9 @@ function code_gen(ast: AST.AST) {
             const lhs = transpile_expression(e.lhs, {...ctx, used_in_expression: true})
             const rhs = transpile_expression(e.rhs, {...ctx, used_in_expression: true})
             if (e.operator === "and") {
-                return `new klar_bool(${lhs}.value && ${rhs}.value)`
+                return `new klar_Bool(${lhs}.value && ${rhs}.value)`
             } else if (e.operator === "or") {
-                return `new klar_bool(${lhs}.value || ${rhs}.value)`
+                return `new klar_Bool(${lhs}.value || ${rhs}.value)`
             }
             const function_name = binary_op_functions[e.operator]
             if (!function_name) {
@@ -358,8 +358,8 @@ function code_gen(ast: AST.AST) {
     function transpile_assert(call: AST.FunctionCall) {
         function escape_str_str(s: string) {
             let value = s.replace(/\\/g, "\\\\")
-            for (const [char, replacement] of Object.entries(Lexer.escape_sequences)) {
-                value = value.replaceAll(char, `\\${replacement}`)
+            for (const [Char, replacement] of Object.entries(Lexer.escape_sequences)) {
+                value = value.replaceAll(Char, `\\${replacement}`)
             }
             value = value.replace(/`/g, "\\`")
             return value
@@ -386,13 +386,13 @@ const lhs_str = to_debug_str(lhs);
 const rhs_str = to_debug_str(rhs);
 if (!${cond}) {
 klar_panic(
-new klar_str(\`Assertion failed:
+new klar_Str(\`Assertion failed:
 
 expected: ${escape_str_str(e.lhs.span.src_text)} ${e.operator} ${escape_str_str(
                 e.rhs.span.src_text,
             )}
 got:      \${lhs_str} ${e.operator} \${rhs_str}
-\`), new klar_str("${location}"), new klar_str(""));}})();`
+\`), new klar_Str("${location}"), new klar_Str(""));}})();`
         } else if (e instanceof AST.Not) {
             const inner = transpile_expression(e.expression, {used_in_expression: true})
             return `(function() {
@@ -400,17 +400,17 @@ let cond = ${inner};
 if (!!(cond.value)) {
 const inner = to_debug_str(cond);
 klar_panic(
-new klar_str(\`Assertion failed at ${location}:
+new klar_Str(\`Assertion failed at ${location}:
 
 expected: not ${escape_str_str(e.expression.span.src_text)}
 got:      \${cond.value}
-\`), new klar_str("${location}"), new klar_str(""));}})();`
+\`), new klar_Str("${location}"), new klar_Str(""));}})();`
         }
         const cond = transpile_expression(e, {used_in_expression: true})
         return `(function() {if (!(${cond}.value)) {
-            klar_panic(new klar_str(\`Assertion failed:\n${escape_str_str(
+            klar_panic(new klar_Str(\`Assertion failed:\n${escape_str_str(
                 src,
-            )}\`), new klar_str("${location}"), new klar_str(""));
+            )}\`), new klar_Str("${location}"), new klar_Str(""));
         }})();`
     }
     /**
@@ -599,8 +599,8 @@ got:      \${cond.value}
     }
     function escape_str(s: AST.Str | AST.Char) {
         let value = s.value.replace(/\\/g, "\\\\")
-        for (const [char, replacement] of Object.entries(Lexer.escape_sequences)) {
-            value = value.replaceAll(char, `\\${replacement}`)
+        for (const [Char, replacement] of Object.entries(Lexer.escape_sequences)) {
+            value = value.replaceAll(Char, `\\${replacement}`)
         }
         value = value.replace(/`/g, "\\`")
         if (s instanceof AST.Str && s.is_multiline) {

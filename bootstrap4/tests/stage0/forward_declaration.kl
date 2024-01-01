@@ -17,22 +17,22 @@ fn main():
 end
 
 impl Age for Person:
-    fn get_age(self) i32:
+    fn get_age(self) Int:
         return self.age
     end
 end
 
 trait Age:
-    fn get_age(self) i32
+    fn get_age(self) Int
 end
 
 struct Person:
-    age i32
+    age Int
 end
 
-fn the_answer() i32:
+fn the_answer() Int:
     -- This should be skipped by `parse_scope_declaration`.
-    fn sub_function() i32: 
+    fn sub_function() Int: 
         return 42
     end
     return 1

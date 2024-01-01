@@ -13,9 +13,9 @@ HSL(_, _, _)
 /expected ---
 
 struct HSL:
-    h i32
-    s i32
-    l i32
+    h Int
+    s Int
+    l Int
 end
 
 enum Color:
@@ -24,14 +24,14 @@ enum Color:
     Green
     Blue
     -- Unnamed values:
-    Gray(i32)
-    RGB(i32, i32, i32)  -- This is basically a tuple
+    Gray(Int)
+    RGB(Int, Int, Int)  -- This is basically a tuple
     -- Struct as value:
     HSL(HSL)
 end
 
 impl ToStr for Color:
-    fn to_str(self) str:
+    fn to_str(self) Str:
         return match self:
             Color.Red => "Red"
             Color.Green => "Green"

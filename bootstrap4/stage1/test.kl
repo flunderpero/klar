@@ -130,17 +130,19 @@ impl TestGroup:
     end
 
     fn run(self, mut config TestRunConfig) TestRunResult:
+        fn color(s Str, color Str) Str => f"\x1b[{color}m{s}\x1b[0m"
         mut result = TestRunResult.new()
         mut logger = config.logger
+        let group_name = color(f"[{self.name}]", "90")
         self.tests.iter().for_each(fn(test TestCase):
             let name = f"it {test.name}"
             if config.verbose:
-                logger.log(f"[{self.name}] RUN  {name}")
+                logger.log(f"{group_name} {color("RUN", "33")}  {name}")
             end
             logger.indent()
             let old_panic_handler = register_panic_handler(fn(message, location, src):
                 result.inc_failed()
-                logger.log(f"[{self.name}] FAIL {name}: panicked with")
+                logger.log(f"{group_name} {color("FAIL", "31")} {name}: panicked with")
                 logger.indent()
                 logger.log(f"{message}\nat {location}")
                 logger.dedent()
@@ -151,11 +153,11 @@ impl TestGroup:
             match res:
                 Ok(_):
                     result.inc_passed()
-                    logger.log(f"[{self.name}] PASS {name}")
+                    logger.log(f"{group_name} {color("PASS", "32")} {name}")
                 end
                 Error(error):
                     result.inc_failed()
-                    logger.log(f"[{self.name}] FAIL {name}")
+                    logger.log(f"{group_name} {color("FAIL", "31")} {name}")
                     logger.indent()
                     logger.log(f"{error}")
                     logger.dedent()
@@ -169,10 +171,13 @@ impl TestGroup:
             result.update(group_result)
             logger.dedent()
         end)
-        if result.failed > 0 =>
-            logger.log(f"[{self.name}] {result.failed} / {result.total()} tests failed")
-        else =>
-            logger.log(f"[{self.name}] {result.total()} tests passed")
+        if result.failed > 0:
+            let s = color(f"{result.failed} / {result.total()} tests failed", "31")
+            logger.log(f"{group_name} {s}")
+        else:
+            let s = color(f"{result.total()} tests passed", "32")
+            logger.log(f"{group_name} {s}")
+        end
         result
     end
 end

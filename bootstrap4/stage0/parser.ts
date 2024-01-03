@@ -1197,7 +1197,7 @@ export function parse(tokens: TokenStream): AST {
                 expression = new Bool({value: simple_token === "true"}, span)
             } else if (simple_token === "not") {
                 const span = tokens.consume().span
-                const value = parse_expression()
+                const value = parse_primary()
                 expression = new Not({expression: value}, Span.combine(span, value))
             } else if (simple_token === "if") {
                 expression = parse_if_or_if_let()

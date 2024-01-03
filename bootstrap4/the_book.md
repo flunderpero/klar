@@ -453,6 +453,17 @@ fn main():
 end
 ```
 
+#### Unary Operators
+
+```klar
+fn main():
+    let a = false
+    assert(not a)
+    -- `not` has lower precedence than `and` and `or`.
+    assert((not a and 42 < 23) == false)
+end
+```
+
 ### Error handling
 
 In Klar, errors are values and may be returned from functions.

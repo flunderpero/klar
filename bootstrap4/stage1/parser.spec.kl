@@ -12,7 +12,7 @@ fn main():
     mut test = Test.new_from_args("parser", env.args)
 
     test.it("ignores comments and whitespace", fn() throws:
-        assert(expr("\n 42 // comment") == "(@int 42)")
+        assert(expr("\n 42 -- comment") == "(@int 42)")
     end)
 
     test.it("parses identifiers", fn() throws:
@@ -80,9 +80,9 @@ fn main():
                 -- todo: for now `Int` is defined as 32-but, but it should be 
                 --       the platform's native int size (64-bit in most cases).
                 assert(expr("2147483647") == "(@int 2147483647)")
-                assert(expr("2147483648") == "(@error invalid int literal)")
+                assert(expr("2147483648") == "(@error invalid int literal at test.kl:1:1)")
                 assert(expr("-2147483648") == "(@int -2147483648)")
-                assert(expr("-2147483649") == "(@error invalid int literal)")
+                assert(expr("-2147483649") == "(@error invalid int literal at test.kl:1:1)")
             end)
         end)
     end)
@@ -96,30 +96,30 @@ fn main():
 
         test.it("detects errors in f-string expressions", fn() throws:
             -- `for` is a keyword and not an expression.
-            assert(expr("f\"{for}\"") == "(@error expr expected)")
+            assert(expr("f\"{for}\"") == "(@error expr expected at test.kl:1:4-6)")
         end)
     end)
 
     test.group("calls", fn():
         test.it("passes the happy path", fn() throws:
-            assert(expr("main()") == "(@call (@ident main))")
-            assert(expr("main(42)") == "(@call (@ident main) (@int 42))")
-            assert(expr("main(42, 43)") == "(@call (@ident main) (@int 42) (@int 43))")
+            assert(expr("test()") == "(@call (@ident test))")
+            assert(expr("test(42)") == "(@call (@ident test) (@int 42))")
+            assert(expr("test(42, 43)") == "(@call (@ident test) (@int 42) (@int 43))")
         end)
 
         test.it("ignores trailing comma in argument list", fn() throws:
-            assert(expr("main(42,)") == "(@call (@ident main) (@int 42))")
-            assert(expr("main(42, 43,)") == "(@call (@ident main) (@int 42) (@int 43))")
+            assert(expr("test(42,)") == "(@call (@ident test) (@int 42))")
+            assert(expr("test(42, 43,)") == "(@call (@ident test) (@int 42) (@int 43))")
         end)
 
         test.it("requires `(` to be an immediate token after the call target", fn() throws:
             -- This is to resolve ambiguity between calls, tuples, and the unit literal.
-            assert(expr("main ()") == "(@ident main)")
-            assert(expr("main--- comment ---()") == "(@ident main)")
+            assert(expr("test ()") == "(@ident test)")
+            assert(expr("test--- comment ---()") == "(@ident test)")
         end)
 
         test.it("can chain calls", fn() throws:
-            assert(expr("main()()") == "(@call (@call (@ident main)))")
+            assert(expr("test()()") == "(@call (@call (@ident test)))")
         end)
     end)
 
@@ -135,6 +135,58 @@ fn main():
             )
         end)
     end)
+
+    test.group("binary operators", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(expr("1 + 2") == "(@binexpr + (@int 1) (@int 2))")
+        end)
+
+        test.it("respects operator precedence", fn() throws:
+            assert(expr("1 + 2 * 3") == "(@binexpr + (@int 1) (@binexpr * (@int 2) (@int 3)))")
+        end)
+
+        test.it("respects operator associativity (left)", fn() throws:
+            assert(expr("1 + 2 + 3") == "(@binexpr + (@binexpr + (@int 1) (@int 2)) (@int 3))")
+        end)
+
+        test.it("parses all binary operators", fn() throws:
+            assert(expr("1 + 2") == "(@binexpr + (@int 1) (@int 2))")
+            assert(expr("1 - 2") == "(@binexpr - (@int 1) (@int 2))")
+            assert(expr("1 * 2") == "(@binexpr * (@int 1) (@int 2))")
+            assert(expr("1 / 2") == "(@binexpr / (@int 1) (@int 2))")
+            assert(expr("1 == 2") == "(@binexpr == (@int 1) (@int 2))")
+            assert(expr("1 != 2") == "(@binexpr != (@int 1) (@int 2))")
+            assert(expr("1 < 2") == "(@binexpr < (@int 1) (@int 2))")
+            assert(expr("1 <= 2") == "(@binexpr <= (@int 1) (@int 2))")
+            assert(expr("1 > 2") == "(@binexpr > (@int 1) (@int 2))")
+            assert(expr("1 >= 2") == "(@binexpr >= (@int 1) (@int 2))")
+            assert(expr("1 and 2") == "(@binexpr and (@int 1) (@int 2))")
+            assert(expr("1 or 2") == "(@binexpr or (@int 1) (@int 2))")
+        end)
+
+        test.it("respects logical associativity", fn() throws:
+            assert(
+                expr("1 and 2 or 3 and 4") 
+                == 
+                "(@binexpr or (@binexpr and (@int 1) (@int 2)) (@binexpr and (@int 3) (@int 4)))"
+            )
+        end)
+
+        test.it("respects parentheses", fn() throws:
+            assert(expr("(1 + 2) * 3") == "(@binexpr * (@binexpr + (@int 1) (@int 2)) (@int 3))")
+        end)
+    end)
+
+    test.group("assignment", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(expr("a = 42") == "(@assign (@ident a) (@int 42))")
+        end)
+
+        test.it("respects associativity", fn() throws:
+            assert(expr("a = b or c") == "(@assign (@ident a) (@binexpr or (@ident b) (@ident c)))")
+        end)
+    end)
+
 
     enum ParseFn:
         Item

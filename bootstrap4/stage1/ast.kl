@@ -48,11 +48,41 @@ struct FStr:
     meta Meta
 end
 
+enum BinaryExprKind:
+    Add
+    And
+    Div
+    Equal
+    GreaterThan
+    GreaterThanOrEqual
+    LessThan
+    LessThanOrEqual
+    Mul
+    NotEqual
+    Or
+    Sub
+end
+
+struct BinaryExpr:
+    lhs Expr
+    rhs Expr
+    kind BinaryExprKind
+    meta Meta
+end
+
+struct Assignment:
+    lhs Expr
+    rhs Expr
+    meta Meta
+end
+
 enum Expr:
-    Literal(Literal)
+    Assignment(Assignment)
+    BinaryExpr(BinaryExpr)
     Call(Call)
-    Ident(Ident)
     FStr(FStr)
+    Ident(Ident)
+    Literal(Literal)
 end
 
 struct GenericArg:
@@ -257,11 +287,11 @@ end
 impl ToDebugStr for ParseErrorKind:
     fn to_debug_str(self) Str:
         match self:
-            ExprExpected(token) => "(@error expr expected)"
-            IdentExpected(token) => "(@error ident expected)"
-            InvalidIntLiteral(token) => "(@error invalid int literal)"
+            ExprExpected(token) => f"(@error expr expected at {token.span})"
+            IdentExpected(token) => f"(@error ident expected at {token.span})"
+            InvalidIntLiteral(token) => f"(@error invalid int literal at {token.span})"
             UnexpectedEOF => "(@error eof)"
-            UnexpectedToken(token) => f"(@error unexpected token: `{token}`)"
+            UnexpectedToken(token) => f"(@error unexpected token `{token}` at {token.span})"
         end
     end
 end
@@ -300,9 +330,35 @@ impl ToDebugStr for FStr:
     end
 end
 
+impl ToDebugStr for BinaryExpr:
+    fn to_debug_str(self) Str:
+        let kind = match self.kind:
+            BinaryExprKind.Add => "+"
+            BinaryExprKind.And => "and"
+            BinaryExprKind.Div => "/"
+            BinaryExprKind.Equal => "=="
+            BinaryExprKind.GreaterThan => ">"
+            BinaryExprKind.GreaterThanOrEqual => ">="
+            BinaryExprKind.LessThan => "<"
+            BinaryExprKind.LessThanOrEqual => "<="
+            BinaryExprKind.Mul => "*"
+            BinaryExprKind.NotEqual => "!="
+            BinaryExprKind.Or => "or"
+            BinaryExprKind.Sub => "-"
+        end
+        f"(@binexpr {kind} {self.lhs.to_debug_str()} {self.rhs.to_debug_str()})"
+    end
+end
+
+impl ToDebugStr for Assignment:
+    fn to_debug_str(self) Str => f"(@assign {self.lhs.to_debug_str()} {self.rhs.to_debug_str()})"
+end
+
 impl ToDebugStr for Expr:
     fn to_debug_str(self) Str:
         match self:
+            Expr.Assignment(value) => value.to_debug_str()
+            Expr.BinaryExpr(value) => value.to_debug_str()
             Expr.Call(value) => value.to_debug_str()
             Expr.FStr(value) => value.to_debug_str()
             Expr.Ident(value) => value.to_debug_str()

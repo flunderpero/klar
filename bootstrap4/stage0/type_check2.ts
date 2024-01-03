@@ -269,8 +269,12 @@ function type_check_return_type(expected_return_type: Type, return_type: Type, s
         } else {
             assert(return_type instanceof EnumType)
             const type_var_idx = return_type.variant_name === "Error" ? 1 : 0
-            let expected = result_type.type_arguments.get(result_type.type_variables[type_var_idx])!
-            let actual = return_type.type_arguments.get(return_type.type_variables[type_var_idx])!
+            let expected =
+                result_type.type_arguments.get(result_type.type_variables[type_var_idx])! ||
+                result_type.type_variables[type_var_idx]
+            let actual =
+                return_type.type_arguments.get(return_type.type_variables[type_var_idx])! ||
+                return_type.type_variables[type_var_idx]
             if (expected.equals(Type.unit)) {
                 expected = result_type.type_variables[type_var_idx].default_type!
             }
@@ -1591,6 +1595,17 @@ class TypeVariable extends Type {
         }
         return s
     }
+
+    assignable_to(other: Type): boolean {
+        if (!(other instanceof TypeVariable)) {
+            return false
+        }
+        if (this.equals(other)) {
+            return true
+        }
+        // If all traitbounds match, it is assignable.
+        return this.trait_bounds.every((t) => other.trait_bounds.some((t2) => t.equals(t2)))
+    }
 }
 
 export class TypeParameters {
@@ -2420,10 +2435,25 @@ export class FunctionType extends ComplexType<FunctionData> {
                 typeof throws === "boolean"
                     ? throws_env.get("ToStr", declaration.span)
                     : Type.from_env_or_declaration(throws, throws_env)
+            const result_type = EnumType.from_env("Result", throws_env, declaration.span)
+            const type_arguments: (Type | null)[] = [null, null]
+            const scoped_type_variables = new Map<TypeVariable, TypeVariable>()
+            if (return_type instanceof TypeVariable) {
+                scoped_type_variables.set(result_type.type_variables[0], return_type)
+            } else {
+                type_arguments[0] = return_type
+            }
+            if (throws_type instanceof TypeVariable) {
+                scoped_type_variables.set(result_type.type_variables[1], throws_type)
+            } else {
+                type_arguments[1] = throws_type
+            }
             return_type = expect_type_with_fields(
                 throws_env.get("Result", declaration.span),
                 declaration.span,
-            ).with_type_arguments([return_type, throws_type], declaration.span)
+            )
+                .with_scope_type_variables(scoped_type_variables)
+                .with_type_arguments(type_arguments, declaration.span)
         }
         fields.set("return", return_type)
         const data = new FunctionData(
@@ -3409,6 +3439,38 @@ const test = {
         assert(foo instanceof StructType)
         assert.equal(foo.fields.get("foo")?.signature, "foo<>(Foo<T>)->Foo<T>")
         assert.equal(foo.debug_str, "Foo<T>{a: T, foo: foo<>(Foo<T>)->Foo<T>}")
+    },
+
+    test_enum_impl_with_generic_function() {
+        const {env} = test.type_check(`
+            trait ToStr:
+                fn to_str(self) Str
+            end
+
+            enum Result<T, E impl ToStr=Str>:
+                Ok(T)
+                Error(E)
+            end
+
+            enum Option<T>: 
+                None
+                Some(T)
+            end
+
+            impl Option<T>:
+                fn unwrap_or_error<E impl ToStr>(self, error E) T throws E:
+                    Error(error)
+                end
+            end
+
+        `)
+        const option = env.get("Option", builtin_span)
+        assert.equal(option.signature, "Option<T>")
+        assert(option instanceof EnumType)
+        assert.equal(
+            option.fields.get("unwrap_or_error")?.signature,
+            "unwrap_or_error<E impl ToStr<>>(Option<T>,E impl ToStr<>)->Result<T,E impl ToStr<>>",
+        )
     },
 
     test_impl_with_inner_function() {

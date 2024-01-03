@@ -2,6 +2,7 @@ use .lexer.Lexer
 use .lexer.Token
 use .lexer.TokenKind
 use .lexer.FStrItem
+use .lexer.Span
 use .lexer.to_src
 use .test.Test
 
@@ -58,6 +59,20 @@ x
             And, Break, Continue, Else, End, Enum, Extern, BoolLiteral(false), Fn, For, If, Impl, 
             Let, Loop, Match, Mut, Not, Or, Return, Struct, Throws, Trait, BoolLiteral(true), Use
         ])
+    end)
+
+    test.it("records correct spans", fn() throws:
+        fn test_span(src Str, expected_from Int, expected_to Int, expected_str Str):
+            let tokens = lex_only(src)
+            -- todo (lang-feat): We should be able to use negative indexes.
+            let i = tokens.len() - 1
+            assert(tokens[i].span.from == expected_from)
+            assert(tokens[i].span.to == expected_to)
+            assert(tokens[i].span.to_str() == expected_str)
+        end
+        test_span("x", 0, 0, "test.kl:1:1")
+        test_span("\nx", 1, 1, "test.kl:2:1")
+        test_span("\n   for", 4, 6, "test.kl:2:4-6")
     end)
 
     test.group("string and f-string literals", fn():

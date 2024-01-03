@@ -35,6 +35,13 @@ impl Option<T>:
             Some(value) => value
         end
     end
+
+    fn unwrap_or_error<E impl ToStr>(self, error E) T throws E:
+        match self:
+            None => Error(error)
+            Some(value) => Ok(value)
+        end
+    end
 end
 
 trait ToStr:

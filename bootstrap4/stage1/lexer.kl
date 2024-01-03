@@ -276,6 +276,9 @@ fn match_escape_sequence(c Char?) Char throws:
 end
 
 struct Span:
+    --- A span is a range of characters in a source file.
+        `to` and `from` are inclusive.
+    ---
     file Str
     src Str
     from Int
@@ -298,14 +301,14 @@ impl ToStr for Span:
         -- First, calculate the line and column numbers.
         fn line_col(pos Int) (Int, Int):
             mut line = 1
-            mut col = 1
+            mut col = 0
             mut iter = self.src.iter()
             mut idx = 0
             loop:
                 match iter.next():
                     Some<Char>('\n'):
                         line = line + 1
-                        col = 1
+                        col = 0
                     end
                     Some<Char>(c) => col = col + 1
                     None => break

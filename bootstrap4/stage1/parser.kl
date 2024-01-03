@@ -28,6 +28,9 @@
           value in any case. The above would then be written as
           `if true => return () func()` which would be unambiguous.
 ---
+use .ast.Assignment
+use .ast.BinaryExpr
+use .ast.BinaryExprKind
 use .ast.Block
 use .ast.BlockItem
 use .ast.Call
@@ -94,6 +97,21 @@ impl Iterator<Token> for TokenIter:
         v
     end
 
+    fn peek(mut self) Token?:
+        --- Peek the next token (ignoring whitespace and comments).
+        ---
+        loop:
+            let token = self.peek_immediate()
+            match token:
+                Some(
+                    Token{kind: TokenKind.WhiteSpace(_) | TokenKind.Comment(_), span: _}
+                ) => self.immediate()
+                _ => return token
+            end
+        end
+        None
+    end
+
     fn peek_immediate(mut self) Token?:
         --- Peek the next token (including whitespace and comments).
         ---
@@ -115,7 +133,7 @@ impl Iterator<Token> for TokenIter:
     end
 
     fn force_immediate(mut self) Token throws ParseError:
-        --- Return the next token (including whitespace and commetns) or 
+        --- Return the next token (including whitespace and comments) or 
             an error if there are no more tokens.
         ---
         match self.immediate():
@@ -123,7 +141,6 @@ impl Iterator<Token> for TokenIter:
             None => return parse_error(UnexpectedEOF, None)
         end
     end
-
 
     fn mark(self) Int => self.idx 
 
@@ -223,6 +240,57 @@ impl Parser:
     end
 
     fn parse_expr(mut self, token Token) Expr? throws ParseError:
+        self.parse_binary_expr(token, 1)!
+    end
+
+    fn parse_binary_expr(mut self, token Token, min_prec Int) Expr? throws ParseError:
+        --- Parse a binary expression with precedence `min_prec` or higher.
+            Each binary operator has a precedence. The higher the precedence
+            the tighter the binding. For example, `1 + 2 * 3` is parsed as
+            `1 + (2 * 3)` because `*` has a higher precedence than `+`.
+
+            If the operator is the assignment operator `=` then it will
+            be parsed as an assignment expression. The precedence of the
+            assignment is the lowest possible precedence.
+        ---
+        let mark = self.iter.mark_prev()
+        let expr = self.parse_primary_expr(token)!
+        if expr.is_none() => return None
+        mut lhs = expr.unwrap()
+        loop:
+            let op_token = self.iter.peek()
+            if op_token.is_none() => break
+            let kind_and_prec = match op_token.unwrap().kind:
+                None => break
+                TokenKind.Equal => return self.parse_assignment(lhs, mark)!
+                TokenKind.Or => (BinaryExprKind.Or, 1)
+                TokenKind.And => (BinaryExprKind.And, 2)
+                TokenKind.DoubleEqual => (BinaryExprKind.Equal, 3)
+                TokenKind.NotEqual => (BinaryExprKind.NotEqual, 3)
+                TokenKind.LessThan => (BinaryExprKind.LessThan, 4)
+                TokenKind.LessThanOrEqual => (BinaryExprKind.LessThanOrEqual, 4)
+                TokenKind.GreaterThan => (BinaryExprKind.GreaterThan, 4)
+                TokenKind.GreaterThanOrEqual => (BinaryExprKind.GreaterThanOrEqual, 4)
+                TokenKind.Plus => (BinaryExprKind.Add, 5)
+                TokenKind.Minus => (BinaryExprKind.Sub, 5)
+                TokenKind.Star => (BinaryExprKind.Mul, 6)
+                TokenKind.Slash => (BinaryExprKind.Div, 6)
+                _ => break
+            end
+            -- todo (lang-feat): We should be able to destruct the tuple.
+            let kind = kind_and_prec.0
+            let prec = kind_and_prec.1
+            if prec < min_prec => break
+            self.iter.next()
+            let rhs_token = self.iter.force_next()!
+            let rhs = self.parse_binary_expr(rhs_token, prec + 1)!
+            if rhs.is_none() => return parse_error(ExprExpected(rhs_token), rhs_token)
+            lhs = Expr.BinaryExpr(BinaryExpr{kind, lhs, rhs: rhs.unwrap(), meta: self.meta(mark, false)})
+        end
+        lhs
+    end
+
+    fn parse_primary_expr(mut self, token Token) Expr? throws ParseError:
         let mark = self.iter.mark_prev()
         mut expr = match token.kind:
             TokenKind.IntLiteral(i) => Expr.Literal(self.parse_int_literal(i, token)!)
@@ -230,7 +298,7 @@ impl Parser:
                 Expr.Literal(Literal{kind: LiteralKind.BoolLiteral(b), meta: self.meta(mark, false)})
             TokenKind.StrLiteral(s, _) => 
                 Expr.Literal(Literal{kind: LiteralKind.StrLiteral(s), meta: self.meta(mark, false)})
-            TokenKind.LParen => self.parse_unit_or_tuple_literal(token)!
+            TokenKind.LParen => self.parse_unit_or_tuple_literal_or_parentheses(token)!
             TokenKind.Ident(name) => Expr.Ident(self.parse_ident(token)!)
             TokenKind.FStr(items, _) => Expr.FStr(self.parse_fstr(items)!)
             _ => return None
@@ -264,15 +332,15 @@ impl Parser:
         end
     end
 
-    fn parse_unit_or_tuple_literal(mut self, token Token) Expr throws ParseError:
+    fn parse_unit_or_tuple_literal_or_parentheses(mut self, token Token) Expr throws ParseError:
         let mark = self.iter.mark_prev()
-        let immediate = self.iter.immediate()
-        match immediate:
-            Some(Token{kind: TokenKind.RParen, span: _}):
-                Expr.Literal(Literal{kind: LiteralKind.UnitLiteral, meta: self.meta(mark, false)})
-            end
-            _ => return parse_error(UnexpectedToken(immediate.unwrap()), immediate.unwrap())
-        end 
+        let immediate = self.iter.peek_immediate()
+        if immediate.is_some() and immediate.unwrap().kind == TokenKind.RParen => 
+            return Expr.Literal(Literal{kind: LiteralKind.UnitLiteral, meta: self.meta(mark, false)})
+        let exprs = self.parse_comma_separated_exprs()!
+        if exprs.len() == 1 => return exprs[0]
+        print("aaaa")
+        return parse_error(UnexpectedToken(immediate.unwrap()), immediate.unwrap())
     end
 
     fn parse_fstr(mut self, items Vector<FStrItem>) FStr throws ParseError:
@@ -303,6 +371,14 @@ impl Parser:
         FStr{exprs, meta: self.meta(mark, false)}
     end
 
+    fn parse_assignment(mut self, lhs Expr, mark Int) Expr throws ParseError:
+        self.iter.expect_lexical_token(TokenKind.Equal)!
+        let rhs_token = self.iter.force_next()!
+        let rhs = self.parse_expr(rhs_token)!
+        if rhs.is_none() => return parse_error(ExprExpected(rhs_token), rhs_token)
+        Expr.Assignment(Assignment{ lhs, rhs: rhs.unwrap(), meta: self.meta(mark, false) })
+    end
+
     fn parse_fn_decl(mut self, token Token) FnDecl throws ParseError:
         let mark = self.iter.mark_prev()
         let ident = self.parse_ident(self.iter.force_next()!)!
@@ -323,7 +399,12 @@ impl Parser:
     fn parse_call(mut self, target Expr) Call throws ParseError:
         let mark = self.iter.mark()
         self.iter.expect_immediate_lexical_token(TokenKind.LParen)!
-        let args = Vector<Expr>.new()
+        let args = self.parse_comma_separated_exprs()!
+        Call{target, args, meta: self.meta(mark, false)}
+    end
+
+    fn parse_comma_separated_exprs(mut self) Vector<Expr> throws ParseError:
+        let exprs = Vector<Expr>.new()
         mut got_comma = false
         loop:
             let next_token = self.iter.force_next()!
@@ -335,17 +416,17 @@ impl Parser:
                     continue
                 end
                 _: 
-                    if args.len() > 0 and not got_comma => 
+                    if exprs.len() > 0 and not got_comma => 
                         return parse_error(UnexpectedToken(next_token), next_token)
                     got_comma = false
                     match self.parse_expr(next_token)!:
-                        Some<Expr>(expr) => args.push(expr)
+                        Some<Expr>(expr) => exprs.push(expr)
                         None => return parse_error(ExprExpected(next_token), next_token)
                     end
                 end
             end
         end
-        Call{target, args, meta: self.meta(mark, false)}
+        exprs
     end
 
     fn parse_block(mut self) Block throws ParseError:

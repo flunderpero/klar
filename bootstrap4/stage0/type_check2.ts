@@ -1030,6 +1030,7 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
     const function_declarations: ast.FunctionDeclaration[] = []
     const trait_declarations: ast.TraitDeclaration[] = []
     const impl_definitions: {node: ast.ImplDefinition; extern: boolean}[] = []
+    const use_declarations: ast.Use[] = []
     function forward_declare(node: ast.DeclarationOrDefinition, extern: boolean) {
         if (node instanceof ast.StructDeclaration) {
             const struct_type = StructType.from_declaration(node, env)
@@ -1060,31 +1061,7 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
             // Will be evaluated next.
             impl_definitions.push({node, extern})
         } else if (node instanceof ast.Use) {
-            if (node.path[0] !== ".") {
-                if (node.path.length !== 3 || node.path[1] !== ".") {
-                    throw new TypeCheckError(
-                        `Expected a \`use\` statement with two segments but got ${node.path.length}`,
-                        node.span,
-                    )
-                }
-                const enum_type = EnumType.from_env(node.path[0], env, node.span)
-                if (node.path[2] === "*") {
-                    for (const variant of enum_type.variants.values()) {
-                        env.add_enum_variant(variant, node.span)
-                    }
-                } else {
-                    const variant = enum_type.variants.get(node.path[2])
-                    if (!variant) {
-                        throw new TypeCheckError(
-                            `Enum ${quote(enum_type.signature)} has no variant ${quote(
-                                node.path[2],
-                            )}`,
-                            node.span,
-                        )
-                    }
-                    env.add_enum_variant(variant, node.span)
-                }
-            }
+            use_declarations.push(node)
         } else if (node instanceof ast.ExternBlock) {
             // Forward declare functions last because they might depend on other types.
             for (const extern_node of node
@@ -1134,6 +1111,10 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
         type_check_enum_variants(node, env)
     }
 
+    for (const node of use_declarations) {
+        bring_use_into_scope(node, env)
+    }
+
     for (const node of trait_declarations) {
         const trait_type = TraitType.from_env(node.name, env, node.span)
         resolve_trait_bounds_for_trait(trait_type, node.span)
@@ -1150,6 +1131,32 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
 
     for (const impl of impl_definitions) {
         type_check_impl(impl.node, env, {extern: impl.extern}, "impls")
+    }
+}
+
+function bring_use_into_scope(node: ast.Use, env: TypeEnvironment) {
+    if (node.path[0] !== ".") {
+        if (node.path.length !== 3 || node.path[1] !== ".") {
+            throw new TypeCheckError(
+                `Expected a \`use\` statement with two segments but got ${node.path.length}`,
+                node.span,
+            )
+        }
+        const enum_type = EnumType.from_env(node.path[0], env, node.span)
+        if (node.path[2] === "*") {
+            for (const variant of enum_type.variants.values()) {
+                env.add_enum_variant(variant, node.span)
+            }
+        } else {
+            const variant = enum_type.variants.get(node.path[2])
+            if (!variant) {
+                throw new TypeCheckError(
+                    `Enum ${quote(enum_type.signature)} has no variant ${quote(node.path[2])}`,
+                    node.span,
+                )
+            }
+            env.add_enum_variant(variant, node.span)
+        }
     }
 }
 
@@ -1182,8 +1189,6 @@ function type_check_enum_variants(node: ast.EnumDeclaration, env: TypeEnvironmen
     for (const variant_declaration of node.variants) {
         const variant = EnumType.variant_from_declaration(enum_type, variant_declaration, enum_env)
         enum_type.add_field_immediate(variant_declaration.name, variant)
-        // Bring the variant into scope but only if the name is not already taken.
-        env.add_enum_variant(variant, variant_declaration.span)
     }
 }
 
@@ -3099,8 +3104,14 @@ const test = {
                     Ok(T)
                     Error(E)
                 end
+                enum Option<T>:
+                    Some(T)
+                    None
+                end
                 fn panic(message Str):
                 end
+                use Result.*
+                use Option.*
             ` + src
         }
         const ast = test.parse(src)
@@ -3459,7 +3470,7 @@ const test = {
 
             impl Option<T>:
                 fn unwrap_or_error<E impl ToStr>(self, error E) T throws E:
-                    Error(error)
+                    Result.Error(error)
                 end
             end
 
@@ -4700,6 +4711,8 @@ const test = {
                 None
             end
 
+            use Option.*
+
             match Some(1):
                 Some<Int>(1..10) => true
                 Some<Int>(2) => false
@@ -4883,12 +4896,14 @@ const test = {
         `)
     },
 
-    test_match_enum_with_auto_imported_variants() {
+    test_match_enum_with_imported_variants() {
         const {type} = test.type_check(`
             enum Foo<T>:
                 Bar(T)
                 Baz
             end
+
+            use Foo.*
 
             let a = Bar(1)
             match a:
@@ -4971,6 +4986,8 @@ const test = {
                 Some(T)
                 None
             end
+
+            use Option.*
 
             match Some(1):
                 Some<Int>(1 | 2) => true
@@ -5060,11 +5077,6 @@ const test = {
 
     test_indexed_access_on_generic_type() {
         const {type, env} = test.type_check_with_core_types(`
-            enum Option<T>:
-                Some(T)
-                None
-            end
-
             struct Map<K, V>:
                 k1 K
                 k2 K
@@ -5381,6 +5393,8 @@ const test = {
                 Some(T)
                 None
             end
+
+            use Option.*
 
             let a = Some<Int>(1)
             if let Some<Int>(value) = a => value

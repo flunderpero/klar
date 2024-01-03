@@ -229,7 +229,7 @@ impl Parser:
                 end
             )
         end
-        Module{items, meta: self.meta(mark, false)}
+        Module{items, meta: self.meta(mark)}
     end
 
     fn parse_item(mut self, token Token) ParseItem? throws ParseError:
@@ -285,7 +285,7 @@ impl Parser:
             let rhs_token = self.iter.force_next()!
             let rhs = self.parse_binary_expr(rhs_token, prec + 1)!
             if rhs.is_none() => return parse_error(ExprExpected(rhs_token), rhs_token)
-            lhs = Expr.BinaryExpr(BinaryExpr{kind, lhs, rhs: rhs.unwrap(), meta: self.meta(mark, false)})
+            lhs = Expr.BinaryExpr(BinaryExpr{kind, lhs, rhs: rhs.unwrap(), meta: self.meta(mark)})
         end
         lhs
     end
@@ -295,9 +295,9 @@ impl Parser:
         mut expr = match token.kind:
             TokenKind.IntLiteral(i) => Expr.Literal(self.parse_int_literal(i, token)!)
             TokenKind.BoolLiteral(b) => 
-                Expr.Literal(Literal{kind: LiteralKind.BoolLiteral(b), meta: self.meta(mark, false)})
+                Expr.Literal(Literal{kind: LiteralKind.BoolLiteral(b), meta: self.meta(mark)})
             TokenKind.StrLiteral(s, _) => 
-                Expr.Literal(Literal{kind: LiteralKind.StrLiteral(s), meta: self.meta(mark, false)})
+                Expr.Literal(Literal{kind: LiteralKind.StrLiteral(s), meta: self.meta(mark)})
             TokenKind.LParen => self.parse_unit_or_tuple_literal_or_parentheses(token)!
             TokenKind.Ident(name) => Expr.Ident(self.parse_ident(token)!)
             TokenKind.FStr(items, _) => Expr.FStr(self.parse_fstr(items)!)
@@ -316,7 +316,7 @@ impl Parser:
     fn parse_ident(mut self, token Token) Ident throws ParseError:
         let mark = self.iter.mark_prev()
         match token.kind:
-            TokenKind.Ident(name) => Ident{name, meta: self.meta(mark, false)}
+            TokenKind.Ident(name) => Ident{name, meta: self.meta(mark)}
             _ => return parse_error(IdentExpected(token), token)
         end
     end
@@ -324,7 +324,7 @@ impl Parser:
     fn parse_int_literal(self, value Str, token Token) Literal throws ParseError:
         let mark = self.iter.mark_prev()
         match Int.from_str(value, 10):
-            Ok<Int>(i) => Literal{kind: LiteralKind.IntLiteral(i), meta: self.meta(mark, false)}
+            Ok<Int>(i) => Literal{kind: LiteralKind.IntLiteral(i), meta: self.meta(mark)}
             -- todo (lang-feat): The `return` should not be needed here. The stage0 type-checker
             --                   cannot infer that the result of the match is the return value 
             --                   of the function.
@@ -336,7 +336,7 @@ impl Parser:
         let mark = self.iter.mark_prev()
         let immediate = self.iter.peek_immediate()
         if immediate.is_some() and immediate.unwrap().kind == TokenKind.RParen => 
-            return Expr.Literal(Literal{kind: LiteralKind.UnitLiteral, meta: self.meta(mark, false)})
+            return Expr.Literal(Literal{kind: LiteralKind.UnitLiteral, meta: self.meta(mark)})
         let exprs = self.parse_comma_separated_exprs()!
         if exprs.len() == 1 => return exprs[0]
         print("aaaa")
@@ -363,12 +363,12 @@ impl Parser:
                     end
                 end
                 FStrItem.FStrStrItem(s):
-                    Expr.Literal(Literal{kind: LiteralKind.StrLiteral(s), meta: self.meta(mark, false)})
+                    Expr.Literal(Literal{kind: LiteralKind.StrLiteral(s), meta: self.meta(mark)})
                 end
             end
             exprs.push(expr)
         end
-        FStr{exprs, meta: self.meta(mark, false)}
+        FStr{exprs, meta: self.meta(mark)}
     end
 
     fn parse_assignment(mut self, lhs Expr, mark Int) Expr throws ParseError:
@@ -376,7 +376,7 @@ impl Parser:
         let rhs_token = self.iter.force_next()!
         let rhs = self.parse_expr(rhs_token)!
         if rhs.is_none() => return parse_error(ExprExpected(rhs_token), rhs_token)
-        Expr.Assignment(Assignment{ lhs, rhs: rhs.unwrap(), meta: self.meta(mark, false) })
+        Expr.Assignment(Assignment{ lhs, rhs: rhs.unwrap(), meta: self.meta(mark) })
     end
 
     fn parse_fn_decl(mut self, token Token) FnDecl throws ParseError:
@@ -384,23 +384,23 @@ impl Parser:
         let ident = self.parse_ident(self.iter.force_next()!)!
         self.iter.expect_lexical_token(TokenKind.LParen)!
         let params = Vector<Param>.new()
-        let return_type = Type{kind: TypeKind.Unit, meta: self.meta(mark, false)}
+        let return_type = Type{kind: TypeKind.Unit, meta: self.meta(mark)}
         self.iter.expect_lexical_token(TokenKind.RParen)!
-        FnDecl{ident, params, return_type, meta: self.meta(mark, false)}
+        FnDecl{ident, params, return_type, meta: self.meta(mark)}
     end
 
     fn parse_fn_def(mut self, token Token) Fn throws ParseError: 
         let mark = self.iter.mark_prev()
         let decl = self.parse_fn_decl(token)!
         let body = self.parse_block()!
-        Fn{decl, body, meta: self.meta(mark, false)}
+        Fn{decl, body, meta: self.meta(mark)}
     end
 
     fn parse_call(mut self, target Expr) Call throws ParseError:
         let mark = self.iter.mark()
         self.iter.expect_immediate_lexical_token(TokenKind.LParen)!
         let args = self.parse_comma_separated_exprs()!
-        Call{target, args, meta: self.meta(mark, false)}
+        Call{target, args, meta: self.meta(mark)}
     end
 
     fn parse_comma_separated_exprs(mut self) Vector<Expr> throws ParseError:
@@ -456,7 +456,7 @@ impl Parser:
             end
             _ => return parse_error(UnexpectedToken(next_token), next_token)
         end
-        Block{meta: self.meta(mark, false), items}
+        Block{meta: self.meta(mark), items}
     end
 
     fn parse_block_item(mut self, token Token) BlockItem throws ParseError:
@@ -470,14 +470,14 @@ impl Parser:
         end
     end
 
-    fn meta(self, mark Int, is_synthetic Bool) Meta:
-        Meta.new(self.iter.tokens_since(mark), is_synthetic)
+    fn meta(self, mark Int) Meta:
+        Meta.new(self.iter.tokens_since(mark))
     end
 end
 
 fn parse_error(kind ParseErrorKind, token Token?) Error<(), ParseError>:
     let tokens = if token.is_some() => Vector<Token>.from([token.unwrap()]) else => Vector<Token>.new()
-    Error(ParseError{meta: Meta.new(tokens, false), kind})
+    Error(ParseError{meta: Meta.new(tokens), kind})
 end
 
 enum ParseItem:

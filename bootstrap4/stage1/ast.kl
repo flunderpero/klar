@@ -1,3 +1,4 @@
+use .lexer.Span
 use .lexer.Token
 
 trait ToDebugStr:
@@ -176,23 +177,25 @@ struct Meta:
         change even if the item is desugared.
     ---
     tokens Vector<Token>
-    --- Whether this item has been altered by the parser as part
-        of desugaring.
-    ---
-    is_synthetic Bool
 end
 
 impl Meta:
-    fn new(tokens Vector<Token>, is_synthetic Bool) Meta:
+    fn new(tokens Vector<Token>) Meta:
+        assert(tokens.len() > 0)
         let id = Id{id: int_next()} 
-        Meta{id: id, tokens: tokens, is_synthetic: is_synthetic}
+        Meta{id: id, tokens}
+    end
+
+    fn span(self) Span:
+        let last = self.tokens.len() - 1
+        -- todo (lang-feat): We should be able to just use `-1` as the end index.
+        self.tokens[0].span.combine(self.tokens[last].span)
     end
 end
 
 impl ToDebugStr for Meta:
     fn to_debug_str(self) Str:
-        if self.is_synthetic => ":syn"
-        else => ""
+        f"(@meta {self.id.id} {self.span()})"
     end
 end
 
@@ -204,7 +207,7 @@ impl ToDebugStr for NameSegment:
             )
             None => ""
         end
-        f"(@seg {self.ident.to_debug_str()}{self.meta.to_debug_str()}{args})"
+        f"(@seg {self.ident.to_debug_str()}{args})"
     end
 end
 
@@ -213,7 +216,7 @@ impl ToDebugStr for Name:
         let segments = " ".join(
             self.segments.iter().map<Str>(fn(it NameSegment) Str => it.to_debug_str())
         )
-        f"(@name {segments}{self.meta.to_debug_str()})"
+        f"(@name {segments})"
     end
 end
 
@@ -227,7 +230,7 @@ impl ToDebugStr for Type:
 end
 
 impl ToDebugStr for Param:
-    fn to_debug_str(self) Str => f"(@param {self.ident.to_debug_str()}{self.meta.to_debug_str()} {self.type.to_debug_str()})"
+    fn to_debug_str(self) Str => f"(@param {self.ident.to_debug_str()} {self.type.to_debug_str()})"
 end
 
 impl ToDebugStr for FnDecl:
@@ -236,7 +239,7 @@ impl ToDebugStr for FnDecl:
             self.params.iter().map<Str>(fn(it Param) Str => it.to_debug_str())
         )
         let return_type = self.return_type.to_debug_str()
-        f"(@fndecl {self.ident.to_debug_str()}{self.meta.to_debug_str()}{" ".when(params.len() > 0)}{params} {return_type})"
+        f"(@fndecl {self.ident.to_debug_str()}{" ".when(params.len() > 0)}{params} {return_type})"
     end
 end
 
@@ -287,11 +290,11 @@ end
 impl ToDebugStr for ParseErrorKind:
     fn to_debug_str(self) Str:
         match self:
-            ExprExpected(token) => f"(@error expr expected at {token.span})"
-            IdentExpected(token) => f"(@error ident expected at {token.span})"
-            InvalidIntLiteral(token) => f"(@error invalid int literal at {token.span})"
-            UnexpectedEOF => "(@error eof)"
-            UnexpectedToken(token) => f"(@error unexpected token `{token}` at {token.span})"
+            ParseErrorKind.ExprExpected(token) => f"(@error expr expected at {token.span})"
+            ParseErrorKind.IdentExpected(token) => f"(@error ident expected at {token.span})"
+            ParseErrorKind.InvalidIntLiteral(token) => f"(@error invalid int literal at {token.span})"
+            ParseErrorKind.UnexpectedEOF => "(@error eof)"
+            ParseErrorKind.UnexpectedToken(token) => f"(@error unexpected token `{token}` at {token.span})"
         end
     end
 end
@@ -304,7 +307,7 @@ impl ToDebugStr for Literal:
             LiteralKind.StrLiteral(value) => f"(@str{" ".when(value.len() > 0)}{value.replace("\n", "\\n")})"
             LiteralKind.UnitLiteral=> "(@unit)"
         end
-        f"{lit}{self.meta.to_debug_str()}"
+        f"{lit}"
     end
 end
 
@@ -313,12 +316,12 @@ impl ToDebugStr for Call:
         let args = " ".join(
             self.args.iter().map<Str>(fn(it Expr) Str => it.to_debug_str())
         )
-        f"(@call {self.target.to_debug_str()}{" ".when(args.len() > 0)}{args}{self.meta.to_debug_str()})"
+        f"(@call {self.target.to_debug_str()}{" ".when(args.len() > 0)}{args})"
     end
 end
 
 impl ToDebugStr for Ident:
-    fn to_debug_str(self) Str => f"(@ident {self.name}{self.meta.to_debug_str()})"
+    fn to_debug_str(self) Str => f"(@ident {self.name})"
 end
 
 impl ToDebugStr for FStr:
@@ -326,7 +329,7 @@ impl ToDebugStr for FStr:
         let exprs = " ".join(
             self.exprs.iter().map<Str>(fn(it Expr) Str => it.to_debug_str())
         )
-        f"(@fstr{" ".when(exprs.len() > 0)}{exprs}{self.meta.to_debug_str()})"
+        f"(@fstr{" ".when(exprs.len() > 0)}{exprs})"
     end
 end
 

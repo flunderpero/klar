@@ -389,6 +389,8 @@ enum FStrItem:
     FStrStrItem(Str)
 end
 
+use FStrItem.*
+
 enum TokenKind:
     And
     BoolLiteral(Bool)

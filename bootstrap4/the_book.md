@@ -350,6 +350,44 @@ fn main():
 end
 ```
 
+##### Enums
+
+###### Importing Enum Variants
+
+```klar
+enum Planets:
+    Earth
+    Mars
+    Venus
+end
+
+-- Bring `Planets.Earth` into the current scope, so we can refer to
+-- it as `Earth`.
+use Planets.Earth
+
+fn main():
+    let earth = Earth
+    let mars = Mars -- Compile error: Unknown `Mars`
+end
+```
+
+You can also import all enum variants:
+
+```klar
+enum Planets:
+    Earth
+    Mars
+    Venus
+end
+
+use Planets.*
+
+fn main():
+    let earth = Earth
+    let mars = Mars
+end
+```
+
 ##### Tuples
 
 ```klar
@@ -663,6 +701,8 @@ enum Planet:
     Venus
 end
 
+use Planet.* -- Bring all enum variants into the current scope.
+
 fn main():
     let planet = Earth(15) -- Remember: Enum variants are visible automatically.
     let name = match planet:
@@ -685,6 +725,8 @@ enum Planet:
     Mars
     Venus
 end
+
+use Planet.* -- Bring all enum variants into the current scope.
 
 fn main():
     let planet = Earth
@@ -796,27 +838,6 @@ fn main():
 
     let e = SomeEnum.SomeA
     assert(e.to_str() == "some a")
-end
-```
-
-#### Importing Enum Variants
-
-```klar
-enum Planets:
-    Earth
-    Mars
-    Venus
-end
-
-fn main():
-    -- Import `Planets.Earth` into the current scope, so we can refer to
-    -- it as `Earth`.
-    use Planets.Earth
-    let earth = Earth
-
-    -- Import all variants of `Planets` into the current scope.
-    use Planets.*
-    let mars = Mars
 end
 ```
 

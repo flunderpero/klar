@@ -75,7 +75,38 @@ x
         test_span("\n   for", 4, 6, "test.kl:2:4-6")
     end)
 
-    test.group("string and f-string literals", fn():
+    test.group("char literals", fn():
+        test.it("passes the happy path", fn() throws:
+            lex_run("'a'", [CharLiteral('a')])
+        end)
+
+        test.it("lexes escape sequences", fn() throws:
+            lex_run("'\\0'", [CharLiteral('\0')])
+            lex_run("'\\n'", [CharLiteral('\n')])
+            lex_run("'\\r'", [CharLiteral('\r')])
+            lex_run("'\\t'", [CharLiteral('\t')])
+            lex_run("'\\\\'", [CharLiteral('\\')])
+            lex_run("'\\''", [CharLiteral('\'')])
+            lex_run("'\\x41'", [CharLiteral('A')])
+            lex_run("'\\u0041'", [CharLiteral('A')])
+        end)
+
+        test.it("detects invalid char literals and recovers", fn() throws:
+            lex_run("'\\l' foo", [LexError("invalid escape sequence"), Ident("foo")])
+            lex_run("'\\x1' foo", [LexError("invalid escape sequence"), Ident("foo")])
+            lex_run("'\\x1g' foo", [LexError("invalid escape sequence"), Ident("foo")])
+            lex_run("'' foo", [LexError("empty character literal"), Ident("foo")])
+            lex_run("'\\u123' foo", [LexError("invalid escape sequence"), Ident("foo")])
+        end)
+
+        test.it("detects unterminated char literals and recovers", fn() throws:
+            lex_run("'a", [LexError("expected closing '")])
+            lex_run("'a\n foo", [LexError("expected closing '"), Ident("foo")])
+        end)
+
+    end)
+
+    test.group("string literals", fn():
         test.it("lexes string literals", fn() throws:
             lex_run("\"hello\"", [StrLiteral("hello", false)])
             -- Note: We can't distinguish between `\n` and `\\n` in the source code.
@@ -84,6 +115,25 @@ x
             lex_run("\"escape \\n \\\"\"", [StrLiteral("escape \n \"", false)])
         end)
 
+        test.it("lexes escape sequences", fn() throws:
+            lex_run("\"\\0\"", [StrLiteral("\0", false)])
+            lex_run("\"\\n\"", [StrLiteral("\n", false)])
+            lex_run("\"\\r\"", [StrLiteral("\r", false)])
+            lex_run("\"\\t\"", [StrLiteral("\t", false)])
+            lex_run("\"\\\\\"", [StrLiteral("\\", false)])
+            lex_run("\"\\\"\"", [StrLiteral("\"", false)])
+            lex_run("\"\\x41\"", [StrLiteral("A", false)])
+            lex_run("\"\\u0041\"", [StrLiteral("A", false)])
+        end)
+
+        test.it("detects unterminated strings and recovers", fn() throws:
+            lex_run("\"string literal eof", [LexError("unexpected end of file")])
+            lex_run("\"string literal \nfoo", [LexError("unexpected end of line"), Ident("foo")])
+            lex_run("\"\"\"string literal eof", [LexError("unexpected end of file")])
+        end)
+    end)
+
+    test.group("f-strings", fn():
         test.it("lexes single-line f-strings", fn() throws:
             let f_str = lex_only("f\"the {question.answer} is {42}\"")
             assert(f_str.len() == 1)
@@ -160,11 +210,34 @@ x
             end
         end)
 
-        test.it("detects unterminated strings and f-strings", fn() throws:
-            lex_run("\"string literal eof", [LexError("Unexpected end of file.")])
-            lex_run("\"string literal \n", [LexError("Unexpected end of line.")])
-            lex_run("f\"string {a} literal eof", [LexError("Unexpected end of file.")])
-            lex_run("f\"string {a} literal \n", [LexError("Unexpected end of line.")])
+        test.it("lexes escape sequences", fn() throws:
+            fn test_escape(src Str, expected_str Str) throws:
+                let res = lex_only(src) 
+                assert(res.len() == 1)
+                match res[0].kind:
+                    FStr(items, _):
+                        assert(items.len() == 1)
+                        match items[0]:
+                            FStrStrItem(s) => assert(s == expected_str)
+                            _ => return Error("expected FStrStrItem.")
+                        end
+                    end
+                    _ => return Error("expected FStr.")
+                end
+            end
+            test_escape("f\"\\n\"", "\n")!
+            test_escape("f\"\\r\"", "\r")!
+            test_escape("f\"\\t\"", "\t")!
+            test_escape("f\"\\\\\"", "\\")!
+            test_escape("f\"\\\"\"", "\"")!
+            test_escape("f\"\\x41\"", "A")!
+            test_escape("f\"\\u0041\"", "A")!
+        end)
+
+        test.it("detects unterminated f-strings and recovers", fn() throws:
+            lex_run("f\"string literal eof", [LexError("unexpected end of file")])
+            lex_run("f\"string literal \nfoo", [LexError("unexpected end of line"), Ident("foo")])
+            lex_run("f\"\"\"string literal eof", [LexError("unexpected end of file")])
         end)
     end)
 
@@ -190,12 +263,17 @@ x
             end
         ).for_each(
             fn(token Token): 
+                if idx >= expected.len():
+                    panic(f"more tokens than expected: {token}")
+                end
                 assert(idx < expected.len())
                 assert(token.kind == expected[idx]) 
                 idx = idx + 1
             end
         )
-        assert(idx == expected.len())
+        if idx < expected.len():
+            panic(f"less tokens than expected: {expected[idx]}")
+        end
         if not has_expected_parse_errors => assert(to_src(tokens) == src)
     end
 

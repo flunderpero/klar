@@ -214,6 +214,17 @@ class klar_Char {
     ne(other) {
         return new klar_Bool(this.value !== other.value)
     }
+
+    static from_int(value) {
+        if (value.value < 0 || value.value > 65535) {
+            return new klar_Result_Error(new klar_Str(`cannot convert ${value.value} to Char`))
+        }
+        return new klar_Char(String.fromCharCode(value.value))
+    }
+
+    to_int() {
+        return new klar_Int(this.value.charCodeAt(0))
+    }
 }
 
 class klar_JSArray extends Array {
@@ -296,9 +307,6 @@ function to_debug_str(s) {
             "\n": "\\n",
             "\r": "\\r",
             "\t": "\\t",
-            "\v": "\\v",
-            "\b": "\\b",
-            "\f": "\\f",
             "\0": "\\0",
             '"': '\\"',
             "`": "\\`",

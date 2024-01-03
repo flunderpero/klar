@@ -93,8 +93,6 @@ export const escape_sequences: Record<string, string> = {
     "\n": "n",
     "\r": "r",
     "\t": "t",
-    "\v": "v",
-    "\b": "b",
     "{": "{",
     "}": "}",
 }
@@ -516,6 +514,20 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
         }
         if (c === '"' || c === "'" || c === "\\") {
             return c
+        }
+        if (c === "x") {
+            const hex = `${consume()}${consume()}`
+            if (hex.match(/[0-9a-fA-F]{2}/)) {
+                return String.fromCharCode(parseInt(hex, 16))
+            }
+            throw new LexerError(`Invalid hex escape sequence ${quote(hex)}`, span())
+        }
+        if (c === "u") {
+            const hex = `${consume()}${consume()}${consume()}${consume()}`
+            if (hex.match(/[0-9a-fA-F]{4}/)) {
+                return String.fromCharCode(parseInt(hex, 16))
+            }
+            throw new LexerError(`Invalid unicode escape sequence ${quote(hex)}`, span())
         }
         throw new LexerError(`Invalid escape sequence ${quote(c)}`, span())
     }

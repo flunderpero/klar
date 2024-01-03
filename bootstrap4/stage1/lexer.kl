@@ -80,6 +80,7 @@ impl Iterator<Token> for Lexer:
                 end
             '0'..'9' => self.match_int_literal(next, span)
             '"' => self.match_string(false)
+            '\'' => self.match_char()
             'a'..'z' | 'A'..'Z' | '_':
                 if next == 'f':
                     match self.iter.peek():
@@ -129,7 +130,7 @@ impl Iterator<Token> for Lexer:
                     _ => Token{kind: Ident(ident), span: ident_span}
                 end
             end
-            _ => Token{kind: LexError(f"Unexpected character: {next}"), span}
+            _ => Token{kind: LexError(f"unexpected character: {next}"), span}
         end
     end
 
@@ -142,6 +143,35 @@ impl Iterator<Token> for Lexer:
             end
         end
         Token{kind: IntLiteral(num), span}
+    end
+
+    fn match_char(mut self) Token:
+        let span = self.span()
+        let c = match self.iter.next():
+            Some('\\') => 
+                match self.match_escape_sequence(self.iter.next()):
+                    Error(err):
+                        -- Error recovery: consume until we find a closing single quote
+                        -- or a new line.
+                        loop:
+                            match self.iter.next():
+                                Some('\'' | '\n') | None => break
+                                _ => ()
+                            end
+                        end
+                        return Token{kind: LexError(err.to_str()), span}
+                    end
+                    Ok<Char>(c) => c
+                end
+            Some('\'') => return Token{kind: LexError("empty character literal"), span: self.span()}
+            Some(c) => c
+            None => return Token{kind: LexError("unexpected end of file"), span: self.span()}
+        end
+        match self.iter.next():
+            Some<Char>('\'') => ()
+            _ => return Token{kind: LexError("expected closing '"), span: self.span()}
+        end
+        Token{kind: CharLiteral(c), span: span.combine(self.span())}
     end
 
     fn match_string(mut self, is_fstr Bool) Token:
@@ -173,7 +203,7 @@ impl Iterator<Token> for Lexer:
                     continue
                 end
                 Some<Char>('\\') => 
-                    match match_escape_sequence(self.iter.next()):
+                    match self.match_escape_sequence(self.iter.next()):
                         Error(err) => return Token{kind: LexError(err.to_str()), span}
                         Ok<Char>(c) => s.push_char(c)
                     end
@@ -193,7 +223,7 @@ impl Iterator<Token> for Lexer:
                                 self.iter.next()
                                 break
                             end
-                            None => return Token{kind: LexError("Unexpected end of file."), span: self.span()}
+                            None => return Token{kind: LexError("unexpected end of file"), span: self.span()}
                             _ => item_tokens.push(self.next().unwrap())
                         end
                     end
@@ -201,9 +231,9 @@ impl Iterator<Token> for Lexer:
                 end
                 Some<Char>('\n') => 
                     if multi_line => s.push_char('\n')
-                    else => return Token{kind: LexError("Unexpected end of line."), span: self.span()}
+                    else => return Token{kind: LexError("unexpected end of line"), span: self.span()}
                 Some<Char>(c) => s.push_char(c)
-                None => return Token{kind: LexError("Unexpected end of file."), span: self.span()}
+                None => return Token{kind: LexError("unexpected end of file"), span: self.span()}
             end
             quotes = ""
         end
@@ -261,19 +291,44 @@ impl Iterator<Token> for Lexer:
         end
         Token{kind: Comment(comment), span}
     end
-end
 
-fn match_escape_sequence(c Char?) Char throws:
-    match c:
-        Some<Char>('n') => '\n'
-        Some<Char>('r') => '\r'
-        Some<Char>('t') => '\t'
-        Some<Char>('"') => '"'
-        Some<Char>('\'') => '\''
-        Some<Char>('\\') => '\\'
-        _ => return Error("Invalid escape sequence.")
+    fn match_escape_sequence(mut self, c Char?) Char throws:
+        fn parse_hex_literal(len Int) Char throws:
+            mut hex = ""
+            mut idx = 0
+            loop:
+                if idx == len => break
+                idx = idx + 1
+                let digit_c = self.iter.peek()
+                let digit = match digit_c:
+                    Some('0'..'9' | 'a'..'f' | 'A'..'F'):
+                        self.iter.next()
+                        digit_c.unwrap()
+                    end
+                    None => return Error("unexpected end of file.")
+                    _ => return Error("invalid escape sequence")
+                end
+                hex.push_char(digit)
+            end
+            let int = Int.from_str(hex, 16)!
+            Char.from_int(int)!
+        end
+
+        match c:
+            Some('0') => '\0'
+            Some('n') => '\n'
+            Some('r') => '\r'
+            Some('t') => '\t'
+            Some('"') => '"'
+            Some('\'') => '\''
+            Some('\\') => '\\'
+            Some('x') => parse_hex_literal(2)!
+            Some('u') => parse_hex_literal(4)!
+            _ => return Error("invalid escape sequence")
+        end
     end
 end
+
 
 struct Span:
     --- A span is a range of characters in a source file.
@@ -338,6 +393,7 @@ enum TokenKind:
     And
     BoolLiteral(Bool)
     Break
+    CharLiteral(Char)
     Colon
     Comma
     Comment(Str)
@@ -398,6 +454,7 @@ impl ToStr for TokenKind:
             And => "and"
             BoolLiteral(b) => f"BoolLiteral({b})"
             Break => "break"
+            CharLiteral(c) => f"CharLiteral({c})"
             Colon => ":"
             Comma => ","
             Comment(comment) => f"Comment({comment})"
@@ -511,9 +568,14 @@ impl Token:
             StrLiteral(s, multi_line) =>
                 -- We use the actual source code to get the string literal
                 -- as it was written in the source code. We need to do this
-                -- because we can't distinguish between `\n` and `\\n` 
-                -- in multi-line strings.
+                -- because we can't distinguish escape sequences from actual 
+                -- characters (like `\n` and `\\n` in multi-line strings).
                 self.span.src.slice_copy(self.span.from, self.span.to + 1)
+            CharLiteral(c):
+                -- We use the actual source code to get the char literal
+                -- for the same reason as for string literals.
+                self.span.src.slice_copy(self.span.from, self.span.to + 1)
+            end
             WhiteSpace(ws) => f"{ws}"
             _ => self.kind.to_str()
         end

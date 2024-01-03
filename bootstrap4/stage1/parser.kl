@@ -323,7 +323,7 @@ impl Parser:
 
     fn parse_int_literal(self, value Str, token Token) Literal throws ParseError:
         let mark = self.iter.mark_prev()
-        match Int.from_str(value):
+        match Int.from_str(value, 10):
             Ok<Int>(i) => Literal{kind: LiteralKind.IntLiteral(i), meta: self.meta(mark, false)}
             -- todo (lang-feat): The `return` should not be needed here. The stage0 type-checker
             --                   cannot infer that the result of the match is the return value 

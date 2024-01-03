@@ -235,8 +235,9 @@ extern:
         fn join(self, iter Iterator<Str>) Str
     end
 
-    impl Int:
-        fn from_str(s Str) Int throws
+    impl Char:
+        fn from_int(i Int) Char throws
+        fn to_int(self) Int
     end
 
     -- JS array helpers.
@@ -316,6 +317,33 @@ impl Str:
             This is useful in f-strings to insert a space only if a condition is met.
         ---
         if condition => self else => ""
+    end
+end
+
+impl Int:
+    fn from_str(s Str, radix Int) Int throws:
+        if s.len() == 0 => return Error("empty string")
+        if radix < 2 or radix > 16 => return Error("radix must be in between 2 and 16")
+        let digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f']
+        let is_negative = s[0] == '-'
+        mut value = 0
+        mut i = if is_negative => 1 else => 0
+        loop:
+            if i >= s.len() => break
+            value = value * radix
+            mut j = 0
+            loop:
+                if j >= digits.len() => return Error(f"invalid digit: {s[i]}")
+                if digits[j] == s[i] => break
+                j = j + 1
+            end
+            value = value + j
+            if not is_negative and value > 2147483647 => return Error(f"literal out of range for Int: {s}")
+            if is_negative and value > 2147483648 => return Error(f"literal out of range for Int: {s}")
+            i = i + 1
+        end
+        -- todo (lang-feat): We should be able to write `-value`.
+        if s[0] == '-' => -1 * value else => value
     end
 end
 

@@ -62,7 +62,7 @@ Rules for identifiers:
 - Must start with a letter and must not start with an underscore.
 - Can contain letters, numbers, and underscores.
 - Must not be a keyword.
-- Type identifiers must start with an uppercase letter. 
+- Type identifiers must start with an uppercase letter.
 - Function, variable, and field identifiers must start with a lowercase letter.
 
 ### Types
@@ -108,6 +108,25 @@ fn main():
     let b Char = '\n' -- Escape sequences are supported.
 end
 ```
+<details>
+<summary>More Examples</summary>
+
+###### Escape Sequences
+
+```klar
+fn main():
+    assert('\x41' == 'A') -- Hexadecimal escape sequence
+    assert('\u0041' == 'A') -- Unicode escape sequence
+    assert('\0' == '\u0000') -- Null character
+    assert('\t' == '\u0009') -- Horizontal tab
+    assert('\n' == '\u000a') -- Line feed
+    assert('\r' == '\u000d') -- Carriage return
+    assert('\'' == '\u0027') -- Single quote
+    assert('\\' == '\u005c') -- Backslash
+end
+```
+
+</details>
 
 ##### The String Type
 
@@ -128,6 +147,26 @@ fn main():
     assert(iter.next().unwrap() == 'e')
 end
 ```
+
+<details>
+<summary>More Examples</summary>
+
+###### Escape Sequences
+
+```klar
+fn main():
+    assert("\x41" == "A") -- Hexadecimal escape sequence
+    assert("\u0041" == "A") -- Unicode escape sequence
+    assert("\0" == "\u0000") -- Null character
+    assert("\t" == "\u0009") -- Horizontal tab
+    assert("\n" == "\u000a") -- Line feed
+    assert("\r" == "\u000d") -- Carriage return
+    assert("\"" == "\u0022") -- Double quote
+    assert("\\" == "\u005c") -- Backslash
+end
+```
+
+</details>
 
 ##### Interpolated Strings
 
@@ -224,7 +263,7 @@ end
 ```klar
 struct Planet:
     name Str
-end 
+end
 
 trait HasId:
     fn id(self) Str
@@ -468,7 +507,7 @@ end
 
 In Klar, errors are values and may be returned from functions.
 
-Errors must implement the `Error` trait which only requires 
+Errors must implement the `Error` trait which only requires
 to implement the `ToStr` trait.
 
 The canonical way of error handling is as follows:
@@ -547,7 +586,7 @@ end
 
 #### Errors Must Be Handled
 
-```klar 
+```klar
 fn divide(divisor Int, dividend Int) Int throws:
     if dividend == 0 => return Error("division by zero")
     divisor / dividend
@@ -576,7 +615,7 @@ end
 
 fn propagate_my_error() throws:
     -- The `!` operator propagates the error.
-    -- Even though `provoke_my_error()` throws a `MyError` we can 
+    -- Even though `provoke_my_error()` throws a `MyError` we can
     -- propagate it as the default error type, because the default
     -- type is the trait `ToStr` which must be implemented by every
     -- error type.
@@ -605,7 +644,7 @@ when a panic occurs.
 ```klar
 fn main():
     mut panic_count = 0
-    let old_handler = register_panic_handler(fn(message, location, src): 
+    let old_handler = register_panic_handler(fn(message, location, src):
         panic_count = panic_count + 1
     end)
     panic("This is a runtime error")
@@ -614,7 +653,6 @@ fn main():
     register_panic_handler(old_handler);
 end
 ```
-
 
 ### Pattern Matching
 
@@ -684,6 +722,7 @@ end
 #### Range Patterns
 
 Match a numeric range:
+
 ```klar
 fn main():
     let result = match 42:
@@ -695,7 +734,7 @@ fn main():
 end
 ```
 
-```klar 
+```klar
 fn main():
     let result = match 'c':
         'a' => "a"          -- Match a single character.
@@ -770,7 +809,7 @@ enum Planets:
 end
 
 fn main():
-    -- Import `Planets.Earth` into the current scope, so we can refer to 
+    -- Import `Planets.Earth` into the current scope, so we can refer to
     -- it as `Earth`.
     use Planets.Earth
     let earth = Earth

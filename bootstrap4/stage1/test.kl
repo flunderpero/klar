@@ -138,41 +138,29 @@ impl TestGroup:
                 logger.log(f"[{self.name}] RUN  {name}")
             end
             logger.indent()
-            mut panicked = 0
-            mut panic_message = ""
-            mut panic_location = ""
             let old_panic_handler = register_panic_handler(fn(message, location, src):
-                panicked = panicked + 1
-                -- Only record values for the first panic.
-                if panicked > 1 => return ()
-                panic_message = message
-                panic_location = location
-            end)
-            let res = test.f()
-            logger.dedent()
-            if panicked > 0:
                 result.inc_failed()
                 logger.log(f"[{self.name}] FAIL {name}: panicked with")
                 logger.indent()
-                logger.log(f"{panic_message}\nat {panic_location}")
-                if panicked > 1:
-                    logger.log(f"(panicked {panicked} times)")
-                end
+                logger.log(f"{message}\nat {location}")
                 logger.dedent()
-            else =>
-                match res:
-                    Ok(_):
-                        result.inc_passed()
-                        logger.log(f"[{self.name}] PASS {name}")
-                    end
-                    Error(error):
-                        result.inc_failed()
-                        logger.log(f"[{self.name}] FAIL {name}")
-                        logger.indent()
-                        logger.log(f"{error}")
-                        logger.dedent()
-                    end
+                exit(1)
+            end)
+            let res = test.f()
+            logger.dedent()
+            match res:
+                Ok(_):
+                    result.inc_passed()
+                    logger.log(f"[{self.name}] PASS {name}")
                 end
+                Error(error):
+                    result.inc_failed()
+                    logger.log(f"[{self.name}] FAIL {name}")
+                    logger.indent()
+                    logger.log(f"{error}")
+                    logger.dedent()
+                end
+            end
             register_panic_handler(old_panic_handler);
         end)
         self.groups.iter().for_each(fn(group TestGroup):

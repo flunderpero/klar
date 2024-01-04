@@ -160,6 +160,18 @@ fn main():
         end)
     end)
 
+    test.group("if", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(expr("if true: end") == "(@if (@bool true) (@block))")
+            assert(expr("if true: 42 end") == "(@if (@bool true) (@block (@int 42)))")
+        end)
+
+        test.it("parses if / else", fn() throws:
+            assert(expr("if true: 42 else: 43 end") == "(@if (@bool true) (@block (@int 42)) (@block (@int 43)))")
+            assert(expr("if true => 42 else => 43") == "(@if (@bool true) (@block (@int 42)) (@block (@int 43)))")
+        end)
+    end)
+
     test.group("binary operators", fn():
         test.it("passes the happy path", fn() throws:
             assert(expr("1 + 2") == "(@binexpr + (@int 1) (@int 2))")

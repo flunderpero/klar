@@ -85,6 +85,13 @@ struct Let:
     meta Meta
 end
 
+struct If:
+    cond Expr
+    then_block Block
+    else_block Block?
+    meta Meta
+end
+
 enum Expr:
     Assignment(Assignment)
     BinaryExpr(BinaryExpr)
@@ -93,6 +100,7 @@ enum Expr:
     Ident(Ident)
     Let(Let)
     Literal(Literal)
+    If(If)
 end
 
 struct GenericArg:
@@ -376,6 +384,16 @@ impl ToDebugStr for Let:
     end
 end
 
+impl ToDebugStr for If:
+    fn to_debug_str(self) Str:
+        let else_block = match self.else_block:
+            Some(x) => f" {x.to_debug_str()}"
+            None => ""
+        end
+        f"(@if {self.cond.to_debug_str()} {self.then_block.to_debug_str()}{else_block})"
+    end
+end
+
 impl ToDebugStr for Expr:
     fn to_debug_str(self) Str:
         match self:
@@ -384,6 +402,7 @@ impl ToDebugStr for Expr:
             Expr.Call(value) => value.to_debug_str()
             Expr.FStr(value) => value.to_debug_str()
             Expr.Ident(value) => value.to_debug_str()
+            Expr.If(value) => value.to_debug_str()
             Expr.Let(value) => value.to_debug_str()
             Expr.Literal(value) => value.to_debug_str()
         end

@@ -40,6 +40,7 @@ use .ast.Fn
 use .ast.FnDecl
 use .ast.GenericArg
 use .ast.Ident
+use .ast.If
 use .ast.Let
 use .ast.Literal
 use .ast.LiteralKind
@@ -314,6 +315,7 @@ impl Parser:
                 Expr.Literal(Literal{kind: LiteralKind.StrLiteral(s), meta: self.meta(mark)})
             TokenKind.LParen => self.parse_unit_or_tuple_literal_or_parentheses(token)!
             TokenKind.Ident(name) => Expr.Ident(self.parse_ident(token)!)
+            TokenKind.If => Expr.If(self.parse_if(token)!)
             TokenKind.FStr(items, _) => Expr.FStr(self.parse_fstr(items)!)
             TokenKind.Let => Expr.Let(self.parse_let_or_mut(token)!)
             TokenKind.Mut => Expr.Let(self.parse_let_or_mut(token)!)
@@ -375,6 +377,32 @@ impl Parser:
                 Let{ident, is_mut, type, expr, meta: self.meta(mark)}
             None => return parse_error(ExprExpected(expr_token), expr_token)
         end
+    end
+
+    fn parse_if(mut self, token Token) If throws ParseError:
+        let mark = self.iter.mark_prev()
+        let cond_token = self.iter.force_next()!
+        let cond = match self.parse_expr(cond_token)!:
+            Some(expr) => expr
+            None => return parse_error(ExprExpected(cond_token), cond_token)
+        end
+        let then_block = self.parse_block_advanced(true)!
+        let else_block Block? = 
+            if then_block.1:
+                Some(self.parse_block()!)
+            else:
+                -- todo: The assignment to `block` should not be needed here. The stage0 type-checker
+                --       cannot infer the type of the match expression.
+                let block = match self.iter.peek():
+                    Some(Token{kind: TokenKind.Else, span: _}):
+                        self.iter.force_next()!
+                        Some(self.parse_block()!)
+                    end
+                    _ => None
+                end
+                block
+            end
+        If{cond, then_block: then_block.0, else_block, meta: self.meta(mark)}
     end
 
     fn parse_int_literal(self, value Str, token Token) Literal throws ParseError:
@@ -485,9 +513,16 @@ impl Parser:
     end
 
     fn parse_block(mut self) Block throws ParseError:
+        -- todo (lang-feat): We should be able to use named arguments here. And we should
+        --                   be able to force the use of named arguments.
+        self.parse_block_advanced(false)!.0
+    end
+
+    fn parse_block_advanced(mut self, may_end_with_else Bool) (Block, Bool) throws ParseError:
         let mark = self.iter.mark()
         let items = Vector<BlockItem>.new() 
         let next_token = self.iter.force_next()!
+        mut ended_with_else = false
         match next_token.kind:
             TokenKind.FatArrow:
                 -- This is a signle expression block, an expression has to follow.
@@ -504,6 +539,12 @@ impl Parser:
                     let token = self.iter.force_next()!
                     let item = match token.kind:
                         TokenKind.End => break
+                        TokenKind.Else:
+                            if not may_end_with_else => 
+                                return parse_error(UnexpectedToken(token), token)
+                            ended_with_else = true
+                            break
+                        end
                         _ => self.parse_block_item(token)!
                     end
                     items.push(item)
@@ -511,7 +552,9 @@ impl Parser:
             end
             _ => return parse_error(UnexpectedToken(next_token), next_token)
         end
-        Block{meta: self.meta(mark), items}
+        -- todo: The `return` should not be needed here. The stage0 parser
+        --       cannot distinguish between a call and a tuple type here.
+        return (Block{meta: self.meta(mark), items}, ended_with_else)
     end
 
     fn parse_block_item(mut self, token Token) BlockItem throws ParseError:

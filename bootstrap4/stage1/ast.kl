@@ -71,6 +71,17 @@ struct BinaryExpr:
     meta Meta
 end
 
+enum UnaryExprKind:
+    Neg
+    Not
+end
+
+struct UnaryExpr:
+    expr Expr
+    kind UnaryExprKind
+    meta Meta
+end
+
 struct Assignment:
     lhs Expr
     rhs Expr
@@ -98,9 +109,10 @@ enum Expr:
     Call(Call)
     FStr(FStr)
     Ident(Ident)
+    If(If)
     Let(Let)
     Literal(Literal)
-    If(If)
+    UnaryExpr(UnaryExpr)
 end
 
 struct GenericArg:
@@ -394,6 +406,16 @@ impl ToDebugStr for If:
     end
 end
 
+impl ToDebugStr for UnaryExpr:
+    fn to_debug_str(self) Str:
+        let kind = match self.kind:
+            UnaryExprKind.Neg => "-"
+            UnaryExprKind.Not => "not"
+        end
+        f"(@unexpr {kind} {self.expr.to_debug_str()})"
+    end
+end
+
 impl ToDebugStr for Expr:
     fn to_debug_str(self) Str:
         match self:
@@ -405,6 +427,7 @@ impl ToDebugStr for Expr:
             Expr.If(value) => value.to_debug_str()
             Expr.Let(value) => value.to_debug_str()
             Expr.Literal(value) => value.to_debug_str()
+            Expr.UnaryExpr(value) => value.to_debug_str()
         end
     end
 end

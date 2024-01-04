@@ -172,7 +172,7 @@ fn main():
         end)
     end)
 
-    test.group("binary operators", fn():
+    test.group("binary expressions", fn():
         test.it("passes the happy path", fn() throws:
             assert(expr("1 + 2") == "(@binexpr + (@int 1) (@int 2))")
         end)
@@ -210,6 +210,27 @@ fn main():
 
         test.it("respects parentheses", fn() throws:
             assert(expr("(1 + 2) * 3") == "(@binexpr * (@binexpr + (@int 1) (@int 2)) (@int 3))")
+        end)
+    end)
+
+    test.group("unary expressions", fn():
+        test.it("parses `not` expressions", fn() throws:
+            assert(expr("not true") == "(@unexpr not (@bool true))")
+        end)
+
+        test.it("parses `-` (negation) expressions", fn() throws:
+            assert(expr("- 42") == "(@unexpr - (@int 42))")
+            -- Note: `-2147483648` is a valid int literal, but `- 2147483648` is not, because
+            --       the lexer will tokenize it as `-` and `2147483648` (two tokens). So the
+            --       parser will try to parse the integer literal, and fail because it's out
+            --       of range.
+            assert(expr("- 2147483648") == "(@error invalid int literal at test.kl:1:3)")
+        end)
+
+        test.it("respects precedence and associativity", fn() throws:
+            assert(expr("not true or false") == "(@binexpr or (@unexpr not (@bool true)) (@bool false))")
+            assert(expr("not a or not b") == "(@binexpr or (@unexpr not (@ident a)) (@unexpr not (@ident b)))")
+            assert(expr("- 42 + 43") == "(@binexpr + (@unexpr - (@int 42)) (@int 43))")
         end)
     end)
 

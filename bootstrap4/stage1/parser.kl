@@ -55,6 +55,8 @@ use .ast.ParseErrorKind
 use .ast.ToDebugStr
 use .ast.Type
 use .ast.TypeKind
+use .ast.UnaryExpr
+use .ast.UnaryExprKind
 use .lexer.FStrItem
 use .lexer.Token
 use .lexer.TokenKind
@@ -319,7 +321,13 @@ impl Parser:
             TokenKind.FStr(items, _) => Expr.FStr(self.parse_fstr(items)!)
             TokenKind.Let => Expr.Let(self.parse_let_or_mut(token)!)
             TokenKind.Mut => Expr.Let(self.parse_let_or_mut(token)!)
-            _ => return None
+            _:
+                let unary_expr = self.parse_unary_expr(token)!
+                match unary_expr:
+                    Some<UnaryExpr>(x) => Expr.UnaryExpr(x)
+                    None => return None
+                end
+            end
         end
         loop:
             expr = match self.iter.peek_immediate():
@@ -329,6 +337,23 @@ impl Parser:
             end
         end
         expr
+    end
+
+    fn parse_unary_expr(mut self, token Token) UnaryExpr? throws ParseError:
+        let mark = self.iter.mark_prev()
+        let kind = match token.kind:
+            TokenKind.Minus => UnaryExprKind.Neg
+            TokenKind.Not => UnaryExprKind.Not
+            _ => return None
+        end
+        let expr_token = self.iter.force_next()!
+        let expr = self.parse_primary_expr(expr_token)!
+        match expr:
+            -- todo: We are note able to reuse the name `expr` here, the stage0 compiler
+            --       throws a JS error.
+            Some(x) => UnaryExpr{kind, expr: x, meta: self.meta(mark)}
+            None => return parse_error(ExprExpected(expr_token), expr_token)
+        end
     end
 
     fn parse_ident(mut self, token Token) Ident throws ParseError:
@@ -409,9 +434,9 @@ impl Parser:
         let mark = self.iter.mark_prev()
         match Int.from_str(value, 10):
             Ok<Int>(i) => Literal{kind: LiteralKind.IntLiteral(i), meta: self.meta(mark)}
-            -- todo (lang-feat): The `return` should not be needed here. The stage0 type-checker
-            --                   cannot infer that the result of the match is the return value 
-            --                   of the function.
+            -- todo: The `return` should not be needed here. The stage0 type-checker
+            --       cannot infer that the result of the match is the return value 
+            --       of the function.
             Error(_) => return parse_error(InvalidIntLiteral(token), token)
         end
     end

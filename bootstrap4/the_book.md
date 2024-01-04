@@ -508,6 +508,16 @@ fn main():
 end
 ```
 
+#### Let Declarations
+
+```klar
+fn main():
+    let a = 42  -- Implicit type inference
+    let b Int = 42  -- Explicit type annotation
+    mut s = "Hello" -- Mutable variable
+end
+```
+
 #### The Unit Operator `;`
 
 Sometimes you need to convert an expression to a statement like in

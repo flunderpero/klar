@@ -27,7 +27,7 @@ fn main():
         end)
 
         test.it("parses items (like Fn) in multi-line blocks", fn() throws:
-            assert(block(": fn main(): end end") == "(@block (@fn (@fndecl (@ident main) (@unit)) (@block)))")
+            assert(block(": fn main(): end end") == "(@block (@fn (@fndecl (@ident main) (@type (@unit))) (@block)))")
         end)
 
         test.it("parses single-line blocks", fn() throws:
@@ -38,14 +38,14 @@ fn main():
 
     test.group("fndecl", fn():
         test.it("passes the happy path", fn() throws:
-            assert(fndecl("fn main()") == "(@fndecl (@ident main) (@unit))")
+            assert(fndecl("fn main()") == "(@fndecl (@ident main) (@type (@unit)))")
         end)
     end)
 
     test.group("fn", fn():
         test.it("passes the happy path", fn() throws:
-            assert(item("fn main(): end") == "(@fn (@fndecl (@ident main) (@unit)) (@block))")
-            assert(item("fn main(): 42 end") == "(@fn (@fndecl (@ident main) (@unit)) (@block (@int 42)))")
+            assert(item("fn main(): end") == "(@fn (@fndecl (@ident main) (@type (@unit))) (@block))")
+            assert(item("fn main(): 42 end") == "(@fn (@fndecl (@ident main) (@type (@unit))) (@block (@int 42)))")
         end)
     end)
 
@@ -131,8 +131,32 @@ fn main():
                     end
                     """) 
                 == 
-                "(@mod (@fn (@fndecl (@ident main) (@unit)) (@block)))"
+                "(@mod (@fn (@fndecl (@ident main) (@type (@unit))) (@block)))"
             )
+        end)
+    end)
+
+    test.group("types", fn():
+        test.it("parses literal type names", fn() throws:
+            assert(type("Int") == "(@type (@name (@seg (@ident Int))))")
+        end)
+    end)
+
+    test.group("variable declarations", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(expr("let a Int = 42") == "(@let (@ident a) (@type (@name (@seg (@ident Int)))) (@int 42))")
+        end)
+
+        test.it("does not require a type annotation", fn() throws:
+            assert(expr("let a = 42") == "(@let (@ident a) (@type (@infer)) (@int 42))")
+        end)
+
+        test.it("respects associativity", fn() throws:
+            assert(expr("let a = b or c") == "(@let (@ident a) (@type (@infer)) (@binexpr or (@ident b) (@ident c)))")
+        end)
+
+        test.it("parses `mut`", fn() throws:
+            assert(expr("mut a = 42") == "(@mut (@ident a) (@type (@infer)) (@int 42))")
         end)
     end)
 
@@ -194,6 +218,7 @@ fn main():
         Block
         FnDecl
         Module
+        Type
     end
 
     fn parse(src Str, parse_fn ParseFn) Str:
@@ -205,6 +230,13 @@ fn main():
             ParseFn.Expr => parser.parse_expr(parser.iter.force_next().unwrap())
             ParseFn.Module:
                 let res = parser.parse_module()
+                if res.is_error():
+                    return res.unwrap_error().to_debug_str()
+                end
+                return res.unwrap().to_debug_str()
+            end
+            ParseFn.Type:
+                let res = parser.parse_type(parser.iter.force_next().unwrap())
                 if res.is_error():
                     return res.unwrap_error().to_debug_str()
                 end
@@ -244,6 +276,8 @@ fn main():
     fn fndecl(src Str) Str => parse(src, ParseFn.FnDecl)
 
     fn module(src Str) Str => parse(src, ParseFn.Module)
+
+    fn type(src Str) Str => parse(src, ParseFn.Type)
 
     test.run_and_exit()
 end

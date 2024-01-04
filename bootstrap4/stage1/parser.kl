@@ -38,16 +38,20 @@ use .ast.Expr
 use .ast.FStr
 use .ast.Fn
 use .ast.FnDecl
+use .ast.GenericArg
 use .ast.Ident
+use .ast.Let
 use .ast.Literal
 use .ast.LiteralKind
 use .ast.Meta
+use .ast.Module
+use .ast.ModuleItem
+use .ast.Name
+use .ast.NameSegment
 use .ast.Param
 use .ast.ParseError
 use .ast.ParseErrorKind
 use .ast.ToDebugStr
-use .ast.Module
-use .ast.ModuleItem
 use .ast.Type
 use .ast.TypeKind
 use .lexer.FStrItem
@@ -239,6 +243,16 @@ impl Parser:
         end
     end
 
+    fn parse_type(mut self, token Token) Type throws ParseError:
+        let mark = self.iter.mark_prev()
+        let kind = match token.kind:
+            TokenKind.Ident(name) => TypeKind.Name(self.parse_name(token)!)
+            _ => return parse_error(UnexpectedToken(token), token)
+        end
+        Type{kind, meta: self.meta(mark)}
+    end
+
+
     fn parse_expr(mut self, token Token) Expr? throws ParseError:
         self.parse_binary_expr(token, 1)!
     end
@@ -301,6 +315,8 @@ impl Parser:
             TokenKind.LParen => self.parse_unit_or_tuple_literal_or_parentheses(token)!
             TokenKind.Ident(name) => Expr.Ident(self.parse_ident(token)!)
             TokenKind.FStr(items, _) => Expr.FStr(self.parse_fstr(items)!)
+            TokenKind.Let => Expr.Let(self.parse_let_or_mut(token)!)
+            TokenKind.Mut => Expr.Let(self.parse_let_or_mut(token)!)
             _ => return None
         end
         loop:
@@ -318,6 +334,46 @@ impl Parser:
         match token.kind:
             TokenKind.Ident(name) => Ident{name, meta: self.meta(mark)}
             _ => return parse_error(IdentExpected(token), token)
+        end
+    end
+
+    fn parse_name(mut self, token Token) Name throws ParseError:
+        let root_mark = self.iter.mark_prev()
+        let segments = Vector<NameSegment>.new()
+        -- The first part of the name must be an identifier.
+        match token.kind:
+            TokenKind.Ident(name) => 
+                segments.push(NameSegment{
+                    ident: Ident{name, meta: self.meta(root_mark)},
+                    args: None,
+                    meta: self.meta(root_mark)
+                })
+            _ => return parse_error(IdentExpected(token), token)
+        end
+        -- todo: parse generic arguments and more segments.
+        Name{segments, meta: self.meta(root_mark)}
+    end
+
+    fn parse_let_or_mut(mut self, token Token) Let throws ParseError:
+        --- Parse a `let` or `mut` declaration depending on the given token.
+        ---
+        let mark = self.iter.mark_prev()
+        let is_mut = token.kind == TokenKind.Mut
+        let ident = self.parse_ident(self.iter.force_next()!)!
+        let type_or_eq = self.iter.force_next()!
+        let type = match type_or_eq.kind:
+            TokenKind.Equal => Type{kind: TypeKind.Infer, meta: self.meta_from_token(type_or_eq)}
+            _: 
+                let t = self.parse_type(type_or_eq)! 
+                self.iter.expect_lexical_token(TokenKind.Equal)!
+                t
+            end
+        end
+        let expr_token = self.iter.force_next()!
+        match self.parse_expr(expr_token)!:
+            Some<Expr>(expr) => 
+                Let{ident, is_mut, type, expr, meta: self.meta(mark)}
+            None => return parse_error(ExprExpected(expr_token), expr_token)
         end
     end
 
@@ -339,7 +395,6 @@ impl Parser:
             return Expr.Literal(Literal{kind: LiteralKind.UnitLiteral, meta: self.meta(mark)})
         let exprs = self.parse_comma_separated_exprs()!
         if exprs.len() == 1 => return exprs[0]
-        print("aaaa")
         return parse_error(UnexpectedToken(immediate.unwrap()), immediate.unwrap())
     end
 
@@ -472,6 +527,10 @@ impl Parser:
 
     fn meta(self, mark Int) Meta:
         Meta.new(self.iter.tokens_since(mark))
+    end
+
+    fn meta_from_token(self, token Token) Meta:
+        Meta.new(Vector<Token>.from([token]))
     end
 end
 

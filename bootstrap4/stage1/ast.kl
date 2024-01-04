@@ -77,12 +77,21 @@ struct Assignment:
     meta Meta
 end
 
+struct Let:
+    ident Ident
+    is_mut Bool
+    type Type
+    expr Expr
+    meta Meta
+end
+
 enum Expr:
     Assignment(Assignment)
     BinaryExpr(BinaryExpr)
     Call(Call)
     FStr(FStr)
     Ident(Ident)
+    Let(Let)
     Literal(Literal)
 end
 
@@ -108,6 +117,7 @@ end
 
 enum TypeKind:
     Name(Name)
+    Infer
     Unit
 end
 
@@ -202,11 +212,12 @@ end
 impl ToDebugStr for NameSegment:
     fn to_debug_str(self) Str:
         let args = match self.args:
-            Some(args) => " ".join(
-                args.iter().map<Str>(fn(it GenericArg) Str => it.type.to_debug_str())
+            Some(x) => " ".join(
+                x.iter().map<Str>(fn(it GenericArg) Str => it.type.to_debug_str())
             )
             None => ""
         end
+        print(args)
         f"(@seg {self.ident.to_debug_str()}{args})"
     end
 end
@@ -223,8 +234,9 @@ end
 impl ToDebugStr for Type:
     fn to_debug_str(self) Str:
         match self.kind:
-            TypeKind.Name(x) => x.to_debug_str()
-            TypeKind.Unit => "(@unit)"
+            TypeKind.Name(x) => f"(@type {x.to_debug_str()})"
+            TypeKind.Unit => "(@type (@unit))"
+            TypeKind.Infer => "(@type (@infer))"
         end
     end
 end
@@ -357,6 +369,13 @@ impl ToDebugStr for Assignment:
     fn to_debug_str(self) Str => f"(@assign {self.lhs.to_debug_str()} {self.rhs.to_debug_str()})"
 end
 
+impl ToDebugStr for Let:
+    fn to_debug_str(self) Str:
+        let name = if self.is_mut => "mut" else => "let"
+        f"(@{name} {self.ident.to_debug_str()} {self.type.to_debug_str()} {self.expr.to_debug_str()})"
+    end
+end
+
 impl ToDebugStr for Expr:
     fn to_debug_str(self) Str:
         match self:
@@ -365,6 +384,7 @@ impl ToDebugStr for Expr:
             Expr.Call(value) => value.to_debug_str()
             Expr.FStr(value) => value.to_debug_str()
             Expr.Ident(value) => value.to_debug_str()
+            Expr.Let(value) => value.to_debug_str()
             Expr.Literal(value) => value.to_debug_str()
         end
     end

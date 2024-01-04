@@ -244,6 +244,21 @@ fn main():
         end)
     end)
 
+    test.group("loop", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(expr("loop: end") == "(@loop (@block))")
+            assert(expr("loop: 42 end") == "(@loop (@block (@int 42)))")
+        end)
+
+        test.it("parses `break`", fn() throws:
+            assert(expr("loop: break end") == "(@loop (@block (@break)))")
+        end)
+
+        test.it("parses `continue`", fn() throws:
+            assert(expr("loop: continue end") == "(@loop (@block (@continue)))")
+        end)
+    end)
+
 
     enum ParseFn:
         Item

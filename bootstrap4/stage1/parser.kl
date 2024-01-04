@@ -33,6 +33,8 @@ use .ast.BinaryExpr
 use .ast.BinaryExprKind
 use .ast.Block
 use .ast.BlockItem
+use .ast.Break
+use .ast.Continue
 use .ast.Call
 use .ast.Expr
 use .ast.FStr
@@ -44,6 +46,7 @@ use .ast.If
 use .ast.Let
 use .ast.Literal
 use .ast.LiteralKind
+use .ast.Loop
 use .ast.Meta
 use .ast.Module
 use .ast.ModuleItem
@@ -246,16 +249,6 @@ impl Parser:
         end
     end
 
-    fn parse_type(mut self, token Token) Type throws ParseError:
-        let mark = self.iter.mark_prev()
-        let kind = match token.kind:
-            TokenKind.Ident(name) => TypeKind.Name(self.parse_name(token)!)
-            _ => return parse_error(UnexpectedToken(token), token)
-        end
-        Type{kind, meta: self.meta(mark)}
-    end
-
-
     fn parse_expr(mut self, token Token) Expr? throws ParseError:
         self.parse_binary_expr(token, 1)!
     end
@@ -321,6 +314,9 @@ impl Parser:
             TokenKind.FStr(items, _) => Expr.FStr(self.parse_fstr(items)!)
             TokenKind.Let => Expr.Let(self.parse_let_or_mut(token)!)
             TokenKind.Mut => Expr.Let(self.parse_let_or_mut(token)!)
+            TokenKind.Break => Expr.Break(Break{meta: self.meta(mark)})
+            TokenKind.Continue => Expr.Continue(Continue{meta: self.meta(mark)})
+            TokenKind.Loop => Expr.Loop(self.parse_loop(token)!)
             _:
                 let unary_expr = self.parse_unary_expr(token)!
                 match unary_expr:
@@ -356,6 +352,12 @@ impl Parser:
         end
     end
 
+    fn parse_loop(mut self, token Token) Loop throws ParseError:
+        let mark = self.iter.mark_prev()
+        let body = self.parse_block()!
+        Loop{body, meta: self.meta(mark)}
+    end
+
     fn parse_ident(mut self, token Token) Ident throws ParseError:
         let mark = self.iter.mark_prev()
         match token.kind:
@@ -379,6 +381,15 @@ impl Parser:
         end
         -- todo: parse generic arguments and more segments.
         Name{segments, meta: self.meta(root_mark)}
+    end
+
+    fn parse_type(mut self, token Token) Type throws ParseError:
+        let mark = self.iter.mark_prev()
+        let kind = match token.kind:
+            TokenKind.Ident(name) => TypeKind.Name(self.parse_name(token)!)
+            _ => return parse_error(UnexpectedToken(token), token)
+        end
+        Type{kind, meta: self.meta(mark)}
     end
 
     fn parse_let_or_mut(mut self, token Token) Let throws ParseError:

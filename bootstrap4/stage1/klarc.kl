@@ -93,7 +93,7 @@ fn main():
     let src = src_read.unwrap()
     let tokens = lex(src, src_file, debug_level)
     match parse(tokens):
-        Ok<Module>(module) => print(module.to_debug_str())
+        Ok<Module>(module) => print(module.to_debug_str_multiline())
         Error<(), ParseErrorKind>(error):
             print(error.to_debug_str())
             exit(3)

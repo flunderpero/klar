@@ -6,6 +6,34 @@ trait ToDebugStr:
         all information, but is easier to test / reason about.
     ---
     fn to_debug_str(self) Str
+
+    fn to_debug_str_multiline(self) Str:
+        --- Same as `to_debug_str`, but with newlines and indentation.
+        ---
+        let str = self.to_debug_str()
+        mut res = ""
+        mut indent = 0
+        mut iter = str.iter()
+        loop:
+            match iter.next():
+                Some('('):
+                    if res.len() > 0:
+                        res.push("\n")
+                    end
+                    res.push("  ".repeat(indent))
+                    res.push("(")
+                    indent = indent + 1
+                end
+                Some(')'):
+                    indent = indent - 1
+                    res.push(")")
+                end
+                Some(x) => res.push_char(x)
+                None => break
+            end
+        end
+        res
+    end
 end
 
 enum ParseErrorKind:
@@ -103,6 +131,19 @@ struct If:
     meta Meta
 end
 
+struct Loop:
+    body Block
+    meta Meta
+end
+
+struct Break:
+    meta Meta
+end
+
+struct Continue:
+    meta Meta
+end
+
 enum Expr:
     Assignment(Assignment)
     BinaryExpr(BinaryExpr)
@@ -113,6 +154,9 @@ enum Expr:
     Let(Let)
     Literal(Literal)
     UnaryExpr(UnaryExpr)
+    Loop(Loop)
+    Break(Break)
+    Continue(Continue)
 end
 
 struct GenericArg:
@@ -416,17 +460,32 @@ impl ToDebugStr for UnaryExpr:
     end
 end
 
+impl ToDebugStr for Loop:
+    fn to_debug_str(self) Str => f"(@loop {self.body.to_debug_str()})"
+end
+
+impl ToDebugStr for Break:
+    fn to_debug_str(self) Str => "(@break)"
+end
+
+impl ToDebugStr for Continue:
+    fn to_debug_str(self) Str => "(@continue)"
+end
+
 impl ToDebugStr for Expr:
     fn to_debug_str(self) Str:
         match self:
             Expr.Assignment(value) => value.to_debug_str()
             Expr.BinaryExpr(value) => value.to_debug_str()
+            Expr.Break(value) => value.to_debug_str()
             Expr.Call(value) => value.to_debug_str()
+            Expr.Continue(value) => value.to_debug_str()
             Expr.FStr(value) => value.to_debug_str()
             Expr.Ident(value) => value.to_debug_str()
             Expr.If(value) => value.to_debug_str()
             Expr.Let(value) => value.to_debug_str()
             Expr.Literal(value) => value.to_debug_str()
+            Expr.Loop(value) => value.to_debug_str()
             Expr.UnaryExpr(value) => value.to_debug_str()
         end
     end

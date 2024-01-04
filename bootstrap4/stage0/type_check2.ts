@@ -205,7 +205,7 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
     } else if (node instanceof ast.FunctionCall) {
         type = type_check_function_call_or_enum_instantiation(node, env, ctx)
     } else if (node instanceof ast.StructInstantiation) {
-        type = struct_instantiation(node, env)
+        type = struct_instantiation(node, env, ctx)
     } else if (node instanceof ast.TupleInstantiation) {
         const types = node.elements.map((v) =>
             type_check(v, env, {...ctx, used_in_expression: true}),
@@ -949,13 +949,17 @@ function type_check_function_call_or_enum_instantiation(
     return return_type
 }
 
-function struct_instantiation(node: ast.StructInstantiation, env: TypeEnvironment): StructType {
+function struct_instantiation(
+    node: ast.StructInstantiation,
+    env: TypeEnvironment,
+    ctx: Context,
+): StructType {
     let struct_type = StructType.from_env(node.target_struct_name, env, node.span)
     const value_types = Object.entries(node.fields).map(([k, v]) => {
         if (!v) {
             return env.get(k, node.span)
         }
-        return type_check(v, env, {used_in_expression: true})
+        return type_check(v, env, {...ctx, used_in_expression: true})
     })
     if (
         struct_type.has_type_parameters() &&
@@ -975,12 +979,28 @@ function struct_instantiation(node: ast.StructInstantiation, env: TypeEnvironmen
     if (type_arguments.length > 0) {
         struct_type = struct_type.with_type_arguments(type_arguments, node.span)
     }
-    for (const [name, value] of Object.entries(node.fields)) {
-        const field_type = struct_type.field(name, node.span)
+    const remaining_fields = new Set(Object.keys(node.fields))
+    for (const [name, field_type] of struct_type.data_fields.entries()) {
+        if (!node.fields.hasOwnProperty(name)) {
+            throw new TypeCheckError(
+                `Missing field ${quote(name)} in struct instantiation`,
+                node.span,
+            )
+        }
+        const value = node.fields[name]
         const value_type = value
-            ? type_check(value, env, {used_in_expression: true})
+            ? type_check(value, env, {...ctx, used_in_expression: true})
             : env.get(name, node.span)
         expect_assignable_to(field_type, value_type, node.span)
+        remaining_fields.delete(name)
+    }
+    if (remaining_fields.size > 0) {
+        throw new TypeCheckError(
+            `Unknown field${remaining_fields.size > 1 ? "s" : ""} ${Array.from(remaining_fields)
+                .map((x) => quote(x))
+                .join(",")} in struct instantiation`,
+            node.span,
+        )
     }
     return struct_type
 }
@@ -1168,7 +1188,7 @@ function resolve_trait_bounds_for_trait(trait_type: TraitType, span: Span) {
                 expect_equal_types(existing, type, span)
                 continue
             }
-            trait_type.add_field_immediate(name, type)
+            trait_type.add_field_immediate(name, type, "data")
         }
     }
 }
@@ -1179,7 +1199,7 @@ function type_check_struct_fields(node: ast.StructDeclaration, env: TypeEnvironm
     for (const [name, type] of Object.entries(node.fields)) {
         let field_type = Type.from_env_or_declaration(type, struct_env)
         const type_parameters = TypeParameters.from_declaration(type.type_parameters, struct_env)
-        struct_type.add_field(name, field_type, type_parameters, type.span)
+        struct_type.add_field(name, field_type, type_parameters, "data", type.span)
     }
 }
 
@@ -1188,7 +1208,7 @@ function type_check_enum_variants(node: ast.EnumDeclaration, env: TypeEnvironmen
     const enum_env = enum_type.create_type_environment(env, node.span)
     for (const variant_declaration of node.variants) {
         const variant = EnumType.variant_from_declaration(enum_type, variant_declaration, enum_env)
-        enum_type.add_field_immediate(variant_declaration.name, variant)
+        enum_type.add_field_immediate(variant_declaration.name, variant, "data")
     }
 }
 
@@ -1230,7 +1250,7 @@ function type_check_function_body(
             } else {
                 return_type = block_type
             }
-            function_type.data.fields.set("return", return_type)
+            function_type.data.fields.set("return", {type: return_type, is_data: true})
         } else {
             type_check_return_type(return_type, block_type, node.span)
         }
@@ -1264,7 +1284,7 @@ function type_check_trait_functions(
                 func.span,
             )
         }
-        trait_type.add_field_immediate(function_type.name, function_type)
+        trait_type.add_field_immediate(function_type.name, function_type, "method")
     }
     if (mode === "signatures") {
         return
@@ -1325,7 +1345,13 @@ function type_check_impl(
                 declaration.type_parameters,
                 impl_env,
             )
-            complex_type.add_field(function_type.name, function_type, type_parameters, func.span)
+            complex_type.add_field(
+                function_type.name,
+                function_type,
+                type_parameters,
+                "method",
+                func.span,
+            )
         }
         if (node.trait_name) {
             complex_type.data.traits.push(node.trait_name)
@@ -1365,7 +1391,7 @@ function type_check_impl(
                     // Add the default impl to the struct.
                     type = type.with_scope_type_variables(type_variable_map)
                     assert(type instanceof FunctionType)
-                    type = complex_type.add_field_immediate(name, type)
+                    type = complex_type.add_field_immediate(name, type, "method")
                 } else {
                     type = type.with_scope_type_variables(type_variable_map)
                 }
@@ -1700,7 +1726,7 @@ export class TypeParameter {
 }
 
 abstract class ComplexType<
-    T extends {name: string; fields: Map<string, Type>; traits: string[]},
+    T extends {name: string; fields: Map<string, {type: Type; is_data: boolean}>; traits: string[]},
 > extends Type {
     static from_env(name: string, env: TypeEnvironment, span: Span): ComplexType<any> {
         const type = env.get(name, span)
@@ -1838,6 +1864,7 @@ abstract class ComplexType<
         name: string,
         field_type: T,
         type_parameters: TypeParameters,
+        data_field_type: "data" | "method",
         span: Span,
     ): T {
         if (type_parameters.type_parameters.length > 0) {
@@ -1873,13 +1900,17 @@ abstract class ComplexType<
         if (field_type instanceof ComplexType) {
             field_type = field_type.with_scope_type_variables(this.type_variable_map)
         }
-        this.data.fields.set(name, field_type)
+        this.data.fields.set(name, {type: field_type, is_data: data_field_type === "data"})
         this._fields = undefined
         return field_type
     }
 
-    add_field_immediate<T extends Type>(name: string, field_type: T): T {
-        this.data.fields.set(name, field_type)
+    add_field_immediate<T extends Type>(
+        name: string,
+        field_type: T,
+        data_field_type: "data" | "method",
+    ): T {
+        this.data.fields.set(name, {type: field_type, is_data: data_field_type === "data"})
         this._fields = undefined
         return field_type
     }
@@ -1898,7 +1929,8 @@ abstract class ComplexType<
         //     return this._fields
         // }
         this._fields = new Map()
-        for (let [name, type] of this.data.fields) {
+        for (let [name, type_] of this.data.fields) {
+            let type = type_.type
             if (type instanceof TypeVariable) {
                 // Respect `this.type_variable_map` here.
                 type = this.type_variable_map.get(type) ?? type
@@ -1926,10 +1958,9 @@ abstract class ComplexType<
     get data_fields(): Map<string, Type> {
         const res = new Map()
         for (const [name, type] of this.fields.entries()) {
-            if (type instanceof FunctionType) {
-                continue
+            if (this.data.fields.get(name)?.is_data) {
+                res.set(name, type)
             }
-            res.set(name, type)
         }
         return res
     }
@@ -2070,7 +2101,7 @@ class StructData {
     constructor(
         public readonly name: string,
         public readonly declaration: ast.StructDeclaration,
-        public readonly fields: Map<string, Type> = new Map(),
+        public readonly fields: Map<string, {type: Type; is_data: boolean}> = new Map(),
         public readonly traits: string[] = [],
     ) {}
 }
@@ -2150,7 +2181,7 @@ class EnumType extends ComplexType<EnumData> {
             return type
         }
         for (const [name, variant] of this.variants) {
-            type.add_field_immediate(name, variant)
+            type.add_field_immediate(name, variant, "data")
         }
         return type
     }
@@ -2179,8 +2210,10 @@ class EnumType extends ComplexType<EnumData> {
         if (this.is_variant) {
             return new Map()
         }
-        return new Map(
-            [...this.data.fields.entries()].filter(([, type]) => type instanceof EnumType),
+        return new Map<string, EnumType>(
+            [...this.data.fields.entries()]
+                .map(([name, {type}]) => [name, type] as [string, EnumType])
+                .filter(([, type]) => type instanceof EnumType),
         ) as Map<string, EnumType>
     }
 
@@ -2228,7 +2261,7 @@ class EnumData {
     constructor(
         public readonly name: string,
         public readonly declaration?: ast.EnumDeclaration,
-        public readonly fields: Map<string, Type> = new Map(),
+        public readonly fields: Map<string, {type: Type; is_data: boolean}> = new Map(),
         public readonly traits: string[] = [],
     ) {}
 }
@@ -2290,7 +2323,7 @@ export class TraitType extends ComplexType<TraitData> {
                         builtin_span,
                     )
                 }
-                trait_type.add_field_immediate(name, type)
+                trait_type.add_field_immediate(name, type, "method")
             }
         }
         return trait_type
@@ -2362,7 +2395,7 @@ class TraitData {
     constructor(
         public readonly name: string,
         public readonly declaration: ast.TraitDeclaration,
-        public readonly fields: Map<string, Type> = new Map(),
+        public readonly fields: Map<string, {type: Type; is_data: boolean}> = new Map(),
         public readonly functions_with_default_impl: string[],
         public readonly traits: string[] = [],
         public readonly trait_bounds: TraitType[] = [],
@@ -2421,13 +2454,13 @@ export class FunctionType extends ComplexType<FunctionData> {
                 : declaration instanceof ast.ClosureDefinition
                 ? declaration.parameters.map((p) => ({name: p.name, type: p.type}))
                 : declaration.arg_types.map((type, i) => ({name: `${i}`, type}))
-        const fields = new Map<string, Type>()
+        const fields = new Map<string, {type: Type; is_data: boolean}>()
         for (const parameter of parameters) {
             const type = resolve_type(parameter.type!)
             if (!env.get_or_null(type.signature)) {
                 env.add(type.signature, type, parameter.type!.span)
             }
-            fields.set(parameter.name, type)
+            fields.set(parameter.name, {type, is_data: true})
         }
         let return_type = resolve_type(declaration.return_type)
         const throws = declaration.throws
@@ -2460,7 +2493,7 @@ export class FunctionType extends ComplexType<FunctionData> {
                 .with_scope_type_variables(scoped_type_variables)
                 .with_type_arguments(type_arguments, declaration.span)
         }
-        fields.set("return", return_type)
+        fields.set("return", {type: return_type, is_data: true})
         const data = new FunctionData(
             declaration instanceof ast.ClosureDefinition ? "<closure>" : declaration.name,
             fields,
@@ -2483,7 +2516,7 @@ export class FunctionType extends ComplexType<FunctionData> {
     }
 
     static from_data(data: FunctionData, span: Span): FunctionType {
-        const type_variables = data.fields.get("self") ? [TypeVariable.Self] : []
+        const type_variables = data.fields.get("self")?.type ? [TypeVariable.Self] : []
         const type = new FunctionType(data, type_variables)
         return Type.add_or_get_known_type(type.signature, type, span)
     }
@@ -2570,7 +2603,7 @@ export class FunctionType extends ComplexType<FunctionData> {
 class FunctionData extends Type {
     constructor(
         public readonly name: string,
-        public readonly fields: Map<string, Type>,
+        public readonly fields: Map<string, {type: Type; is_data: boolean}> = new Map(),
         public readonly parameter_names: string[],
         public readonly traits: string[] = [],
         public readonly declaration?:
@@ -2590,9 +2623,9 @@ class TupleType extends ComplexType<TupleData> {
         span: Span,
     ): TupleType {
         const types = declaration.fields.map((f) => Type.from_env_or_declaration(f, env))
-        const fields = new Map<string, Type>()
+        const fields = new Map<string, {type: Type; is_data: boolean}>()
         for (let i = 0; i < types.length; i++) {
-            fields.set(`${i}`, types[i])
+            fields.set(`${i}`, {type: types[i], is_data: true})
         }
         const data = new TupleData(`(${types.map((t) => t.signature).join(",")})`, fields)
         const type = new TupleType(data, type_variables)
@@ -2601,7 +2634,9 @@ class TupleType extends ComplexType<TupleData> {
 
     static from_types(types: Type[]): TupleType {
         const name = `(${types.map((t) => t.signature).join(",")})`
-        const fields = new Map<string, Type>(types.map((t, i) => [`${i}`, t]))
+        const fields = new Map<string, {type: Type; is_data: boolean}>(
+            types.map((t, i) => [`${i}`, {type: t, is_data: true}]),
+        )
         const type = new TupleType(new TupleData(name, fields), [])
         return Type.add_or_get_known_type(type.signature, type, builtin_span)
     }
@@ -2682,7 +2717,7 @@ class TupleType extends ComplexType<TupleData> {
 class TupleData {
     constructor(
         public readonly name: string,
-        public readonly fields: Map<string, Type>,
+        public readonly fields: Map<string, {type: Type; is_data: boolean}> = new Map(),
         public readonly traits: string[] = [],
     ) {}
 }
@@ -2707,7 +2742,7 @@ export class StrType extends ComplexType<StrData> {
 class StrData {
     constructor(
         public readonly name: string,
-        public readonly fields: Map<string, Type>,
+        public readonly fields: Map<string, {type: Type; is_data: boolean}> = new Map(),
         public readonly traits: string[] = [],
     ) {}
 }
@@ -2730,7 +2765,7 @@ export class CharType extends ComplexType<CharData> {
 class CharData {
     constructor(
         public readonly name: string,
-        public readonly fields: Map<string, Type>,
+        public readonly fields: Map<string, {type: Type; is_data: boolean}> = new Map(),
         public readonly traits: string[] = [],
     ) {}
 }
@@ -2753,7 +2788,7 @@ export class BoolType extends ComplexType<BoolData> {
 class BoolData {
     constructor(
         public readonly name: string,
-        public readonly fields: Map<string, Type>,
+        public readonly fields: Map<string, {type: Type; is_data: boolean}> = new Map(),
         public readonly traits: string[] = [],
     ) {}
 }
@@ -2776,7 +2811,7 @@ export class NumericType extends ComplexType<NumericData> {
 class NumericData {
     constructor(
         public readonly name: string,
-        public readonly fields: Map<string, Type>,
+        public readonly fields: Map<string, {type: Type; is_data: boolean}> = new Map(),
         public readonly traits: string[] = [],
     ) {}
 }
@@ -2818,7 +2853,7 @@ export class ArrayType extends ComplexType<ArrayData> {
 class ArrayData {
     constructor(
         public readonly name: string,
-        public readonly fields: Map<string, Type>,
+        public readonly fields: Map<string, {type: Type; is_data: boolean}> = new Map(),
         public readonly element_type: Type,
         public readonly traits: string[] = [],
     ) {}
@@ -2829,7 +2864,11 @@ export class ModuleType extends ComplexType<ModuleData> {
         const data = new ModuleData(name)
         const module_type = new ModuleType(data, [])
         for (const [name, type] of env.types_by_name.entries()) {
-            module_type.add_field_immediate(name, type)
+            module_type.add_field_immediate(
+                name,
+                type,
+                type instanceof FunctionType ? "method" : "data",
+            )
         }
         return Type.add_or_get_known_type(module_type.signature, module_type, span)
     }
@@ -2863,7 +2902,7 @@ export class ModuleType extends ComplexType<ModuleData> {
 class ModuleData {
     constructor(
         public readonly name: string,
-        public readonly fields: Map<string, Type> = new Map(),
+        public readonly fields: Map<string, {type: Type; is_data: boolean}> = new Map(),
         public readonly traits: string[] = [],
     ) {}
 }
@@ -2892,20 +2931,20 @@ function add_core_traits<T extends ComplexType<any>>(
         type.data.traits.push(name)
         for (const function_name of trait_functions[name]) {
             if (function_name === "to_str") {
-                type.data.fields.set(
-                    function_name,
-                    FunctionType.from_data(
+                type.data.fields.set(function_name, {
+                    type: FunctionType.from_data(
                         new FunctionData(
                             function_name,
-                            new Map<string, Type>([
-                                ["self", type],
-                                ["return", str_type],
+                            new Map<string, {type: Type; is_data: boolean}>([
+                                ["self", {type, is_data: true}],
+                                ["return", {type: str_type, is_data: true}],
                             ]),
                             ["self"],
                         ),
                         builtin_span,
                     ),
-                )
+                    is_data: false,
+                })
                 continue
             }
             type.add_field_immediate(
@@ -2913,18 +2952,24 @@ function add_core_traits<T extends ComplexType<any>>(
                 FunctionType.from_data(
                     new FunctionData(
                         function_name,
-                        new Map<string, Type>([
-                            ["self", type],
-                            ["rhs", type],
+                        new Map<string, {type: Type; is_data: boolean}>([
+                            ["self", {type, is_data: true}],
+                            ["rhs", {type, is_data: true}],
                             [
                                 "return",
-                                ["PartialEq", "PartialOrd"].includes(name) ? bool_type : type,
+                                {
+                                    type: ["PartialEq", "PartialOrd"].includes(name)
+                                        ? bool_type
+                                        : type,
+                                    is_data: true,
+                                },
                             ],
                         ]),
                         ["self", "rhs"],
                     ),
                     builtin_span,
                 ),
+                "method",
             )
         }
     }
@@ -3521,6 +3566,34 @@ const test = {
         assert.equal(type.signature, "Foo<>")
     },
 
+    test_struct_instantiation_requires_all_fields() {
+        assert.throws(
+            () =>
+                test.type_check(`
+            struct Foo: 
+                a Int 
+            end
+
+            let foo = Foo{}
+        `),
+            /Missing field `a`/,
+        )
+    },
+
+    test_struct_instantiation_with_extra_fields() {
+        assert.throws(
+            () =>
+                test.type_check(`
+            struct Foo: 
+                a Int 
+            end
+
+            let foo = Foo{a: 1, b: true}
+        `),
+            /Unknown field `b`/,
+        )
+    },
+
     test_struct_instantiation_with_wrong_field_type() {
         assert.throws(
             () =>
@@ -3533,6 +3606,22 @@ const test = {
         `),
             /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
+    },
+
+    test_struct_instantiation_with_function_type_member() {
+        const {type} = test.type_check(`
+            struct Foo: 
+                a Int 
+                foo (fn() Int)
+            end
+
+            fn f() Int:
+                1
+            end
+            let foo = Foo{a: 1, foo: f}
+            foo
+        `)
+        assert.equal(type.debug_str, "Foo<>{a: Int, foo: fn<>()->Int}")
     },
 
     test_struct_instantiation_with_generic_struct() {

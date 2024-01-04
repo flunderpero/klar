@@ -37,11 +37,13 @@ trait ToDebugStr:
 end
 
 enum ParseErrorKind:
-    UnexpectedToken(Token)
-    UnexpectedEOF
-    InvalidIntLiteral(Token)
     ExprExpected(Token)
     IdentExpected(Token)
+    InvalidIntLiteral(Token)
+    TypeExpected(Token)
+    UnexpectedEOF
+    UnexpectedFnDecl(FnDecl)
+    UnexpectedToken(Token)
 end
 
 struct ParseError:
@@ -214,17 +216,26 @@ struct Block:
     meta Meta
 end
 
+struct Trait:
+    ident Ident
+    generics Vector<GenericArg>
+    fn_decls Vector<FnDecl>
+    fn_impls Vector<Fn>
+    meta Meta
+end
+
 enum BlockItem:
     Expr(Expr)
     Fn(Fn)
+    Trait(Trait)
     -- Enum(Enum)
     -- Impl(Impl)
     -- Struct(Struct)
-    -- Trait(Trait)
 end
 
 enum ModuleItem:
     Fn(Fn)
+    Trait(Trait)
     -- Use(Use)
     -- Extern(Extern)
     -- Enum(Enum)
@@ -319,10 +330,26 @@ impl ToDebugStr for FnDecl:
     end
 end
 
+impl ToDebugStr for Trait:
+    fn to_debug_str(self) Str:
+        let generics = " ".join(
+            self.generics.iter().map<Str>(fn(it GenericArg) Str => it.type.to_debug_str())
+        )
+        let fn_decls = " ".join(
+            self.fn_decls.iter().map<Str>(fn(it FnDecl) Str => it.to_debug_str())
+        )
+        let fn_impls = " ".join(
+            self.fn_impls.iter().map<Str>(fn(it Fn) Str => it.to_debug_str())
+        )
+        f"(@trait {self.ident.to_debug_str()}{" ".when(generics.len() > 0)}{generics}{" ".when(fn_decls.len() > 0)}{fn_decls}{" ".when(fn_impls.len() > 0)}{fn_impls})"
+    end
+end
+
 impl ToDebugStr for ModuleItem:
     fn to_debug_str(self) Str:
         match self:
             ModuleItem.Fn(x) => x.to_debug_str()
+            ModuleItem.Trait(x) => x.to_debug_str()
         end
     end
 end
@@ -341,6 +368,7 @@ impl ToDebugStr for BlockItem:
         match self:
             BlockItem.Expr(x) => x.to_debug_str()
             BlockItem.Fn(x) => x.to_debug_str()
+            BlockItem.Trait(x) => x.to_debug_str()
         end
     end
 end
@@ -369,7 +397,9 @@ impl ToDebugStr for ParseErrorKind:
             ParseErrorKind.ExprExpected(token) => f"(@error expr expected at {token.span})"
             ParseErrorKind.IdentExpected(token) => f"(@error ident expected at {token.span})"
             ParseErrorKind.InvalidIntLiteral(token) => f"(@error invalid int literal at {token.span})"
+            ParseErrorKind.TypeExpected(token) => f"(@error type expected at {token.span})"
             ParseErrorKind.UnexpectedEOF => "(@error eof)"
+            ParseErrorKind.UnexpectedFnDecl(decl) => f"(@error unexpected fn decl `{decl.ident}` at {decl.meta.span()})"
             ParseErrorKind.UnexpectedToken(token) => f"(@error unexpected token `{token}` at {token.span})"
         end
     end
@@ -398,6 +428,10 @@ end
 
 impl ToDebugStr for Ident:
     fn to_debug_str(self) Str => f"(@ident {self.name})"
+end
+
+impl ToStr for Ident:
+    fn to_str(self) Str => self.name
 end
 
 impl ToDebugStr for FStr:

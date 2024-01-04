@@ -259,6 +259,49 @@ fn main():
         end)
     end)
 
+    test.group("trait", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(
+                item("""
+                    trait Foo:
+                        fn bar()
+                    end
+                    """) 
+                == 
+                "(@trait (@ident Foo) (@fndecl (@ident bar) (@type (@unit))))"
+            )
+        end)
+
+        test.it("parses default implementations", fn() throws:
+            assert(
+                item("""
+                    trait Foo:
+                        fn bar()
+                        fn baz():
+                        end
+                    end
+                    """) 
+                == 
+                "(@trait (@ident Foo) " +
+                "(@fndecl (@ident bar) (@type (@unit))) " +
+                "(@fn (@fndecl (@ident baz) (@type (@unit))) (@block)))"
+            )
+        end)
+        
+        test.it("parses generics", fn() throws:
+            assert(
+                item("""
+                    trait Foo<T>:
+                        fn bar() T
+                    end
+                    """) 
+                == 
+                "(@trait (@ident Foo) (@type (@name (@seg (@ident T)))) " +
+                "(@fndecl (@ident bar) (@type (@name (@seg (@ident T))))))"
+            )
+        end)
+    end)
+
 
     enum ParseFn:
         Item

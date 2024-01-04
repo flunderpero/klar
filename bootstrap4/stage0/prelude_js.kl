@@ -320,6 +320,15 @@ impl Str:
     end
 end
 
+impl Add for Str:
+    fn add(self, rhs Str) Str:
+        mut res = ""
+        res.push(self)
+        res.push(rhs)
+        res
+    end
+end
+
 impl Int:
     fn from_str(s Str, radix Int) Int throws:
         if s.len() == 0 => return Error("empty string")
@@ -470,6 +479,15 @@ impl IndexedSet<Int, T> for Vector<T>:
             panic("Vector index out of bounds")
         end
         self.data.set(i, v)
+    end
+end
+
+impl Add for Vector<T>:
+    fn add(self, rhs Vector<T>) Vector<T>:
+        let vec = Vector<T>.new()
+        self.iter().for_each(fn(value) => vec.push(value))
+        rhs.iter().for_each(fn(value) => vec.push(value))
+        vec
     end
 end
 

@@ -224,11 +224,29 @@ struct Trait:
     meta Meta
 end
 
+enum EnumVariantKind:
+    Tuple(Vector<Type>)
+    Unit
+end
+
+struct EnumVariant:
+    ident Ident
+    kind EnumVariantKind
+    meta Meta
+end
+
+struct Enum:
+    ident Ident
+    generics Vector<GenericArg>
+    variants Vector<EnumVariant>
+    meta Meta
+end
+
 enum BlockItem:
     Expr(Expr)
     Fn(Fn)
     Trait(Trait)
-    -- Enum(Enum)
+    Enum(Enum)
     -- Impl(Impl)
     -- Struct(Struct)
 end
@@ -236,12 +254,11 @@ end
 enum ModuleItem:
     Fn(Fn)
     Trait(Trait)
+    Enum(Enum)
     -- Use(Use)
     -- Extern(Extern)
-    -- Enum(Enum)
     -- Impl(Impl)
     -- Struct(Struct)
-    -- Trait(Trait)
 end
 
 struct Module:
@@ -345,9 +362,43 @@ impl ToDebugStr for Trait:
     end
 end
 
+impl ToDebugStr for EnumVariantKind:
+    fn to_debug_str(self) Str:
+        match self:
+            EnumVariantKind.Tuple(x):
+                let types = " ".join(
+                    x.iter().map<Str>(fn(it Type) Str => it.to_debug_str())
+                )
+                f"(@tuple {types})"
+            end
+            EnumVariantKind.Unit => "(@unit)"
+        end
+    end
+end
+
+impl ToDebugStr for EnumVariant:
+    fn to_debug_str(self) Str:
+        let kind = self.kind.to_debug_str()
+        f"(@variant {self.ident.to_debug_str()} {kind})"
+    end
+end
+
+impl ToDebugStr for Enum:
+    fn to_debug_str(self) Str:
+        let generics = " ".join(
+            self.generics.iter().map<Str>(fn(it GenericArg) Str => it.type.to_debug_str())
+        )
+        let variants = " ".join(
+            self.variants.iter().map<Str>(fn(it EnumVariant) Str => it.to_debug_str())
+        )
+        f"(@enum {self.ident.to_debug_str()}{" ".when(generics.len() > 0)}{generics}{" ".when(variants.len() > 0)}{variants})"
+    end
+end
+
 impl ToDebugStr for ModuleItem:
     fn to_debug_str(self) Str:
         match self:
+            ModuleItem.Enum(x) => x.to_debug_str()
             ModuleItem.Fn(x) => x.to_debug_str()
             ModuleItem.Trait(x) => x.to_debug_str()
         end
@@ -366,6 +417,7 @@ end
 impl ToDebugStr for BlockItem:
     fn to_debug_str(self) Str:
         match self:
+            BlockItem.Enum(x) => x.to_debug_str()
             BlockItem.Expr(x) => x.to_debug_str()
             BlockItem.Fn(x) => x.to_debug_str()
             BlockItem.Trait(x) => x.to_debug_str()

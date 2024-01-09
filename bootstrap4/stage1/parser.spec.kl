@@ -302,6 +302,41 @@ fn main():
         end)
     end)
 
+    test.group("enum", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(
+                item("""
+                    enum Foo:
+                        Bar
+                        Baz(Int, Str, Bool)
+                    end
+                    """) 
+                == 
+                "(@enum (@ident Foo) " +
+                "(@variant (@ident Bar) (@unit)) " +
+                "(@variant (@ident Baz) (@tuple " + 
+                "(@type (@name (@seg (@ident Int)))) " +
+                "(@type (@name (@seg (@ident Str)))) " +
+                "(@type (@name (@seg (@ident Bool)))))))"
+            )
+        end)
+
+        test.it("parses generics", fn() throws:
+            assert(
+                item("""
+                    enum Foo<T>:
+                        Bar(T)
+                    end
+                    """) 
+                == 
+                "(@enum (@ident Foo) " +
+                "(@type (@name (@seg (@ident T)))) " +
+                "(@variant (@ident Bar) (@tuple " + 
+                "(@type (@name (@seg (@ident T)))))))"
+            )
+        end)
+
+    end)
 
     enum ParseFn:
         Item

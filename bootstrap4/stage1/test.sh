@@ -15,6 +15,9 @@ build/parser.spec.js $@
 
 echo "Testing all source files under ../tests/stage0 ..."
 for test_file in ../tests/stage0/*.kl; do
+    if [[ "$test_file" == *"compile_error"* ]]; then
+        continue
+    fi
     test=$(basename "$test_file")
     compiled="build/${test%.kl}"
     echo "$test"

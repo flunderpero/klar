@@ -37,6 +37,9 @@ use .ast.Break
 use .ast.Continue
 use .ast.Trait
 use .ast.Call
+use .ast.Enum
+use .ast.EnumVariant
+use .ast.EnumVariantKind
 use .ast.Expr
 use .ast.FStr
 use .ast.Fn
@@ -238,6 +241,7 @@ impl Parser:
                 match item:
                     ParseItem.Fn(f) => ModuleItem.Fn(f)
                     ParseItem.Trait(t) => ModuleItem.Trait(t)
+                    ParseItem.Enum(e) => ModuleItem.Enum(e)
                     ParseItem.FnDecl(f) => return parse_error(UnexpectedFnDecl(f), token)
                 end
             )
@@ -256,6 +260,7 @@ impl Parser:
                 end
             end
             TokenKind.Trait => ParseItem.Trait(self.parse_trait(token)!)
+            TokenKind.Enum => ParseItem.Enum(self.parse_enum(token)!)
             _ => return None
         end
     end
@@ -356,7 +361,7 @@ impl Parser:
         let expr_token = self.iter.force_next()!
         let expr = self.parse_primary_expr(expr_token)!
         match expr:
-            -- todo: We are note able to reuse the name `expr` here, the stage0 compiler
+            -- todo: We are not able to reuse the name `expr` here, the stage0 compiler
             --       throws a JS error.
             Some(x) => UnaryExpr{kind, expr: x, meta: self.meta(mark)}
             None => return parse_error(ExprExpected(expr_token), expr_token)
@@ -582,6 +587,59 @@ impl Parser:
         Trait{ident, generics, fn_decls, fn_impls, meta: self.meta(mark)}
     end
 
+    fn parse_enum(mut self, token Token) Enum throws ParseError:
+        let mark = self.iter.mark_prev()
+        let ident = self.parse_ident(self.iter.force_next()!)!
+        let generics = self.parse_generic_args()!
+        let variants = Vector<EnumVariant>.new()
+        self.iter.expect_lexical_token(TokenKind.Colon)!
+        loop:
+            let next_token = self.iter.force_next()!
+            match next_token.kind:
+                TokenKind.End => break
+                _ => variants.push(self.parse_enum_variant(next_token)!)
+            end
+        end
+        Enum{ident, generics, variants, meta: self.meta(mark)}
+    end
+
+    fn parse_enum_variant(mut self, token Token) EnumVariant throws ParseError:
+        let mark = self.iter.mark_prev()
+        let ident = self.parse_ident(token)!
+        let kind = match self.iter.peek():
+            Some(Token{kind: TokenKind.LParen, span: _}):
+                self.iter.force_next()!
+                let types = self.parse_comma_separated_types()!
+                EnumVariantKind.Tuple(types)
+            end
+            _ => EnumVariantKind.Unit
+        end
+        EnumVariant{ident, kind, meta: self.meta(mark)}
+    end
+
+    fn parse_comma_separated_types(mut self) Vector<Type> throws ParseError:
+        let types = Vector<Type>.new()
+        mut got_comma = false
+        loop:
+            let next_token = self.iter.force_next()!
+            match next_token.kind:
+                TokenKind.RParen => break
+                TokenKind.Comma:
+                    if got_comma => return parse_error(TypeExpected(next_token), next_token)
+                    got_comma = true
+                    continue
+                end
+                _: 
+                    if types.len() > 0 and not got_comma => 
+                        return parse_error(UnexpectedToken(next_token), next_token)
+                    got_comma = false
+                    types.push(self.parse_type(next_token)!)
+                end
+            end
+        end
+        types
+    end
+
     fn parse_call(mut self, target Expr) Call throws ParseError:
         let mark = self.iter.mark()
         self.iter.expect_immediate_lexical_token(TokenKind.LParen)!
@@ -668,6 +726,7 @@ impl Parser:
         match item.unwrap():
             ParseItem.Fn(f) => BlockItem.Fn(f)
             ParseItem.Trait(t) => BlockItem.Trait(t)
+            ParseItem.Enum(e) => BlockItem.Enum(e)
             _ => return parse_error(UnexpectedToken(token), token)
         end
     end
@@ -693,6 +752,7 @@ enum ParseItem:
     Fn(Fn)
     FnDecl(FnDecl)
     Trait(Trait)
+    Enum(Enum)
 end
 
 impl ToDebugStr for ParseItem:
@@ -701,6 +761,7 @@ impl ToDebugStr for ParseItem:
             ParseItem.Fn(f) => f.to_debug_str()
             ParseItem.FnDecl(f) => f.to_debug_str()
             ParseItem.Trait(t) => t.to_debug_str()
+            ParseItem.Enum(e) => e.to_debug_str()
         end
     end
 end

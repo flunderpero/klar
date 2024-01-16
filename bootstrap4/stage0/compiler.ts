@@ -384,6 +384,13 @@ const lhs = ${lhs};
 const rhs = ${rhs};
 const lhs_str = to_debug_str(lhs);
 const rhs_str = to_debug_str(rhs);
+let first_diff_index = -1;
+for (let i = 0; i < lhs_str.length && i < rhs_str.length; i++) {
+    if (lhs_str[i] !== rhs_str[i]) {
+        first_diff_index = i;
+        break;
+    }
+}
 if (!${cond}) {
 klar_panic(
 new klar_Str(\`Assertion failed:
@@ -392,6 +399,8 @@ expected: ${escape_str_str(e.lhs.span.src_text)} ${e.operator} ${escape_str_str(
                 e.rhs.span.src_text,
             )}
 got:      \${lhs_str} ${e.operator} \${rhs_str}
+
+first difference at index \${first_diff_index} (\\\"\${lhs_str[first_diff_index]}\\\" vs \\\"\${rhs_str[first_diff_index]}\\\")
 \`), new klar_Str("${location}"), new klar_Str(""));}})();`
         } else if (e instanceof AST.Not) {
             const inner = transpile_expression(e.expression, {used_in_expression: true})

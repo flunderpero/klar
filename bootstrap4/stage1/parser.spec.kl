@@ -47,6 +47,34 @@ fn main():
             assert(item("fn main(): end") == "(@fn (@fndecl (@ident main) (@type (@unit))) (@block))")
             assert(item("fn main(): 42 end") == "(@fn (@fndecl (@ident main) (@type (@unit))) (@block (@int 42)))")
         end)
+
+        test.it("parses parameters", fn() throws:
+            assert(
+                item("fn main(a Int): end") 
+                == 
+                "(@fn (@fndecl (@ident main) " +
+                "(@param (@ident a) (@type (@name (@seg (@ident Int))))) " +
+                "(@type (@unit))) (@block))"
+            )
+            assert(
+                item("fn main(a Int, b Str): end") 
+                == 
+                "(@fn (@fndecl (@ident main) " + 
+                "(@param (@ident a) (@type (@name (@seg (@ident Int))))) " +
+                "(@param (@ident b) (@type (@name (@seg (@ident Str))))) " +
+                "(@type (@unit))) (@block))"
+            )
+        end)
+
+        test.it("parses the `self` parameter", fn() throws:
+            assert(
+                item("fn main(self): end") 
+                == 
+                "(@fn (@fndecl (@ident main) " +
+                "(@param (@ident self) (@type (@self))) " +
+                "(@type (@unit))) (@block))"
+            )
+        end)
     end)
 
     test.group("literals", fn():

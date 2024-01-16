@@ -40,6 +40,7 @@ enum ParseErrorKind:
     ExprExpected(Token)
     IdentExpected(Token)
     InvalidIntLiteral(Token)
+    ParamExpected(Token)
     TypeExpected(Token)
     UnexpectedEOF
     UnexpectedFnDecl(FnDecl)
@@ -184,6 +185,7 @@ end
 enum TypeKind:
     Name(Name)
     Infer
+    Self
     Unit
 end
 
@@ -328,6 +330,7 @@ impl ToDebugStr for Type:
         match self.kind:
             TypeKind.Name(x) => f"(@type {x.to_debug_str()})"
             TypeKind.Unit => "(@type (@unit))"
+            TypeKind.Self => "(@type (@self))"
             TypeKind.Infer => "(@type (@infer))"
         end
     end
@@ -449,6 +452,7 @@ impl ToDebugStr for ParseErrorKind:
             ParseErrorKind.ExprExpected(token) => f"(@error expr expected at {token.span})"
             ParseErrorKind.IdentExpected(token) => f"(@error ident expected at {token.span})"
             ParseErrorKind.InvalidIntLiteral(token) => f"(@error invalid int literal at {token.span})"
+            ParseErrorKind.ParamExpected(token) => f"(@error param expected at {token.span})"
             ParseErrorKind.TypeExpected(token) => f"(@error type expected at {token.span})"
             ParseErrorKind.UnexpectedEOF => "(@error eof)"
             ParseErrorKind.UnexpectedFnDecl(decl) => f"(@error unexpected fn decl `{decl.ident}` at {decl.meta.span()})"

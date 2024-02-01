@@ -164,21 +164,12 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
             type = get_function_type.return_type
         }
     } else if (node instanceof ast.Return) {
-        if (node.value) {
-            if (!ctx.return_type) {
-                throw new SemanticError("Unexpected return", node.span)
-            }
-            const return_type = type_check(node.value, env, {...ctx, used_in_expression: true})
-            type_check_return_type(ctx.return_type, return_type, node.span)
-            // `return` is a statement, but we give it the type because it makes it easier
-            // to type-check nested blocks like:
-            //     fn foo(): Int
-            //         if bar => return 1 else => return 2
-            //     end
-            type = ctx.return_type
-        } else {
-            type = Type.unit
+        if (!ctx.return_type) {
+            throw new SemanticError("Unexpected return", node.span)
         }
+        const return_type = type_check(node.value, env, {...ctx, used_in_expression: true})
+        type_check_return_type(ctx.return_type, return_type, node.span)
+        type = ctx.return_type
     } else if (node instanceof ast.BinaryExpression) {
         type = type_check_binary_expression(node, env, ctx)
     } else if (node instanceof ast.FunctionDefinition) {
@@ -4208,16 +4199,6 @@ const test = {
               -- not the last expression in the block.
         `)
         assert.equal(type, env.Int)
-    },
-
-    test_return_without_value() {
-        const {type} = test.type_check(`
-            fn foo(): 
-                return
-            end
-            foo()
-        `)
-        assert.equal(type, Type.unit)
     },
 
     test_return_with_value() {

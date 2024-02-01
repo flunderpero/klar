@@ -39,7 +39,7 @@ impl Point:
 
     fn add_to_y(mut self, value Int):
         self.y = self.y + value
-        return
+        return ()
     end
 end
 

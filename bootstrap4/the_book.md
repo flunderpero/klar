@@ -201,7 +201,7 @@ It is also the default return type of functions.
 fn test():
     --- This function returns the unit value.
     ---
-    return
+    return ()
 end
 
 fn main():
@@ -548,6 +548,54 @@ fn main():
     assert(not a)
     -- `not` has lower precedence than `and` and `or`.
     assert((not a and 42 < 23) == false)
+end
+```
+
+### Functions
+
+#### Return Values
+
+In Klar, the last expression of a function is the return value.
+
+```klar
+fn add(a Int, b Int) Int:
+    a + b -- This is the return value.
+end
+
+fn main():
+    assert(add(1, 2) == 3)
+end
+```
+
+##### Explicit And Early Returns
+
+```klar
+fn divide(divisor Int, dividend Int) Int:
+    if dividend == 0:
+        return 0 -- Early return.
+    end
+    return divisor / dividend -- Explicit return.
+end
+
+fn main():
+    assert(divide(10, 2) == 5)
+    assert(divide(10, 0) == 0)
+end
+```
+
+The `return` keyword must be followed by an expression.
+
+```klar
+fn main():
+    return 
+end -- Compile error: Unexpected token `end`
+```
+
+The correct code is:
+
+```klar
+fn main():
+    return ()
 end
 ```
 

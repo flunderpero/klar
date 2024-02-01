@@ -561,9 +561,9 @@ export class UnitOperator extends Statement {
 
 export class Return extends Statement {
     kind = "return"
-    value?: Expression
+    value: Expression
 
-    constructor(data: {value?: Expression}, span: Span) {
+    constructor(data: {value: Expression}, span: Span) {
         super(span)
         Object.assign(this as typeof data, data as typeof Return.prototype)
     }
@@ -1897,13 +1897,8 @@ export function parse(tokens: TokenStream): AST {
 
     function parse_return_expression(): Return {
         const span = tokens.expect("return").span
-        let end_span = span
-        let value: Expression | undefined
-        if (tokens.simple_peek() !== "end") {
-            value = parse_expression()
-            end_span = value.span
-        }
-        return new Return({value}, Span.combine(span, end_span))
+        const value = parse_expression()
+        return new Return({value}, Span.combine(span, value.span))
     }
 
     function parse_identifier_reference(token: Identifier): IdentifierReference {

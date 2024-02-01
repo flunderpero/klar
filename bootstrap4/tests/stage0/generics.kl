@@ -36,7 +36,7 @@ impl Container<T>:
 
     fn set_value(mut self, value T):
         self.value = value
-        return
+        return ()
     end
 end
 
@@ -83,5 +83,4 @@ fn main():
     let f = MultiContainer<Int, Container<Num>>.new(30, Container<Num>.new(Num{ value: 31 }))
     print(f.get_value1())
     print(f.get_value2().get_value().value)
-    return 
 end

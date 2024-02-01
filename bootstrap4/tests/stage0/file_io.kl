@@ -15,14 +15,14 @@ fn main():
     match file.write_str("Hello, World!"):
         Error(error): 
             print(f"File IO failed: {error}")
-            return
+            return ()
         end
         Ok(_) => ()
     end
     let contents = match file.read_str():
         Error(error): 
             print(f"File IO failed: {error}")
-            return
+            return ()
         end
         Ok<Str>(contents) => contents
     end

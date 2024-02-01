@@ -74,7 +74,7 @@ fn main():
     if env.args.len() < 4:
         print("Usage: klarc <src> <dst>")
         exit(1)
-        return
+        return ()
     end
     -- todo (lang-feat) We should be able to replace this with a simple block instead of an IIFE.
     let debug_level = (fn () DebugLevel:
@@ -88,7 +88,7 @@ fn main():
     if let Error(error) = src_read:
         print(f"Error reading file {src_file}: {error}")
         exit(2)
-        return
+        return ()
     end
     let src = src_read.unwrap()
     let tokens = lex(src, src_file, debug_level)

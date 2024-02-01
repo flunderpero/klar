@@ -544,7 +544,7 @@ impl IndexedSet<K, V> for Map<K, V>:
             let v = self.data.get(i)
             if v.0 == key:
                 self.data.set(i, (key, Option<V>.Some(value)))
-                return
+                return ()
             end
             i = i + 1
         end

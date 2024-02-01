@@ -21,7 +21,7 @@ impl MayHaveValue<T>:
             MayHaveValue.Some(_) => print(1)
             MayHaveValue.None => print(0)
         end
-        return 
+        return ()
     end
 end
 

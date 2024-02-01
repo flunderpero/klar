@@ -122,7 +122,7 @@ end
 struct Let:
     ident Ident
     is_mut Bool
-    type Type
+    type_ Type
     expr Expr
     meta Meta
 end
@@ -163,7 +163,7 @@ enum Expr:
 end
 
 struct GenericArg:
-    type Type
+    type_ Type
     meta Meta
 end
 
@@ -196,7 +196,7 @@ end
 
 struct Param:
     ident Ident
-    type Type
+    type_ Type
     meta Meta
 end
 
@@ -244,23 +244,31 @@ struct Enum:
     meta Meta
 end
 
+struct Impl:
+    -- todo (lang feat): Make `type` a reserved word for future use.
+    type_ Type
+    trait_ Type? 
+    fn_impls Vector<Fn>
+    meta Meta
+end
+
 enum BlockItem:
+    -- Struct(Struct)
+    Enum(Enum)
     Expr(Expr)
     Fn(Fn)
+    Impl(Impl)
     Trait(Trait)
-    Enum(Enum)
-    -- Impl(Impl)
-    -- Struct(Struct)
 end
 
 enum ModuleItem:
-    Fn(Fn)
-    Trait(Trait)
-    Enum(Enum)
-    -- Use(Use)
     -- Extern(Extern)
-    -- Impl(Impl)
     -- Struct(Struct)
+    -- Use(Use)
+    Enum(Enum)
+    Fn(Fn)
+    Impl(Impl)
+    Trait(Trait)
 end
 
 struct Module:
@@ -307,7 +315,7 @@ impl ToDebugStr for NameSegment:
     fn to_debug_str(self) Str:
         let args = match self.args:
             Some(x) => " ".join(
-                x.iter().map<Str>(fn(it GenericArg) Str => it.type.to_debug_str())
+                x.iter().map<Str>(fn(it GenericArg) Str => it.type_.to_debug_str())
             )
             None => ""
         end
@@ -337,7 +345,7 @@ impl ToDebugStr for Type:
 end
 
 impl ToDebugStr for Param:
-    fn to_debug_str(self) Str => f"(@param {self.ident.to_debug_str()} {self.type.to_debug_str()})"
+    fn to_debug_str(self) Str => f"(@param {self.ident.to_debug_str()} {self.type_.to_debug_str()})"
 end
 
 impl ToDebugStr for FnDecl:
@@ -353,7 +361,7 @@ end
 impl ToDebugStr for Trait:
     fn to_debug_str(self) Str:
         let generics = " ".join(
-            self.generics.iter().map<Str>(fn(it GenericArg) Str => it.type.to_debug_str())
+            self.generics.iter().map<Str>(fn(it GenericArg) Str => it.type_.to_debug_str())
         )
         let fn_decls = " ".join(
             self.fn_decls.iter().map<Str>(fn(it FnDecl) Str => it.to_debug_str())
@@ -389,7 +397,7 @@ end
 impl ToDebugStr for Enum:
     fn to_debug_str(self) Str:
         let generics = " ".join(
-            self.generics.iter().map<Str>(fn(it GenericArg) Str => it.type.to_debug_str())
+            self.generics.iter().map<Str>(fn(it GenericArg) Str => it.type_.to_debug_str())
         )
         let variants = " ".join(
             self.variants.iter().map<Str>(fn(it EnumVariant) Str => it.to_debug_str())
@@ -398,11 +406,25 @@ impl ToDebugStr for Enum:
     end
 end
 
+impl ToDebugStr for Impl:
+    fn to_debug_str(self) Str:
+        let trait_ = match self.trait_:
+            Some(x) => f"{x.to_debug_str()} "
+            None => ""
+        end
+        let fn_impls = " ".join(
+            self.fn_impls.iter().map<Str>(fn(it Fn) Str => it.to_debug_str())
+        )
+        f"(@impl {trait_}{self.type_.to_debug_str()}{" ".when(fn_impls.len() > 0)}{fn_impls})"
+    end
+end
+
 impl ToDebugStr for ModuleItem:
     fn to_debug_str(self) Str:
         match self:
             ModuleItem.Enum(x) => x.to_debug_str()
             ModuleItem.Fn(x) => x.to_debug_str()
+            ModuleItem.Impl(x) => x.to_debug_str()
             ModuleItem.Trait(x) => x.to_debug_str()
         end
     end
@@ -423,6 +445,7 @@ impl ToDebugStr for BlockItem:
             BlockItem.Enum(x) => x.to_debug_str()
             BlockItem.Expr(x) => x.to_debug_str()
             BlockItem.Fn(x) => x.to_debug_str()
+            BlockItem.Impl(x) => x.to_debug_str()
             BlockItem.Trait(x) => x.to_debug_str()
         end
     end
@@ -526,7 +549,7 @@ end
 impl ToDebugStr for Let:
     fn to_debug_str(self) Str:
         let name = if self.is_mut => "mut" else => "let"
-        f"(@{name} {self.ident.to_debug_str()} {self.type.to_debug_str()} {self.expr.to_debug_str()})"
+        f"(@{name} {self.ident.to_debug_str()} {self.type_.to_debug_str()} {self.expr.to_debug_str()})"
     end
 end
 

@@ -85,7 +85,7 @@ fn main():
         test.it("parses unit literals only if `(` is immediately followed by `)`", fn() throws:
             -- It's not required for ambiguity reasons, but having whitespace in between
             -- obscures the intent of the code.
-            assert(expr("()") == "(@unit)")
+            assert(expr("( )") == "(@error unexpected token `WhiteSpace()` at test.kl:1:2)")
         end)
 
         test.it("parses boolean literals", fn() throws:
@@ -363,7 +363,37 @@ fn main():
                 "(@type (@name (@seg (@ident T)))))))"
             )
         end)
+    end)
 
+    test.group("impl", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(
+                item("""
+                    impl Foo:
+                        fn bar():
+                        end
+                    end
+                    """) 
+                == 
+                "(@impl (@type (@name (@seg (@ident Foo)))) " +
+                "(@fn (@fndecl (@ident bar) (@type (@unit))) (@block)))"
+            )
+        end)
+
+        test.it("parses trait impls", fn() throws:
+            assert(
+                item("""
+                    impl Foo for Bar:
+                        fn foo():
+                        end
+                    end
+                    """) 
+                == 
+                "(@impl (@type (@name (@seg (@ident Foo)))) " +
+                "(@type (@name (@seg (@ident Bar)))) " +
+                "(@fn (@fndecl (@ident foo) (@type (@unit))) (@block)))"
+            )
+        end)
     end)
 
     enum ParseFn:

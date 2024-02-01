@@ -28,21 +28,22 @@
           value in any case. The above would then be written as
           `if true => return () func()` which would be unambiguous.
 ---
+
 use .ast.Assignment
 use .ast.BinaryExpr
 use .ast.BinaryExprKind
 use .ast.Block
 use .ast.BlockItem
 use .ast.Break
-use .ast.Continue
-use .ast.Trait
 use .ast.Call
+use .ast.Continue
 use .ast.Enum
 use .ast.EnumVariant
 use .ast.EnumVariantKind
 use .ast.Expr
-use .ast.Field
+use .ast.FQN
 use .ast.FStr
+use .ast.Field
 use .ast.Fn
 use .ast.FnDecl
 use .ast.GenericArg
@@ -57,12 +58,12 @@ use .ast.Meta
 use .ast.Module
 use .ast.ModuleItem
 use .ast.Name
-use .ast.NameSegment
 use .ast.Param
 use .ast.ParseError
 use .ast.ParseErrorKind
 use .ast.Struct
 use .ast.ToDebugStr
+use .ast.Trait
 use .ast.Type
 use .ast.TypeKind
 use .ast.UnaryExpr
@@ -70,7 +71,6 @@ use .ast.UnaryExprKind
 use .lexer.FStrItem
 use .lexer.Token
 use .lexer.TokenKind
-
 use ParseErrorKind.*
 
 struct TokenIter:
@@ -389,11 +389,11 @@ impl Parser:
         end
     end
 
-    fn parse_generic_args(mut self) Vector<GenericArg> throws ParseError:
+    fn parse_generic_args(mut self) Vector<GenericArg>? throws ParseError:
         let args = Vector<GenericArg>.new()
         match self.iter.peek():
             Some(Token{kind: TokenKind.LessThan, span: _}) => ()
-            _ => return args
+            _ => return None
         end
         self.iter.force_next()!
         loop:
@@ -417,26 +417,28 @@ impl Parser:
     end
 
     fn parse_name(mut self, token Token) Name throws ParseError:
+        let mark = self.iter.mark_prev()
+        let ident = self.parse_ident(token)!
+        let args = self.parse_generic_args()!
+        Name{ident, args, meta: self.meta(mark)}
+    end
+
+    fn parse_fqn(mut self, token Token) FQN throws ParseError:
         let root_mark = self.iter.mark_prev()
-        let segments = Vector<NameSegment>.new()
+        let names = Vector<Name>.new()
         -- The first part of the name must be an identifier.
         match token.kind:
-            TokenKind.Ident(name) => 
-                segments.push(NameSegment{
-                    ident: Ident{name, meta: self.meta(root_mark)},
-                    args: None,
-                    meta: self.meta(root_mark)
-                })
+            TokenKind.Ident(_) => names.push(self.parse_name(token)!)
             _ => return parse_error(IdentExpected(token), token)
         end
-        -- todo: parse generic arguments and more segments.
-        Name{segments, meta: self.meta(root_mark)}
+        -- todo: parse more segments.
+        FQN{names, meta: self.meta(root_mark)}
     end
 
     fn parse_type(mut self, token Token) Type throws ParseError:
         let mark = self.iter.mark_prev()
         let kind = match token.kind:
-            TokenKind.Ident(name) => TypeKind.Name(self.parse_name(token)!)
+            TokenKind.Ident(name) => TypeKind.FQN(self.parse_fqn(token)!)
             _ => return parse_error(UnexpectedToken(token), token)
         end
         Type{kind, meta: self.meta(mark)}
@@ -603,14 +605,14 @@ impl Parser:
         let mark = self.iter.mark_prev()
         -- todo (lang feat): We should not need to use `mut` here, but should be able
         --                   to express this as a single match expression.
-        mut type_ = self.parse_type(self.iter.force_next()!)!
-        mut trait_ Type? = None
+        mut type_ = self.parse_fqn(self.iter.force_next()!)!
+        mut trait_ FQN? = None
         match self.iter.peek():
             Some(Token{kind: TokenKind.For, span: _}):
                 self.iter.force_next()!;
                 -- todo (lang feat): We should not need to use `Some(...)` here.
                 trait_ = Some(type_)
-                type_ = self.parse_type(self.iter.force_next()!)!
+                type_ = self.parse_fqn(self.iter.force_next()!)!
             end
             _: 
             end
@@ -633,8 +635,7 @@ impl Parser:
 
     fn parse_trait(mut self) Trait throws ParseError:
         let mark = self.iter.mark_prev()
-        let ident = self.parse_ident(self.iter.force_next()!)!
-        let generics = self.parse_generic_args()!
+        let name = self.parse_name(self.iter.force_next()!)!
         let fn_decls = Vector<FnDecl>.new()
         let fn_impls = Vector<Fn>.new()
         self.iter.expect_lexical_token(TokenKind.Colon)!
@@ -653,13 +654,12 @@ impl Parser:
                 _ => return parse_error(UnexpectedToken(next_token), next_token)
             end
         end
-        Trait{ident, generics, fn_decls, fn_impls, meta: self.meta(mark)}
+        Trait{name, fn_decls, fn_impls, meta: self.meta(mark)}
     end
 
     fn parse_enum(mut self) Enum throws ParseError:
         let mark = self.iter.mark_prev()
-        let ident = self.parse_ident(self.iter.force_next()!)!
-        let generics = self.parse_generic_args()!
+        let name = self.parse_name(self.iter.force_next()!)!
         let variants = Vector<EnumVariant>.new()
         self.iter.expect_lexical_token(TokenKind.Colon)!
         loop:
@@ -669,7 +669,7 @@ impl Parser:
                 _ => variants.push(self.parse_enum_variant(next_token)!)
             end
         end
-        Enum{ident, generics, variants, meta: self.meta(mark)}
+        Enum{name, variants, meta: self.meta(mark)}
     end
 
     fn parse_enum_variant(mut self, token Token) EnumVariant throws ParseError:
@@ -688,8 +688,7 @@ impl Parser:
 
     fn parse_struct(mut self) Struct throws ParseError:
         let mark = self.iter.mark_prev()
-        let ident = self.parse_ident(self.iter.force_next()!)!
-        let generics = self.parse_generic_args()!
+        let name = self.parse_name(self.iter.force_next()!)!
         let fields = Vector<Field>.new()
         self.iter.expect_lexical_token(TokenKind.Colon)!
         loop:
@@ -699,7 +698,7 @@ impl Parser:
                 _ => fields.push(self.parse_field(next_token)!)
             end
         end
-        Struct{ident, generics, fields, meta: self.meta(mark)}
+        Struct{name, fields, meta: self.meta(mark)}
     end
 
     fn parse_field(mut self, token Token) Field throws ParseError:

@@ -53,15 +53,15 @@ fn main():
                 item("fn main(a Int): end") 
                 == 
                 "(@fn (@fndecl (@ident main) " +
-                "(@param (@ident a) (@type (@name (@seg (@ident Int))))) " +
+                "(@param (@ident a) (@type (@fqn (@name (@ident Int))))) " +
                 "(@type (@unit))) (@block))"
             )
             assert(
                 item("fn main(a Int, b Str): end") 
                 == 
                 "(@fn (@fndecl (@ident main) " + 
-                "(@param (@ident a) (@type (@name (@seg (@ident Int))))) " +
-                "(@param (@ident b) (@type (@name (@seg (@ident Str))))) " +
+                "(@param (@ident a) (@type (@fqn (@name (@ident Int))))) " +
+                "(@param (@ident b) (@type (@fqn (@name (@ident Str))))) " +
                 "(@type (@unit))) (@block))"
             )
         end)
@@ -166,13 +166,13 @@ fn main():
 
     test.group("types", fn():
         test.it("parses literal type names", fn() throws:
-            assert(type("Int") == "(@type (@name (@seg (@ident Int))))")
+            assert(type("Int") == "(@type (@fqn (@name (@ident Int))))")
         end)
     end)
 
     test.group("variable declarations", fn():
         test.it("passes the happy path", fn() throws:
-            assert(expr("let a Int = 42") == "(@let (@ident a) (@type (@name (@seg (@ident Int)))) (@int 42))")
+            assert(expr("let a Int = 42") == "(@let (@ident a) (@type (@fqn (@name (@ident Int)))) (@int 42))")
         end)
 
         test.it("does not require a type annotation", fn() throws:
@@ -296,7 +296,20 @@ fn main():
                     end
                     """) 
                 == 
-                "(@trait (@ident Foo) (@fndecl (@ident bar) (@type (@unit))))"
+                "(@trait (@name (@ident Foo)) (@fndecl (@ident bar) (@type (@unit))))"
+            )
+        end)
+
+        test.it("parses generics", fn() throws:
+            assert(
+                item("""
+                    trait Foo<T>:
+                        fn bar()
+                    end
+                    """) 
+                == 
+                "(@trait (@name (@ident Foo) (@type (@fqn (@name (@ident T))))) " +
+                "(@fndecl (@ident bar) (@type (@unit))))"
             )
         end)
 
@@ -310,7 +323,7 @@ fn main():
                     end
                     """) 
                 == 
-                "(@trait (@ident Foo) " +
+                "(@trait (@name (@ident Foo)) " +
                 "(@fndecl (@ident bar) (@type (@unit))) " +
                 "(@fn (@fndecl (@ident baz) (@type (@unit))) (@block)))"
             )
@@ -327,7 +340,7 @@ fn main():
                     """) 
                 == 
                 "(@fn (@fndecl (@ident main) (@type (@unit))) " +
-                "(@block (@trait (@ident Foo) (@fndecl (@ident bar) (@type (@unit))))))"
+                "(@block (@trait (@name (@ident Foo)) (@fndecl (@ident bar) (@type (@unit))))))"
             )
         end)
     end)
@@ -342,12 +355,25 @@ fn main():
                     end
                     """) 
                 == 
-                "(@enum (@ident Foo) " +
+                "(@enum (@name (@ident Foo)) " +
                 "(@variant (@ident Bar) (@unit)) " +
                 "(@variant (@ident Baz) (@tuple " + 
-                "(@type (@name (@seg (@ident Int)))) " +
-                "(@type (@name (@seg (@ident Str)))) " +
-                "(@type (@name (@seg (@ident Bool)))))))"
+                "(@type (@fqn (@name (@ident Int)))) " +
+                "(@type (@fqn (@name (@ident Str)))) " +
+                "(@type (@fqn (@name (@ident Bool)))))))"
+            )
+        end)
+
+        test.it("parses generics", fn() throws:
+            assert(
+                item("""
+                    enum Foo<T>:
+                        Bar
+                    end
+                    """) 
+                == 
+                "(@enum (@name (@ident Foo) (@type (@fqn (@name (@ident T))))) " +
+                "(@variant (@ident Bar) (@unit)))"
             )
         end)
 
@@ -362,7 +388,7 @@ fn main():
                     """) 
                 == 
                 "(@fn (@fndecl (@ident main) (@type (@unit))) " +
-                "(@block (@enum (@ident Foo) " +
+                "(@block (@enum (@name (@ident Foo)) " +
                 "(@variant (@ident Bar) (@unit)))))"
             )
         end)
@@ -378,7 +404,23 @@ fn main():
                     end
                     """) 
                 == 
-                "(@impl (@type (@name (@seg (@ident Foo)))) " +
+                "(@impl (@fqn (@name (@ident Foo))) " +
+                "(@fn (@fndecl (@ident bar) (@type (@unit))) (@block)))"
+            )
+        end)
+
+        test.it("parses generics", fn() throws:
+            assert(
+                item("""
+                    impl Foo<T> for Bar<U>:
+                        fn bar():
+                        end
+                    end
+                    """) 
+                == 
+                "(@impl (@fqn (@name (@ident Foo) " +
+                "(@type (@fqn (@name (@ident T)))))) " +
+                "(@fqn (@name (@ident Bar) (@type (@fqn (@name (@ident U)))))) " +
                 "(@fn (@fndecl (@ident bar) (@type (@unit))) (@block)))"
             )
         end)
@@ -392,8 +434,8 @@ fn main():
                     end
                     """) 
                 == 
-                "(@impl (@type (@name (@seg (@ident Foo)))) " +
-                "(@type (@name (@seg (@ident Bar)))) " +
+                "(@impl (@fqn (@name (@ident Foo))) " +
+                "(@fqn (@name (@ident Bar))) " +
                 "(@fn (@fndecl (@ident foo) (@type (@unit))) (@block)))"
             )
         end)
@@ -410,7 +452,7 @@ fn main():
                     """) 
                 == 
                 "(@fn (@fndecl (@ident main) (@type (@unit))) " +
-                "(@block (@impl (@type (@name (@seg (@ident Foo)))) " +
+                "(@block (@impl (@fqn (@name (@ident Foo))) " +
                 "(@fn (@fndecl (@ident foo) (@type (@unit))) (@block)))))"
             )
         end)
@@ -426,9 +468,22 @@ fn main():
                     end
                     """) 
                 == 
-                "(@struct (@ident Foo) " +
-                "(@field (@ident a) (@type (@name (@seg (@ident Int))))) " +
-                "(@field (@ident b) (@type (@name (@seg (@ident Str))))))"
+                "(@struct (@name (@ident Foo)) " +
+                "(@field (@ident a) (@type (@fqn (@name (@ident Int))))) " +
+                "(@field (@ident b) (@type (@fqn (@name (@ident Str))))))"
+            )
+        end)
+
+        test.it("pareses generics", fn() throws:
+            assert(
+                item("""
+                    struct Foo<T>:
+                        a T
+                    end
+                    """) 
+                == 
+                "(@struct (@name (@ident Foo) (@type (@fqn (@name (@ident T))))) " +
+                "(@field (@ident a) (@type (@fqn (@name (@ident T))))))"
             )
         end)
 
@@ -444,9 +499,9 @@ fn main():
                     """) 
                 == 
                 "(@fn (@fndecl (@ident main) (@type (@unit))) " +
-                "(@block (@struct (@ident Foo) " +
-                "(@field (@ident a) (@type (@name (@seg (@ident Int))))) " +
-                "(@field (@ident b) (@type (@name (@seg (@ident Str))))))))"
+                "(@block (@struct (@name (@ident Foo)) " +
+                "(@field (@ident a) (@type (@fqn (@name (@ident Int))))) " +
+                "(@field (@ident b) (@type (@fqn (@name (@ident Str))))))))"
             )
         end)
     end)

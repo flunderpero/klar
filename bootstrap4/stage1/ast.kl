@@ -147,6 +147,11 @@ struct Continue:
     meta Meta
 end
 
+struct Return:
+    expr Expr
+    meta Meta
+end
+
 enum Expr:
     Assignment(Assignment)
     BinaryExpr(BinaryExpr)
@@ -160,6 +165,7 @@ enum Expr:
     Loop(Loop)
     Break(Break)
     Continue(Continue)
+    Return(Return)
 end
 
 struct GenericArg:
@@ -303,7 +309,6 @@ end
 
 impl Meta:
     fn new(tokens Vector<Token>) Meta:
-        assert(tokens.len() > 0)
         let id = Id{id: int_next()} 
         Meta{id: id, tokens}
     end
@@ -603,6 +608,10 @@ impl ToDebugStr for Continue:
     fn to_debug_str(self) Str => "(@continue)"
 end
 
+impl ToDebugStr for Return:
+    fn to_debug_str(self) Str => f"(@return {self.expr.to_debug_str()})"
+end
+
 impl ToDebugStr for Expr:
     fn to_debug_str(self) Str:
         match self:
@@ -617,6 +626,7 @@ impl ToDebugStr for Expr:
             Expr.Let(value) => value.to_debug_str()
             Expr.Literal(value) => value.to_debug_str()
             Expr.Loop(value) => value.to_debug_str()
+            Expr.Return(value) => value.to_debug_str()
             Expr.UnaryExpr(value) => value.to_debug_str()
         end
     end

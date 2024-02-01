@@ -506,6 +506,16 @@ fn main():
         end)
     end)
 
+    test.group("return", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(expr("return 42") == "(@return (@int 42))")
+        end)
+
+        test.it("requires an expression", fn() throws:
+            assert(expr("return") == "(@error eof)")
+        end)
+    end)
+
     enum ParseFn:
         Item
         Expr

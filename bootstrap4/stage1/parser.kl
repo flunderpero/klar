@@ -19,14 +19,6 @@
     == TODO: Ambiguity
 
     These constructs are still ambiguous:
-
-    - `if true => return func()`
-        - Is this a return statement or a return expression? 
-          Writing it as `if true: return end func()` or
-          `if true: return func() end` would make it unambiguous.
-        - We could remove the ambiguity here by requiring a return
-          value in any case. The above would then be written as
-          `if true => return () func()` which would be unambiguous.
 ---
 
 use .ast.Assignment
@@ -61,6 +53,7 @@ use .ast.Name
 use .ast.Param
 use .ast.ParseError
 use .ast.ParseErrorKind
+use .ast.Return
 use .ast.Struct
 use .ast.ToDebugStr
 use .ast.Trait
@@ -340,6 +333,7 @@ impl Parser:
             TokenKind.Break => Expr.Break(Break{meta: self.meta(mark)})
             TokenKind.Continue => Expr.Continue(Continue{meta: self.meta(mark)})
             TokenKind.Loop => Expr.Loop(self.parse_loop(token)!)
+            TokenKind.Return => Expr.Return(self.parse_return()!)
             _:
                 let unary_expr = self.parse_unary_expr(token)!
                 match unary_expr:
@@ -379,6 +373,15 @@ impl Parser:
         let mark = self.iter.mark_prev()
         let body = self.parse_block()!
         Loop{body, meta: self.meta(mark)}
+    end
+
+    fn parse_return(mut self) Return throws ParseError:
+        let mark = self.iter.mark_prev()
+        let expr_token = self.iter.force_next()!
+        match self.parse_expr(expr_token)!:
+            Some<Expr>(expr) => Return{expr, meta: self.meta(mark)}
+            None => return parse_error(ExprExpected(expr_token), expr_token)
+        end
     end
 
     fn parse_ident(mut self, token Token) Ident throws ParseError:

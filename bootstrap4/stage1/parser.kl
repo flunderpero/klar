@@ -41,6 +41,7 @@ use .ast.Enum
 use .ast.EnumVariant
 use .ast.EnumVariantKind
 use .ast.Expr
+use .ast.Field
 use .ast.FStr
 use .ast.Fn
 use .ast.FnDecl
@@ -60,6 +61,7 @@ use .ast.NameSegment
 use .ast.Param
 use .ast.ParseError
 use .ast.ParseErrorKind
+use .ast.Struct
 use .ast.ToDebugStr
 use .ast.Type
 use .ast.TypeKind
@@ -242,6 +244,7 @@ impl Parser:
                 match item:
                     ParseItem.Fn(f) => ModuleItem.Fn(f)
                     ParseItem.Trait(t) => ModuleItem.Trait(t)
+                    ParseItem.Struct(t) => ModuleItem.Struct(t)
                     ParseItem.Impl(i) => ModuleItem.Impl(i)
                     ParseItem.Enum(e) => ModuleItem.Enum(e)
                     ParseItem.FnDecl(f) => return parse_error(UnexpectedFnDecl(f), token)
@@ -261,9 +264,10 @@ impl Parser:
                     _ => ParseItem.FnDecl(decl)
                 end
             end
-            TokenKind.Trait => ParseItem.Trait(self.parse_trait(token)!)
-            TokenKind.Enum => ParseItem.Enum(self.parse_enum(token)!)
-            TokenKind.Impl => ParseItem.Impl(self.parse_impl(token)!)
+            TokenKind.Trait => ParseItem.Trait(self.parse_trait()!)
+            TokenKind.Enum => ParseItem.Enum(self.parse_enum()!)
+            TokenKind.Struct => ParseItem.Struct(self.parse_struct()!)
+            TokenKind.Impl => ParseItem.Impl(self.parse_impl()!)
             _ => return None
         end
     end
@@ -595,7 +599,7 @@ impl Parser:
         Fn{decl, body, meta: Meta.new(decl.meta.tokens + body.meta.tokens)}
     end
 
-    fn parse_impl(mut self, token Token) Impl throws ParseError:
+    fn parse_impl(mut self) Impl throws ParseError:
         let mark = self.iter.mark_prev()
         -- todo (lang feat): We should not need to use `mut` here, but should be able
         --                   to express this as a single match expression.
@@ -627,7 +631,7 @@ impl Parser:
         return Impl{type_, trait_, fn_impls, meta: self.meta(mark)}
     end
 
-    fn parse_trait(mut self, token Token) Trait throws ParseError:
+    fn parse_trait(mut self) Trait throws ParseError:
         let mark = self.iter.mark_prev()
         let ident = self.parse_ident(self.iter.force_next()!)!
         let generics = self.parse_generic_args()!
@@ -652,7 +656,7 @@ impl Parser:
         Trait{ident, generics, fn_decls, fn_impls, meta: self.meta(mark)}
     end
 
-    fn parse_enum(mut self, token Token) Enum throws ParseError:
+    fn parse_enum(mut self) Enum throws ParseError:
         let mark = self.iter.mark_prev()
         let ident = self.parse_ident(self.iter.force_next()!)!
         let generics = self.parse_generic_args()!
@@ -680,6 +684,29 @@ impl Parser:
             _ => EnumVariantKind.Unit
         end
         EnumVariant{ident, kind, meta: self.meta(mark)}
+    end
+
+    fn parse_struct(mut self) Struct throws ParseError:
+        let mark = self.iter.mark_prev()
+        let ident = self.parse_ident(self.iter.force_next()!)!
+        let generics = self.parse_generic_args()!
+        let fields = Vector<Field>.new()
+        self.iter.expect_lexical_token(TokenKind.Colon)!
+        loop:
+            let next_token = self.iter.force_next()!
+            match next_token.kind:
+                TokenKind.End => break
+                _ => fields.push(self.parse_field(next_token)!)
+            end
+        end
+        Struct{ident, generics, fields, meta: self.meta(mark)}
+    end
+
+    fn parse_field(mut self, token Token) Field throws ParseError:
+        let mark = self.iter.mark_prev()
+        let ident = self.parse_ident(token)!
+        let type_ = self.parse_type(self.iter.force_next()!)!
+        Field{ident, type_, meta: self.meta(mark)}
     end
 
     fn parse_comma_separated_types(mut self) Vector<Type> throws ParseError:
@@ -799,6 +826,7 @@ impl Parser:
             ParseItem.Trait(t) => BlockItem.Trait(t)
             ParseItem.Enum(e) => BlockItem.Enum(e)
             ParseItem.Impl(i) => BlockItem.Impl(i)
+            ParseItem.Struct(i) => BlockItem.Struct(i)
             _ => return parse_error(UnexpectedToken(token), token)
         end
     end
@@ -826,6 +854,7 @@ enum ParseItem:
     Trait(Trait)
     Impl(Impl)
     Enum(Enum)
+    Struct(Struct)
 end
 
 impl ToDebugStr for ParseItem:
@@ -836,6 +865,7 @@ impl ToDebugStr for ParseItem:
             ParseItem.Impl(i) => i.to_debug_str()
             ParseItem.Trait(t) => t.to_debug_str()
             ParseItem.Enum(e) => e.to_debug_str()
+            ParseItem.Struct(s) => s.to_debug_str()
         end
     end
 end

@@ -244,6 +244,19 @@ struct Enum:
     meta Meta
 end
 
+struct Struct:
+    ident Ident
+    generics Vector<GenericArg>
+    fields Vector<Field>
+    meta Meta
+end
+
+struct Field:
+    ident Ident
+    type_ Type
+    meta Meta
+end
+
 struct Impl:
     -- todo (lang feat): Make `type` a reserved word for future use.
     type_ Type
@@ -253,7 +266,7 @@ struct Impl:
 end
 
 enum BlockItem:
-    -- Struct(Struct)
+    Struct(Struct)
     Enum(Enum)
     Expr(Expr)
     Fn(Fn)
@@ -263,8 +276,8 @@ end
 
 enum ModuleItem:
     -- Extern(Extern)
-    -- Struct(Struct)
     -- Use(Use)
+    Struct(Struct)
     Enum(Enum)
     Fn(Fn)
     Impl(Impl)
@@ -406,6 +419,22 @@ impl ToDebugStr for Enum:
     end
 end
 
+impl ToDebugStr for Field:
+    fn to_debug_str(self) Str => f"(@field {self.ident.to_debug_str()} {self.type_.to_debug_str()})"
+end
+
+impl ToDebugStr for Struct:
+    fn to_debug_str(self) Str:
+        let generics = " ".join(
+            self.generics.iter().map<Str>(fn(it GenericArg) Str => it.type_.to_debug_str())
+        )
+        let fields = " ".join(
+            self.fields.iter().map<Str>(fn(it Field) Str => it.to_debug_str())
+        )
+        f"(@struct {self.ident.to_debug_str()}{" ".when(generics.len() > 0)}{generics}{" ".when(fields.len() > 0)}{fields})"
+    end
+end
+
 impl ToDebugStr for Impl:
     fn to_debug_str(self) Str:
         let trait_ = match self.trait_:
@@ -426,6 +455,7 @@ impl ToDebugStr for ModuleItem:
             ModuleItem.Fn(x) => x.to_debug_str()
             ModuleItem.Impl(x) => x.to_debug_str()
             ModuleItem.Trait(x) => x.to_debug_str()
+            ModuleItem.Struct(x) => x.to_debug_str()
         end
     end
 end
@@ -447,6 +477,7 @@ impl ToDebugStr for BlockItem:
             BlockItem.Fn(x) => x.to_debug_str()
             BlockItem.Impl(x) => x.to_debug_str()
             BlockItem.Trait(x) => x.to_debug_str()
+            BlockItem.Struct(x) => x.to_debug_str()
         end
     end
 end

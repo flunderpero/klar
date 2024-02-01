@@ -416,6 +416,41 @@ fn main():
         end)
     end)
 
+    test.group("struct", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(
+                item("""
+                    struct Foo:
+                        a Int
+                        b Str
+                    end
+                    """) 
+                == 
+                "(@struct (@ident Foo) " +
+                "(@field (@ident a) (@type (@name (@seg (@ident Int))))) " +
+                "(@field (@ident b) (@type (@name (@seg (@ident Str))))))"
+            )
+        end)
+
+        test.it("is parsed inside blocks", fn() throws:
+            assert(
+                item("""
+                    fn main():
+                        struct Foo:
+                            a Int
+                            b Str
+                        end
+                    end
+                    """) 
+                == 
+                "(@fn (@fndecl (@ident main) (@type (@unit))) " +
+                "(@block (@struct (@ident Foo) " +
+                "(@field (@ident a) (@type (@name (@seg (@ident Int))))) " +
+                "(@field (@ident b) (@type (@name (@seg (@ident Str))))))))"
+            )
+        end)
+    end)
+
     enum ParseFn:
         Item
         Expr

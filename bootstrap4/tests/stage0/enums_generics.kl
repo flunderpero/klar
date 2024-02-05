@@ -18,16 +18,16 @@ end
 impl MayHaveValue<T>:
     fn print(self):
         match self:
-            MayHaveValue.Some(_) => print(1)
-            MayHaveValue.None => print(0)
+            MayHaveValue::Some(_) => print(1)
+            MayHaveValue::None => print(0)
         end
         return ()
     end
 end
 
 fn main():
-    let some = MayHaveValue<Int>.Some(1)
+    let some = MayHaveValue<Int>::Some(1)
     some.print()
-    let none = MayHaveValue<Int>.None
+    let none = MayHaveValue<Int>::None
     none.print()
 end

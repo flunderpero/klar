@@ -35,7 +35,7 @@ impl Color:
 end
 
 fn main():
-    let c = Color.Red
+    let c = Color::Red
     print(c.to_num())
     print(c.some_function())
 end

@@ -28,7 +28,7 @@ class CodeGenError extends Error {
 /**
  * Transpile AST to JavaScript.
  */
-function code_gen(ast: AST.AST) {
+function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
     function m(name: string) {
         if (name.startsWith("klar_")) {
             return name
@@ -48,9 +48,15 @@ function code_gen(ast: AST.AST) {
         "/": "div",
     }
     let res = ""
+    if (opts?.encapsulate) {
+        res += "{"
+    }
     for (const expression of ast.body) {
         res += transpile_expression(expression, {used_in_expression: false})
         res += "\n"
+    }
+    if (opts?.encapsulate) {
+        res += "}"
     }
     type Context = {
         func?: AST.FunctionDeclaration | AST.ClosureDefinition
@@ -74,7 +80,7 @@ function code_gen(ast: AST.AST) {
                         return e.value
                     }
                     throw e
-                }}`
+                }};exported.${m(e.declaration.name)} = ${m(e.declaration.name)};`
         } else if (e instanceof AST.ClosureDefinition) {
             const parameters = e.parameters.map((x) => m(x.name)).join(",")
             const block = transpile_block(
@@ -251,17 +257,25 @@ function code_gen(ast: AST.AST) {
             }
         } else if (e instanceof AST.StructDeclaration) {
             const members = Object.keys(e.fields).join(";")
-            return `class ${m(e.name)} {${members}\n}`
+            return `class ${m(e.name)} {${members}\n};exported.${m(e.name)} = ${m(e.name)};`
         } else if (e instanceof AST.EnumDeclaration) {
             let variants = ""
+            let assign = ""
             for (const variant of e.variants) {
                 const variant_class_name = `${m(e.name)}_${variant.name}`
                 const constructor =
                     "constructor(...values) {super();values.forEach((x, i) => {this[i] = x;});}"
                 variants += `class ${variant_class_name} extends ${m(e.name)} {\n${constructor}};`
+                if (variant.fields.fields.length === 0) {
+                    assign += `${m(e.name)}.${m(variant.name)} = new ${variant_class_name}();`
+                } else {
+                    assign += `${m(e.name)}.${m(
+                        variant.name,
+                    )} = (...args) => new ${variant_class_name}(...args);`
+                }
             }
             const base_class = `class ${m(e.name)} {}`
-            return `${base_class}${variants}`
+            return `${base_class}${variants}${assign};exported.${m(e.name)} = ${m(e.name)};`
         } else if (e instanceof AST.Loop) {
             const block = transpile_block(e.block, ctx)
             // The `try / catch` is a bit of a hack to be able to break out of a match
@@ -289,25 +303,15 @@ function code_gen(ast: AST.AST) {
             }
             return `(${lhs}.${function_name}(${rhs}))`
         } else if (e instanceof AST.FieldAccess) {
-            if (
-                e.target instanceof AST.IdentifierReference &&
-                e.target.attributes.type?.declaration instanceof AST.EnumDeclaration
-            ) {
-                const declaration = e.target.attributes.type?.declaration
-                assert(typeof e.field === "string")
-                const variant = declaration.get_variant(e.field)
-                if (variant) {
-                    if (variant.fields.fields.length === 0) {
-                        return `new ${m(declaration.name)}_${e.field}()`
-                    }
-                    return `new ${m(declaration.name)}_${e.field}`
-                }
-            }
             const target = transpile_expression(e.target, {...ctx, used_in_expression: true})
             if (parseInt(e.field).toString() === e.field) {
                 return `${target}[${e.field}]`
             }
             return `${target}.${e.field}`
+        } else if (e instanceof AST.FQN) {
+            return e.parts
+                .map((x) => transpile_expression(x, {...ctx, used_in_expression: true}))
+                .join(".")
         } else if (e instanceof AST.IndexedAccess) {
             const target = transpile_expression(e.target, {...ctx, used_in_expression: true})
             const index = transpile_expression(e.index, {...ctx, used_in_expression: true})
@@ -324,16 +328,6 @@ function code_gen(ast: AST.AST) {
                 .join(",")
             return `[${values}]`
         } else if (e instanceof AST.IdentifierReference) {
-            if (e.attributes.type?.constructor.name === "EnumType") {
-                let enum_type = e.attributes.type as any
-                if (enum_type.is_variant && enum_type.variant_name === e.name) {
-                    const constructor_name = `${m(enum_type.name)}_${enum_type.variant_name}`
-                    if (enum_type.fields.length === 0) {
-                        return `new ${m(constructor_name)}()`
-                    }
-                    return `new ${m(constructor_name)}`
-                }
-            }
             return m(e.name)
         } else if (e instanceof AST.ImplDefinition) {
             return transpile_impl(e)
@@ -346,7 +340,16 @@ function code_gen(ast: AST.AST) {
         } else if (e instanceof AST.UnitLiteral) {
             return "new klar_unit()"
         } else if (e instanceof AST.Use) {
-            return ""
+            let s = ""
+            if (e.attributes.enum_variants) {
+                const prefix = e.path[0] === "." ? "exported." : ""
+                for (const variant of e.attributes.enum_variants) {
+                    s += `const ${m(variant.name)} = ${prefix}${m(e.path[0])}.${m(variant.name)};`
+                }
+            } else {
+                s += `const ${m(e.path.at(-1)!)} = exported.${m(e.path.at(-1)!)};`
+            }
+            return s
         } else {
             throw new CodeGenError(`Unexpected expression ${quote(e.kind)}`, e.span)
         }
@@ -446,6 +449,11 @@ got:      \${cond.value}
                         res = new klar_unit();
                     }
                     if (${is_option}) {
+                        if (${!!throws}) {
+                            if (res.constructor.name === "klar_Result_Error") {
+                                return res;
+                            }
+                        }
                         if (res.constructor.name !== "klar_Option_Some" 
                             && res.constructor.name !== "klar_Option_None") {
                             res = new klar_Option_Some(res);
@@ -658,28 +666,24 @@ got:      \${cond.value}
             const {type_expression} = pattern
             let target_name
             if (type_expression instanceof AST.IdentifierReference) {
-                target_name = m(type_expression.name)
                 if (type_expression.attributes.type?.constructor.name === "EnumType") {
-                    let enum_type = type_expression.attributes.type as any
-                    if (enum_type.is_variant) {
-                        const constructor_name = `${m(enum_type.variant_parent.name)}_${
-                            enum_type.variant_name
-                        }`
-                        // if (enum_type.fields.length === 0) {
-                        //     target_name = `${constructor_name}()`
-                        // }
-                        target_name = `${constructor_name}`
-                    }
+                    const enum_type = type_expression.attributes.type as any
+                    assert(enum_type.variant_name)
+                    target_name = `${m(enum_type.name)}_${enum_type.variant_name}`
+                } else {
+                    target_name = m(type_expression.name)
                 }
-            } else if (
-                type_expression instanceof AST.FieldAccess &&
-                type_expression.target instanceof AST.IdentifierReference &&
-                type_expression.target.attributes.type?.declaration instanceof AST.EnumDeclaration
-            ) {
-                const declaration = type_expression.target.attributes.type!.declaration
-                target_name = `${m(declaration.name)}_${type_expression.field}`
+            } else if (type_expression instanceof AST.FQN) {
+                if (type_expression.attributes.type?.constructor.name === "EnumType") {
+                    assert((type_expression.attributes.type as any).is_variant)
+                    target_name = `${m(type_expression.attributes.type.name)}_${
+                        type_expression.parts.at(-1)!.name
+                    }`
+                } else {
+                    target_name = transpile_expression(type_expression, {used_in_expression: true})
+                }
             }
-            let s = `(${match_expression}.constructor.name == "${target_name}")`
+            let s = `(${match_expression}.constructor.name === "${target_name}")`
             if (pattern instanceof AST.TupleMatchPattern) {
                 const values = pattern.values.map((x, i) =>
                     transpile_match_pattern_to_condition(`${match_expression}[${i}]`, x),
@@ -720,12 +724,14 @@ export async function compile({
     disable_debug,
     env,
     modules,
+    encapsulate = true,
 }: {
     file: string
     src: string
     env: TypeEnvironment
     disable_debug?: boolean
     modules: Map<string, TypeEnvironment>
+    encapsulate?: boolean
 }) {
     const log_prefix = `[${file.split("/").pop()}]`
     const tokens = Lexer.lexer({file: file.split("/").pop() ?? file, src})
@@ -772,7 +778,7 @@ export async function compile({
         console.log(to_json(ast, 2))
     }
     type_check_ast(ast, env)
-    transpiled += code_gen(ast)
+    transpiled += code_gen(ast, {encapsulate})
     if (prettify) {
         const proc = Bun.spawn(["prettier", "--stdin-filepath", "transpiled.js"], {
             stdin: "pipe",
@@ -812,7 +818,14 @@ export async function compile_prelude(
 ): Promise<{env: TypeEnvironment; prelude: string}> {
     env = env || TypeEnvironment.global()
     const src = await Bun.file(file).text()
-    const prelude = await compile({file, src, env, disable_debug: true, modules: new Map()})
+    const prelude = await compile({
+        file,
+        src,
+        env,
+        disable_debug: true,
+        encapsulate: false,
+        modules: new Map(),
+    })
     return {env, prelude}
 }
 

@@ -130,16 +130,35 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
             node.span,
         )
         type = target_type.field(node.field, node.span)
-        if (type instanceof EnumType && type.is_variant) {
-            if (type.variant_tuple_type!.fields.size > 0 && !ctx.parent_is_function_call) {
+        if (target_type instanceof EnumType && type instanceof EnumType) {
+            throw new TypeCheckError(
+                `Cannot access enum variant ${quote(type.signature)} with dot notation`,
+                node.span,
+            )
+        }
+        // Remember the target for later use.
+        node.attributes.target_type = target_type
+    } else if (node instanceof ast.FQN) {
+        let target_type = expect_type_with_fields(
+            type_check(node.parts[0], env, {...ctx, used_in_expression: false}),
+            node.span,
+        )
+        for (let i = 1; i < node.parts.length; i++) {
+            const part = node.parts[i]
+            target_type = expect_type_with_fields(
+                target_type.field(part.name, node.span),
+                node.span,
+            )
+        }
+        if (target_type instanceof EnumType && target_type.is_variant) {
+            if (target_type.variant_tuple_type!.fields.size > 0 && !ctx.parent_is_function_call) {
                 throw new TypeCheckError(
-                    `Enum variant ${quote(type.signature)} must be instantiated`,
+                    `Enum variant ${quote(target_type.signature)} must be instantiated`,
                     node.span,
                 )
             }
         }
-        // Remember the target for later use.
-        node.attributes.target_type = target_type
+        type = target_type
     } else if (node instanceof ast.IndexedAccess) {
         const index_type = type_check(node.index, env, {...ctx, used_in_expression: true})
         const target_type = expect_type_with_fields(
@@ -1154,9 +1173,18 @@ function bring_use_into_scope(node: ast.Use, env: TypeEnvironment) {
             )
         }
         const enum_type = EnumType.from_env(node.path[0], env, node.span)
+        node.attributes.enum_variants = []
         if (node.path[2] === "*") {
             for (const variant of enum_type.variants.values()) {
                 env.add_enum_variant(variant, node.span)
+                const variant_declaration = enum_type.declaration!.get_variant(
+                    variant.variant_name!,
+                )
+                assert(
+                    variant_declaration,
+                    `Missing declaration for variant ${variant.name} in enum ${enum_type.name}`,
+                )
+                node.attributes.enum_variants.push(variant_declaration)
             }
         } else {
             const variant = enum_type.variants.get(node.path[2])
@@ -1167,6 +1195,7 @@ function bring_use_into_scope(node: ast.Use, env: TypeEnvironment) {
                 )
             }
             env.add_enum_variant(variant, node.span)
+            node.attributes.enum_variants.push(enum_type.declaration!.get_variant(node.path[2])!)
         }
     }
 }
@@ -3375,8 +3404,8 @@ const test = {
                 Err(Error<E>)
             end
 
-            let a = Result<Int>.Ok(1)
-            let b = Result<Int>.Err(Error{message: "foo", data: ()})
+            let a = Result<Int>::Ok(1)
+            let b = Result<Int>::Err(Error{message: "foo", data: ()})
         `)
         assert.equal(env.get("a", builtin_span).signature, "Result<T=Int,E default ()=()>.Ok")
         assert.equal(env.get("b", builtin_span).signature, "Result<T=Int,E default ()=()>.Err")
@@ -3506,7 +3535,7 @@ const test = {
 
             impl Option<T>:
                 fn unwrap_or_error<E impl ToStr>(self, error E) T throws E:
-                    Result.Error(error)
+                    Result::Error(error)
                 end
             end
 
@@ -4528,10 +4557,10 @@ const test = {
             fn foo(a Foo):
             end
 
-            foo(Foo.Bar)
+            foo(Foo::Bar)
 
-            let a = Foo.Bar
-            let b = Foo.Baz(1)
+            let a = Foo::Bar
+            let b = Foo::Baz(1)
         `)
         const enum_type = env.get("Foo", builtin_span)
         assert.equal(enum_type.signature, "Foo<>")
@@ -4550,9 +4579,9 @@ const test = {
             fn foo(a Foo<Int>):
             end
 
-            let a = Foo<Int>.Bar
-            let b = Foo<Int>.Baz(1)
-            foo(Foo<Int>.Baz(1))
+            let a = Foo<Int>::Bar
+            let b = Foo<Int>::Baz(1)
+            foo(Foo<Int>::Baz(1))
         `)
         const enum_type = env.get("Foo", builtin_span)
         assert.equal(enum_type.signature, "Foo<T>")
@@ -4569,7 +4598,7 @@ const test = {
                         Baz(T)
                     end
 
-                    Foo<Int>.Baz(true)
+                    Foo<Int>::Baz(true)
                 `),
             /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
         )
@@ -4582,7 +4611,7 @@ const test = {
                     enum Foo:
                         Bar(Int)
                     end
-                    let a = Foo.Bar
+                    let a = Foo::Bar
                 `),
             /Enum variant `Foo<>.Bar` must be instantiated/,
         )
@@ -4598,14 +4627,14 @@ const test = {
             impl Foo:
                 fn foo(self) Int:
                     match self:
-                        Foo.Bar => 1
-                        Foo.Baz(a) => a
+                        Foo::Bar => 1
+                        Foo::Baz(a) => a
                     end
                 end
             end
 
-            let a = Foo.Bar.foo
-            let b = Foo.Baz(1).foo
+            let a = Foo::Bar.foo
+            let b = Foo::Baz(1).foo
         `)
         const enum_type = env.get("Foo", builtin_span)
         assert.equal(enum_type.signature, "Foo<>")
@@ -4879,9 +4908,9 @@ const test = {
                 Baz
             end
 
-            match Foo.Bar:
-                Foo.Bar => true
-                Foo.Baz => false
+            match Foo::Bar:
+                Foo::Bar => true
+                Foo::Baz => false
             end
         `)
         assert.equal(type, env.Bool)
@@ -4894,9 +4923,9 @@ const test = {
                 Baz(T)
             end
 
-            match Foo<Int>.Bar:
-                Foo<Int>.Bar => true
-                Foo<Int>.Baz(1) => false
+            match Foo<Int>::Bar:
+                Foo<Int>::Bar => true
+                Foo<Int>::Baz(1) => false
             end
         `)
         assert.equal(type, env.Bool)
@@ -4909,9 +4938,9 @@ const test = {
                 Baz(T)
             end
 
-            match Foo<Int>.Baz(1): -- This is the difference from the previous test.
-                Foo<Int>.Bar => true
-                Foo<Int>.Baz(1) => false
+            match Foo<Int>::Baz(1): -- This is the difference from the previous test.
+                Foo<Int>::Bar => true
+                Foo<Int>::Baz(1) => false
             end
         `)
         assert.equal(type, env.Bool)
@@ -4926,9 +4955,9 @@ const test = {
                         Baz(T)
                     end
 
-                    match Foo<Int>.Bar:
-                        Foo<Int>.Bar => true
-                        Foo<Int>.Baz(true) => false
+                    match Foo<Int>::Bar:
+                        Foo<Int>::Bar => true
+                        Foo<Int>::Baz(true) => false
                     end
                 `),
             /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
@@ -4944,8 +4973,8 @@ const test = {
                         Baz
                     end
 
-                    match Foo.Bar:
-                        Foo.Bar => true
+                    match Foo::Bar:
+                        Foo::Bar => true
                     end
                 `),
             /Match is not exhaustive/,
@@ -4959,8 +4988,8 @@ const test = {
                 Baz
             end
 
-            match Foo.Bar:
-                Foo.Bar => true
+            match Foo::Bar:
+                Foo::Bar => true
                 _ => false
             end
         `)
@@ -5009,9 +5038,9 @@ const test = {
                 foo Foo<T>
             end
 
-            match FooStruct<Int>{foo: Foo<Int>.Baz(BazStruct<Int>{baz: 1})}:
+            match FooStruct<Int>{foo: Foo<Int>::Baz(BazStruct<Int>{baz: 1})}:
                 FooStruct<Int>{foo: _} => true
-                FooStruct<Int>{foo: Foo<Int>.Baz(BazStruct<Int>{baz: _})} => false
+                FooStruct<Int>{foo: Foo<Int>::Baz(BazStruct<Int>{baz: _})} => false
                 _ => false
             end
         `)
@@ -5157,9 +5186,9 @@ const test = {
             impl IndexedGet<K, Option<V>> for Map<K, V>:
                 fn get(self, k K) Option<V>:
                     match k:
-                        self.k1 => Option<V>.Some(self.v1)
-                        self.k2 => Option<V>.Some(self.v2)
-                        _ => Option<V>.None
+                        self.k1 => Option<V>::Some(self.v1)
+                        self.k2 => Option<V>::Some(self.v2)
+                        _ => Option<V>::None
                     end
                 end
             end
@@ -5261,9 +5290,9 @@ const test = {
             fn divide(dividend Int, divisor Int) Result<Int, Str>:
                 if divisor == 0 
                     -- Explicit return is tested here.
-                    => return Result<Int, Str>.Error("division by zero")
+                    => return Result<Int, Str>::Error("division by zero")
                 -- Implicit return is tested here.
-                Result<Int, Str>.Ok(dividend / divisor)
+                Result<Int, Str>::Ok(dividend / divisor)
             end
 
             let ok = divide(10, 2)
@@ -5371,8 +5400,8 @@ const test = {
                 Baz(T)
             end
 
-            let foo = Foo.Baz(1)
-            let bar = Foo.Bar
+            let foo = Foo::Baz(1)
+            let bar = Foo::Bar
             foo
         `)
         assert.equal(type.signature, "Foo<T=Int>.Baz")
@@ -5441,8 +5470,8 @@ const test = {
             impl Option<T>:
                 fn is_none(self) Bool:
                     match self:
-                        Option<T>.Some(_) => false
-                        Option<T>.None => true
+                        Option<T>::Some(_) => false
+                        Option<T>::None => true
                     end
                 end
             end

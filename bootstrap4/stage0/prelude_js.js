@@ -316,3 +316,6 @@ function to_debug_str(s) {
     }
     return `"${s}"`
 }
+
+// All experted functions and classes.
+const exported = {}

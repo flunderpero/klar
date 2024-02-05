@@ -33,22 +33,22 @@ end
 impl ToStr for Color:
     fn to_str(self) Str:
         return match self:
-            Color.Red => "Red"
-            Color.Green => "Green"
-            Color.Blue => "Blue"
-            Color.Gray(_) => "Gray"
-            Color.RGB(1, _, _) => "RGB(1, _, _)"
-            Color.RGB(_, _, _) => "RGB(_, _, _)"
-            Color.HSL(HSL{ h: 10, s: _, l: _ }) => "HSL(10, _, _)"
-            Color.HSL(_) => "HSL(_, _, _)"
+            Color::Red => "Red"
+            Color::Green => "Green"
+            Color::Blue => "Blue"
+            Color::Gray(_) => "Gray"
+            Color::RGB(1, _, _) => "RGB(1, _, _)"
+            Color::RGB(_, _, _) => "RGB(_, _, _)"
+            Color::HSL(HSL{ h: 10, s: _, l: _ }) => "HSL(10, _, _)"
+            Color::HSL(_) => "HSL(_, _, _)"
         end
     end
 end
 
 fn main():
-    let c = Color.RGB(1, 2, 3)
+    let c = Color::RGB(1, 2, 3)
     print(c.to_str())
-    print(Color.RGB(4, 5, 6).to_str())
-    print(Color.HSL(HSL{ h: 10, s: 20, l: 30 }).to_str())
-    print(Color.HSL(HSL{ h: 11, s: 21, l: 31 }).to_str())
+    print(Color::RGB(4, 5, 6).to_str())
+    print(Color::HSL(HSL{ h: 10, s: 20, l: 30 }).to_str())
+    print(Color::HSL(HSL{ h: 11, s: 21, l: 31 }).to_str())
 end

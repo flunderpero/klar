@@ -43,6 +43,21 @@ export class Span {
     get src_text() {
         return this.src.slice(this.start, this.end)
     }
+
+    /**
+     * Get the lines of source code that this span covers.
+     */
+    get src_lines() {
+        let x = this.start
+        while (x > 0 && this.src[x - 1] !== "\n") {
+            x--
+        }
+        let y = this.end
+        while (y < this.src.length && this.src[y] !== "\n") {
+            y++
+        }
+        return this.src.slice(x, y)
+    }
 }
 
 export class HasKindAndSpan {

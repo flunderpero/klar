@@ -32,11 +32,11 @@ end
 impl Color:
     fn print(self):
         match self:
-            Color.Red => print(1)
-            Color.Green => print(2)
-            Color.Blue => print(3)
-            Color.Gray(x) => print(x)
-            Color.RGB(RGB { red, green, blue}):
+            Color::Red => print(1)
+            Color::Green => print(2)
+            Color::Blue => print(3)
+            Color::Gray(x) => print(x)
+            Color::RGB(RGB { red, green, blue}):
                 print(red)
                 print(green)
                 print(blue)
@@ -46,9 +46,9 @@ impl Color:
 end
 
 fn main():
-    Color.Red.print()
-    Color.Green.print()
-    Color.Blue.print()
-    Color.Gray(10).print()
-    Color.RGB(RGB{ red: 20, green: 21, blue: 22 }).print()
+    Color::Red.print()
+    Color::Green.print()
+    Color::Blue.print()
+    Color::Gray(10).print()
+    Color::RGB(RGB{ red: 20, green: 21, blue: 22 }).print()
 end

@@ -15,16 +15,16 @@ end
 impl PartialEq for DebugLevel:
     fn eq(self, other DebugLevel) Bool:
         match self:
-            DebugLevel.Off => match other:
-                DebugLevel.Off => true
+            DebugLevel::Off => match other:
+                DebugLevel::Off => true
                 _ => false
             end
-            DebugLevel.Debug => match other:
-                DebugLevel.Debug => true
+            DebugLevel::Debug => match other:
+                DebugLevel::Debug => true
                 _ => false
             end
-            DebugLevel.Warn => match other:
-                DebugLevel.Warn => true
+            DebugLevel::Warn => match other:
+                DebugLevel::Warn => true
                 _ => false
             end
         end
@@ -36,12 +36,12 @@ fn lex(src Str, file Str, debug_level DebugLevel) Vector<Token>:
     let lex_errors = tokens.iter().filter(
         fn(token Token) Bool:
             match token.kind:
-                TokenKind.LexError(_) => true
+                TokenKind::LexError(_) => true
                 _ => false
             end
         end
     ).collect()
-    if debug_level == DebugLevel.Debug:
+    if debug_level == DebugLevel::Debug:
         print("Tokens:")
         let iter = tokens.iter()
         loop:
@@ -51,7 +51,7 @@ fn lex(src Str, file Str, debug_level DebugLevel) Vector<Token>:
             end
         end
     end
-    if debug_level == DebugLevel.Warn or debug_level == DebugLevel.Debug:
+    if debug_level == DebugLevel::Warn or debug_level == DebugLevel::Debug:
         if lex_errors.len() > 0:
             print("Lex errors:")
             let iter = lex_errors.iter()
@@ -78,9 +78,9 @@ fn main():
     end
     -- todo (lang-feat) We should be able to replace this with a simple block instead of an IIFE.
     let debug_level = (fn () DebugLevel:
-        if env.args.iter().any(fn(s Str) Bool => s == "--debug") => return DebugLevel.Debug
-        else => if env.args.iter().any(fn(s Str) Bool => s == "--warn") => return DebugLevel.Warn
-        DebugLevel.Off
+        if env.args.iter().any(fn(s Str) Bool => s == "--debug") => return DebugLevel::Debug
+        else => if env.args.iter().any(fn(s Str) Bool => s == "--warn") => return DebugLevel::Warn
+        DebugLevel::Off
     end)()
     let src_file = env.args[2]
     let dst_file = env.args[3]

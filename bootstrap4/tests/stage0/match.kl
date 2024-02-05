@@ -43,9 +43,9 @@ end
 
 fn match_enum(c Color) Int:
     return match c:
-        Color.Red => 10
-        Color.Green => 11
-        Color.Blue => 12
+        Color::Red => 10
+        Color::Green => 11
+        Color::Blue => 12
     end
 end
 
@@ -82,9 +82,9 @@ fn main():
     print(match_number(1))
     print(match_number(2))
     print(match_number(3))
-    print(match_enum(Color.Red))
-    print(match_enum(Color.Green))
-    print(match_enum(Color.Blue))
+    print(match_enum(Color::Red))
+    print(match_enum(Color::Green))
+    print(match_enum(Color::Blue))
     print(match_struct(Point {x: 1, y: 2}))
     print(match_struct(Point {x: 1, y: 3}))
     print(match_struct(Point {x: 2, y: 2}))

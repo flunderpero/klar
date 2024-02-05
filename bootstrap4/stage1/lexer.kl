@@ -38,10 +38,19 @@ impl Iterator<Token> for Lexer:
             ']' => Token{kind: RBracket, span}
             '.' => Token{kind: Dot, span}
             ',' => Token{kind: Comma, span}
-            ':' => Token{kind: Colon, span}
             '+' => Token{kind: Plus, span}
             '*' => Token{kind: Star, span}
             '/' => Token{kind: Slash, span}
+            '?' => Token{kind: QMark, span}
+            ';' => Token{kind: Semicolon, span}
+            ':' => 
+                match self.iter.peek():
+                    Some<Char>(':'):
+                        self.iter.next()
+                        Token{kind: DoubleColon, span: span.combine(self.span())}
+                    end
+                    _ => Token{kind: Colon, span}
+                end
             '!' => 
                 match self.iter.peek():
                     Some<Char>('='):
@@ -401,6 +410,7 @@ enum TokenKind:
     Comment(Str)
     Continue
     Dot
+    DoubleColon
     DoubleEqual
     Else
     End
@@ -433,10 +443,12 @@ enum TokenKind:
     Or
     LexError(Str)
     Plus
+    QMark
     RBrace
     RBracket
     RParen
     Return
+    Semicolon
     Slash
     Star
     StrLiteral(Str, Bool)
@@ -462,6 +474,7 @@ impl ToStr for TokenKind:
             Comment(comment) => f"Comment({comment})"
             Continue => "continue"
             Dot => "."
+            DoubleColon => "::"
             DoubleEqual => "=="
             Else => "else"
             End => "end"
@@ -510,10 +523,12 @@ impl ToStr for TokenKind:
             Or => "or"
             LexError(message) => f"LexError: {message}"
             Plus => "+"
+            QMark => "?"
             RBrace => "}"
             RBracket => "]"
             RParen => ")"
             Return => "return"
+            Semicolon => ";"
             Slash => "/"
             Star => "*"
             -- todo: escape string

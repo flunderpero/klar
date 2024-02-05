@@ -157,6 +157,7 @@ enum Expr:
     BinaryExpr(BinaryExpr)
     Call(Call)
     FStr(FStr)
+    FQN(FQN)
     Ident(Ident)
     If(If)
     Let(Let)
@@ -175,7 +176,7 @@ end
 
 struct Name:
     ident Ident
-    args Vector<GenericArg>?
+    generics Vector<GenericArg>?
     meta Meta
 end
 
@@ -328,13 +329,14 @@ end
 
 impl ToDebugStr for Name:
     fn to_debug_str(self) Str:
-        let args = match self.args:
-            Some(x) => " ".join(
-                x.iter().map<Str>(fn(it GenericArg) Str => it.type_.to_debug_str())
-            )
+        let generics = match self.generics:
+            Some(x) => 
+                " ".join(
+                    x.iter().map<Str>(fn(it GenericArg) Str => it.type_.to_debug_str())
+                )
             None => ""
         end
-        f"(@name {self.ident.to_debug_str()}{" ".when(args.len() > 0)}{args})"
+        f"(@name {self.ident.to_debug_str()}{" ".when(generics.len() > 0)}{generics})"
     end
 end
 
@@ -350,10 +352,10 @@ end
 impl ToDebugStr for Type:
     fn to_debug_str(self) Str:
         match self.kind:
-            TypeKind.FQN(x) => f"(@type {x.to_debug_str()})"
-            TypeKind.Unit => "(@type (@unit))"
-            TypeKind.Self => "(@type (@self))"
-            TypeKind.Infer => "(@type (@infer))"
+            TypeKind::FQN(x) => f"(@type {x.to_debug_str()})"
+            TypeKind::Unit => "(@type (@unit))"
+            TypeKind::Self => "(@type (@self))"
+            TypeKind::Infer => "(@type (@infer))"
         end
     end
 end
@@ -387,13 +389,13 @@ end
 impl ToDebugStr for EnumVariantKind:
     fn to_debug_str(self) Str:
         match self:
-            EnumVariantKind.Tuple(x):
+            EnumVariantKind::Tuple(x):
                 let types = " ".join(
                     x.iter().map<Str>(fn(it Type) Str => it.to_debug_str())
                 )
                 f"(@tuple {types})"
             end
-            EnumVariantKind.Unit => "(@unit)"
+            EnumVariantKind::Unit => "(@unit)"
         end
     end
 end
@@ -443,11 +445,11 @@ end
 impl ToDebugStr for ModuleItem:
     fn to_debug_str(self) Str:
         match self:
-            ModuleItem.Enum(x) => x.to_debug_str()
-            ModuleItem.Fn(x) => x.to_debug_str()
-            ModuleItem.Impl(x) => x.to_debug_str()
-            ModuleItem.Trait(x) => x.to_debug_str()
-            ModuleItem.Struct(x) => x.to_debug_str()
+            ModuleItem::Enum(x) => x.to_debug_str()
+            ModuleItem::Fn(x) => x.to_debug_str()
+            ModuleItem::Impl(x) => x.to_debug_str()
+            ModuleItem::Trait(x) => x.to_debug_str()
+            ModuleItem::Struct(x) => x.to_debug_str()
         end
     end
 end
@@ -464,12 +466,12 @@ end
 impl ToDebugStr for BlockItem:
     fn to_debug_str(self) Str:
         match self:
-            BlockItem.Enum(x) => x.to_debug_str()
-            BlockItem.Expr(x) => x.to_debug_str()
-            BlockItem.Fn(x) => x.to_debug_str()
-            BlockItem.Impl(x) => x.to_debug_str()
-            BlockItem.Trait(x) => x.to_debug_str()
-            BlockItem.Struct(x) => x.to_debug_str()
+            BlockItem::Enum(x) => x.to_debug_str()
+            BlockItem::Expr(x) => x.to_debug_str()
+            BlockItem::Fn(x) => x.to_debug_str()
+            BlockItem::Impl(x) => x.to_debug_str()
+            BlockItem::Trait(x) => x.to_debug_str()
+            BlockItem::Struct(x) => x.to_debug_str()
         end
     end
 end
@@ -495,14 +497,14 @@ end
 impl ToDebugStr for ParseErrorKind:
     fn to_debug_str(self) Str:
         match self:
-            ParseErrorKind.ExprExpected(token) => f"(@error expr expected at {token.span})"
-            ParseErrorKind.IdentExpected(token) => f"(@error ident expected at {token.span})"
-            ParseErrorKind.InvalidIntLiteral(token) => f"(@error invalid int literal at {token.span})"
-            ParseErrorKind.ParamExpected(token) => f"(@error param expected at {token.span})"
-            ParseErrorKind.TypeExpected(token) => f"(@error type expected at {token.span})"
-            ParseErrorKind.UnexpectedEOF => "(@error eof)"
-            ParseErrorKind.UnexpectedFnDecl(decl) => f"(@error unexpected fn decl `{decl.ident}` at {decl.meta.span()})"
-            ParseErrorKind.UnexpectedToken(token) => f"(@error unexpected token `{token}` at {token.span})"
+            ParseErrorKind::ExprExpected(token) => f"(@error expr expected at {token.span})"
+            ParseErrorKind::IdentExpected(token) => f"(@error ident expected at {token.span})"
+            ParseErrorKind::InvalidIntLiteral(token) => f"(@error invalid int literal at {token.span})"
+            ParseErrorKind::ParamExpected(token) => f"(@error param expected at {token.span})"
+            ParseErrorKind::TypeExpected(token) => f"(@error type expected at {token.span})"
+            ParseErrorKind::UnexpectedEOF => "(@error eof)"
+            ParseErrorKind::UnexpectedFnDecl(decl) => f"(@error unexpected fn decl `{decl.ident}` at {decl.meta.span()})"
+            ParseErrorKind::UnexpectedToken(token) => f"(@error unexpected token `{token}` at {token.span})"
         end
     end
 end
@@ -510,10 +512,10 @@ end
 impl ToDebugStr for Literal:
     fn to_debug_str(self) Str:
         let lit = match self.kind:
-            LiteralKind.BoolLiteral(value) => f"(@bool {value})"
-            LiteralKind.IntLiteral(value) => f"(@int {value})"
-            LiteralKind.StrLiteral(value) => f"(@str{" ".when(value.len() > 0)}{value.replace("\n", "\\n")})"
-            LiteralKind.UnitLiteral=> "(@unit)"
+            LiteralKind::BoolLiteral(value) => f"(@bool {value})"
+            LiteralKind::IntLiteral(value) => f"(@int {value})"
+            LiteralKind::StrLiteral(value) => f"(@str{" ".when(value.len() > 0)}{value.replace("\n", "\\n")})"
+            LiteralKind::UnitLiteral=> "(@unit)"
         end
         f"{lit}"
     end
@@ -548,18 +550,18 @@ end
 impl ToDebugStr for BinaryExpr:
     fn to_debug_str(self) Str:
         let kind = match self.kind:
-            BinaryExprKind.Add => "+"
-            BinaryExprKind.And => "and"
-            BinaryExprKind.Div => "/"
-            BinaryExprKind.Equal => "=="
-            BinaryExprKind.GreaterThan => ">"
-            BinaryExprKind.GreaterThanOrEqual => ">="
-            BinaryExprKind.LessThan => "<"
-            BinaryExprKind.LessThanOrEqual => "<="
-            BinaryExprKind.Mul => "*"
-            BinaryExprKind.NotEqual => "!="
-            BinaryExprKind.Or => "or"
-            BinaryExprKind.Sub => "-"
+            BinaryExprKind::Add => "+"
+            BinaryExprKind::And => "and"
+            BinaryExprKind::Div => "/"
+            BinaryExprKind::Equal => "=="
+            BinaryExprKind::GreaterThan => ">"
+            BinaryExprKind::GreaterThanOrEqual => ">="
+            BinaryExprKind::LessThan => "<"
+            BinaryExprKind::LessThanOrEqual => "<="
+            BinaryExprKind::Mul => "*"
+            BinaryExprKind::NotEqual => "!="
+            BinaryExprKind::Or => "or"
+            BinaryExprKind::Sub => "-"
         end
         f"(@binexpr {kind} {self.lhs.to_debug_str()} {self.rhs.to_debug_str()})"
     end
@@ -589,8 +591,8 @@ end
 impl ToDebugStr for UnaryExpr:
     fn to_debug_str(self) Str:
         let kind = match self.kind:
-            UnaryExprKind.Neg => "-"
-            UnaryExprKind.Not => "not"
+            UnaryExprKind::Neg => "-"
+            UnaryExprKind::Not => "not"
         end
         f"(@unexpr {kind} {self.expr.to_debug_str()})"
     end
@@ -615,19 +617,20 @@ end
 impl ToDebugStr for Expr:
     fn to_debug_str(self) Str:
         match self:
-            Expr.Assignment(value) => value.to_debug_str()
-            Expr.BinaryExpr(value) => value.to_debug_str()
-            Expr.Break(value) => value.to_debug_str()
-            Expr.Call(value) => value.to_debug_str()
-            Expr.Continue(value) => value.to_debug_str()
-            Expr.FStr(value) => value.to_debug_str()
-            Expr.Ident(value) => value.to_debug_str()
-            Expr.If(value) => value.to_debug_str()
-            Expr.Let(value) => value.to_debug_str()
-            Expr.Literal(value) => value.to_debug_str()
-            Expr.Loop(value) => value.to_debug_str()
-            Expr.Return(value) => value.to_debug_str()
-            Expr.UnaryExpr(value) => value.to_debug_str()
+            Expr::Assignment(value) => value.to_debug_str()
+            Expr::BinaryExpr(value) => value.to_debug_str()
+            Expr::Break(value) => value.to_debug_str()
+            Expr::Call(value) => value.to_debug_str()
+            Expr::Continue(value) => value.to_debug_str()
+            Expr::FStr(value) => value.to_debug_str()
+            Expr::FQN(value) => value.to_debug_str()
+            Expr::Ident(value) => value.to_debug_str()
+            Expr::If(value) => value.to_debug_str()
+            Expr::Let(value) => value.to_debug_str()
+            Expr::Literal(value) => value.to_debug_str()
+            Expr::Loop(value) => value.to_debug_str()
+            Expr::Return(value) => value.to_debug_str()
+            Expr::UnaryExpr(value) => value.to_debug_str()
         end
     end
 end

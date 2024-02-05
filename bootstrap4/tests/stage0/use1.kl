@@ -14,9 +14,9 @@ end
 impl ImportedEnum:
     fn print(self):
         match self:
-            ImportedEnum.A => print("a")
-            ImportedEnum.B => print("b")
-            ImportedEnum.C => print("c")
+            ImportedEnum::A => print("a")
+            ImportedEnum::B => print("b")
+            ImportedEnum::C => print("c")
         end
     end
 end

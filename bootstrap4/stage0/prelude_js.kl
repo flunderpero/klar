@@ -24,7 +24,7 @@ impl Option<T>:
 
     fn unwrap(self) T:
         match self:
-            None => panic("called `Option.unwrap()` on a `None` value")
+            None => panic("called `Option::unwrap()` on a `None` value")
             Some(value) => value
         end
     end
@@ -177,29 +177,29 @@ use Result.*
 impl Result<T, E>:
     fn is_ok(self) Bool:
         match self:
-            Result.Ok(_) => true
-            Result.Error(_) => false
+            Ok(_) => true
+            Error(_) => false
         end
     end
 
     fn is_error(self) Bool:
         match self:
-            Result.Ok(_) => false
-            Result.Error(_) => true
+            Ok(_) => false
+            Error(_) => true
         end
     end
 
     fn unwrap(self) T:
         match self:
-            Result.Ok(value) => value
-            Result.Error(error) => panic(f"called `Result.unwrap()` on an `Error` value: {error}")
+            Ok(value) => value
+            Error(error) => panic(f"called `Result.unwrap()` on an `Error` value: {error}")
         end
     end
 
     fn unwrap_error(self) E:
         match self:
-            Result.Ok(value) => panic(f"called `Result.unwrap_err()` on an `Ok` value")
-            Result.Error(error) => error
+            Ok(value) => panic(f"called `Result.unwrap_err()` on an `Ok` value")
+            Error(error) => error
         end
     end
 end
@@ -207,8 +207,8 @@ end
 impl ToStr for Result<T, E>:
     fn to_str(self) Str:
         match self:
-            Result.Ok(value) => f"ok: {value}"
-            Result.Error(error) => f"error: {error}"
+            Ok(value) => f"ok: {value}"
+            Error(error) => f"error: {error}"
         end
     end
 end
@@ -467,7 +467,7 @@ end
 impl IndexedGet<Int, T> for Vector<T>:
     fn get(self, i Int) T:
         if i >= self.len():
-            panic("Vector index out of bounds")
+            panic(f"Vector index out of bounds: {i} >= {self.len()}")
         end
         self.data.get(i)
     end
@@ -476,7 +476,7 @@ end
 impl IndexedSet<Int, T> for Vector<T>:
     fn set(mut self, i Int, v T):
         if i >= self.len():
-            panic("Vector index out of bounds")
+            panic(f"Vector index out of bounds: {i} >= {self.len()}")
         end
         self.data.set(i, v)
     end
@@ -543,12 +543,12 @@ impl IndexedSet<K, V> for Map<K, V>:
             end
             let v = self.data.get(i)
             if v.0 == key:
-                self.data.set(i, (key, Option<V>.Some(value)))
+                self.data.set(i, (key, Option<V>::Some(value)))
                 return ()
             end
             i = i + 1
         end
-        self.data.push((key, Option<V>.Some(value)))
+        self.data.push((key, Option<V>::Some(value)))
     end
 end
 

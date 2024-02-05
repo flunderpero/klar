@@ -16,7 +16,27 @@ fn main():
     end)
 
     test.it("parses identifiers", fn() throws:
+        -- todo: do we really need `Ident` when we have `FQN`?
         assert(expr("a") == "(@ident a)")
+        assert(expr("a42") == "(@ident a42)")
+        assert(expr("a_42") == "(@ident a_42)")
+    end)
+
+    test.group("fully qualified names", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(expr("A<T>") == "(@fqn (@name (@ident A) (@type (@fqn (@name (@ident T))))))")
+            assert(expr("a::b") == "(@fqn (@name (@ident a)) (@name (@ident b)))")
+            assert(
+                expr("A<B>::C<D>") 
+                == 
+                "(@fqn (@name (@ident A) (@type (@fqn (@name (@ident B))))) " + 
+                "(@name (@ident C) (@type (@fqn (@name (@ident D))))))"
+            )
+        end)
+
+        test.it("distinguishes generics from the less-than operator", fn() throws:
+            assert(expr("a < b") == "(@binexpr < (@ident a) (@ident b))")
+        end)
     end)
 
     test.group("blocks", fn():
@@ -530,30 +550,30 @@ fn main():
         let tokens = Lexer.lex(src, "test.kl").collect()
         let parser = Parser.new(TokenIter.new(tokens))
         let res = match parse_fn:
-            ParseFn.Item => parser.parse_item(parser.iter.force_next().unwrap())
-            ParseFn.Expr => parser.parse_expr(parser.iter.force_next().unwrap())
-            ParseFn.Module:
+            ParseFn::Item => parser.parse_item(parser.iter.force_next().unwrap())
+            ParseFn::Expr => parser.parse_expr(parser.iter.force_next().unwrap())
+            ParseFn::Module:
                 let res = parser.parse_module()
                 if res.is_error():
                     return res.unwrap_error().to_debug_str()
                 end
                 return res.unwrap().to_debug_str()
             end
-            ParseFn.Type:
+            ParseFn::Type:
                 let res = parser.parse_type(parser.iter.force_next().unwrap())
                 if res.is_error():
                     return res.unwrap_error().to_debug_str()
                 end
                 return res.unwrap().to_debug_str()
             end
-            ParseFn.FnDecl:
+            ParseFn::FnDecl:
                 let res = parser.parse_fn_decl(parser.iter.force_next().unwrap())
                 if res.is_error():
                     return res.unwrap_error().to_debug_str()
                 end
                 return res.unwrap().to_debug_str()
             end
-            ParseFn.Block: 
+            ParseFn::Block: 
                 let res = parser.parse_block()
                 if res.is_error():
                     return res.unwrap_error().to_debug_str()
@@ -571,17 +591,17 @@ fn main():
         opt.unwrap().to_debug_str()
     end
 
-    fn expr(src Str) Str => parse(src, ParseFn.Expr)
+    fn expr(src Str) Str => parse(src, ParseFn::Expr)
 
-    fn item(src Str) Str => parse(src, ParseFn.Item)
+    fn item(src Str) Str => parse(src, ParseFn::Item)
 
-    fn block(src Str) Str => parse(src, ParseFn.Block)
+    fn block(src Str) Str => parse(src, ParseFn::Block)
 
-    fn fndecl(src Str) Str => parse(src, ParseFn.FnDecl)
+    fn fndecl(src Str) Str => parse(src, ParseFn::FnDecl)
 
-    fn module(src Str) Str => parse(src, ParseFn.Module)
+    fn module(src Str) Str => parse(src, ParseFn::Module)
 
-    fn type(src Str) Str => parse(src, ParseFn.Type)
+    fn type(src Str) Str => parse(src, ParseFn::Type)
 
     test.run_and_exit()
 end

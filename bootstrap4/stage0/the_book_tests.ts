@@ -8,6 +8,13 @@ import {Span} from "./common"
 // @ts-ignore
 const dir = import.meta.dir
 const print_code = Bun.argv.includes("--print-code")
+const output_file = (() => {
+    const i = Bun.argv.indexOf("--output")
+    if (i === -1) {
+        return null
+    }
+    return Bun.argv[i + 1]
+})()
 
 type Test = {
     name: string
@@ -73,6 +80,9 @@ async function run_test(test: Test): Promise<boolean> {
         prelude: default_prelude.prelude + the_book_prelude.prelude,
         epilogue: await Bun.file(`${dir}/../the_book_epilogue_js.js`).text(),
     })
+    if (output_file) {
+        await Bun.write(output_file, linked)
+    }
     try {
         eval(linked)
     } catch (e: any) {

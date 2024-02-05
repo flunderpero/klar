@@ -16,6 +16,10 @@ fn main():
     print(person.get_age())
 end
 
+struct Person:
+    age Int
+end
+
 impl Age for Person:
     fn get_age(self) Int:
         return self.age
@@ -24,10 +28,6 @@ end
 
 trait Age:
     fn get_age(self) Int
-end
-
-struct Person:
-    age Int
 end
 
 fn the_answer() Int:

@@ -24,6 +24,7 @@ export class LexicalToken extends Token {
             | "!"
             | "?"
             | ":"
+            | "::"
             | ";"
             | "_"
             | "|"
@@ -421,6 +422,11 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
                 value += consume()
             }
             return new NumberToken(value, span(start_span))
+        }
+        if (c === ":" && peek(1) === ":") {
+            const token = new LexicalToken("::", span())
+            skip(2)
+            return token
         }
         if (
             [

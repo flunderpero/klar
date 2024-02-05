@@ -1,1 +1,1 @@
-process.exit(klar_main()?.value ?? 0)
+process.exit(exported.klar_main()?.value ?? 0)

@@ -1,1 +1,1 @@
-klar_main()
+exported?.klar_main?.()

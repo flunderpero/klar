@@ -11,19 +11,6 @@ import {
     Token,
 } from "./lexer"
 
-// FIXME: We have ambiguous syntax for function calls and the unit type.
-//        `let a = foo ()` could mean "call foo and assign the result to a"
-//        or "assign the function type `foo` to a and continue with a unit type".
-//        Better example:
-//        ```
-//        function a():
-//            if b => foo else => bar
-//            ()  -- We inserted the unit type here, because the
-//                -- function must return the unit type. But this
-//                -- is also a valid function call given that bar is a function.
-//        end
-//        ```
-
 type Mark = number
 
 export class TokenStream {
@@ -44,6 +31,10 @@ export class TokenStream {
             throw new ParseError("Unexpected EOF", this.tokens[this.index - 1]?.span)
         }
         return this.tokens[this.index++]
+    }
+
+    prev_span() {
+        return this.tokens[this.index - 1]?.span
     }
 
     expect_identifier() {
@@ -99,7 +90,11 @@ export class ParseError extends Error {
         public error: string,
         public span: Span | undefined,
     ) {
-        super(`${error} at ${span ?? "EOF"}`)
+        let message = `${error} at ${span ?? "EOF"}`
+        if (span) {
+            message += "\n" + span.src_lines
+        }
+        super(message)
     }
 }
 
@@ -592,6 +587,7 @@ export class Continue extends Statement {
 export class Use extends DeclarationOrDefinition {
     kind = "use"
     path: string[]
+    attributes: ASTNodeAttributes & {enum_variants?: EnumVariant[]} = {}
 
     constructor(data: {path: string[]}, span: Span) {
         super(span)
@@ -793,6 +789,20 @@ export class Assignment extends Statement {
 
     contained_nodes() {
         return [this.target, this.value]
+    }
+}
+
+export class FQN extends Expression {
+    kind = "fqn"
+    parts: IdentifierReference[]
+
+    constructor(data: {parts: IdentifierReference[]}, span: Span) {
+        super(span)
+        Object.assign(this as typeof data, data as typeof FQN.prototype)
+    }
+
+    contained_nodes() {
+        return this.parts
     }
 }
 
@@ -1660,7 +1670,7 @@ export function parse(tokens: TokenStream): AST {
             )
         } else if (token instanceof Identifier) {
             tokens.consume()
-            let type_expression: IdentifierReference | FieldAccess =
+            let type_expression: IdentifierReference | FQN | FieldAccess =
                 parse_identifier_reference(token)
             while (tokens.simple_peek() === ".") {
                 tokens.consume()
@@ -1901,7 +1911,7 @@ export function parse(tokens: TokenStream): AST {
         return new Return({value}, Span.combine(span, value.span))
     }
 
-    function parse_identifier_reference(token: Identifier): IdentifierReference {
+    function parse_identifier_reference(token: Identifier): IdentifierReference | FQN {
         let type_parameters: TypeDeclaration[]
         // TODO: We should try to make this work without backtracking.
         //       For now we have to because we may parse a less-than operator
@@ -1914,8 +1924,33 @@ export function parse(tokens: TokenStream): AST {
             tokens.reset(mark)
             type_parameters = []
         }
-        const span = token.span
-        return new IdentifierReference({name: token.value, type_parameters}, span)
+        const parts = [
+            new IdentifierReference(
+                {name: token.value, type_parameters},
+                Span.combine(token.span, tokens.prev_span()),
+            ),
+        ]
+        while (tokens.simple_peek() === "::") {
+            tokens.consume()
+            const token = tokens.expect_identifier()
+            const mark = tokens.mark()
+            try {
+                type_parameters = try_parse_generic_type_parameters()
+            } catch (e) {
+                tokens.reset(mark)
+                type_parameters = []
+            }
+            parts.push(
+                new IdentifierReference(
+                    {name: token.value, type_parameters},
+                    Span.combine(token.span, tokens.prev_span()),
+                ),
+            )
+        }
+        if (parts.length === 1) {
+            return parts[0]
+        }
+        return new FQN({parts}, Span.combine(parts[0], parts.at(-1)!))
     }
 
     function try_parse_struct_initialization(token: Identifier): StructInstantiation | undefined {

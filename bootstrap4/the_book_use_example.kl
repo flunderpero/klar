@@ -24,9 +24,9 @@ end
 impl ToStr for SomeEnum:
     fn to_str(self) Str:
         match self:
-            SomeEnum.SomeA => "some a"
-            SomeEnum.SomeB => "some b"
-            SomeEnum.SomeC => "some c"
+            SomeEnum::SomeA => "some a"
+            SomeEnum::SomeB => "some b"
+            SomeEnum::SomeC => "some c"
         end
     end
 end

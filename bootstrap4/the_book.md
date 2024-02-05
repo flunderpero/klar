@@ -224,8 +224,8 @@ The `Option` type is a generic type that can either be `Some` value or `None`.
 
 ```klar
 fn main():
-    let a = Option.Some(42)
-    let b = Option.None
+    let a = Option::Some(42)
+    let b = Option::None
 
     -- Use a match expression to get the value.
     let value = match a:
@@ -643,9 +643,9 @@ Note: This is syntactic sugar for this code:
 ```klar
 fn divide(divisor Int, dividend Int) Result<Int, Str>:
     if dividend == 0:
-        return Result<Int, Str>.Error("division by zero")
+        return Result<Int, Str>::Error("division by zero")
     end
-    Result<Int, Str>.Ok(divisor / dividend)
+    Result<Int, Str>::Ok(divisor / dividend)
 end
 ```
 
@@ -894,7 +894,7 @@ fn main():
     s.increment()
     assert(s.value == 2)
 
-    let e = SomeEnum.SomeA
+    let e = SomeEnum::SomeA
     assert(e.to_str() == "some a")
 end
 ```

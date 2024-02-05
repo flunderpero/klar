@@ -12,9 +12,9 @@ b
 
 /expected ---
 
-use .use1.Point
-use .use1.ImportedEnum
-use ImportedEnum.B
+use .use1::Point
+use .use1::ImportedEnum
+use ImportedEnum::B
 
 fn main():
     let p = Point::new(1, 2)

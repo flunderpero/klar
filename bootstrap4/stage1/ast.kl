@@ -1,5 +1,5 @@
-use .lexer.Span
-use .lexer.Token
+use .lexer::Span
+use .lexer::Token
 
 trait ToDebugStr:
     --- Convert the item to a string representation that does retain

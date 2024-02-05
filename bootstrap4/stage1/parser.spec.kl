@@ -1,12 +1,12 @@
-use .lexer.Lexer
-use .lexer.Token
-use .parser.Parser
-use .parser.TokenIter
-use .parser.ParseItem
-use .ast.ParseError
-use .ast.ToDebugStr
-use .ast.Expr
-use .test.Test
+use .lexer::Lexer
+use .lexer::Token
+use .parser::Parser
+use .parser::TokenIter
+use .parser::ParseItem
+use .ast::ParseError
+use .ast::ToDebugStr
+use .ast::Expr
+use .test::Test
 
 fn main():
     mut test = Test::new_from_args("parser", env.args)

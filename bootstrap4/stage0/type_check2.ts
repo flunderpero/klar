@@ -1190,7 +1190,7 @@ function type_check_declarations_and_definitions(block: ast.Block, env: TypeEnvi
 
 function bring_use_into_scope(node: ast.Use, env: TypeEnvironment) {
     if (node.path[0] !== ".") {
-        if (node.path.length !== 3 || node.path[1] !== ".") {
+        if (node.path.length !== 2) {
             throw new TypeCheckError(
                 `Expected a \`use\` statement with two segments but got ${node.path.length}`,
                 node.span,
@@ -1198,7 +1198,7 @@ function bring_use_into_scope(node: ast.Use, env: TypeEnvironment) {
         }
         const enum_type = EnumType.from_env(node.path[0], env, node.span)
         node.attributes.enum_variants = []
-        if (node.path[2] === "*") {
+        if (node.path[1] === "*") {
             for (const variant of enum_type.variants.values()) {
                 env.add_enum_variant(variant, node.span)
                 const variant_declaration = enum_type.declaration!.get_variant(
@@ -1211,15 +1211,15 @@ function bring_use_into_scope(node: ast.Use, env: TypeEnvironment) {
                 node.attributes.enum_variants.push(variant_declaration)
             }
         } else {
-            const variant = enum_type.variants.get(node.path[2])
+            const variant = enum_type.variants.get(node.path[1])
             if (!variant) {
                 throw new TypeCheckError(
-                    `Enum ${quote(enum_type.signature)} has no variant ${quote(node.path[2])}`,
+                    `Enum ${quote(enum_type.signature)} has no variant ${quote(node.path[1])}`,
                     node.span,
                 )
             }
             env.add_enum_variant(variant, node.span)
-            node.attributes.enum_variants.push(enum_type.declaration!.get_variant(node.path[2])!)
+            node.attributes.enum_variants.push(enum_type.declaration!.get_variant(node.path[1])!)
         }
     }
 }
@@ -3204,8 +3204,8 @@ const test = {
                 end
                 fn panic(message Str):
                 end
-                use Result.*
-                use Option.*
+                use Result::*
+                use Option::*
             ` + src
         }
         const ast = test.parse(src)
@@ -4876,7 +4876,7 @@ const test = {
                 None
             end
 
-            use Option.*
+            use Option::*
 
             match Some(1):
                 Some<Int>(1..10) => true
@@ -5068,7 +5068,7 @@ const test = {
                 Baz
             end
 
-            use Foo.*
+            use Foo::*
 
             let a = Bar(1)
             match a:
@@ -5152,7 +5152,7 @@ const test = {
                 None
             end
 
-            use Option.*
+            use Option::*
 
             match Some(1):
                 Some<Int>(1 | 2) => true
@@ -5559,7 +5559,7 @@ const test = {
                 None
             end
 
-            use Option.*
+            use Option::*
 
             let a = Some<Int>(1)
             if let Some<Int>(value) = a => value
@@ -5574,7 +5574,7 @@ const test = {
                 None
             end
 
-            use Option.*
+            use Option::*
 
             let a = Some<Int>(1)
             let b = None

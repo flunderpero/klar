@@ -1304,10 +1304,9 @@ export function parse(tokens: TokenStream): AST {
             }
             end_span = token.span
             path.push(token.value)
-            if (tokens.simple_peek() !== ".") {
+            if (tokens.simple_peek() !== "::") {
                 break
             }
-            path.push(".")
             end_span = tokens.consume().span
         }
         return new Use({path}, Span.combine(span, end_span))

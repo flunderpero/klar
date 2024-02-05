@@ -363,7 +363,7 @@ end
 
 -- Bring `Planets.Earth` into the current scope, so we can refer to
 -- it as `Earth`.
-use Planets.Earth
+use Planets::Earth
 
 fn main():
     let earth = Earth
@@ -380,7 +380,7 @@ enum Planets:
     Venus
 end
 
-use Planets.*
+use Planets::*
 
 fn main():
     let earth = Earth
@@ -759,7 +759,7 @@ enum Planet:
     Venus
 end
 
-use Planet.* -- Bring all enum variants into the current scope.
+use Planet::* -- Bring all enum variants into the current scope.
 
 fn main():
     let planet = Earth(15) -- Remember: Enum variants are visible automatically.
@@ -784,7 +784,7 @@ enum Planet:
     Venus
 end
 
-use Planet.* -- Bring all enum variants into the current scope.
+use Planet::* -- Bring all enum variants into the current scope.
 
 fn main():
     let planet = Earth
@@ -885,8 +885,8 @@ In Klar, modules are files. The name of the module is the name of the file.
 This is how you import a type from a local module:
 
 ```klar
-use .the_book_use_example.SomeStruct
-use .the_book_use_example.SomeEnum
+use .the_book_use_example::SomeStruct
+use .the_book_use_example::SomeEnum
 
 fn main():
     let s = SomeStruct::new(1)

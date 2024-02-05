@@ -5,7 +5,7 @@ enum Option<T>:
     Some(T)
 end
 
-use Option.*
+use Option::*
 
 impl Option<T>:
     fn is_none(self) Bool:
@@ -172,7 +172,7 @@ enum Result<T, E impl ToStr=Str>:
     Error(E)
 end
 
-use Result.*
+use Result::*
 
 impl Result<T, E>:
     fn is_ok(self) Bool:

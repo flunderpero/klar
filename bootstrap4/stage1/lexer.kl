@@ -398,7 +398,7 @@ enum FStrItem:
     FStrStrItem(Str)
 end
 
-use FStrItem.*
+use FStrItem::*
 
 enum TokenKind:
     And
@@ -459,7 +459,7 @@ enum TokenKind:
     WhiteSpace(Char)
 end
 
-use TokenKind.*
+use TokenKind::*
 
 impl ToStr for TokenKind:
     fn to_str(self) Str:

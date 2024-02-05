@@ -1,13 +1,13 @@
-use .lexer.Lexer
-use .lexer.Token
-use .lexer.TokenKind
-use .lexer.FStrItem
-use .lexer.Span
-use .lexer.to_src
-use .test.Test
+use .lexer::Lexer
+use .lexer::Token
+use .lexer::TokenKind
+use .lexer::FStrItem
+use .lexer::Span
+use .lexer::to_src
+use .test::Test
 
-use TokenKind.*
-use FStrItem.*
+use TokenKind::*
+use FStrItem::*
 
 fn main():
     mut test = Test::new_from_args("lexer", env.args)

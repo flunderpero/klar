@@ -32,7 +32,7 @@ impl PartialEq for DebugLevel:
 end
 
 fn lex(src Str, file Str, debug_level DebugLevel) Vector<Token>:
-    let tokens = Lexer.lex(src, file).collect()
+    let tokens = Lexer::lex(src, file).collect()
     let lex_errors = tokens.iter().filter(
         fn(token Token) Bool:
             match token.kind:
@@ -67,7 +67,7 @@ fn lex(src Str, file Str, debug_level DebugLevel) Vector<Token>:
 end
 
 fn parse(tokens Vector<Token>) Module throws ParseErrorKind:
-    Parser.new(TokenIter.new(tokens)).parse_module()
+    Parser::new(TokenIter::new(tokens)).parse_module()
 end
 
 fn main():
@@ -84,7 +84,7 @@ fn main():
     end)()
     let src_file = env.args[2]
     let dst_file = env.args[3]
-    let src_read = File.at(src_file).read_str()
+    let src_read = File::at(src_file).read_str()
     if let Error(error) = src_read:
         print(f"Error reading file {src_file}: {error}")
         exit(2)

@@ -2020,6 +2020,8 @@ export function parse(tokens: TokenStream): AST {
             target = target_candidate
             if (target instanceof FieldAccess) {
                 type_arguments = target.field_type_arguments
+            } else if (target instanceof FQN) {
+                type_arguments = target.parts.at(-1)!.type_parameters
             }
         } else {
             throw new ParseError(

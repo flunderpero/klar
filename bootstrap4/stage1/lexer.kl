@@ -6,7 +6,7 @@ end
 
 impl Lexer:
     fn lex(src Str, file Str) Iterator<Token>:
-        let iter = PeekableIterator<Char>.new(src.iter())
+        let iter = PeekableIterator::new(src.iter())
         Lexer{file, src, iter}
     end
 
@@ -186,7 +186,7 @@ impl Iterator<Token> for Lexer:
     fn match_string(mut self, is_fstr Bool) Token:
         let span = self.span()
         mut s = ""
-        mut fstr_items = Vector<FStrItem>.new()
+        mut fstr_items = Vector<FStrItem>::new()
         mut quotes = ""
         let required_closing_quotes = match self.iter.peek():
             Some<Char>('"'):
@@ -225,7 +225,7 @@ impl Iterator<Token> for Lexer:
                         fstr_items.push(FStrStrItem(s))
                         s = ""
                     end
-                    mut item_tokens = Vector<Token>.new()
+                    mut item_tokens = Vector<Token>::new()
                     loop:
                         match self.iter.peek():
                             Some<Char>('}'): 
@@ -319,8 +319,8 @@ impl Iterator<Token> for Lexer:
                 end
                 hex.push_char(digit)
             end
-            let int = Int.from_str(hex, 16)!
-            Char.from_int(int)!
+            let int = Int::from_str(hex, 16)!
+            Char::from_int(int)!
         end
 
         match c:

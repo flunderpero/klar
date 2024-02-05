@@ -68,8 +68,8 @@ end
 
 impl Test:
     fn new(name Str, verbose Bool) Test:
-        let root_group = TestGroup.new(name)
-        Test{verbose, root_group, collect_group: root_group, logger: TestLogger.new()}
+        let root_group = TestGroup::new(name)
+        Test{verbose, root_group, collect_group: root_group, logger: TestLogger::new()}
     end
 
     fn new_from_args(name Str, args Vector<Str>) Test:
@@ -79,7 +79,7 @@ impl Test:
               * `--verbose`: print test logs to stdout.
         ---
         let verbose = args.iter().any(fn(arg Str) => arg == "--verbose") 
-        Test.new(name, verbose)
+        Test::new(name, verbose)
     end
 
     fn it(self, name Str, f (fn() throws)):
@@ -93,7 +93,7 @@ impl Test:
             `collect` function will be added to the new group. 
         ---
         let collect_group = self.collect_group
-        mut group = TestGroup.new(name)
+        mut group = TestGroup::new(name)
         self.collect_group = group
         collect()
         self.collect_group = collect_group
@@ -126,12 +126,12 @@ end
 
 impl TestGroup:
     fn new(name Str) TestGroup:
-        TestGroup{ name, tests: Vector<TestCase>.new(), groups: Vector<TestGroup>.new() }
+        TestGroup{ name, tests: Vector<TestCase>::new(), groups: Vector<TestGroup>::new() }
     end
 
     fn run(self, mut config TestRunConfig) TestRunResult:
         fn color(s Str, color Str) Str => f"\x1b[{color}m{s}\x1b[0m"
-        mut result = TestRunResult.new()
+        mut result = TestRunResult::new()
         mut logger = config.logger
         let group_name = color(f"[{self.name}]", "90")
         self.tests.iter().for_each(fn(test TestCase):

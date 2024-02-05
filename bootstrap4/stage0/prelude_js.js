@@ -1,7 +1,7 @@
 #!/usr/bin/env bun --silent
 
 function klar_print(value) {
-    console.log(value.to_str().value)
+    console.log(value.klar_to_str().value)
 }
 
 // For compiler debugging purposes only.
@@ -26,7 +26,7 @@ function klar_exit(code) {
 class klar_unit {}
 
 class klar_Int {
-    static from_str(value) {
+    static klar_from_str(value) {
         let int
         try {
             int = parseInt(value.value)
@@ -43,47 +43,47 @@ class klar_Int {
         this.value = value
     }
 
-    to_str() {
+    klar_to_str() {
         return new klar_Str(this.value.toString())
     }
 
-    eq(other) {
+    klar_eq(other) {
         return new klar_Bool(this.value === other.value)
     }
 
-    ne(other) {
+    klar_ne(other) {
         return new klar_Bool(this.value !== other.value)
     }
 
-    lt(other) {
+    klar_lt(other) {
         return new klar_Bool(this.value < other.value)
     }
 
-    le(other) {
+    klar_le(other) {
         return new klar_Bool(this.value <= other.value)
     }
 
-    gt(other) {
+    klar_gt(other) {
         return new klar_Bool(this.value > other.value)
     }
 
-    ge(other) {
+    klar_ge(other) {
         return new klar_Bool(this.value >= other.value)
     }
 
-    add(other) {
+    klar_add(other) {
         return new klar_Int(this.value + other.value)
     }
 
-    sub(other) {
+    klar_sub(other) {
         return new klar_Int(this.value - other.value)
     }
 
-    mul(other) {
+    klar_mul(other) {
         return new klar_Int(this.value * other.value)
     }
 
-    div(other) {
+    klar_div(other) {
         return new klar_Int(Math.ceil(this.value / other.value))
     }
 }
@@ -93,31 +93,31 @@ class klar_Bool {
         this.value = value
     }
 
-    to_str() {
+    klar_to_str() {
         return new klar_Str(this.value.toString())
     }
 
-    eq(other) {
+    klar_eq(other) {
         return new klar_Bool(this.value === other.value)
     }
 
-    ne(other) {
+    klar_ne(other) {
         return new klar_Bool(this.value !== other.value)
     }
 
-    lt(other) {
+    klar_lt(other) {
         return new klar_Bool(this.value < other.value)
     }
 
-    le(other) {
+    klar_le(other) {
         return new klar_Bool(this.value <= other.value)
     }
 
-    gt(other) {
+    klar_gt(other) {
         return new klar_Bool(this.value > other.value)
     }
 
-    ge(other) {
+    klar_ge(other) {
         return new klar_Bool(this.value >= other.value)
     }
 }
@@ -127,40 +127,40 @@ class klar_Str {
         this.value = value
     }
 
-    to_str() {
+    klar_to_str() {
         return this
     }
 
-    eq(other) {
+    klar_eq(other) {
         return new klar_Bool(this.value === other.value)
     }
 
-    ne(other) {
+    klar_ne(other) {
         return new klar_Bool(this.value !== other.value)
     }
 
-    push(other) {
+    klar_push(other) {
         this.value += other.value
         return this
     }
 
-    push_char(other) {
+    klar_push_char(other) {
         this.value += other.value
         return this
     }
 
-    slice_copy(start, end) {
+    klar_slice_copy(start, end) {
         return new klar_Str(this.value.slice(start.value, end.value))
     }
 
-    len() {
+    klar_len() {
         return new klar_Int(this.value.length)
     }
 
-    iter() {
+    klar_iter() {
         let idx = 0
         return {
-            next: () => {
+            klar_next: () => {
                 if (idx < this.value.length) {
                     return new klar_Option_Some(new klar_Char(this.value[idx++]))
                 } else {
@@ -170,27 +170,27 @@ class klar_Str {
         }
     }
 
-    join(iter) {
+    klar_join(iter) {
         let result = ""
         let first = true
-        let item = iter.next()
-        while (item.is_some().value) {
+        let item = iter.klar_next()
+        while (item.klar_is_some().value) {
             if (first) {
                 first = false
             } else {
                 result += this.value
             }
-            result += item.unwrap().value
-            item = iter.next()
+            result += item.klar_unwrap().value
+            item = iter.klar_next()
         }
         return new klar_Str(result)
     }
 
-    get(index) {
-        if (index.value > this.len().value || index.value < 0) {
+    klar_get(index) {
+        if (index.value > this.klar_len().value || index.value < 0) {
             panic(
                 `index out of bound in \`Str[${index.value}]\`, Str has length \`${
-                    this.len().value
+                    this.klar_len().value
                 }`,
             )
         }
@@ -203,50 +203,54 @@ class klar_Char {
         this.value = value
     }
 
-    to_str() {
+    klar_to_str() {
         return new klar_Str(this.value)
     }
 
-    eq(other) {
+    klar_eq(other) {
         return new klar_Bool(this.value === other.value)
     }
 
-    ne(other) {
+    klar_ne(other) {
         return new klar_Bool(this.value !== other.value)
     }
 
-    static from_int(value) {
+    static klar_from_int(value) {
         if (value.value < 0 || value.value > 65535) {
             return new klar_Result_Error(new klar_Str(`cannot convert ${value.value} to Char`))
         }
         return new klar_Char(String.fromCharCode(value.value))
     }
 
-    to_int() {
+    klar_to_int() {
         return new klar_Int(this.value.charCodeAt(0))
     }
 }
 
 class klar_JSArray extends Array {
-    static new(size) {
+    static klar_new(size) {
         return new klar_JSArray(size.value)
     }
 
-    len() {
+    klar_len() {
         return new klar_Int(this.length)
     }
 
-    get(index) {
+    klar_get(index) {
         return this[index.value]
     }
 
-    set(index, value) {
+    klar_set(index, value) {
         this[index.value] = value
+    }
+
+    klar_push(value) {
+        this.push(value)
     }
 }
 
 class klar_File {
-    static at(path) {
+    static klar_at(path) {
         return new klar_File(path)
     }
 
@@ -254,11 +258,11 @@ class klar_File {
         this.path = path
     }
 
-    to_str() {
+    klar_to_str() {
         return new klar_Str(this.path)
     }
 
-    read_str() {
+    klar_read_str() {
         const fs = require("fs")
         try {
             const res = new klar_Str(fs.readFileSync(this.path.value, "utf8"))
@@ -268,7 +272,7 @@ class klar_File {
         }
     }
 
-    write_str(value) {
+    klar_write_str(value) {
         const fs = require("fs")
         try {
             fs.writeFileSync(this.path.value, value.value)
@@ -282,7 +286,7 @@ class klar_File {
 function klar_ext_args() {
     const result = new klar_JSArray(0)
     for (let i = 0; i < Bun.argv.length; i++) {
-        result.push(new klar_Str(Bun.argv[i]))
+        result.klar_push(new klar_Str(Bun.argv[i]))
     }
     return result
 }

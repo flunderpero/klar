@@ -16,7 +16,7 @@
 fn main():
     -- fixme: support generic functions (Vector.from)
     -- let v = Vector<Int>.from([1, 2, 3])
-    let v = Vector<Int>.new()
+    let v = Vector<Int>::new()
     v.push(1)
     v.push(2)
     v.push(3)

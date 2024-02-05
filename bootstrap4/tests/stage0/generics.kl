@@ -73,14 +73,14 @@ fn main():
     print(c.value)
     c.set_value(c.get_value() + 1)
     print(c.get_value())
-    let d = Container<Num>.new(Num{ value: 10 })
+    let d = Container<Num>::new(Num{ value: 10 })
     print(d.get_value().value)
     d.set_value(Num{ value: d.get_value().value + 1 })
     print(d.get_value().value)
-    let e = MultiContainer<Int, Container<Num>>{ value: 20, other: Container<Num>.new(Num{ value: 21 }) }
+    let e = MultiContainer<Int, Container<Num>>{ value: 20, other: Container<Num>::new(Num{ value: 21 }) }
     print(e.value)
     print(e.other.get_value().value)
-    let f = MultiContainer<Int, Container<Num>>.new(30, Container<Num>.new(Num{ value: 31 }))
+    let f = MultiContainer<Int, Container<Num>>::new(30, Container<Num>::new(Num{ value: 31 }))
     print(f.get_value1())
     print(f.get_value2().get_value().value)
 end

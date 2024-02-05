@@ -136,6 +136,14 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
                 node.span,
             )
         }
+        if (target_type instanceof StructType && type instanceof FunctionType) {
+            if (!target_type.is_field_or_instance_function(node.field, node.span)) {
+                throw new TypeCheckError(
+                    `Cannot reference static function ${quote(type.signature)} with dot notation`,
+                    node.span,
+                )
+            }
+        }
         // Remember the target for later use.
         node.attributes.target_type = target_type
     } else if (node instanceof ast.FQN) {
@@ -145,10 +153,26 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         )
         for (let i = 1; i < node.parts.length; i++) {
             const part = node.parts[i]
-            target_type = expect_type_with_fields(
-                target_type.field(part.name, node.span),
-                node.span,
-            )
+            if (i === node.parts.length - 1) {
+                const last_type = target_type.field(part.name, node.span)
+                if (target_type instanceof StructType && last_type instanceof FunctionType) {
+                    if (target_type.is_field_or_instance_function(part.name, node.span)) {
+                        throw new TypeCheckError(
+                            `Cannot reference member function ${quote(
+                                target_type.signature,
+                            )} with :: notation`,
+                            node.span,
+                        )
+                    }
+                }
+                target_type = last_type as any
+            } else {
+                target_type = expect_type_with_fields(
+                    target_type.field(part.name, node.span),
+                    node.span,
+                )
+            }
+            part.attributes.type = target_type
         }
         if (target_type instanceof EnumType && target_type.is_variant) {
             if (target_type.variant_tuple_type!.fields.size > 0 && !ctx.parent_is_function_call) {
@@ -886,9 +910,9 @@ function type_check_function_call_or_enum_instantiation(
     if (type_arguments.length === 0 && function_type.type_variables.length > 0) {
         type_arguments = function_type.type_variables.map((v) => find_type_argument(v) ?? v)
     }
-    if (node.target instanceof ast.FieldAccess) {
+    if (node.target instanceof ast.FQN && node.target.parts.length > 1) {
         let target_type = expect_type_with_fields(
-            node.target.attributes.target_type as Type,
+            type_check(node.target.parts.at(-2)!, env, {...ctx, used_in_expression: true}),
             node.span,
         )
         if (
@@ -916,7 +940,7 @@ function type_check_function_call_or_enum_instantiation(
             target_type = target_type.with_type_arguments(new_target_type_arguments, node.span)
             node.target.attributes.target_type = target_type
             function_type = expect_function_type(
-                target_type.field(node.target.field, node.span),
+                target_type.field(node.target.parts.at(-1)!.name, node.span),
                 node.span,
             )
         }
@@ -2114,6 +2138,11 @@ export class StructType extends ComplexType<StructData> {
 
     get signature() {
         return `${this.data.name}${this.type_signature}`
+    }
+
+    is_field_or_instance_function(name: string, span: Span) {
+        const f = expect_function_type(this.field(name, span), span)
+        return f.is_instance_function() || this.declaration.fields.hasOwnProperty(name)
     }
 }
 
@@ -3698,7 +3727,7 @@ const test = {
 
             let bar = Bar<Int>{foo: Foo<Int>{a: 1}}
             let bar_foo = bar.foo
-            let bar_foo_do_foo = bar_foo.do_foo
+            let do_foo = Foo<Int>::do_foo
             bar
         `)
         assert.equal(type.signature, "Bar<T=Int>")
@@ -3709,7 +3738,7 @@ const test = {
             env.get("Foo", builtin_span)!.debug_str,
             "Foo<T>{a: T, do_foo: do_foo<>(T)->T}",
         )
-        assert.equal(env.get("bar_foo_do_foo", builtin_span)!.signature, "do_foo<>(Int)->Int")
+        assert.equal(env.get("do_foo", builtin_span)!.signature, "do_foo<>(Int)->Int")
     },
 
     test_static_struct_function() {
@@ -3724,7 +3753,7 @@ const test = {
                 end
             end
 
-            let foo = Foo<Int>.new(1)
+            let foo = Foo<Int>::new(1)
             foo
         `)
         assert.equal(type.signature, "Foo<T=Int>")
@@ -3748,6 +3777,43 @@ const test = {
             foo<Int>(1, true)
         `)
         assert.equal(type.signature, "Int")
+    },
+
+    test_struct_static_function_call() {
+        const {type} = test.type_check(`
+            struct Foo: 
+                a Int
+            end
+
+            impl Foo: 
+                fn foo() Int: 
+                    1
+                end
+            end
+
+            Foo::foo()
+        `)
+        assert.equal(type.signature, "Int")
+    },
+
+    test_struct_static_function_call_cannot_be_called_with_dot_syntax() {
+        assert.throws(
+            () =>
+                test.type_check(`
+            struct Foo: 
+                a Int
+            end
+
+            impl Foo: 
+                fn foo() Int: 
+                    1
+                end
+            end
+
+            Foo.foo()
+        `),
+            /Cannot reference static function `foo.* dot notation/,
+        )
     },
 
     test_struct_function_call() {
@@ -3803,7 +3869,7 @@ const test = {
             end
 
             impl Foo<A>: 
-                fn foo<B>(v A, b B) B: 
+                fn foo<B>(self, v A, b B) B: 
                     b
                 end
             end
@@ -3931,7 +3997,7 @@ const test = {
 
             trait Bar: 
                 fn bar() Foo:
-                   Foo.new()
+                   Foo::new()
                 end
             end
 
@@ -4429,7 +4495,7 @@ const test = {
     test_extern_block() {
         const {env} = test.type_check(`
             trait A:
-                fn foo()
+                fn foo(self)
             end
 
             extern:
@@ -4442,7 +4508,7 @@ const test = {
                 impl A for Foo
 
                 impl Foo:
-                    fn bar() Int
+                    fn bar(self) Int
                 end
             end
 
@@ -4453,7 +4519,7 @@ const test = {
         `)
         assert.equal(env.get("a", builtin_span), env.Bool)
         assert.equal(env.get("b", builtin_span).signature, "Foo<>")
-        assert.equal(env.get("c", builtin_span).signature, "foo<>()->()")
+        assert.equal(env.get("c", builtin_span).signature, "foo<>(Foo<>)->()")
         assert.equal(env.get("d", builtin_span), env.Int)
     },
 
@@ -5455,7 +5521,7 @@ const test = {
                 fn new(a T) Self => Foo{a}
             end
 
-            Foo.new(1)
+            Foo::new(1)
         `)
         assert.equal(type.signature, "Foo<T=Int>")
     },

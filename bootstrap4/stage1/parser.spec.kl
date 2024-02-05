@@ -9,7 +9,7 @@ use .ast.Expr
 use .test.Test
 
 fn main():
-    mut test = Test.new_from_args("parser", env.args)
+    mut test = Test::new_from_args("parser", env.args)
 
     test.it("ignores comments and whitespace", fn() throws:
         assert(expr("\n 42 -- comment") == "(@int 42)")
@@ -547,8 +547,8 @@ fn main():
 
     fn parse(src Str, parse_fn ParseFn) Str:
         test.log(f"testing: {src}")
-        let tokens = Lexer.lex(src, "test.kl").collect()
-        let parser = Parser.new(TokenIter.new(tokens))
+        let tokens = Lexer::lex(src, "test.kl").collect()
+        let parser = Parser::new(TokenIter::new(tokens))
         let res = match parse_fn:
             ParseFn::Item => parser.parse_item(parser.iter.force_next().unwrap())
             ParseFn::Expr => parser.parse_expr(parser.iter.force_next().unwrap())

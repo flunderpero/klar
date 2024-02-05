@@ -17,7 +17,7 @@ use .use1.ImportedEnum
 use ImportedEnum.B
 
 fn main():
-    let p = Point.new(1, 2)
+    let p = Point::new(1, 2)
     print(p.x)
     print(p.y)
     let enum_ = ImportedEnum::A

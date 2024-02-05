@@ -10,7 +10,7 @@ use TokenKind.*
 use FStrItem.*
 
 fn main():
-    mut test = Test.new_from_args("lexer", env.args)
+    mut test = Test::new_from_args("lexer", env.args)
 
     test.it("lexes identifiers", fn() throws:
         lex_run("x", [Ident("x")])
@@ -153,7 +153,7 @@ x
                         FStrTokensItem(tokens):
                             let kinds = tokens.iter().map<TokenKind>(
                                 fn(token Token) => token.kind).collect()
-                            assert(kinds == Vector<TokenKind>.from(
+                            assert(kinds == Vector<TokenKind>::from(
                                 [Ident("question"), Dot, Ident("answer")])
                             )
                         end
@@ -167,7 +167,7 @@ x
                         FStrTokensItem(tokens):
                             let kinds = tokens.iter().map<TokenKind>(
                                 fn(token Token) => token.kind).collect()
-                            assert(kinds == Vector<TokenKind>.from([IntLiteral("42")]))
+                            assert(kinds == Vector<TokenKind>::from([IntLiteral("42")]))
                         end
                         _ => return Error("expected FStrTokensItem.")
                     end
@@ -191,7 +191,7 @@ x
                         FStrTokensItem(tokens):
                             let kinds = tokens.iter().map<TokenKind>(
                                 fn(token Token) => token.kind).collect()
-                            assert(kinds == Vector<TokenKind>.from(
+                            assert(kinds == Vector<TokenKind>::from(
                                 [Ident("question"), Dot, WhiteSpace('\n'), Ident("answer")])
                             )
                         end
@@ -205,7 +205,7 @@ x
                         FStrTokensItem(tokens):
                             let kinds = tokens.iter().map<TokenKind>(
                                 fn(token Token) => token.kind).collect()
-                            assert(kinds == Vector<TokenKind>.from([IntLiteral("42")]))
+                            assert(kinds == Vector<TokenKind>::from([IntLiteral("42")]))
                         end
                         _ => return Error("expected FStrTokensItem.")
                     end
@@ -245,7 +245,7 @@ x
         end)
     end)
 
-    fn lex_only(src Str) Vector<Token> => Lexer.lex(src, "test.kl").collect()
+    fn lex_only(src Str) Vector<Token> => Lexer::lex(src, "test.kl").collect()
 
     fn lex_run(src Str, expected Array<TokenKind>):
         --- Test that `src` is lexed into `expected`. Whitespaces are ignored.

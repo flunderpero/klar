@@ -11,7 +11,7 @@ File IO failed as expected: No such file or directory
 /expected ---
 
 fn main():
-    let file = File.at("/tmp/klar_file_io.test.txt")
+    let file = File::at("/tmp/klar_file_io.test.txt")
     match file.write_str("Hello, World!"):
         Error(error): 
             print(f"File IO failed: {error}")
@@ -28,7 +28,7 @@ fn main():
     end
     if contents == "Hello, World!" => print("File IO works!")
     else => print("File IO failed!")
-    let invalid_file = File.at("/tmp/\n")
+    let invalid_file = File::at("/tmp/\n")
     match invalid_file.read_str():
         Error(error) => print(f"File IO failed as expected: {error}")
         Ok(result) => print(f"File IO succeeded??? It returned: {result}")

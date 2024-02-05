@@ -117,10 +117,10 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
         } else if (e instanceof AST.InterpolatedStr) {
             const parts = e.expressions.map(
                 (x) =>
-                    `_.push(${transpile_expression(x, {
+                    `_.klar_push(${transpile_expression(x, {
                         ...ctx,
                         used_in_expression: true,
-                    })}.to_str());`,
+                    })}.klar_to_str());`,
             )
             return `(function () { const _ = new klar_Str(""); ${parts.join("")}; return _; })()`
         } else if (e instanceof AST.FunctionCall) {
@@ -165,7 +165,7 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             const create_instance = `let _ = new ${m(e.target_struct_name)}()`
             const assign_members = Object.entries(e.fields).map(
                 ([name, value]) =>
-                    `_.${name} = ${
+                    `_.${m(name)} = ${
                         value
                             ? transpile_expression(value, {
                                   ...ctx,
@@ -189,7 +189,7 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
                 return `${transpile_expression(e.target.target, {
                     ...ctx,
                     used_in_expression: true,
-                })}.set(${transpile_expression(e.target.index, {
+                })}.klar_set(${transpile_expression(e.target.index, {
                     ...ctx,
                     used_in_expression: true,
                 })}, ${value});`
@@ -200,10 +200,13 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             const values = e.elements
                 .map(
                     (x) =>
-                        `_.push(${transpile_expression(x, {...ctx, used_in_expression: true})});`,
+                        `_.klar_push(${transpile_expression(x, {
+                            ...ctx,
+                            used_in_expression: true,
+                        })});`,
                 )
                 .join("")
-            return `(function () { const _ = klar_Vector.new(); ${values} return _; })()`
+            return `(function () { const _ = klar_Vector.klar_new(); ${values} return _; })()`
         } else if (e instanceof AST.Block) {
             return transpile_block(e, ctx)
         } else if (e instanceof AST.If) {
@@ -256,7 +259,7 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
                 return `;${s};`
             }
         } else if (e instanceof AST.StructDeclaration) {
-            const members = Object.keys(e.fields).join(";")
+            const members = Object.keys(e.fields).map(m).join(";")
             return `class ${m(e.name)} {${members}\n};exported.${m(e.name)} = ${m(e.name)};`
         } else if (e instanceof AST.EnumDeclaration) {
             let variants = ""
@@ -301,13 +304,13 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             if (!function_name) {
                 throw new CodeGenError(`Unexpected operator ${quote(e.operator)}`, e.span)
             }
-            return `(${lhs}.${function_name}(${rhs}))`
+            return `(${lhs}.${m(function_name)}(${rhs}))`
         } else if (e instanceof AST.FieldAccess) {
             const target = transpile_expression(e.target, {...ctx, used_in_expression: true})
             if (parseInt(e.field).toString() === e.field) {
                 return `${target}[${e.field}]`
             }
-            return `${target}.${e.field}`
+            return `${target}.${m(e.field)}`
         } else if (e instanceof AST.FQN) {
             return e.parts
                 .map((x) => transpile_expression(x, {...ctx, used_in_expression: true}))
@@ -315,7 +318,7 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
         } else if (e instanceof AST.IndexedAccess) {
             const target = transpile_expression(e.target, {...ctx, used_in_expression: true})
             const index = transpile_expression(e.index, {...ctx, used_in_expression: true})
-            return `${target}.get(${index})`
+            return `${target}.klar_get(${index})`
         } else if (e instanceof AST.Not) {
             const value = transpile_expression(e.expression, {...ctx, used_in_expression: true})
             return `!${value}`
@@ -380,7 +383,7 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
                 cond = `(lhs.value || rhs.value)`
             } else {
                 const function_name = binary_op_functions[e.operator]
-                cond = `(lhs.${function_name}(rhs).value)`
+                cond = `(lhs.${m(function_name)}(rhs).value)`
             }
             return `(function() {
 const lhs = ${lhs};
@@ -532,7 +535,7 @@ got:      \${cond.value}
             const prefix = is_static
                 ? `${m(impl.target_name)}.`
                 : `${m(impl.target_name)}.prototype.`
-            s += `\n${prefix}${fn.declaration.name} = function(${parameters}){
+            s += `\n${prefix}${m(fn.declaration.name)} = function(${parameters}){
                 try {
                     ${block}
                 } catch (e) {
@@ -704,7 +707,7 @@ got:      \${cond.value}
                         s += " && "
                     }
                     const field_condition = transpile_match_pattern_to_condition(
-                        `${match_expression}.${field_name}`,
+                        `${match_expression}.${m(field_name)}`,
                         field_pattern,
                     )
                     s += field_condition

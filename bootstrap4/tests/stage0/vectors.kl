@@ -12,7 +12,7 @@
 /expected ---
 
 fn main():
-    mut v = Vector<Int>.new()
+    mut v = Vector<Int>::new()
     v.push(1)
     v.push(2)
     v.push(3)

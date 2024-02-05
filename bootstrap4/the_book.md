@@ -407,7 +407,7 @@ end
 
 ```klar
 fn main():
-    mut vector = Vector<Int>.new()
+    mut vector = Vector<Int>::new()
     vector.push(1)
     vector.push(2)
     vector.push(3)
@@ -430,7 +430,7 @@ end
 
 ```klar
 fn main():
-    mut map = Map<Str, Int>.new()
+    mut map = Map<Str, Int>::new()
     map["one"] = 1  -- Idiomatic way of setting elements.
     map.set("two", 2) -- Alternative way of setting elements.
     map["three"] = 3
@@ -889,7 +889,7 @@ use .the_book_use_example.SomeStruct
 use .the_book_use_example.SomeEnum
 
 fn main():
-    let s = SomeStruct.new(1)
+    let s = SomeStruct::new(1)
     assert(s.value == 1)
     s.increment()
     assert(s.value == 2)

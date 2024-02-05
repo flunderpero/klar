@@ -88,7 +88,7 @@ fn chained_field_access():
 end
 
 fn static_method():
-    let p = Point.new(30, 31)
+    let p = Point::new(30, 31)
     p.print_members()
 end
 

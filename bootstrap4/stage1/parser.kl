@@ -154,7 +154,7 @@ impl Iterator<Token> for TokenIter:
     fn tokens_since(mut self, mark Int) Vector<Token>:
         --- Returns all tokens since the given mark (inclusive).
         ---
-        if mark >= self.idx or mark < 0 => return Vector<Token>.new()
+        if mark >= self.idx or mark < 0 => return Vector<Token>::new()
         self.tokens.slice_copy(mark, self.idx)
     end
 
@@ -215,7 +215,7 @@ impl Parser:
     fn parse_module(mut self) Module throws ParseError:
         -- The main entry point to parse a Klar module.
         let mark = self.iter.mark()
-        let items = Vector<ModuleItem>.new()
+        let items = Vector<ModuleItem>::new()
         loop:
             let token_option = self.iter.next()
             if token_option.is_none() => break
@@ -393,7 +393,7 @@ impl Parser:
             we return `None`.
         ---
         let root_mark = self.iter.mark()
-        let args = Vector<GenericArg>.new()
+        let args = Vector<GenericArg>::new()
         match self.iter.peek():
             Some(Token{kind: TokenKind::LessThan, span: _}) => ()
             _ => return None
@@ -447,7 +447,7 @@ impl Parser:
 
     fn parse_fqn(mut self, token Token) FQN throws ParseError:
         let root_mark = self.iter.mark_prev()
-        let names = Vector<Name>.new()
+        let names = Vector<Name>::new()
         -- The first part of the name must be an identifier.
         match token.kind:
             TokenKind::Ident(_) => names.push(self.parse_name(token)!)
@@ -534,8 +534,8 @@ impl Parser:
 
     fn parse_int_literal(self, value Str, token Token) Literal throws ParseError:
         let mark = self.iter.mark_prev()
-        match Int.from_str(value, 10):
-            Ok<Int>(i) => Literal{kind: LiteralKind::IntLiteral(i), meta: self.meta(mark)}
+        match Int::from_str(value, 10):
+            Ok(i) => Literal{kind: LiteralKind::IntLiteral(i), meta: self.meta(mark)}
             -- todo: The `return` should not be needed here. The stage0 type-checker
             --       cannot infer that the result of the match is the return value 
             --       of the function.
@@ -555,7 +555,7 @@ impl Parser:
 
     fn parse_fstr(mut self, items Vector<FStrItem>) FStr throws ParseError:
         let mark = self.iter.mark_prev()
-        mut exprs = Vector<Expr>.new()
+        mut exprs = Vector<Expr>::new()
         mut idx = 0
         -- todo (lang-feat): We tried to implement this with `items.iter().map()` but
         --                   we were not able to propagate errors from the map closure.
@@ -565,7 +565,7 @@ impl Parser:
             idx = idx + 1
             let expr = match item:
                 FStrItem::FStrTokensItem(tokens):
-                    mut parser = Parser.new(TokenIter.new(tokens))
+                    mut parser = Parser::new(TokenIter::new(tokens))
                     let expr = parser.parse_expr(parser.iter.force_next()!)!
                     match expr:
                         Some<Expr>(value) => value
@@ -601,7 +601,7 @@ impl Parser:
     end
 
     fn parse_params(mut self) Vector<Param> throws ParseError:
-        let params = Vector<Param>.new()
+        let params = Vector<Param>::new()
         mut got_comma = false
         loop:
             let next_token = self.iter.force_next()!
@@ -633,7 +633,7 @@ impl Parser:
 
     fn parse_fn_def(mut self, decl FnDecl) Fn throws ParseError: 
         let body = self.parse_block()!
-        Fn{decl, body, meta: Meta.new(decl.meta.tokens + body.meta.tokens)}
+        Fn{decl, body, meta: Meta::new(decl.meta.tokens + body.meta.tokens)}
     end
 
     fn parse_impl(mut self) Impl throws ParseError:
@@ -653,7 +653,7 @@ impl Parser:
             end
         end 
         self.iter.expect_lexical_token(TokenKind::Colon)!
-        let fn_impls = Vector<Fn>.new()
+        let fn_impls = Vector<Fn>::new()
         loop:
             let next_token = self.iter.force_next()!
             match next_token.kind:
@@ -671,8 +671,8 @@ impl Parser:
     fn parse_trait(mut self) Trait throws ParseError:
         let mark = self.iter.mark_prev()
         let name = self.parse_name(self.iter.force_next()!)!
-        let fn_decls = Vector<FnDecl>.new()
-        let fn_impls = Vector<Fn>.new()
+        let fn_decls = Vector<FnDecl>::new()
+        let fn_impls = Vector<Fn>::new()
         self.iter.expect_lexical_token(TokenKind::Colon)!
         loop:
             let next_token = self.iter.force_next()!
@@ -695,7 +695,7 @@ impl Parser:
     fn parse_enum(mut self) Enum throws ParseError:
         let mark = self.iter.mark_prev()
         let name = self.parse_name(self.iter.force_next()!)!
-        let variants = Vector<EnumVariant>.new()
+        let variants = Vector<EnumVariant>::new()
         self.iter.expect_lexical_token(TokenKind::Colon)!
         loop:
             let next_token = self.iter.force_next()!
@@ -724,7 +724,7 @@ impl Parser:
     fn parse_struct(mut self) Struct throws ParseError:
         let mark = self.iter.mark_prev()
         let name = self.parse_name(self.iter.force_next()!)!
-        let fields = Vector<Field>.new()
+        let fields = Vector<Field>::new()
         self.iter.expect_lexical_token(TokenKind::Colon)!
         loop:
             let next_token = self.iter.force_next()!
@@ -744,7 +744,7 @@ impl Parser:
     end
 
     fn parse_comma_separated_types(mut self) Vector<Type> throws ParseError:
-        let types = Vector<Type>.new()
+        let types = Vector<Type>::new()
         mut got_comma = false
         loop:
             let next_token = self.iter.force_next()!
@@ -774,7 +774,7 @@ impl Parser:
     end
 
     fn parse_comma_separated_exprs(mut self) Vector<Expr> throws ParseError:
-        let exprs = Vector<Expr>.new()
+        let exprs = Vector<Expr>::new()
         mut got_comma = false
         loop:
             let next_token = self.iter.force_next()!
@@ -813,7 +813,7 @@ impl Parser:
                     ended with an `else` token.
         ---
         let mark = self.iter.mark()
-        let items = Vector<BlockItem>.new() 
+        let items = Vector<BlockItem>::new() 
         let next_token = self.iter.force_next()!
         mut ended_with_else = false
         match next_token.kind:
@@ -866,17 +866,17 @@ impl Parser:
     end
 
     fn meta(self, mark Int) Meta:
-        Meta.new(self.iter.tokens_since(mark))
+        Meta::new(self.iter.tokens_since(mark))
     end
 
     fn meta_from_token(self, token Token) Meta:
-        Meta.new(Vector<Token>.from([token]))
+        Meta::new(Vector<Token>::from([token]))
     end
 end
 
 fn parse_error(kind ParseErrorKind, token Token?) Error<(), ParseError>:
-    let tokens = if token.is_some() => Vector<Token>.from([token.unwrap()]) else => Vector<Token>.new()
-    Error(ParseError{meta: Meta.new(tokens), kind})
+    let tokens = if token.is_some() => Vector<Token>::from([token.unwrap()]) else => Vector<Token>::new()
+    Error(ParseError{meta: Meta::new(tokens), kind})
 end
 
 enum ParseItem:

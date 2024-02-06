@@ -36,6 +36,7 @@ use .ast::Expr
 use .ast::FQN
 use .ast::FStr
 use .ast::Field
+use .ast::FieldAccess
 use .ast::Fn
 use .ast::FnDecl
 use .ast::GenericArg
@@ -341,6 +342,8 @@ impl Parser:
             expr = match self.iter.peek_immediate():
                 Some(Token{kind: TokenKind::LParen, span: _}) => 
                     Expr::Call(self.parse_call(expr)!)
+                Some(Token{kind: TokenKind::Dot, span: _}) => 
+                    Expr::FieldAccess(self.parse_field_access(expr)!)
                 _ => break
             end
         end
@@ -764,6 +767,13 @@ impl Parser:
             end
         end
         types
+    end
+
+    fn parse_field_access(mut self, target Expr) FieldAccess throws ParseError:
+        let mark = self.iter.mark()
+        self.iter.expect_immediate_lexical_token(TokenKind::Dot)!
+        let field = self.parse_ident(self.iter.force_next()!)!
+        FieldAccess{target, field, meta: self.meta(mark)}
     end
 
     fn parse_call(mut self, target Expr) Call throws ParseError:

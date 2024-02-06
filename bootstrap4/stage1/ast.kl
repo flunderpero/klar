@@ -152,10 +152,17 @@ struct Return:
     meta Meta
 end
 
+struct FieldAccess:
+    target Expr
+    field Ident
+    meta Meta
+end
+
 enum Expr:
     Assignment(Assignment)
     BinaryExpr(BinaryExpr)
     Call(Call)
+    FieldAccess(FieldAccess)
     FStr(FStr)
     FQN(FQN)
     Ident(Ident)
@@ -614,6 +621,11 @@ impl ToDebugStr for Return:
     fn to_debug_str(self) Str => f"(@return {self.expr.to_debug_str()})"
 end
 
+impl ToDebugStr for FieldAccess:
+    fn to_debug_str(self) Str 
+        => f"(@fieldaccess {self.target.to_debug_str()} {self.field.to_debug_str()})"
+end
+
 impl ToDebugStr for Expr:
     fn to_debug_str(self) Str:
         match self:
@@ -622,6 +634,7 @@ impl ToDebugStr for Expr:
             Expr::Break(value) => value.to_debug_str()
             Expr::Call(value) => value.to_debug_str()
             Expr::Continue(value) => value.to_debug_str()
+            Expr::FieldAccess(value) => value.to_debug_str()
             Expr::FStr(value) => value.to_debug_str()
             Expr::FQN(value) => value.to_debug_str()
             Expr::Ident(value) => value.to_debug_str()

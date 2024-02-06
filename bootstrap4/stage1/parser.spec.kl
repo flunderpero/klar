@@ -536,6 +536,28 @@ fn main():
         end)
     end)
 
+    test.group("field access", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(expr("a.b") == "(@fieldaccess (@ident a) (@ident b))")
+        end)
+
+        test.it("parses chained field accesses", fn() throws:
+            assert(
+                expr("a.b.c") 
+                == 
+                "(@fieldaccess (@fieldaccess (@ident a) (@ident b)) (@ident c))"
+            )
+        end)
+
+        test.it("works with calls", fn() throws:
+            assert(
+                expr("a.b().c") 
+                == 
+                "(@fieldaccess (@call (@fieldaccess (@ident a) (@ident b))) (@ident c))"
+            )
+        end)
+    end)
+
     enum ParseFn:
         Item
         Expr

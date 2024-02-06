@@ -1,1 +1,1 @@
-{"flagWords":[],"words":["codegen","impls","struct","structs","Peekable","fstr","desugared","rparen","lparen","fndef","fndecl","klarc","Isize","binop","prec","binexpr","cond","unexpr"],"version":"0.2","language":"en"}
+{"language":"en","flagWords":[],"words":["codegen","impls","struct","structs","Peekable","fstr","desugared","rparen","lparen","fndef","fndecl","klarc","Isize","binop","prec","binexpr","cond","unexpr","fieldaccess"],"version":"0.2"}

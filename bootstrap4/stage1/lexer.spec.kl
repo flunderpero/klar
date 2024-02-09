@@ -15,8 +15,8 @@ fn main():
     test.it("lexes identifiers", fn() throws:
         lex_run("x", [Ident("x")])
         lex_run("x y", [Ident("x"), Ident("y")])
-        lex_run("x Y _ a1 _a1 A1 _A1 a_1", [
-            Ident("x"), Ident("Y"), Ident("_"), Ident("a1"), Ident("_a1"), 
+        lex_run("x Y a1 _a1 A1 _A1 a_1", [
+            Ident("x"), Ident("Y"), Ident("a1"), Ident("_a1"), 
             Ident("A1"), Ident("_A1"), Ident("a_1")
         ])
     end)
@@ -52,6 +52,10 @@ x
 
     test.it("lexes punctuation", fn() throws:
         lex_run(", . : ; :: ? !", [Comma, Dot, Colon, Semicolon, DoubleColon, QMark, Exclamation])
+    end)
+
+    test.it("lexes underscore", fn() throws:
+        lex_run("_", [Underscore])
     end)
 
     test.it("lexes all keywords", fn() throws:

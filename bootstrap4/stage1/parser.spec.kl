@@ -118,6 +118,10 @@ fn main():
             assert(expr("\"\"\"foo\nbar\"\"\"") == "(@str foo\\nbar)")
         end)
 
+        test.it("parses char literals", fn() throws:
+            assert(expr("'a'") == "(@char a)")
+        end)
+
         test.group("int", fn():
             test.it("passes the happy path", fn() throws:
                 assert(expr("42") == "(@int 42)")
@@ -555,6 +559,210 @@ fn main():
                 == 
                 "(@fieldaccess (@call (@fieldaccess (@ident a) (@ident b))) (@ident c))"
             )
+        end)
+    end)
+
+    test.group("match", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(
+                expr("""
+                    match a:
+                        42 => 1
+                    end
+                    """)
+                == 
+                "(@match (@ident a) " +
+                "(@matcharm (@pattern (@literal (@int 42))) (@block (@int 1))))"
+            )
+        end)
+
+        test.it("parses multiple arms", fn() throws:
+            assert(
+                expr("""
+                    match a:
+                        42 => 1
+                        43 => 2
+                    end
+                    """)
+                == 
+                "(@match (@ident a) " +
+                "(@matcharm (@pattern (@literal (@int 42))) (@block (@int 1))) " +
+                "(@matcharm (@pattern (@literal (@int 43))) (@block (@int 2))))"
+            )
+        end)
+
+        test.group("pattern", fn():
+            test.it("parses int literal patterns", fn() throws:
+                assert(
+                    expr("""
+                        match a:
+                            42 => 1
+                        end
+                        """)
+                    == 
+                    "(@match (@ident a) " +
+                    "(@matcharm (@pattern (@literal (@int 42))) (@block (@int 1))))"
+                )
+            end)
+
+            test.it("parses bool literal patterns", fn() throws:
+                assert(
+                    expr("""
+                        match a:
+                            true => 1
+                        end
+                        """)
+                    == 
+                    "(@match (@ident a) " +
+                    "(@matcharm (@pattern (@literal (@bool true))) (@block (@int 1))))"
+                )
+            end)
+
+            test.it("parses string literal patterns", fn() throws:
+                assert(
+                    expr("""
+                        match a:
+                            "foo" => 1
+                        end
+                        """)
+                    == 
+                    "(@match (@ident a) " +
+                    "(@matcharm (@pattern (@literal (@str foo))) (@block (@int 1))))"
+                )
+            end)
+
+            test.it("parses ident patterns", fn() throws:
+                assert(
+                    expr("""
+                        match a:
+                            b => 1
+                        end
+                        """)
+                    == 
+                    "(@match (@ident a) " +
+                    "(@matcharm (@pattern (@ident b)) (@block (@int 1))))"
+                )
+            end)
+
+            test.it("parses fqn patterns", fn() throws:
+                assert(
+                    expr("""
+                        match a:
+                            Option::None => 1
+                        end
+                        """)
+                    == 
+                    "(@match (@ident a) " +
+                    "(@matcharm (@pattern (@fqn (@name (@ident Option)) (@name (@ident None)))) " +
+                    "(@block (@int 1))))"
+                )
+            end)
+
+            test.it("parses wildcard patterns", fn() throws:
+                assert(
+                    expr("""
+                        match a:
+                            _ => 1
+                        end
+                        """)
+                    == 
+                    "(@match (@ident a) " +
+                    "(@matcharm (@pattern (@wildcard)) (@block (@int 1))))"
+                )
+            end)
+
+            test.it("parses int range patterns", fn() throws:
+                assert(
+                    expr("""
+                        match a:
+                            1..3 => 1
+                            1..<3 => 2
+                        end
+                        """)
+                    == 
+                    "(@match (@ident a) " +
+                    "(@matcharm (@pattern (@range (@int 1) .. (@int 3))) (@block (@int 1))) " +
+                    "(@matcharm (@pattern (@range (@int 1) ..< (@int 3))) (@block (@int 2))))"
+                )
+            end)
+
+            test.it("parses char range patterns", fn() throws:
+                assert(
+                    expr("""
+                        match a:
+                            'a'..'z' => 1
+                            'a'..< 'z' => 2
+                        end
+                        """)
+                    == 
+                    "(@match (@ident a) " +
+                    "(@matcharm (@pattern (@range (@char a) .. (@char z))) (@block (@int 1))) " +
+                    "(@matcharm (@pattern (@range (@char a) ..< (@char z))) (@block (@int 2))))"
+                )
+            end)
+
+            test.it("parses tuple patterns", fn() throws:
+                assert(
+                    expr("""
+                        match a:
+                            (1, a) => 1
+                        end
+                        """)
+                    == 
+                    "(@match (@ident a) " +
+                    "(@matcharm (@pattern (@tuple (@pattern (@literal (@int 1))) " +
+                    "(@pattern (@ident a)))) (@block (@int 1))))"
+                )
+            end)
+
+            test.it("parses enum variant with fields patterns", fn() throws:
+                assert(
+                    expr("""
+                        match a:
+                            Foo::Bar(1, a) => 1
+                            Bar(_) => 2
+                        end
+                        """)
+                    == 
+                    "(@match (@ident a) " +
+                    "(@matcharm (@pattern (@enumvariant (@fqn (@name (@ident Foo)) (@name (@ident Bar))) " +
+                    "(@pattern (@literal (@int 1))) (@pattern (@ident a)))) (@block (@int 1))) " +
+                    "(@matcharm (@pattern (@enumvariant (@fqn (@name (@ident Bar))) (@pattern (@wildcard)))) " +
+                    "(@block (@int 2))))"
+                )
+            end)
+
+            test.it("parses struct patterns", fn() throws:
+                assert(
+                    expr("""
+                        match a:
+                            Foo{a: 1, b, c: _} => 1
+                        end
+                        """)
+                    == 
+                    "(@match (@ident a) " +
+                    "(@matcharm (@pattern (@struct (@fqn (@name (@ident Foo))) " +
+                    "(@field (@ident a) (@pattern (@literal (@int 1)))) " +
+                    "(@field (@ident b) (@pattern (@ident b))) " +
+                    "(@field (@ident c) (@pattern (@wildcard))))) " +
+                    "(@block (@int 1))))"
+                )
+            end)
+
+            test.it("parses or patterns", fn() throws:
+                assert(
+                    expr("""
+                        match a:
+                            1 | b | 't' => 1
+                        end
+                        """)
+                    == 
+                    "(@match (@ident a) " +
+                    "(@matcharm (@pattern (@or (@pattern (@literal (@int 1))) " +
+                    "(@pattern (@ident b)) (@pattern (@literal (@char t))))) " +
+                    "(@block (@int 1))))"
+                )
+            end)
         end)
     end)
 

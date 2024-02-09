@@ -51,9 +51,14 @@ use .ast::Meta
 use .ast::Module
 use .ast::ModuleItem
 use .ast::Name
+use .ast::Match
+use .ast::MatchArm
 use .ast::Param
 use .ast::ParseError
 use .ast::ParseErrorKind
+use .ast::Pattern
+use .ast::PatternKind
+use .ast::Range
 use .ast::Return
 use .ast::Struct
 use .ast::ToDebugStr
@@ -310,9 +315,11 @@ impl Parser:
     fn parse_primary_expr(mut self, token Token) Expr? throws ParseError:
         let mark = self.iter.mark_prev()
         mut expr = match token.kind:
-            TokenKind::IntLiteral(i) => Expr::Literal(self.parse_int_literal(i, token)!)
+            TokenKind::IntLiteral(_) => Expr::Literal(self.parse_int_literal( token)!)
             TokenKind::BoolLiteral(b) => 
                 Expr::Literal(Literal{kind: LiteralKind::BoolLiteral(b), meta: self.meta(mark)})
+            TokenKind::CharLiteral(c) => 
+                Expr::Literal(Literal{kind: LiteralKind::CharLiteral(c), meta: self.meta(mark)})
             TokenKind::StrLiteral(s, _) => 
                 Expr::Literal(Literal{kind: LiteralKind::StrLiteral(s), meta: self.meta(mark)})
             TokenKind::LParen => self.parse_unit_or_tuple_literal_or_parentheses(token)!
@@ -325,6 +332,7 @@ impl Parser:
             TokenKind::If => Expr::If(self.parse_if(token)!)
             TokenKind::FStr(items, _) => Expr::FStr(self.parse_fstr(items)!)
             TokenKind::Let => Expr::Let(self.parse_let_or_mut(token)!)
+            TokenKind::Match => Expr::Match(self.parse_match()!)
             TokenKind::Mut => Expr::Let(self.parse_let_or_mut(token)!)
             TokenKind::Break => Expr::Break(Break{meta: self.meta(mark)})
             TokenKind::Continue => Expr::Continue(Continue{meta: self.meta(mark)})
@@ -490,6 +498,176 @@ impl Parser:
         end
     end
 
+    fn parse_match(mut self) Match throws ParseError:
+        let mark = self.iter.mark_prev()
+        let expr_token = self.iter.force_next()!
+        let expr = match self.parse_expr(expr_token)!:
+            Some(expr) => expr
+            None => return parse_error(ExprExpected(expr_token), expr_token)
+        end
+        self.iter.expect_lexical_token(TokenKind::Colon)!
+        let arms = Vector<MatchArm>::new()
+        loop:
+            let next_token = self.iter.force_next()!
+            match next_token.kind:
+                TokenKind::End => break
+                _ => arms.push(self.parse_match_arm(next_token)!)
+            end
+        end
+        Match{expr, arms, meta: self.meta(mark)}
+    end
+
+    fn parse_match_arm(mut self, token Token) MatchArm throws ParseError:
+        let mark = self.iter.mark_prev()
+        let pattern = self.parse_pattern(token)!
+        let block = self.parse_block()!
+        MatchArm{pattern, block, meta: self.meta(mark)}
+    end
+
+    fn parse_pattern(mut self, token Token) Pattern throws ParseError:
+        fn parse_literal_or_range(
+            token Token, 
+            parse_literal (fn (Token) Literal throws ParseError)
+        ) PatternKind throws ParseError:
+            let mark = self.iter.mark_prev()
+            let start = parse_literal(token)!
+            let peeked = self.iter.peek()
+            match peeked:
+                  Some(Token{kind: TokenKind::DotDot, span: _}) 
+                | Some(Token{kind: TokenKind::DotDotLessThan, span: _}):
+                    self.iter.force_next()!
+                    let end_ = parse_literal(self.iter.force_next()!)!
+                    -- todo (lang-feat): We should not need to unwrap the token here, we
+                    --                   should have been able to assign `kind` in 
+                    --                   the pattern above.
+                    let end_is_exclusive = peeked.unwrap().kind == TokenKind::DotDotLessThan
+                    PatternKind::Range(Range{start, end_, end_is_exclusive, meta: self.meta(mark)})
+                end
+                _ => PatternKind::Literal(start)
+            end
+        end
+        fn parse_comma_separated_patterns() Vector<Pattern> throws ParseError:
+            let patterns = Vector<Pattern>::new()
+            mut got_comma = false
+            loop:
+                let next_token = self.iter.force_next()!
+                match next_token.kind:
+                    TokenKind::RParen => break
+                    TokenKind::Comma:
+                        if got_comma => return parse_error(PatternExpected(next_token), next_token)
+                        got_comma = true
+                        continue
+                    end
+                    _: 
+                        if patterns.len() > 0 and not got_comma => 
+                            return parse_error(UnexpectedToken(next_token), next_token)
+                        got_comma = false
+                        patterns.push(parse_it(next_token)!)
+                    end
+                end
+            end
+            patterns
+        end
+        fn parse_struct_pattern() Vector<(Ident, Pattern)> throws ParseError:
+            let fields = Vector<(Ident, Pattern)>::new()
+            mut got_comma = false
+            loop:
+                let next_token = self.iter.force_next()!
+                match next_token.kind:
+                    TokenKind::RBrace => break
+                    TokenKind::Comma:
+                        if got_comma => return parse_error(IdentExpected(next_token), next_token)
+                        got_comma = true
+                        continue
+                    end
+                    _: 
+                        if fields.len() > 0 and not got_comma => 
+                            return parse_error(UnexpectedToken(next_token), next_token)
+                        got_comma = false
+                        let mark = self.iter.mark()
+                        let ident = self.parse_ident(next_token)!
+                        match self.iter.peek():
+                            Some(Token{kind: TokenKind::Colon, span: _}):
+                                self.iter.force_next()!
+                                fields.push((ident, parse_it(self.iter.force_next()!)!))
+                            end
+                            _ => fields.push(
+                                (ident, Pattern{kind: PatternKind::Ident(ident), meta: self.meta(mark)})
+                            )
+                        end
+                    end
+                end
+            end
+            fields
+        end
+        fn parse_it(token Token) Pattern throws ParseError:
+            let mark = self.iter.mark_prev()
+            let kind = match token.kind:
+                TokenKind::Ident(name):
+                    let fqn = self.parse_fqn(token)!
+                    let pattern = if fqn.names.len() == 1 and fqn.names[0].generics.is_none()
+                        => PatternKind::Ident(fqn.names[0].ident)
+                    else => PatternKind::FQN(fqn)
+                    match self.iter.peek():
+                        Some(Token{kind: TokenKind::LParen, span: _}):
+                            self.iter.force_next()!
+                            PatternKind::EnumVariant(fqn, parse_comma_separated_patterns()!)
+                        end
+                        Some(Token{kind: TokenKind::LBrace, span: _}):
+                            self.iter.force_next()!
+                            PatternKind::Struct(fqn, parse_struct_pattern()!)
+                        end
+                        _ => pattern
+                    end
+                end
+                TokenKind::IntLiteral(_) 
+                    => parse_literal_or_range(
+                            token, 
+                            -- todo (lang feat) We should not need to specify all the types here.
+                            fn (token Token) Literal throws ParseError 
+                                => self.parse_int_literal(token)!
+                       )!
+                TokenKind::BoolLiteral(b) 
+                    => PatternKind::Literal(
+                        Literal{kind: LiteralKind::BoolLiteral(b), meta: self.meta(mark)}
+                    )
+                TokenKind::StrLiteral(s, _) 
+                    => PatternKind::Literal(
+                        Literal{kind: LiteralKind::StrLiteral(s), meta: self.meta(mark)}
+                    )
+                TokenKind::CharLiteral(c) 
+                    => parse_literal_or_range(
+                            token, 
+                            fn (token Token) Literal throws ParseError:
+                                match token.kind:
+                                    TokenKind::CharLiteral(c) => 
+                                        Literal{kind: LiteralKind::CharLiteral(c), meta: self.meta(mark)}
+                                    _ => return parse_error(CharLiteralExpected(token), token)
+                                end
+                            end
+                      )!
+                TokenKind::Underscore => PatternKind::Wildcard
+                TokenKind::LParen => PatternKind::Tuple(parse_comma_separated_patterns()!)
+                _ => return parse_error(UnexpectedToken(token), token)
+            end
+            Pattern{kind, meta: self.meta(mark)}
+        end
+        let mark = self.iter.mark()
+        mut patterns = Vector<Pattern>::new()
+        patterns.push(parse_it(token)!)
+        loop:
+            match self.iter.peek():
+                Some(Token{kind: TokenKind::Pipe, span: _}):
+                    self.iter.force_next()!
+                    patterns.push(parse_it(self.iter.force_next()!)!)
+                end
+                _ => break
+            end
+        end
+        if patterns.len() == 1 => patterns[0]
+        else => Pattern{kind: PatternKind::Or(patterns), meta: self.meta(mark)}
+    end
+
     fn parse_let_or_mut(mut self, token Token) Let throws ParseError:
         --- Parse a `let` or `mut` declaration depending on the given token.
         ---
@@ -535,13 +713,14 @@ impl Parser:
         If{cond, then_block: then_block.0, else_block, meta: self.meta(mark)}
     end
 
-    fn parse_int_literal(self, value Str, token Token) Literal throws ParseError:
+    fn parse_int_literal(self, token Token) Literal throws ParseError:
+        let value = match token.kind:
+            TokenKind::IntLiteral(value) => value
+            _ => return parse_error(IntLiteralExpected(token), token)
+        end 
         let mark = self.iter.mark_prev()
         match Int::from_str(value, 10):
             Ok(i) => Literal{kind: LiteralKind::IntLiteral(i), meta: self.meta(mark)}
-            -- todo: The `return` should not be needed here. The stage0 type-checker
-            --       cannot infer that the result of the match is the return value 
-            --       of the function.
             Error(_) => return parse_error(InvalidIntLiteral(token), token)
         end
     end

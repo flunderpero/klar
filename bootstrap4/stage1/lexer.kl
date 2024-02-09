@@ -36,13 +36,27 @@ impl Iterator<Token> for Lexer:
             '}' => Token{kind: RBrace, span}
             '[' => Token{kind: LBracket, span}
             ']' => Token{kind: RBracket, span}
-            '.' => Token{kind: Dot, span}
             ',' => Token{kind: Comma, span}
             '+' => Token{kind: Plus, span}
             '*' => Token{kind: Star, span}
             '/' => Token{kind: Slash, span}
             '?' => Token{kind: QMark, span}
+            '|' => Token{kind: Pipe, span}
             ';' => Token{kind: Semicolon, span}
+            '.' =>
+                match self.iter.peek():
+                    Some<Char>('.'):
+                        self.iter.next()
+                        match self.iter.peek():
+                            Some<Char>('<'):
+                                self.iter.next()
+                                Token{kind: DotDotLessThan, span: span.combine(self.span())}
+                            end
+                            _ => Token{kind: DotDot, span: span.combine(self.span())}
+                        end
+                    end
+                    _ => Token{kind: Dot, span}
+                end
             ':' => 
                 match self.iter.peek():
                     Some<Char>(':'):
@@ -136,6 +150,7 @@ impl Iterator<Token> for Lexer:
                     "trait" => Token{kind: Trait, span: ident_span}
                     "true" => Token{kind: BoolLiteral(true), span: ident_span}
                     "use" => Token{kind: Use, span: ident_span}
+                    "_" => Token{kind: Underscore, span: ident_span}
                     _ => Token{kind: Ident(ident), span: ident_span}
                 end
             end
@@ -410,6 +425,8 @@ enum TokenKind:
     Comment(Str)
     Continue
     Dot
+    DotDot
+    DotDotLessThan
     DoubleColon
     DoubleEqual
     Else
@@ -442,6 +459,7 @@ enum TokenKind:
     NotEqual
     Or
     LexError(Str)
+    Pipe
     Plus
     QMark
     RBrace
@@ -455,6 +473,7 @@ enum TokenKind:
     Struct
     Throws
     Trait
+    Underscore
     Use
     WhiteSpace(Char)
 end
@@ -474,6 +493,8 @@ impl ToStr for TokenKind:
             Comment(comment) => f"Comment({comment})"
             Continue => "continue"
             Dot => "."
+            DotDot => ".."
+            DotDotLessThan => "..<"
             DoubleColon => "::"
             DoubleEqual => "=="
             Else => "else"
@@ -522,6 +543,7 @@ impl ToStr for TokenKind:
             NotEqual => "!="
             Or => "or"
             LexError(message) => f"LexError: {message}"
+            Pipe => "|"
             Plus => "+"
             QMark => "?"
             RBrace => "}"
@@ -536,6 +558,7 @@ impl ToStr for TokenKind:
             Struct => "struct"
             Throws => "throws"
             Trait => "trait"
+            Underscore => "_"
             Use => "use"
             WhiteSpace(ws) => f"WhiteSpace()"
         end

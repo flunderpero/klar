@@ -229,10 +229,8 @@ fn main():
 
     -- Use a match expression to get the value.
     let value = match a:
-        -- Enum variants are automatically imported into the current scope.
-        -- So we can just use `Some` and `None` here.
-        Some(value) => value
-        None => panic("Should not be reached")
+        Option::Some(value) => value
+        Option::None => panic("Should not be reached")
     end
 end
 ```
@@ -246,6 +244,7 @@ fn divide(divisor Int, dividend Int?) Int?:
         if (dividend.unwrap() == 0):
             return None
         end
+        -- This is the same as `Some(divisor / dividend.unwrap())`.
         return divisor / dividend.unwrap()
     end
     None

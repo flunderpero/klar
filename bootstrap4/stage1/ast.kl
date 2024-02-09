@@ -37,9 +37,12 @@ trait ToDebugStr:
 end
 
 enum ParseErrorKind:
+    CharLiteralExpected(Token)
     ExprExpected(Token)
     IdentExpected(Token)
+    IntLiteralExpected(Token)
     InvalidIntLiteral(Token)
+    PatternExpected(Token)
     ParamExpected(Token)
     TypeExpected(Token)
     UnexpectedEOF
@@ -56,6 +59,7 @@ enum LiteralKind:
     IntLiteral(Int)
     BoolLiteral(Bool)
     StrLiteral(Str)
+    CharLiteral(Char)
     UnitLiteral
 end
 
@@ -158,6 +162,42 @@ struct FieldAccess:
     meta Meta
 end
 
+struct Match:
+    expr Expr
+    arms Vector<MatchArm>
+    meta Meta
+end
+
+struct MatchArm:
+    pattern Pattern
+    block Block
+    meta Meta
+end
+
+struct Pattern:
+    kind PatternKind
+    meta Meta
+end
+
+struct Range:
+    start Literal
+    end_ Literal
+    end_is_exclusive Bool
+    meta Meta
+end
+
+enum PatternKind:
+    EnumVariant(FQN, Vector<Pattern>)
+    Ident(Ident)
+    FQN(FQN)
+    Literal(Literal)
+    Or(Vector<Pattern>)
+    Range(Range)
+    Struct(FQN, Vector<(Ident, Pattern)>)
+    Tuple(Vector<Pattern>)
+    Wildcard
+end
+
 enum Expr:
     Assignment(Assignment)
     BinaryExpr(BinaryExpr)
@@ -167,6 +207,7 @@ enum Expr:
     FQN(FQN)
     Ident(Ident)
     If(If)
+    Match(Match)
     Let(Let)
     Literal(Literal)
     UnaryExpr(UnaryExpr)
@@ -504,10 +545,13 @@ end
 impl ToDebugStr for ParseErrorKind:
     fn to_debug_str(self) Str:
         match self:
+            ParseErrorKind::CharLiteralExpected(token) => f"(@error char literal expected at {token.span})"
             ParseErrorKind::ExprExpected(token) => f"(@error expr expected at {token.span})"
             ParseErrorKind::IdentExpected(token) => f"(@error ident expected at {token.span})"
+            ParseErrorKind::IntLiteralExpected(token) => f"(@error int literal expected at {token.span})"
             ParseErrorKind::InvalidIntLiteral(token) => f"(@error invalid int literal at {token.span})"
             ParseErrorKind::ParamExpected(token) => f"(@error param expected at {token.span})"
+            ParseErrorKind::PatternExpected(token) => f"(@error pattern expected at {token.span})"
             ParseErrorKind::TypeExpected(token) => f"(@error type expected at {token.span})"
             ParseErrorKind::UnexpectedEOF => "(@error eof)"
             ParseErrorKind::UnexpectedFnDecl(decl) => f"(@error unexpected fn decl `{decl.ident}` at {decl.meta.span()})"
@@ -520,6 +564,7 @@ impl ToDebugStr for Literal:
     fn to_debug_str(self) Str:
         let lit = match self.kind:
             LiteralKind::BoolLiteral(value) => f"(@bool {value})"
+            LiteralKind::CharLiteral(value) => f"(@char {value})"
             LiteralKind::IntLiteral(value) => f"(@int {value})"
             LiteralKind::StrLiteral(value) => f"(@str{" ".when(value.len() > 0)}{value.replace("\n", "\\n")})"
             LiteralKind::UnitLiteral=> "(@unit)"
@@ -626,6 +671,68 @@ impl ToDebugStr for FieldAccess:
         => f"(@fieldaccess {self.target.to_debug_str()} {self.field.to_debug_str()})"
 end
 
+impl ToDebugStr for MatchArm:
+    fn to_debug_str(self) Str
+        => f"(@matcharm {self.pattern.to_debug_str()} {self.block.to_debug_str()})"
+end
+
+impl ToDebugStr for Range:
+    fn to_debug_str(self) Str:
+        let sign = if self.end_is_exclusive => "..<" else => ".."
+        f"(@range {self.start.to_debug_str()} {sign} {self.end_.to_debug_str()})"
+    end
+end
+
+impl ToDebugStr for PatternKind:
+    fn to_debug_str(self) Str:
+        match self:
+            PatternKind::EnumVariant(fqn, patterns):
+                let patterns_str = " ".join(
+                    patterns.iter().map<Str>(fn(it Pattern) Str => it.to_debug_str())
+                )
+                f"(@enumvariant {fqn.to_debug_str()}{" ".when(patterns_str.len() > 0)}{patterns_str})"
+            end
+            PatternKind::Struct(fqn, fields):
+                let fields_str = " ".join(
+                    fields.iter().map<Str>(fn(it (Ident, Pattern)) Str 
+                        => f"(@field {it.0.to_debug_str()} {it.1.to_debug_str()})")
+                )
+                f"(@struct {fqn.to_debug_str()}{" ".when(fields_str.len() > 0)}{fields_str})"
+            end
+            PatternKind::Or(patterns):
+                let patterns_str = " ".join(
+                    patterns.iter().map<Str>(fn(it Pattern) Str => it.to_debug_str())
+                )
+                f"(@or {patterns_str})"
+            end
+            PatternKind::Ident(x) => x.to_debug_str()
+            PatternKind::FQN(x) => x.to_debug_str()
+            PatternKind::Literal(x) => f"(@literal {x.to_debug_str()})"
+            PatternKind::Range(x) => x.to_debug_str()
+            PatternKind::Tuple(x):
+                let patterns = " ".join(
+                    x.iter().map<Str>(fn(it Pattern) Str => it.to_debug_str())
+                )
+                f"(@tuple{" ".when(patterns.len() > 0)}{patterns})"
+            end
+            PatternKind::Wildcard => "(@wildcard)"
+        end
+    end
+end
+
+impl ToDebugStr for Pattern:
+    fn to_debug_str(self) Str => f"(@pattern {self.kind.to_debug_str()})"
+end
+
+impl ToDebugStr for Match:
+    fn to_debug_str(self) Str:
+        let arms = " ".join(
+            self.arms.iter().map<Str>(fn(it MatchArm) Str => it.to_debug_str())
+        )
+        f"(@match {self.expr.to_debug_str()}{" ".when(arms.len() > 0)}{arms})"
+    end
+end
+
 impl ToDebugStr for Expr:
     fn to_debug_str(self) Str:
         match self:
@@ -642,6 +749,7 @@ impl ToDebugStr for Expr:
             Expr::Let(value) => value.to_debug_str()
             Expr::Literal(value) => value.to_debug_str()
             Expr::Loop(value) => value.to_debug_str()
+            Expr::Match(value) => value.to_debug_str()
             Expr::Return(value) => value.to_debug_str()
             Expr::UnaryExpr(value) => value.to_debug_str()
         end

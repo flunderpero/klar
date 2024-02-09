@@ -510,11 +510,31 @@ end
 -- Map
 
 struct Map<K, V>:
-    data Vector<(K, Option<V>)>
+    data Vector<(K, V)>
 end
 
 impl Map<K, V>:
-    fn new() Map<K, V> => Map<K, V> { data: Vector<(K, Option<V>)>::new() }
+    fn new() Map<K, V> => Map<K, V> { data: Vector<(K, V)>::new() }
+
+    fn keys(self) Iterator<K>:
+        -- todo (lang feat): This should be just 
+        --                   `self.data.iter().map(fn(pair) => pair.0)`
+        --                   but the stage0 type-checker cannot handle it.
+        mut vec = Vector<K>::new()
+        mut i = 0
+        loop:
+            if i >= self.data.len():
+                break
+            end
+            let v = self.data.get(i)
+            vec.push(v.0)
+            i = i + 1
+        end
+        vec.iter()
+    end
+
+    -- todo (lang feat): The stage0 type-checker cannot resolve the types of the tuple.
+    -- fn iter(self) Iterator<(K,V)> => self.data.iter()
 end
 
 impl IndexedGet<K, Option<V>> for Map<K, V>:
@@ -526,7 +546,7 @@ impl IndexedGet<K, Option<V>> for Map<K, V>:
             end
             let v = self.data.get(i)
             if v.0 == key:
-                return v.1
+                return Some<V>(v.1)
             end
             i = i + 1
         end
@@ -543,12 +563,12 @@ impl IndexedSet<K, V> for Map<K, V>:
             end
             let v = self.data.get(i)
             if v.0 == key:
-                self.data.set(i, (key, Option<V>::Some(value)))
+                self.data.set(i, (key, value))
                 return ()
             end
             i = i + 1
         end
-        self.data.push((key, Option<V>::Some(value)))
+        self.data.push((key, value))
     end
 end
 

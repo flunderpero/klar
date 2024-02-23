@@ -237,9 +237,9 @@ struct Name:
 end
 
 struct FQN:
-    --- A fully qualified name is a series of names, separated by `.`.
+    --- A fully qualified name is a series of names, separated by `::`.
         A name can have generic arguments.
-        Example: `module.Enum<T>.Variant`.
+        Example: `module::Enum::Variant<T>`.
     ---
     names Vector<Name>
     meta Meta
@@ -325,6 +325,31 @@ struct Impl:
     meta Meta
 end
 
+struct Extern:
+    items Vector<ExternItem>
+    meta Meta
+end
+
+enum ExternItem:
+    Enum(Enum)
+    ExternImpl(ExternImpl)
+    ExternImplTrait(ExternImplTrait)
+    FnDecl(FnDecl)
+    Struct(Struct)
+end
+
+struct ExternImpl:
+    type_ FQN
+    fn_decls Vector<FnDecl>
+    meta Meta
+end
+
+struct ExternImplTrait:
+    type_ FQN
+    trait_ FQN
+    meta Meta
+end
+
 enum BlockItem:
     Struct(Struct)
     Enum(Enum)
@@ -335,7 +360,7 @@ enum BlockItem:
 end
 
 enum ModuleItem:
-    -- Extern(Extern)
+    Extern(Extern)
     -- Use(Use)
     Struct(Struct)
     Enum(Enum)
@@ -498,10 +523,47 @@ impl ToDebugStr for Impl:
     end
 end
 
+impl ToDebugStr for Extern:
+    fn to_debug_str(self) Str:
+        let items = " ".join(
+            self.items.iter().map<Str>(fn(it ExternItem) Str => it.to_debug_str())
+        )
+        f"(@extern{" ".when(items.len() > 0)}{items})"
+    end
+end
+
+impl ToDebugStr for ExternImpl:
+    fn to_debug_str(self) Str:
+        let fn_decls = " ".join(
+            self.fn_decls.iter().map<Str>(fn(it FnDecl) Str => it.to_debug_str())
+        )
+        f"(@externimpl {self.type_.to_debug_str()}{" ".when(fn_decls.len() > 0)}{fn_decls})"
+    end
+end
+
+impl ToDebugStr for ExternImplTrait:
+    fn to_debug_str(self) Str:
+        f"(@externimpltrait {self.trait_.to_debug_str()} {self.type_.to_debug_str()})"
+    end
+end
+
+impl ToDebugStr for ExternItem:
+    fn to_debug_str(self) Str:
+        match self:
+            ExternItem::Enum(x) => x.to_debug_str()
+            ExternItem::FnDecl(x) => x.to_debug_str()
+            ExternItem::ExternImpl(x) => x.to_debug_str()
+            ExternItem::ExternImplTrait(x) => x.to_debug_str()
+            ExternItem::Struct(x) => x.to_debug_str()
+        end
+    end
+end
+
 impl ToDebugStr for ModuleItem:
     fn to_debug_str(self) Str:
         match self:
             ModuleItem::Enum(x) => x.to_debug_str()
+            ModuleItem::Extern(x) => x.to_debug_str()
             ModuleItem::Fn(x) => x.to_debug_str()
             ModuleItem::Impl(x) => x.to_debug_str()
             ModuleItem::Trait(x) => x.to_debug_str()

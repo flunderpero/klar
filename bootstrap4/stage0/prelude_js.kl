@@ -44,6 +44,16 @@ impl Option<T>:
     end
 end
 
+-- todo (lang-feat): We should be able to implemnt `ToStr` for `Option<T impl ToStr>`.
+impl ToStr for Option<T>:
+    fn to_str(self) Str:
+        match self:
+            None => "None"
+            Some(_) => f"Some(...)"
+        end
+    end
+end
+
 trait ToStr:
     fn to_str(self) Str
 end

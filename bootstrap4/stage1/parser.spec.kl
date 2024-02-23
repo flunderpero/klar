@@ -531,6 +531,79 @@ fn main():
         end)
     end)
 
+    test.group("extern", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(
+                module("""
+                    extern:
+                        fn foo() Int
+                    end
+                    """) 
+                == 
+                "(@mod (@extern (@fndecl (@ident foo) (@type (@fqn (@name (@ident Int)))))))" 
+            )
+        end)
+
+        test.it("parses extern structs", fn() throws:
+            assert(
+                module("""
+                    extern:
+                        struct Foo:
+                            a Int
+                        end
+                    end
+                    """) 
+                == 
+                "(@mod (@extern (@struct (@name (@ident Foo)) " +
+                "(@field (@ident a) (@type (@fqn (@name (@ident Int))))))))"
+            )
+        end)
+
+        test.it("parses extern enums", fn() throws:
+            assert(
+                module("""
+                    extern:
+                        enum Foo:
+                            Bar
+                        end
+                    end
+                    """) 
+                == 
+                "(@mod (@extern (@enum (@name (@ident Foo)) " +
+                "(@variant (@ident Bar) (@unit)))))"
+            )
+        end)
+
+        test.it("parses trait implementations", fn() throws:
+            assert(
+                module("""
+                    extern:
+                        impl Foo for Bar
+                    end
+                    """) 
+                == 
+                "(@mod (@extern (@externimpltrait (@fqn (@name (@ident Foo))) " +
+                "(@fqn (@name (@ident Bar))))))"
+            )
+        end)
+
+        test.it("parses regular implementations", fn() throws:
+            assert(
+                module("""
+                    extern:
+                        impl Foo:
+                            fn bar()
+                        end
+                    end
+                    """) 
+                == 
+                "(@mod (@extern (@externimpl (@fqn (@name (@ident Foo))) " +
+                "(@fndecl (@ident bar) (@type (@unit))))))"
+            )
+        end)
+
+    end)
+
     test.group("struct instantiation", fn():
         test.it("passes the happy path", fn() throws:
             assert(

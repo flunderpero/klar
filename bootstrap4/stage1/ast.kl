@@ -198,23 +198,31 @@ enum PatternKind:
     Wildcard
 end
 
+struct StructInst:
+    fqn FQN
+    generics Vector<GenericArg>?
+    fields Vector<(Ident, Expr)>
+    meta Meta
+end
+
 enum Expr:
     Assignment(Assignment)
     BinaryExpr(BinaryExpr)
+    Break(Break)
     Call(Call)
-    FieldAccess(FieldAccess)
-    FStr(FStr)
+    Continue(Continue)
     FQN(FQN)
+    FStr(FStr)
+    FieldAccess(FieldAccess)
     Ident(Ident)
     If(If)
-    Match(Match)
     Let(Let)
     Literal(Literal)
-    UnaryExpr(UnaryExpr)
     Loop(Loop)
-    Break(Break)
-    Continue(Continue)
+    Match(Match)
     Return(Return)
+    StructInst(StructInst)
+    UnaryExpr(UnaryExpr)
 end
 
 struct GenericArg:
@@ -733,6 +741,23 @@ impl ToDebugStr for Match:
     end
 end
 
+impl ToDebugStr for StructInst:
+    fn to_debug_str(self) Str:
+        let generics = match self.generics:
+            Some(x) => 
+                " ".join(
+                    x.iter().map<Str>(fn(it GenericArg) Str => it.type_.to_debug_str())
+                )
+            None => ""
+        end
+        let fields = " ".join(
+            self.fields.iter().map<Str>(fn(it (Ident, Expr)) Str 
+                => f"(@field {it.0.to_debug_str()} {it.1.to_debug_str()})")
+        )
+        f"(@structinst {self.fqn.to_debug_str()}{" ".when(generics.len() > 0)}{generics}{" ".when(fields.len() > 0)}{fields})"
+    end
+end
+
 impl ToDebugStr for Expr:
     fn to_debug_str(self) Str:
         match self:
@@ -751,6 +776,7 @@ impl ToDebugStr for Expr:
             Expr::Loop(value) => value.to_debug_str()
             Expr::Match(value) => value.to_debug_str()
             Expr::Return(value) => value.to_debug_str()
+            Expr::StructInst(value) => value.to_debug_str()
             Expr::UnaryExpr(value) => value.to_debug_str()
         end
     end

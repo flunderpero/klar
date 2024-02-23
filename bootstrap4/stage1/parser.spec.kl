@@ -531,6 +531,50 @@ fn main():
         end)
     end)
 
+    test.group("struct instantiation", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(
+                expr("Foo{a: 42, b: \"foo\"}") 
+                == 
+                "(@structinst (@fqn (@name (@ident Foo))) " +
+                "(@field (@ident a) (@int 42)) " +
+                "(@field (@ident b) (@str foo)))"
+            )
+        end)
+
+        test.it("parses fqn struct names", fn() throws:
+            assert(
+                expr("my::package::Bar{a: 42}") 
+                == 
+                "(@structinst (@fqn (@name (@ident my)) (@name (@ident package)) (@name (@ident Bar))) " +
+                "(@field (@ident a) (@int 42)))"
+            )
+        end)
+
+        test.it("parses empty struct instantiations", fn() throws:
+            assert(expr("Foo{}") == "(@structinst (@fqn (@name (@ident Foo))))")
+        end)
+
+        test.it("supports field capture", fn() throws:
+            assert(
+                expr("Foo{a, b: c}") 
+                == 
+                "(@structinst (@fqn (@name (@ident Foo))) " +
+                "(@field (@ident a) (@ident a)) " +
+                "(@field (@ident b) (@ident c)))"
+            )
+        end)
+
+        test.it("parses generics", fn() throws:
+            assert(
+                expr("Foo<Int>{a: 42}") 
+                == 
+                "(@structinst (@fqn (@name (@ident Foo) (@type (@fqn (@name (@ident Int)))))) " +
+                "(@field (@ident a) (@int 42)))"
+            )
+        end)
+    end)
+
     test.group("return", fn():
         test.it("passes the happy path", fn() throws:
             assert(expr("return 42") == "(@return (@int 42))")

@@ -61,6 +61,7 @@ use .ast::PatternKind
 use .ast::Range
 use .ast::Return
 use .ast::Struct
+use .ast::StructInst
 use .ast::ToDebugStr
 use .ast::Trait
 use .ast::Type
@@ -325,9 +326,16 @@ impl Parser:
             TokenKind::LParen => self.parse_unit_or_tuple_literal_or_parentheses(token)!
             TokenKind::Ident(name):
                 let fqn = self.parse_fqn(token)!
-                if fqn.names.len() == 1 and fqn.names[0].generics.is_none()
+                let ident = if fqn.names.len() == 1 and fqn.names[0].generics.is_none()
                     => Expr::Ident(fqn.names[0].ident)
                 else => Expr::FQN(fqn)
+                match self.iter.peek():
+                    Some(Token{kind: TokenKind::LBrace, span: _}):
+                        self.iter.force_next()!
+                        Expr::StructInst(self.parse_struct_inst_expr(fqn)!)
+                    end
+                    _ => ident
+                end
             end
             TokenKind::If => Expr::If(self.parse_if(token)!)
             TokenKind::FStr(items, _) => Expr::FStr(self.parse_fstr(items)!)
@@ -923,6 +931,46 @@ impl Parser:
             end
         end
         Struct{name, fields, meta: self.meta(mark)}
+    end
+
+    fn parse_struct_inst_expr(mut self, fqn FQN) StructInst throws ParseError:
+        let mark = self.iter.mark()
+        let generics = self.parse_generics()!
+        let fields = Vector<(Ident, Expr)>::new()
+        mut got_comma = false
+        loop:
+            let next_token = self.iter.force_next()!
+            match next_token.kind:
+                TokenKind::RBrace => break
+                TokenKind::Comma:
+                    if got_comma => return parse_error(IdentExpected(next_token), next_token)
+                    got_comma = true
+                    continue
+                end
+                _: 
+                    if fields.len() > 0 and not got_comma => 
+                        return parse_error(UnexpectedToken(next_token), next_token)
+                    got_comma = false
+                    let mark = self.iter.mark()
+                    let ident = self.parse_ident(next_token)!
+                    match self.iter.peek():
+                        Some(Token{kind: TokenKind::Colon, span: _}):
+                            self.iter.next()
+                            let expr_token = self.iter.force_next()!
+                            match self.parse_expr(expr_token)!:
+                                Some<Expr>(expr) => fields.push((ident, expr))
+                                None => return parse_error(ExprExpected(expr_token), expr_token)
+                            end
+                        end
+                        Some(Token{kind: TokenKind::Comma | TokenKind::RBrace, span: _}) =>
+                            fields.push((ident, Expr::Ident(ident)))
+                        Some(next) => return parse_error(UnexpectedToken(next), next)
+                        None => return parse_error(UnexpectedEOF, None)
+                    end
+                end
+            end
+        end
+        StructInst{fqn, generics, fields, meta: self.meta(mark)}
     end
 
     fn parse_field(mut self, token Token) Field throws ParseError:

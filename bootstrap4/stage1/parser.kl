@@ -828,10 +828,18 @@ impl Parser:
 
     fn parse_param(mut self, token Token) Param throws ParseError:
         let mark = self.iter.mark_prev()
-        let ident = self.parse_ident(token)!
+        mut next_token = token
+        let is_mut = match token.kind:
+            TokenKind::Mut:
+                next_token = self.iter.force_next()!
+                true
+            end
+            _ => false
+        end
+        let ident = self.parse_ident(next_token)!
         let type_ = if ident.name == "self" => Type{kind: TypeKind::Self, meta: self.meta(mark)}
         else => self.parse_type(self.iter.force_next()!)!
-        Param{ident, type_, meta: self.meta(mark)}
+        Param{ident, type_, is_mut, meta: self.meta(mark)}
     end
 
     fn parse_fn_def(mut self, decl FnDecl) Fn throws ParseError: 

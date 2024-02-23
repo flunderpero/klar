@@ -58,7 +58,55 @@ fn main():
 
     test.group("fndecl", fn():
         test.it("passes the happy path", fn() throws:
-            assert(fndecl("fn main()") == "(@fndecl (@ident main) (@type (@unit)))")
+            assert(fndecl("fn test()") == "(@fndecl (@ident test) (@type (@unit)))")
+        end)
+
+        test.it("parses parameters", fn() throws:
+            assert(
+                fndecl("fn test(a Int)") 
+                == 
+                "(@fndecl (@ident test) " +
+                "(@param (@ident a) (@type (@fqn (@name (@ident Int))))) " +
+                "(@type (@unit)))"
+            )
+            assert(
+                fndecl("fn test(a Int, b Str)") 
+                == 
+                "(@fndecl (@ident test) " + 
+                "(@param (@ident a) (@type (@fqn (@name (@ident Int))))) " +
+                "(@param (@ident b) (@type (@fqn (@name (@ident Str))))) " +
+                "(@type (@unit)))"
+            )
+        end)
+
+        test.it("parses mutable parameters", fn() throws:
+            assert(
+                fndecl("fn test(mut a Int)") 
+                == 
+                "(@fndecl (@ident test) " +
+                "(@param mut (@ident a) (@type (@fqn (@name (@ident Int))))) " +
+                "(@type (@unit)))"
+            )
+        end)
+
+        test.it("parses the `self` parameter", fn() throws:
+            assert(
+                item("fn test(self): end") 
+                == 
+                "(@fn (@fndecl (@ident test) " +
+                "(@param (@ident self) (@type (@self))) " +
+                "(@type (@unit))) (@block))"
+            )
+        end)
+
+        test.it("parses the mutable `self` parameter", fn() throws:
+            assert(
+                item("fn test(mut self): end") 
+                == 
+                "(@fn (@fndecl (@ident test) " +
+                "(@param mut (@ident self) (@type (@self))) " +
+                "(@type (@unit))) (@block))"
+            )
         end)
     end)
 
@@ -66,34 +114,6 @@ fn main():
         test.it("passes the happy path", fn() throws:
             assert(item("fn main(): end") == "(@fn (@fndecl (@ident main) (@type (@unit))) (@block))")
             assert(item("fn main(): 42 end") == "(@fn (@fndecl (@ident main) (@type (@unit))) (@block (@int 42)))")
-        end)
-
-        test.it("parses parameters", fn() throws:
-            assert(
-                item("fn main(a Int): end") 
-                == 
-                "(@fn (@fndecl (@ident main) " +
-                "(@param (@ident a) (@type (@fqn (@name (@ident Int))))) " +
-                "(@type (@unit))) (@block))"
-            )
-            assert(
-                item("fn main(a Int, b Str): end") 
-                == 
-                "(@fn (@fndecl (@ident main) " + 
-                "(@param (@ident a) (@type (@fqn (@name (@ident Int))))) " +
-                "(@param (@ident b) (@type (@fqn (@name (@ident Str))))) " +
-                "(@type (@unit))) (@block))"
-            )
-        end)
-
-        test.it("parses the `self` parameter", fn() throws:
-            assert(
-                item("fn main(self): end") 
-                == 
-                "(@fn (@fndecl (@ident main) " +
-                "(@param (@ident self) (@type (@self))) " +
-                "(@type (@unit))) (@block))"
-            )
         end)
     end)
 

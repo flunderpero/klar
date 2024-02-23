@@ -908,3 +908,23 @@ fn main():
     assert(args.len() > 0)
 end
 ```
+
+## RFC
+
+### Introduce `..` For Concatenation (Union)
+
+I don't really like to use `+` for string or container concatenation. Either we don't have that
+at all or we should introduce other syntax. I propose `..` because it reads nice and Lua already
+uses that.
+
+```
+trait Concatenate<T>:
+    fn concatenate(self, lhs T, rhs T) Self
+end
+
+fn main():
+    let s = "Hello" .. " world".
+    let a = [1, 2] .. [3, 4]
+end
+
+```

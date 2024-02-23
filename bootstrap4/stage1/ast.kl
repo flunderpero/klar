@@ -260,6 +260,7 @@ end
 struct Param:
     ident Ident
     type_ Type
+    is_mut Bool
     meta Meta
 end
 
@@ -442,7 +443,10 @@ impl ToDebugStr for Type:
 end
 
 impl ToDebugStr for Param:
-    fn to_debug_str(self) Str => f"(@param {self.ident.to_debug_str()} {self.type_.to_debug_str()})"
+    fn to_debug_str(self) Str:
+        let is_mut = if self.is_mut => "mut " else => ""
+        f"(@param {is_mut}{self.ident.to_debug_str()} {self.type_.to_debug_str()})"
+    end
 end
 
 impl ToDebugStr for FnDecl:

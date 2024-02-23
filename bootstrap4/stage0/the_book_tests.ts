@@ -112,6 +112,7 @@ async function cli() {
     let src = ""
     let pos = 0
     let span: Span = new Span(0, 0, "the_book.md", book)
+    let parsing_code = false
     for (const line of book.split("\n")) {
         pos += line.length + 1
         if (line.startsWith("##")) {
@@ -120,10 +121,12 @@ async function cli() {
             section.push(line)
             num = 0
         } else if (line.startsWith("```klar")) {
+            parsing_code = true
             src = ""
             span = new Span(pos, 0, "the_book.md", book)
             num++
-        } else if (line.startsWith("```")) {
+        } else if (parsing_code && line.startsWith("```")) {
+            parsing_code = false
             span.end = pos
             const path = section.map((x) => x.replaceAll("#", "").trim()).join(" > ") + ` #${num}`
             tests.push({

@@ -28,6 +28,7 @@ use .ast::Block
 use .ast::BlockItem
 use .ast::Break
 use .ast::Call
+use .ast::Closure
 use .ast::Continue
 use .ast::Enum
 use .ast::EnumVariant
@@ -344,6 +345,7 @@ impl Parser:
                 end
             end
             TokenKind::If => Expr::If(self.parse_if(token)!)
+            TokenKind::Fn => Expr::Closure(self.parse_closure()!)
             TokenKind::FStr(items, _) => Expr::FStr(self.parse_fstr(items)!)
             TokenKind::Let => Expr::Let(self.parse_let_or_mut(token)!)
             TokenKind::Match => Expr::Match(self.parse_match()!)
@@ -796,14 +798,26 @@ impl Parser:
         let mark = self.iter.mark_prev()
         let ident = self.parse_ident(self.iter.force_next()!)!
         self.iter.expect_lexical_token(TokenKind::LParen)!
-        let params = self.parse_params()!
+        let params = self.parse_params(false)!
         let return_type = self.try_parse_type()!.unwrap_or(
             Type{kind: TypeKind::Unit, meta: self.meta(mark)}
         )
         FnDecl{ident, params, return_type, meta: self.meta(mark)}
     end
 
-    fn parse_params(mut self) Vector<Param> throws ParseError:
+    fn parse_closure(mut self) Closure throws ParseError:
+        let mark = self.iter.mark_prev()
+        self.iter.expect_lexical_token(TokenKind::LParen)!
+        let params = self.parse_params(true)!
+        let return_type = match self.try_parse_type()!:
+            Some(t) => t
+            None => Type{kind: TypeKind::Infer, meta: self.meta(mark)}
+        end
+        let body = self.parse_block()!
+        Closure{params, return_type, body, meta: self.meta(mark)}
+    end
+
+    fn parse_params(mut self, type_is_optional Bool) Vector<Param> throws ParseError:
         let params = Vector<Param>::new()
         mut got_comma = false
         loop:
@@ -819,14 +833,14 @@ impl Parser:
                     if params.len() > 0 and not got_comma => 
                         return parse_error(UnexpectedToken(next_token), next_token)
                     got_comma = false
-                    params.push(self.parse_param(next_token)!)
+                    params.push(self.parse_param(next_token, type_is_optional)!)
                 end
             end
         end
         params
     end
 
-    fn parse_param(mut self, token Token) Param throws ParseError:
+    fn parse_param(mut self, token Token, type_is_optional Bool) Param throws ParseError:
         let mark = self.iter.mark_prev()
         mut next_token = token
         let is_mut = match token.kind:
@@ -837,8 +851,18 @@ impl Parser:
             _ => false
         end
         let ident = self.parse_ident(next_token)!
-        let type_ = if ident.name == "self" => Type{kind: TypeKind::Self, meta: self.meta(mark)}
-        else => self.parse_type(self.iter.force_next()!)!
+        let type_ = match ident.name:
+            "self" => Type{kind: TypeKind::Self, meta: self.meta(mark)}
+            _ =>
+            match self.try_parse_type()!:
+                Some(t) => t
+                None => 
+                    match type_is_optional:
+                        true => Type{kind: TypeKind::Infer, meta: self.meta(mark)}
+                        false => return parse_error(TypeExpected(next_token), next_token)
+                    end
+            end
+        end
         Param{ident, type_, is_mut, meta: self.meta(mark)}
     end
 
@@ -1164,17 +1188,21 @@ impl Parser:
     end
 
     fn parse_block_item(mut self, token Token) BlockItem throws ParseError:
-        let expr = self.parse_expr(token)!
-        if expr.is_some() => return BlockItem::Expr(expr.unwrap())
-        let item = self.parse_item(token)!
-        if item.is_none() => return parse_error(UnexpectedToken(token), token)
-        match item.unwrap():
-            ParseItem::Fn(f) => BlockItem::Fn(f)
-            ParseItem::Trait(t) => BlockItem::Trait(t)
-            ParseItem::Enum(e) => BlockItem::Enum(e)
-            ParseItem::Impl(i) => BlockItem::Impl(i)
-            ParseItem::Struct(i) => BlockItem::Struct(i)
-            _ => return parse_error(UnexpectedToken(token), token)
+        -- todo (lang-bug): I would rather write this using `if let` but it is broken
+        match self.parse_item(token)!:
+            Some(item) => 
+                return match item:
+                    ParseItem::Fn(f) => BlockItem::Fn(f)
+                    ParseItem::Trait(t) => BlockItem::Trait(t)
+                    ParseItem::Enum(e) => BlockItem::Enum(e)
+                    ParseItem::Impl(i) => BlockItem::Impl(i)
+                    ParseItem::Struct(i) => BlockItem::Struct(i)
+                    _ => return parse_error(UnexpectedToken(token), token)
+                end
+            None => match self.parse_expr(token)!:
+                Some(expr) => BlockItem::Expr(expr)
+                None => return parse_error(ExprExpected(token), token)
+            end
         end
     end
 

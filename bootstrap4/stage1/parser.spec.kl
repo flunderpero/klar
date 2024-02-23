@@ -47,7 +47,11 @@ fn main():
         end)
 
         test.it("parses items (like Fn) in multi-line blocks", fn() throws:
-            assert(block(": fn main(): end end") == "(@block (@fn (@fndecl (@ident main) (@type (@unit))) (@block)))")
+            assert(
+                block(": fn test(): end end") 
+                == 
+                "(@block (@fn (@fndecl (@ident test) (@type (@unit))) (@block)))"
+            )
         end)
 
         test.it("parses single-line blocks", fn() throws:
@@ -112,8 +116,36 @@ fn main():
 
     test.group("fn", fn():
         test.it("passes the happy path", fn() throws:
-            assert(item("fn main(): end") == "(@fn (@fndecl (@ident main) (@type (@unit))) (@block))")
-            assert(item("fn main(): 42 end") == "(@fn (@fndecl (@ident main) (@type (@unit))) (@block (@int 42)))")
+            assert(
+                item("fn test(): end") 
+                == 
+                "(@fn (@fndecl (@ident test) (@type (@unit))) (@block))"
+            )
+            assert(
+                item("fn test(): 42 end") 
+                == 
+                "(@fn (@fndecl (@ident test) (@type (@unit))) (@block (@int 42)))"
+            )
+        end)
+    end)
+
+    test.group("closures", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(
+                expr("fn(a Int) Int => 42") 
+                == 
+                "(@closure (@param (@ident a) (@type (@fqn (@name (@ident Int))))) " +
+                "(@type (@fqn (@name (@ident Int)))) (@block (@int 42)))"
+            )
+        end)
+
+        test.it("treats types as optional", fn() throws:
+            assert(
+                expr("fn(a) => 42") 
+                == 
+                "(@closure (@param (@ident a) (@type (@infer))) " +
+                "(@type (@infer)) (@block (@int 42)))"
+            )
         end)
     end)
 
@@ -200,11 +232,11 @@ fn main():
         test.it("passes the happy path", fn() throws:
             assert(
                 module("""
-                    fn main():
+                    fn test():
                     end
                     """) 
                 == 
-                "(@mod (@fn (@fndecl (@ident main) (@type (@unit))) (@block)))"
+                "(@mod (@fn (@fndecl (@ident test) (@type (@unit))) (@block)))"
             )
         end)
     end)
@@ -377,14 +409,14 @@ fn main():
         test.it("is parsed inside blocks", fn() throws:
             assert(
                 item("""
-                    fn main():
+                    fn test():
                         trait Foo:
                             fn bar()
                         end
                     end
                     """) 
                 == 
-                "(@fn (@fndecl (@ident main) (@type (@unit))) " +
+                "(@fn (@fndecl (@ident test) (@type (@unit))) " +
                 "(@block (@trait (@name (@ident Foo)) (@fndecl (@ident bar) (@type (@unit))))))"
             )
         end)
@@ -425,14 +457,14 @@ fn main():
         test.it("is parsed inside blocks", fn() throws:
             assert(
                 item("""
-                    fn main():
+                    fn test():
                         enum Foo:
                             Bar
                         end
                     end
                     """) 
                 == 
-                "(@fn (@fndecl (@ident main) (@type (@unit))) " +
+                "(@fn (@fndecl (@ident test) (@type (@unit))) " +
                 "(@block (@enum (@name (@ident Foo)) " +
                 "(@variant (@ident Bar) (@unit)))))"
             )
@@ -488,7 +520,7 @@ fn main():
         test.it("is parsed inside blocks", fn() throws:
             assert(
                 item("""
-                    fn main():
+                    fn test():
                         impl Foo:
                             fn foo():
                             end
@@ -496,7 +528,7 @@ fn main():
                     end
                     """) 
                 == 
-                "(@fn (@fndecl (@ident main) (@type (@unit))) " +
+                "(@fn (@fndecl (@ident test) (@type (@unit))) " +
                 "(@block (@impl (@fqn (@name (@ident Foo))) " +
                 "(@fn (@fndecl (@ident foo) (@type (@unit))) (@block)))))"
             )
@@ -535,7 +567,7 @@ fn main():
         test.it("is parsed inside blocks", fn() throws:
             assert(
                 item("""
-                    fn main():
+                    fn test():
                         struct Foo:
                             a Int
                             b Str
@@ -543,7 +575,7 @@ fn main():
                     end
                     """) 
                 == 
-                "(@fn (@fndecl (@ident main) (@type (@unit))) " +
+                "(@fn (@fndecl (@ident test) (@type (@unit))) " +
                 "(@block (@struct (@name (@ident Foo)) " +
                 "(@field (@ident a) (@type (@fqn (@name (@ident Int))))) " +
                 "(@field (@ident b) (@type (@fqn (@name (@ident Str))))))))"

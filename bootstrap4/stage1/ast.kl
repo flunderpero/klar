@@ -205,11 +205,19 @@ struct StructInst:
     meta Meta
 end
 
+struct Closure:
+    params Vector<Param>
+    return_type Type
+    body Block
+    meta Meta
+end
+
 enum Expr:
     Assignment(Assignment)
     BinaryExpr(BinaryExpr)
     Break(Break)
     Call(Call)
+    Closure(Closure)
     Continue(Continue)
     FQN(FQN)
     FStr(FStr)
@@ -824,6 +832,15 @@ impl ToDebugStr for StructInst:
     end
 end
 
+impl ToDebugStr for Closure:
+    fn to_debug_str(self) Str:
+        let params = " ".join(
+            self.params.iter().map<Str>(fn(it Param) Str => it.to_debug_str())
+        )
+        f"(@closure{" ".when(params.len() > 0)}{params} {self.return_type.to_debug_str()} {self.body.to_debug_str()})"
+    end
+end
+
 impl ToDebugStr for Expr:
     fn to_debug_str(self) Str:
         match self:
@@ -831,6 +848,7 @@ impl ToDebugStr for Expr:
             Expr::BinaryExpr(value) => value.to_debug_str()
             Expr::Break(value) => value.to_debug_str()
             Expr::Call(value) => value.to_debug_str()
+            Expr::Closure(value) => value.to_debug_str()
             Expr::Continue(value) => value.to_debug_str()
             Expr::FieldAccess(value) => value.to_debug_str()
             Expr::FStr(value) => value.to_debug_str()

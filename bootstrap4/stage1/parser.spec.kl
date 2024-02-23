@@ -729,6 +729,17 @@ fn main():
                 == 
                 "(@fieldaccess (@call (@fieldaccess (@ident a) (@ident b))) (@ident c))"
             )
+            assert(
+                expr(
+                    """
+                    a()
+                    .b().
+                    c
+                    """
+                )
+                ==
+                "(@fieldaccess (@call (@fieldaccess (@call (@ident a)) (@ident b))) (@ident c))"
+            )
         end)
     end)
 

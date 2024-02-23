@@ -366,9 +366,11 @@ impl Parser:
             expr = match self.iter.peek_immediate():
                 Some(Token{kind: TokenKind::LParen, span: _}) => 
                     Expr::Call(self.parse_call(expr)!)
-                Some(Token{kind: TokenKind::Dot, span: _}) => 
-                    Expr::FieldAccess(self.parse_field_access(expr)!)
-                _ => break
+                _ => match self.iter.peek():
+                    Some(Token{kind: TokenKind::Dot, span: _}) => 
+                        Expr::FieldAccess(self.parse_field_access(expr)!)
+                    _ => break
+                end
             end
         end
         expr
@@ -1051,7 +1053,7 @@ impl Parser:
 
     fn parse_field_access(mut self, target Expr) FieldAccess throws ParseError:
         let mark = self.iter.mark()
-        self.iter.expect_immediate_lexical_token(TokenKind::Dot)!
+        self.iter.expect_lexical_token(TokenKind::Dot)!
         let field = self.parse_ident(self.iter.force_next()!)!
         FieldAccess{target, field, meta: self.meta(mark)}
     end

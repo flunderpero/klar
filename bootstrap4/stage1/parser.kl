@@ -727,12 +727,19 @@ impl Parser:
 
     fn parse_unit_or_tuple_literal_or_parentheses(mut self, token Token) Expr throws ParseError:
         let mark = self.iter.mark_prev()
-        let immediate = self.iter.peek_immediate()
-        if immediate.is_some() and immediate.unwrap().kind == TokenKind::RParen => 
-            return Expr::Literal(Literal{kind: LiteralKind::UnitLiteral, meta: self.meta(mark)})
-        let exprs = self.parse_comma_separated_exprs()!
-        if exprs.len() == 1 => return exprs[0]
-        return parse_error(UnexpectedToken(immediate.unwrap()), immediate.unwrap())
+        -- todo (lang-feat): All these `return` statements should not be needed.
+        match self.iter.peek_immediate():
+            Some(Token{kind: TokenKind::RParen, span: _}):
+                self.iter.force_next()!
+                return Expr::Literal(Literal{kind: LiteralKind::UnitLiteral, meta: self.meta(mark)})
+            end
+            Some(immediate):
+                let exprs = self.parse_comma_separated_exprs()!
+                if exprs.len() == 1 => return exprs[0]
+                else => return parse_error(UnexpectedToken(immediate), immediate)
+            end
+            None => return parse_error(UnexpectedEOF, None)
+        end
     end
 
     fn parse_fstr(mut self, items Vector<FStrItem>) FStr throws ParseError:

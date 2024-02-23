@@ -100,6 +100,7 @@ fn main():
     test.group("literals", fn():
         test.it("parses unit literals", fn() throws:
             assert(expr("()") == "(@unit)")
+            assert(expr("return ()") == "(@return (@unit))")
         end)
 
         test.it("parses unit literals only if `(` is immediately followed by `)`", fn() throws:

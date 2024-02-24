@@ -46,6 +46,7 @@ use .ast::Fn
 use .ast::FnDecl
 use .ast::GenericArg
 use .ast::Ident
+use .ast::IndexAccess
 use .ast::If
 use .ast::Impl
 use .ast::Let
@@ -369,6 +370,8 @@ impl Parser:
                 _ => match self.iter.peek():
                     Some(Token{kind: TokenKind::Dot, span: _}) => 
                         Expr::FieldAccess(self.parse_field_access(expr)!)
+                    Some(Token{kind: TokenKind::LBracket, span: _}) => 
+                        Expr::IndexAccess(self.parse_index_access(expr)!)
                     _ => break
                 end
             end
@@ -1056,6 +1059,20 @@ impl Parser:
         self.iter.expect_lexical_token(TokenKind::Dot)!
         let field = self.parse_ident(self.iter.force_next()!)!
         FieldAccess{target, field, meta: self.meta(mark)}
+    end
+
+    fn parse_index_access(mut self, target Expr) IndexAccess throws ParseError:
+        let mark = self.iter.mark_prev()
+        self.iter.expect_lexical_token(TokenKind::LBracket)!
+        let index = match self.parse_expr(self.iter.force_next()!)!:
+            Some(expr) => expr
+            None:
+                let next_token = self.iter.force_next()!
+                return parse_error(ExprExpected(next_token), next_token)
+            end
+        end
+        self.iter.expect_lexical_token(TokenKind::RBracket)!
+        IndexAccess{target, index, meta: self.meta(mark)}
     end
 
     fn parse_call(mut self, target Expr) Call throws ParseError:

@@ -743,6 +743,47 @@ fn main():
         end)
     end)
 
+    test.group("indexex access", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(expr("a[42]") == "(@indexaccess (@ident a) (@int 42))")
+        end)
+
+        test.it("parses chained index accesses", fn() throws:
+            assert(
+                expr("a[42][43]") 
+                == 
+                "(@indexaccess (@indexaccess (@ident a) (@int 42)) (@int 43))"
+            )
+        end)
+
+        test.it("takes any expression as index", fn() throws:
+            assert(
+                expr("a[42 + 43]") 
+                == 
+                "(@indexaccess (@ident a) (@binexpr + (@int 42) (@int 43)))"
+            )
+        end)
+
+        test.it("works with calls", fn() throws:
+            assert(
+                expr("a()[42][43]") 
+                == 
+                "(@indexaccess (@indexaccess (@call (@ident a)) (@int 42)) (@int 43))"
+            )
+            assert(
+                expr(
+                    """
+                    a()
+                    [42]
+                    [43]
+                    """
+                )
+                ==
+                "(@indexaccess (@indexaccess (@call (@ident a)) (@int 42)) (@int 43))"
+            )
+        end)
+    end)
+
     test.group("match", fn():
         test.it("passes the happy path", fn() throws:
             assert(

@@ -162,6 +162,12 @@ struct FieldAccess:
     meta Meta
 end
 
+struct IndexAccess:
+    target Expr
+    index Expr
+    meta Meta
+end
+
 struct Match:
     expr Expr
     arms Vector<MatchArm>
@@ -223,6 +229,7 @@ enum Expr:
     FStr(FStr)
     FieldAccess(FieldAccess)
     Ident(Ident)
+    IndexAccess(IndexAccess)
     If(If)
     Let(Let)
     Literal(Literal)
@@ -753,6 +760,11 @@ impl ToDebugStr for FieldAccess:
         => f"(@fieldaccess {self.target.to_debug_str()} {self.field.to_debug_str()})"
 end
 
+impl ToDebugStr for IndexAccess:
+    fn to_debug_str(self) Str 
+        => f"(@indexaccess {self.target.to_debug_str()} {self.index.to_debug_str()})"
+end
+
 impl ToDebugStr for MatchArm:
     fn to_debug_str(self) Str
         => f"(@matcharm {self.pattern.to_debug_str()} {self.block.to_debug_str()})"
@@ -854,6 +866,7 @@ impl ToDebugStr for Expr:
             Expr::FStr(value) => value.to_debug_str()
             Expr::FQN(value) => value.to_debug_str()
             Expr::Ident(value) => value.to_debug_str()
+            Expr::IndexAccess(value) => value.to_debug_str()
             Expr::If(value) => value.to_debug_str()
             Expr::Let(value) => value.to_debug_str()
             Expr::Literal(value) => value.to_debug_str()

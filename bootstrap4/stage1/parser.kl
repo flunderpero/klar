@@ -68,6 +68,7 @@ use .ast::Range
 use .ast::Return
 use .ast::Struct
 use .ast::StructInst
+use .ast::TerminatorExpr
 use .ast::ToDebugStr
 use .ast::Trait
 use .ast::Type
@@ -271,7 +272,20 @@ impl Parser:
     end
 
     fn parse_expr(mut self, token Token) Expr? throws ParseError:
-        self.parse_binary_expr(token, 1)!
+        let mark = self.iter.mark_prev()
+        match self.parse_binary_expr(token, 1)!:
+            Some(expr):
+                match self.iter.peek():
+                    Some(Token{kind: TokenKind::Semicolon, span: _}):
+                        self.iter.force_next()!
+                        Expr::TerminatorExpr(TerminatorExpr{expr, meta: self.meta(mark)})
+                    end
+                    _ => expr
+                end
+            end        
+            -- todo (lang-feat): The `return` should not be needed here.
+            None => return None
+        end
     end
 
     fn parse_binary_expr(mut self, token Token, min_prec Int) Expr? throws ParseError:
@@ -285,9 +299,10 @@ impl Parser:
             assignment is the lowest possible precedence.
         ---
         let mark = self.iter.mark_prev()
-        let expr = self.parse_primary_expr(token)!
-        if expr.is_none() => return None
-        mut lhs = expr.unwrap()
+        mut lhs = match self.parse_primary_expr(token)!:
+            Some(expr) => expr
+            None => return None
+        end
         loop:
             let op_token = self.iter.peek()
             if op_token.is_none() => break

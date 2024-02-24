@@ -784,6 +784,16 @@ fn main():
         end)
     end)
 
+    test.group("terminator expression", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(expr("a;") == "(@terminatorexpr (@ident a))")
+        end)
+
+        test.it("has the highest precedence", fn() throws:
+            assert(expr("a + b;") == "(@terminatorexpr (@binexpr + (@ident a) (@ident b)))")
+        end)
+    end)
+
     test.group("match", fn():
         test.it("passes the happy path", fn() throws:
             assert(

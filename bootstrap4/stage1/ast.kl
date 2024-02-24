@@ -218,6 +218,11 @@ struct Closure:
     meta Meta
 end
 
+struct TerminatorExpr:
+    expr Expr
+    meta Meta
+end
+
 enum Expr:
     Assignment(Assignment)
     BinaryExpr(BinaryExpr)
@@ -237,6 +242,7 @@ enum Expr:
     Match(Match)
     Return(Return)
     StructInst(StructInst)
+    TerminatorExpr(TerminatorExpr)
     UnaryExpr(UnaryExpr)
 end
 
@@ -853,6 +859,10 @@ impl ToDebugStr for Closure:
     end
 end
 
+impl ToDebugStr for TerminatorExpr:
+    fn to_debug_str(self) Str => f"(@terminatorexpr {self.expr.to_debug_str()})"
+end
+
 impl ToDebugStr for Expr:
     fn to_debug_str(self) Str:
         match self:
@@ -874,6 +884,7 @@ impl ToDebugStr for Expr:
             Expr::Match(value) => value.to_debug_str()
             Expr::Return(value) => value.to_debug_str()
             Expr::StructInst(value) => value.to_debug_str()
+            Expr::TerminatorExpr(value) => value.to_debug_str()
             Expr::UnaryExpr(value) => value.to_debug_str()
         end
     end

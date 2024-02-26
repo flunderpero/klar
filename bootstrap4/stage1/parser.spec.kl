@@ -763,7 +763,7 @@ fn main():
         end)
     end)
 
-    test.group("indexex access", fn():
+    test.group("index access", fn():
         test.it("passes the happy path", fn() throws:
             assert(expr("a[42]") == "(@indexaccess (@ident a) (@int 42))")
         end)
@@ -800,6 +800,44 @@ fn main():
                 )
                 ==
                 "(@indexaccess (@indexaccess (@call (@ident a)) (@int 42)) (@int 43))"
+            )
+        end)
+    end)
+
+    test.group("use statement", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(
+                module("use foo::bar") 
+                == 
+                "(@mod (@use (@ident foo) (@ident bar)))"
+            )
+        end)
+
+        test.it("parses `*`", fn() throws:
+            assert(
+                module("use foo::bar::*") 
+                == 
+                "(@mod (@use wildcard (@ident foo) (@ident bar)))"
+            )
+        end)
+
+        test.it("parses relative paths", fn() throws:
+            assert(
+                module("use .here::foo::bar") 
+                == 
+                "(@mod (@use relative (@ident here) (@ident foo) (@ident bar)))"
+            )
+        end)
+
+        test.it("it cannot be used inside blocks", fn() throws:
+            assert(
+                module("""
+                    fn test():
+                        use foo::bar
+                    end
+                    """) 
+                == 
+                "(@error expr expected at test.kl:3:25-27)"
             )
         end)
     end)

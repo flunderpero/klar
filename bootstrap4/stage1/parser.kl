@@ -76,6 +76,7 @@ use .ast::Type
 use .ast::TypeKind
 use .ast::UnaryExpr
 use .ast::UnaryExprKind
+use .ast::Use
 use .lexer::FStrItem
 use .lexer::Token
 use .lexer::TokenKind
@@ -243,27 +244,30 @@ impl Parser:
             let token_option = self.iter.next()
             if token_option.is_none() => break
             let token = token_option.unwrap()
-            let item_option = self.parse_item(token)!
-            if item_option.is_none() => return parse_error(UnexpectedToken(token), token) 
-            let item = item_option.unwrap()
-            items.push(
-                match item:
-                    ParseItem::Extern(e) => ModuleItem::Extern(e)
-                    ParseItem::Fn(f) => ModuleItem::Fn(f)
-                    ParseItem::Trait(t) => ModuleItem::Trait(t)
-                    ParseItem::Struct(t) => ModuleItem::Struct(t)
-                    ParseItem::Impl(i) => ModuleItem::Impl(i)
-                    ParseItem::Enum(e) => ModuleItem::Enum(e)
-                    ParseItem::FnDecl(f) => return parse_error(UnexpectedFnDecl(f), token)
+            let item = match self.parse_item(token)!:
+                Some(item_):
+                    match item_:
+                        ParseItem::Fn(f) => ModuleItem::Fn(f)
+                        ParseItem::Trait(t) => ModuleItem::Trait(t)
+                        ParseItem::Struct(t) => ModuleItem::Struct(t)
+                        ParseItem::Impl(i) => ModuleItem::Impl(i)
+                        ParseItem::Enum(e) => ModuleItem::Enum(e)
+                        ParseItem::FnDecl(f) => return parse_error(UnexpectedFnDecl(f), token)
+                    end
                 end
-            )
+                None => match token.kind:
+                    TokenKind::Extern => ModuleItem::Extern(self.parse_extern()!)
+                    TokenKind::Use => ModuleItem::Use(self.parse_use()!)
+                    _ => return parse_error(UnexpectedToken(token), token)
+                end
+            end
+            items.push(item)
         end
         Module{items, meta: self.meta(mark)}
     end
 
     fn parse_item(mut self, token Token) ParseItem? throws ParseError:
         match token.kind:
-            TokenKind::Extern => ParseItem::Extern(self.parse_extern()!)
             TokenKind::Fn: 
                 let decl = self.parse_fn_decl(token)!
                 match self.iter.peek():
@@ -1180,6 +1184,37 @@ impl Parser:
         exprs
     end
 
+    fn parse_use(mut self) Use throws ParseError:
+        let mark = self.iter.mark_prev()
+        let path = Vector<Ident>::new()
+        let relative = match self.iter.peek():
+            Some(Token{kind: TokenKind::Dot, span: _}):
+                self.iter.force_next()!
+                true
+            end
+            Some(Token{kind: TokenKind::Ident(_), span: _}) => false
+            Some(token) => return parse_error(UnexpectedToken(token), token)
+            None => return parse_error(UnexpectedEOF, None)
+        end
+        mut wildcard = false
+        loop:
+            let next_token = self.iter.force_next()!
+            match next_token:
+                Token{kind: TokenKind::Ident(_), span: _} => path.push(self.parse_ident(next_token)!)
+                Token{kind: TokenKind::Star, span: _}:
+                    wildcard = true
+                    break
+                end
+                _ => return parse_error(UnexpectedToken(next_token), next_token)
+            end
+            match self.iter.peek():
+                Some(Token{kind: TokenKind::DoubleColon, span: _}) => self.iter.force_next()!
+                _ => break
+            end
+        end
+        Use{path, relative, wildcard, meta: self.meta(mark)}
+    end
+
     fn parse_extern(mut self) Extern throws ParseError:
         fn parse_extern_impl() ExternItem throws ParseError:
             let mark = self.iter.mark_prev()
@@ -1288,7 +1323,7 @@ impl Parser:
                     ParseItem::Enum(e) => BlockItem::Enum(e)
                     ParseItem::Impl(i) => BlockItem::Impl(i)
                     ParseItem::Struct(i) => BlockItem::Struct(i)
-                    _ => return parse_error(UnexpectedToken(token), token)
+                    ParseItem::FnDecl(f) => return parse_error(UnexpectedToken(token), token)
                 end
             None => match self.parse_expr(token)!:
                 Some(expr) => BlockItem::Expr(expr)
@@ -1315,7 +1350,6 @@ enum ParseItem:
     --- All items that can be declared anywhere in the source code.
         Returned by `Parser.parse_item`.
     ---
-    Extern(Extern)
     Fn(Fn)
     FnDecl(FnDecl)
     Trait(Trait)
@@ -1327,7 +1361,6 @@ end
 impl ToDebugStr for ParseItem:
     fn to_debug_str(self) Str:
         match self:
-            ParseItem::Extern(e) => e.to_debug_str()
             ParseItem::Fn(f) => f.to_debug_str()
             ParseItem::FnDecl(f) => f.to_debug_str()
             ParseItem::Impl(i) => i.to_debug_str()

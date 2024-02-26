@@ -381,6 +381,13 @@ struct ExternImplTrait:
     meta Meta
 end
 
+struct Use:
+    path Vector<Ident>
+    relative Bool
+    wildcard Bool
+    meta Meta
+end
+
 enum BlockItem:
     Struct(Struct)
     Enum(Enum)
@@ -392,7 +399,7 @@ end
 
 enum ModuleItem:
     Extern(Extern)
-    -- Use(Use)
+    Use(Use)
     Struct(Struct)
     Enum(Enum)
     Fn(Fn)
@@ -572,6 +579,15 @@ impl ToDebugStr for Extern:
     end
 end
 
+impl ToDebugStr for Use:
+    fn to_debug_str(self) Str:
+        let path = " ".join(
+            self.path.iter().map<Str>(fn(it Ident) Str => it.to_debug_str())
+        )
+        f"(@use {"relative ".when(self.relative)}{"wildcard ".when(self.wildcard)}{path})"
+    end
+end
+
 impl ToDebugStr for ExternImpl:
     fn to_debug_str(self) Str:
         let fn_decls = " ".join(
@@ -608,6 +624,7 @@ impl ToDebugStr for ModuleItem:
             ModuleItem::Impl(x) => x.to_debug_str()
             ModuleItem::Trait(x) => x.to_debug_str()
             ModuleItem::Struct(x) => x.to_debug_str()
+            ModuleItem::Use(x) => x.to_debug_str()
         end
     end
 end

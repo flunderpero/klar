@@ -507,7 +507,7 @@ impl ToStr for TokenKind:
             Fn => "fn"
             For => "for"
             FStr(items, is_multi_line):
-                let items = items<FStrItem>.iter().map<Str>(
+                let items_to_str = items<FStrItem>.iter().map<Str>(
                     fn(token FStrItem) Str:
                         match token:
                             FStrTokensItem(tokens) => 
@@ -520,7 +520,7 @@ impl ToStr for TokenKind:
                         end
                     end
                 )
-                let items_str = ", ".join(items)
+                let items_str = ", ".join(items_to_str)
                 f"FStr([{items_str}], {is_multi_line})"
             end
             GreaterThan => ">"

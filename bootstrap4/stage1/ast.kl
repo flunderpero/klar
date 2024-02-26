@@ -56,6 +56,7 @@ struct ParseError:
 end
 
 enum LiteralKind:
+    ArrayLiteral(Vector<Expr>)
     IntLiteral(Int)
     BoolLiteral(Bool)
     StrLiteral(Str)
@@ -696,6 +697,12 @@ end
 impl ToDebugStr for Literal:
     fn to_debug_str(self) Str:
         let lit = match self.kind:
+            LiteralKind::ArrayLiteral(exprs):
+                let exprs_str = " ".join(
+                    exprs.iter().map<Str>(fn(it Expr) Str => it.to_debug_str())
+                )
+                f"(@array{" ".when(exprs_str.len() > 0)}{exprs_str})"
+            end
             LiteralKind::BoolLiteral(value) => f"(@bool {value})"
             LiteralKind::CharLiteral(value) => f"(@char {value})"
             LiteralKind::IntLiteral(value) => f"(@int {value})"

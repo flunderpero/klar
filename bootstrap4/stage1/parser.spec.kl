@@ -194,6 +194,16 @@ fn main():
         test.it("parses tuple literals", fn() throws:
             assert(expr("(42, \"a\")") == "(@tuple (@int 42) (@str a))")
         end)
+
+        test.group("array", fn():
+            test.it("passes the happy path", fn() throws:
+                assert(expr("[42, \"foo\"]") == "(@array (@int 42) (@str foo))")
+            end)
+
+            test.it("parses empty arrays", fn() throws:
+                assert(expr("[]") == "(@array)")
+            end)
+        end)
     end)
 
     test.group("f-string", fn():

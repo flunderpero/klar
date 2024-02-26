@@ -71,6 +71,7 @@ use .ast::StructInst
 use .ast::TerminatorExpr
 use .ast::ToDebugStr
 use .ast::Trait
+use .ast::TupleAccess
 use .ast::Type
 use .ast::TypeKind
 use .ast::UnaryExpr
@@ -392,7 +393,7 @@ impl Parser:
                     Expr::Call(self.parse_call(expr)!)
                 _ => match self.iter.peek():
                     Some(Token{kind: TokenKind::Dot, span: _}) => 
-                        Expr::FieldAccess(self.parse_field_access(expr)!)
+                        self.parse_field_or_tuple_access_expr(expr)!
                     Some(Token{kind: TokenKind::LBracket, span: _}) => 
                         Expr::IndexAccess(self.parse_index_access(expr)!)
                     _ => break
@@ -778,13 +779,17 @@ impl Parser:
     end
 
     fn parse_int_literal(self, token Token) Literal throws ParseError:
+        let mark = self.iter.mark_prev()
+        Literal{kind: LiteralKind::IntLiteral(self.parse_int_token(token)!), meta: self.meta(mark)}
+    end
+
+    fn parse_int_token(self, token Token) Int throws ParseError:
         let value = match token.kind:
             TokenKind::IntLiteral(value) => value
             _ => return parse_error(IntLiteralExpected(token), token)
         end 
-        let mark = self.iter.mark_prev()
         match Int::from_str(value, 10):
-            Ok(i) => Literal{kind: LiteralKind::IntLiteral(i), meta: self.meta(mark)}
+            Ok(i) => i
             Error(_) => return parse_error(InvalidIntLiteral(token), token)
         end
     end
@@ -795,12 +800,15 @@ impl Parser:
         match self.iter.peek_immediate():
             Some(Token{kind: TokenKind::RParen, span: _}):
                 self.iter.force_next()!
-                return Expr::Literal(Literal{kind: LiteralKind::UnitLiteral, meta: self.meta(mark)})
+                Expr::Literal(Literal{kind: LiteralKind::UnitLiteral, meta: self.meta(mark)})
             end
             Some(immediate):
                 let exprs = self.parse_comma_separated_exprs()!
-                if exprs.len() == 1 => return exprs[0]
-                else => return parse_error(UnexpectedToken(immediate), immediate)
+                match exprs.len():
+                    0 => return parse_error(UnexpectedToken(immediate), immediate)
+                    1 => exprs[0]
+                    _ => Expr::Tuple(exprs)
+                end
             end
             None => return parse_error(UnexpectedEOF, None)
         end
@@ -1104,11 +1112,25 @@ impl Parser:
         types
     end
 
-    fn parse_field_access(mut self, target Expr) FieldAccess throws ParseError:
+    fn parse_field_or_tuple_access_expr(mut self, target Expr) Expr throws ParseError:
         let mark = self.iter.mark()
         self.iter.expect_lexical_token(TokenKind::Dot)!
-        let field = self.parse_ident(self.iter.force_next()!)!
-        FieldAccess{target, field, meta: self.meta(mark)}
+        -- todo(lang-feat): The `returns` should not be needed here.
+        match self.iter.peek():
+            Some(Token{kind: TokenKind::Ident(_), span: _}) => 
+                return Expr::FieldAccess(
+                    FieldAccess{
+                        target, 
+                        field: self.parse_ident(self.iter.force_next()!)!, meta: self.meta(mark)
+                    }
+                )
+            Some(Token{kind: TokenKind::IntLiteral(_), span: _}):
+                let index = self.parse_int_token(self.iter.force_next()!)!
+                return Expr::TupleAccess(TupleAccess{target, index, meta: self.meta(mark)})
+            end
+            Some(token) => parse_error(UnexpectedToken(token), token)
+            None => parse_error(UnexpectedEOF, None)
+        end
     end
 
     fn parse_index_access(mut self, target Expr) IndexAccess throws ParseError:

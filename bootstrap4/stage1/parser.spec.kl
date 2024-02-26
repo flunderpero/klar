@@ -190,6 +190,10 @@ fn main():
                 assert(expr("-2147483649") == "(@error invalid int literal at test.kl:1:1)")
             end)
         end)
+
+        test.it("parses tuple literals", fn() throws:
+            assert(expr("(42, \"a\")") == "(@tuple (@int 42) (@str a))")
+        end)
     end)
 
     test.group("f-string", fn():
@@ -752,6 +756,10 @@ fn main():
                 ==
                 "(@fieldaccess (@call (@fieldaccess (@call (@ident a)) (@ident b))) (@ident c))"
             )
+        end)
+
+        test.it("parses tuple access", fn() throws:
+            assert(expr("a.0") == "(@tupleaccess (@ident a) 0)")
         end)
     end)
 

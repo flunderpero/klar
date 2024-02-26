@@ -162,6 +162,12 @@ struct FieldAccess:
     meta Meta
 end
 
+struct TupleAccess:
+    target Expr
+    index Int
+    meta Meta
+end
+
 struct IndexAccess:
     target Expr
     index Expr
@@ -243,6 +249,8 @@ enum Expr:
     Return(Return)
     StructInst(StructInst)
     TerminatorExpr(TerminatorExpr)
+    Tuple(Vector<Expr>)
+    TupleAccess(TupleAccess)
     UnaryExpr(UnaryExpr)
 end
 
@@ -779,6 +787,11 @@ impl ToDebugStr for FieldAccess:
         => f"(@fieldaccess {self.target.to_debug_str()} {self.field.to_debug_str()})"
 end
 
+impl ToDebugStr for TupleAccess:
+    fn to_debug_str(self) Str 
+        => f"(@tupleaccess {self.target.to_debug_str()} {self.index})"
+end
+
 impl ToDebugStr for IndexAccess:
     fn to_debug_str(self) Str 
         => f"(@indexaccess {self.target.to_debug_str()} {self.index.to_debug_str()})"
@@ -898,6 +911,13 @@ impl ToDebugStr for Expr:
             Expr::Return(value) => value.to_debug_str()
             Expr::StructInst(value) => value.to_debug_str()
             Expr::TerminatorExpr(value) => value.to_debug_str()
+            Expr::Tuple(value):
+                let exprs = " ".join(
+                    value.iter().map<Str>(fn(it Expr) Str => it.to_debug_str())
+                )
+                f"(@tuple{" ".when(exprs.len() > 0)}{exprs})"
+            end
+            Expr::TupleAccess(value) => value.to_debug_str()
             Expr::UnaryExpr(value) => value.to_debug_str()
         end
     end

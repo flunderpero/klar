@@ -44,7 +44,7 @@ enum ParseErrorKind:
     InvalidIntLiteral(Token)
     PatternExpected(Token)
     ParamExpected(Token)
-    TypeExpected(Token)
+    TypeExpected(Token?)
     UnexpectedEOF
     UnexpectedFnDecl(FnDecl)
     UnexpectedToken(Token)
@@ -270,6 +270,7 @@ enum TypeKind:
     FQN(FQN)
     Infer
     Self
+    Tuple(Vector<Type>)
     Unit
 end
 
@@ -458,6 +459,12 @@ impl ToDebugStr for Type:
             TypeKind::FQN(x) => f"(@type {x.to_debug_str()})"
             TypeKind::Unit => "(@type (@unit))"
             TypeKind::Self => "(@type (@self))"
+            TypeKind::Tuple(x):
+                let types = " ".join(
+                    x.iter().map<Str>(fn(it Type) Str => it.to_debug_str())
+                )
+                f"(@type (@tuple{" ".when(types.len() > 0)}{types})"
+            end
             TypeKind::Infer => "(@type (@infer))"
         end
     end
@@ -647,7 +654,13 @@ impl ToDebugStr for ParseErrorKind:
             ParseErrorKind::InvalidIntLiteral(token) => f"(@error invalid int literal at {token.span})"
             ParseErrorKind::ParamExpected(token) => f"(@error param expected at {token.span})"
             ParseErrorKind::PatternExpected(token) => f"(@error pattern expected at {token.span})"
-            ParseErrorKind::TypeExpected(token) => f"(@error type expected at {token.span})"
+            ParseErrorKind::TypeExpected(token):
+                let span_str = match token:
+                    Some(x) => x.span.to_str()
+                    None => "EOF"
+                end
+                f"(@error type expected at {span_str})"
+            end
             ParseErrorKind::UnexpectedEOF => "(@error eof)"
             ParseErrorKind::UnexpectedFnDecl(decl) => f"(@error unexpected fn decl `{decl.ident}` at {decl.meta.span()})"
             ParseErrorKind::UnexpectedToken(token) => f"(@error unexpected token `{token}` at {token.span})"

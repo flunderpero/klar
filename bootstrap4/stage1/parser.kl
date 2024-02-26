@@ -104,6 +104,14 @@ impl Iterator<Token> for TokenIter:
         None
     end
 
+    fn current(self) Token?:
+        --- Return the token at the current position including whitespace and comments.
+            Returns `None` if the iterator is at the start or past the end.
+        ---
+        if self.idx == 0 or self.idx > self.tokens.len() => return None
+        self.tokens[self.idx - 1]
+    end
+
     fn immediate(mut self) Token?:
         --- Return the next token or `None` but including whitespace and comments.
         ---
@@ -521,6 +529,22 @@ impl Parser:
         let mark = self.iter.mark_prev()
         let kind = match token.kind:
             TokenKind::Ident(name) => TypeKind::FQN(self.parse_fqn(token)!)
+            TokenKind::LParen:
+                match self.iter.peek_immediate():
+                    Some(Token{kind: TokenKind::RParen, span: _}):
+                        self.iter.force_next()!
+                        TypeKind::Unit
+                    end
+                    _:
+                        -- todo(lang-feat): I don't like the deep nesting here but would
+                        --                  rather use an "early return" pattern. Perhaps
+                        --                  we could use a `match` statement with a `break`
+                        --                  or `yield` expression.
+                        let types = self.parse_tuple_type()!
+                        TypeKind::Tuple(types)
+                    end
+                end
+            end
             _ => return parse_error(UnexpectedToken(token), token)
         end
         Type{kind, meta: self.meta(mark)}
@@ -528,9 +552,13 @@ impl Parser:
 
     fn try_parse_type(mut self) Type? throws ParseError:
         let mark = self.iter.mark()
-        match self.iter.peek():
-            Some(Token{kind: TokenKind::Ident(_), span: _}) => Some(self.parse_type(self.iter.force_next()!)!)
-            _ => None
+        if self.iter.peek().is_none() => return None
+        match self.parse_type(self.iter.force_next()!):
+            Ok(t) => Some(t)
+            Error(_):
+                self.iter.reset(mark)
+                None
+            end
         end
     end
 
@@ -976,7 +1004,7 @@ impl Parser:
         let kind = match self.iter.peek():
             Some(Token{kind: TokenKind::LParen, span: _}):
                 self.iter.force_next()!
-                let types = self.parse_comma_separated_types()!
+                let types = self.parse_tuple_type()!
                 EnumVariantKind::Tuple(types)
             end
             _ => EnumVariantKind::Unit
@@ -1046,11 +1074,11 @@ impl Parser:
         Field{ident, type_, meta: self.meta(mark)}
     end
 
-    fn parse_comma_separated_types(mut self) Vector<Type> throws ParseError:
+    fn parse_tuple_type(mut self) Vector<Type> throws ParseError:
         let types = Vector<Type>::new()
         mut got_comma = false
         loop:
-            let next_token = self.iter.force_next()!
+            mut next_token = self.iter.force_next()!
             match next_token.kind:
                 TokenKind::RParen => break
                 TokenKind::Comma:
@@ -1065,6 +1093,13 @@ impl Parser:
                     types.push(self.parse_type(next_token)!)
                 end
             end
+        end
+        if types.len() == 0:
+            -- We cannot have an empty tuple type and the unit type
+            -- (`()`) requires the closing parenthesis follow the opening
+            -- parenthesis immediately (see above).
+            let current_token = self.iter.current()
+            return parse_error(TypeExpected(current_token), current_token)
         end
         types
     end

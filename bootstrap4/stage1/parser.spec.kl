@@ -245,6 +245,18 @@ fn main():
         test.it("parses literal type names", fn() throws:
             assert(type("Int") == "(@type (@fqn (@name (@ident Int))))")
         end)
+
+        test.it("parses tuple types", fn() throws:
+            assert(type("(Int, Str)") == "(@type (@tuple " +
+                "(@type (@fqn (@name (@ident Int)))) " +
+                "(@type (@fqn (@name (@ident Str)))))"
+            )
+        end)
+
+        test.it("parses the unit type", fn() throws:
+            assert(type("()") == "(@type (@unit))")
+            assert(type("( )") == "(@error type expected at test.kl:1:3)")
+        end)
     end)
 
     test.group("variable declarations", fn():

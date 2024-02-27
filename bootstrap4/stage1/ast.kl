@@ -72,6 +72,7 @@ end
 struct Call:
     target Expr
     args Vector<Expr>
+    propagate_error Bool
     meta Meta
 end
 
@@ -771,7 +772,7 @@ impl ToDebugStr for Call:
         let args = " ".join(
             self.args.iter().map<Str>(fn(it Expr) Str => it.to_debug_str())
         )
-        f"(@call {self.target.to_debug_str()}{" ".when(args.len() > 0)}{args})"
+        f"(@call {self.target.to_debug_str()}{" ".when(args.len() > 0)}{args}{" (@propagate)".when(self.propagate_error)})"
     end
 end
 

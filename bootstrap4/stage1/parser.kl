@@ -1286,7 +1286,14 @@ impl Parser:
         let mark = self.iter.mark()
         self.iter.expect_immediate_lexical_token(TokenKind::LParen)!
         let args = self.parse_comma_separated_exprs(TokenKind::RParen)!
-        Call{target, args, meta: self.meta(mark)}
+        let propagate_error = match self.iter.peek():
+            Some(Token{kind: TokenKind::Exclamation, span: _}):
+                self.iter.force_next()!
+                true
+            end
+            _ => false
+        end
+        Call{target, args, propagate_error, meta: self.meta(mark)}
     end
 
     fn parse_comma_separated_exprs(mut self, stop_token_kind TokenKind) Vector<Expr> throws ParseError:

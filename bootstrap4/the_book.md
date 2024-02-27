@@ -802,7 +802,9 @@ end
 Sometimes you just want to match a single pattern. In this case you can use
 the `if let` expression.
 
-```klar
+TODO: This does not work as expected yet (variable captures are buggy). We are still
+      contemplating if we should keep this feature.
+```
 fn main():
     let a = Some(42)
     if let Some(value) = a:
@@ -912,7 +914,40 @@ fn main():
 end
 ```
 
+## Known Issues
+
+### `if / else` Can Be Ambiguous
+
+```
+if a:
+    if b => 42
+else:
+    23
+end
+```
+
+This is ambiguous. The `else` could belong to the inner `if` or the outer `if`. For
+now, you have to use the multi-line block syntax to disambiguate:
+
+```
+if a:
+    if b:
+        42
+    else:
+        23
+    end
+else:
+    23
+end
+```
+
 ## RFC
+
+### Get Rid of `if let` And Propose Guard Clauses
+
+The syntax is ugly. Most of the time you want to match a single pattern in a
+guard clause. I don't know what the best course of action is here. For now, I
+am completely fine with writing full match expressions.
 
 ### Introduce `..` For Concatenation (Union)
 

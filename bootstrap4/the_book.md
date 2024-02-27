@@ -455,14 +455,18 @@ Statements are:
 - `let` declarations
 
 ```klar
+fn main():
     let a = 42
+end
 ```
 
 - Assignments
 
 ```klar
+fn main():
     mut a = 42
     let b = (a = 43) -- Compile error: Cannot assign the unit value
+end
 ```
 
 - Struct, trait, function declarations, and implementation blocks:

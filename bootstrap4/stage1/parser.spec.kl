@@ -348,6 +348,24 @@ fn main():
                 "(@type (@fqn (@name (@ident Option) (@genericarg (@type (@fqn (@name (@ident Int))))))))"
             )
         end)
+
+        test.group("function types", fn():
+            test.it("passes the happy path", fn() throws:
+                assert(
+                    type("(fn(Int) Int)") 
+                    == 
+                    "(@fntype (@type (@fqn (@name (@ident Int)))) (@type (@fqn (@name (@ident Int)))))"
+                )
+            end)
+
+            test.it("defaults to the unit type if no return type is specified", fn() throws:
+                assert(
+                    type("(fn(Int))") 
+                    == 
+                    "(@fntype (@type (@fqn (@name (@ident Int)))) (@type (@unit)))"
+                )
+            end)
+        end)
     end)
 
     test.group("variable declarations", fn():

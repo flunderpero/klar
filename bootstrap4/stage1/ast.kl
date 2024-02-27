@@ -276,8 +276,15 @@ struct FQN:
     meta Meta
 end
 
+struct FnType:
+    param_types Vector<Type>
+    return_type Type
+    meta Meta
+end
+
 enum TypeKind:
     FQN(FQN)
+    Fn(FnType)
     Infer
     Self
     Tuple(Vector<Type>)
@@ -485,9 +492,19 @@ impl ToDebugStr for FQN:
     end
 end
 
+impl ToDebugStr for FnType:
+    fn to_debug_str(self) Str:
+        let param_types = " ".join(
+            self.param_types.iter().map<Str>(fn(it Type) Str => it.to_debug_str())
+        )
+        f"(@fntype{" ".when(param_types.len() > 0)}{param_types} {self.return_type.to_debug_str()})"
+    end
+end
+
 impl ToDebugStr for Type:
     fn to_debug_str(self) Str:
         match self.kind:
+            TypeKind::Fn(x) => x.to_debug_str()
             TypeKind::FQN(x) => f"(@type {x.to_debug_str()})"
             TypeKind::Unit => "(@type (@unit))"
             TypeKind::Self => "(@type (@self))"

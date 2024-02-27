@@ -38,12 +38,13 @@ use .ast::Extern
 use .ast::ExternImpl
 use .ast::ExternImplTrait
 use .ast::ExternItem
-use .ast::FQN
-use .ast::FStr
 use .ast::Field
 use .ast::FieldAccess
 use .ast::Fn
 use .ast::FnDecl
+use .ast::FnType
+use .ast::FQN
+use .ast::FStr
 use .ast::GenericArg
 use .ast::Ident
 use .ast::IndexAccess
@@ -580,8 +581,16 @@ impl Parser:
                         --                  rather use an "early return" pattern. Perhaps
                         --                  we could use a `match` statement with a `break`
                         --                  or `yield` expression.
-                        let types = self.parse_tuple_type()!
-                        TypeKind::Tuple(types)
+                        match self.iter.peek():
+                            Some(Token{kind: TokenKind::Fn, span: _}):
+                                self.iter.force_next()!
+                                TypeKind::Fn(self.parse_fn_type()!)
+                            end
+                            _:
+                                let types = self.parse_tuple_type()!
+                                TypeKind::Tuple(types)
+                            end
+                        end
                     end
                 end
             end
@@ -608,6 +617,15 @@ impl Parser:
             end
             _ => res
         end
+    end
+
+    fn parse_fn_type(mut self) FnType throws ParseError:
+        let mark = self.iter.mark_prev()
+        self.iter.expect_lexical_token(TokenKind::LParen)!
+        let param_types = self.parse_comma_separated_types()!
+        let return_type = self.parse_return_type()!
+        self.iter.expect_lexical_token(TokenKind::RParen)!
+        FnType{param_types, return_type, meta: self.meta(mark)}
     end
 
     fn try_parse_type(mut self) Type? throws ParseError:
@@ -921,10 +939,15 @@ impl Parser:
         let generics = self.parse_generics()!
         self.iter.expect_lexical_token(TokenKind::LParen)!
         let params = self.parse_params(false)!
-        let return_type = self.try_parse_type()!.unwrap_or(
+        let return_type = self.parse_return_type()!
+        FnDecl{ident, generics, params, return_type, meta: self.meta(mark)}
+    end
+
+    fn parse_return_type(mut self) Type throws ParseError:
+        let mark = self.iter.mark()
+        self.try_parse_type()!.unwrap_or(
             Type{kind: TypeKind::Unit, meta: self.meta(mark)}
         )
-        FnDecl{ident, generics, params, return_type, meta: self.meta(mark)}
     end
 
     fn parse_closure(mut self) Closure throws ParseError:
@@ -1251,6 +1274,29 @@ impl Parser:
             end
         end
         exprs
+    end
+
+    fn parse_comma_separated_types(mut self) Vector<Type> throws ParseError:
+        let types = Vector<Type>::new()
+        mut got_comma = false
+        loop:
+            let next_token = self.iter.force_next()!
+            match next_token.kind:
+                TokenKind::Comma:
+                    if got_comma => return parse_error(TypeExpected(next_token), next_token)
+                    got_comma = true
+                    continue
+                end
+                TokenKind::RParen => break
+                _: 
+                    if types.len() > 0 and not got_comma => 
+                        return parse_error(UnexpectedToken(next_token), next_token)
+                    got_comma = false
+                    types.push(self.parse_type(next_token)!)
+                end
+            end
+        end
+        types
     end
 
     fn parse_use(mut self) Use throws ParseError:

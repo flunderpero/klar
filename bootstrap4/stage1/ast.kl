@@ -317,6 +317,7 @@ end
 
 struct Trait:
     name Name
+    trait_bounds Vector<FQN>?
     fn_decls Vector<FnDecl>
     fn_impls Vector<Fn>
     meta Meta
@@ -529,13 +530,23 @@ end
 
 impl ToDebugStr for Trait:
     fn to_debug_str(self) Str:
+        let trait_bounds = match self.trait_bounds:
+            Some(x) => 
+                " ".join(
+                    x.iter().map<Str>(fn(it FQN) Str => f"(@traitbound {it.to_debug_str()})")
+                )
+            None => ""
+        end
         let fn_decls = " ".join(
             self.fn_decls.iter().map<Str>(fn(it FnDecl) Str => it.to_debug_str())
         )
         let fn_impls = " ".join(
             self.fn_impls.iter().map<Str>(fn(it Fn) Str => it.to_debug_str())
         )
-        f"(@trait {self.name.to_debug_str()}{" ".when(fn_decls.len() > 0)}{fn_decls}{" ".when(fn_impls.len() > 0)}{fn_impls})"
+        f"(@trait {self.name.to_debug_str()}" +
+        f"{" ".when(trait_bounds.len() > 0)}{trait_bounds}" +
+        f"{" ".when(fn_decls.len() > 0)}" +
+        f"{fn_decls}{" ".when(fn_impls.len() > 0)}{fn_impls})"
     end
 end
 

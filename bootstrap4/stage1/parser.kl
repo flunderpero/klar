@@ -478,31 +478,7 @@ impl Parser:
                     end
                 end
             end
-            let trait_bounds Option<Vector<FQN>> = match self.iter.peek():
-                Some(Token{kind: TokenKind::Impl, span: _}):
-                    self.iter.force_next()!
-                    let bounds = Vector<FQN>::new()
-                    loop:
-                        let token = self.iter.force_next()!
-                        match token.kind:
-                            TokenKind::Ident(_) => bounds.push(self.parse_fqn(token)!)
-                            _ => return parse_error(IdentExpected(token), token)
-                        end
-                        match self.iter.peek():
-                            Some(Token{kind: TokenKind::And, span: _}) => self.iter.force_next()!
-                            Some(Token{kind: TokenKind::Comma, span: _}) => break
-                            Some(Token{kind: TokenKind::GreaterThan, span: _}) => break
-                            None => return parse_error(UnexpectedEOF, None)
-                            _:
-                                let next_token = self.iter.force_next()!
-                                return parse_error(UnexpectedToken(next_token), next_token)
-                            end
-                        end
-                    end
-                    Some(bounds)
-                end
-                _ => None
-            end
+            let trait_bounds = self.parse_trait_bounds()!
             args.push(GenericArg{type_, trait_bounds, meta: self.meta(mark)})
             let next_token = self.iter.next()
             match next_token:
@@ -523,6 +499,38 @@ impl Parser:
             end
         end
         args
+    end
+
+    fn parse_trait_bounds(mut self) Vector<FQN>? throws ParseError:
+        --- Try to parse a list of trait bounds in the form of `impl T and U and V`.
+            Stops parsing when it encounters a `>`, `:`, or `,`.
+        ---
+        match self.iter.peek():
+            Some(Token{kind: TokenKind::Impl, span: _}):
+                self.iter.force_next()!
+                let bounds = Vector<FQN>::new()
+                loop:
+                    let token = self.iter.force_next()!
+                    match token.kind:
+                        TokenKind::Ident(_) => bounds.push(self.parse_fqn(token)!)
+                        _ => return parse_error(IdentExpected(token), token)
+                    end
+                    match self.iter.peek():
+                        Some(Token{kind: TokenKind::And, span: _}) => self.iter.force_next()!
+                        Some(Token{kind: TokenKind::Comma, span: _}) => break
+                        Some(Token{kind: TokenKind::GreaterThan, span: _}) => break
+                        Some(Token{kind: TokenKind::Colon, span: _}) => break
+                        None => return parse_error(UnexpectedEOF, None)
+                        _:
+                            let next_token = self.iter.force_next()!
+                            return parse_error(UnexpectedToken(next_token), next_token)
+                        end
+                    end
+                end
+                Some(bounds)
+            end
+            _ => None
+        end
     end
 
     fn parse_name(mut self, token Token) Name throws ParseError:
@@ -1029,6 +1037,7 @@ impl Parser:
     fn parse_trait(mut self) Trait throws ParseError:
         let mark = self.iter.mark_prev()
         let name = self.parse_name(self.iter.force_next()!)!
+        let trait_bounds = self.parse_trait_bounds()!
         let fn_decls = Vector<FnDecl>::new()
         let fn_impls = Vector<Fn>::new()
         self.iter.expect_lexical_token(TokenKind::Colon)!
@@ -1047,7 +1056,7 @@ impl Parser:
                 _ => return parse_error(UnexpectedToken(next_token), next_token)
             end
         end
-        Trait{name, fn_decls, fn_impls, meta: self.meta(mark)}
+        Trait{name, trait_bounds, fn_decls, fn_impls, meta: self.meta(mark)}
     end
 
     fn parse_enum(mut self) Enum throws ParseError:

@@ -523,6 +523,17 @@ fn main():
                 "(@block (@trait (@name (@ident Foo)) (@fndecl (@ident bar) (@type (@unit))))))"
             )
         end)
+
+        test.it("parses trait bounds", fn() throws:
+            assert(
+                item("""
+                    trait Foo impl Bar:
+                    end
+                    """) 
+                == 
+                "(@trait (@name (@ident Foo)) (@traitbound (@fqn (@name (@ident Bar)))))"
+            )
+        end)
     end)
 
     test.group("enum", fn():

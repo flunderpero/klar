@@ -21,7 +21,7 @@ end
 fn color(s Str, color Str) Str => f"\x1b[{color}m{s}\x1b[0m"
 
 fn run_spec(spec Spec) Bool:
-    let prefix = f"{spec.path} #{spec.num}"
+    let prefix = f"{spec.path} #{spec.num} at {spec.span}"
     let tokens = Lexer::lex(spec.code, "the_book.kl").collect()
     let lex_errors = tokens.iter().filter(
         fn(token Token) Bool:
@@ -48,6 +48,7 @@ fn run_spec(spec Spec) Bool:
         Error(error):
             print(f"{color("✗", "31")} {prefix} Parsing failed")
             print(f"  {error}")
+            print("\n".join(error.meta.span().src_lines().map<Str>(fn(it Str) => f"    {it}")))
             false
         end
     end
@@ -84,7 +85,7 @@ fn parse_specs(the_book_src Str) Vector<Spec>:
             let span = Span{
                 from: pos,
                 to: pos + code.len(),
-                src: code,
+                src: the_book_src,
                 file: "the_book.md"
             }
             pos = pos + code.len() + 1
@@ -98,6 +99,7 @@ fn parse_specs(the_book_src Str) Vector<Spec>:
 end
 
 fn main() throws:
+    let bail = env.args.iter().any(fn(arg Str) => arg == "--bail") 
     let src = File::at("../the_book.md").read_str()!
     let specs = parse_specs(src)
     print(f"Found {specs.len()} specs")
@@ -108,7 +110,10 @@ fn main() throws:
             Some(x) => x
             None => break
         end
-        if not run_spec(spec) => failed = failed + 1
+        if not run_spec(spec):
+            failed = failed + 1
+            if bail => break
+        end
     end
     if failed > 0:
         print(f"{color("✗", "31")} {failed} specs failed")

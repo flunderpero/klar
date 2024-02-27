@@ -478,7 +478,32 @@ impl Parser:
                     end
                 end
             end
-            args.push(GenericArg{type_, meta: self.meta(mark)})
+            let trait_bounds Option<Vector<FQN>> = match self.iter.peek():
+                Some(Token{kind: TokenKind::Impl, span: _}):
+                    self.iter.force_next()!
+                    let bounds = Vector<FQN>::new()
+                    loop:
+                        let token = self.iter.force_next()!
+                        match token.kind:
+                            TokenKind::Ident(_) => bounds.push(self.parse_fqn(token)!)
+                            _ => return parse_error(IdentExpected(token), token)
+                        end
+                        match self.iter.peek():
+                            Some(Token{kind: TokenKind::And, span: _}) => self.iter.force_next()!
+                            Some(Token{kind: TokenKind::Comma, span: _}) => break
+                            Some(Token{kind: TokenKind::GreaterThan, span: _}) => break
+                            None => return parse_error(UnexpectedEOF, None)
+                            _:
+                                let next_token = self.iter.force_next()!
+                                return parse_error(UnexpectedToken(next_token), next_token)
+                            end
+                        end
+                    end
+                    Some(bounds)
+                end
+                _ => None
+            end
+            args.push(GenericArg{type_, trait_bounds, meta: self.meta(mark)})
             let next_token = self.iter.next()
             match next_token:
                 Some(Token{kind: TokenKind::Comma, span: _}) => ()
@@ -554,7 +579,27 @@ impl Parser:
             end
             _ => return parse_error(UnexpectedToken(token), token)
         end
-        Type{kind, meta: self.meta(mark)}
+        let res = Type{kind, meta: self.meta(mark)}
+        match self.iter.peek():
+            Some(Token{kind: TokenKind::QMark, span: _}):
+                self.iter.force_next()!
+                let meta = self.meta(mark)
+                let generics = Vector<GenericArg>::from([
+                    GenericArg{type_: res, trait_bounds: None, meta: res.meta}
+                ])
+                let name = Name{
+                    ident: Ident{name: "Option", meta: res.meta}, 
+                    -- todo (lang-feat): We should not need to wrap in a `Some` here.
+                    generics: Some(generics), 
+                    meta
+                }
+                Type{
+                    kind: TypeKind::FQN(FQN{names: Vector::from([name]), meta: res.meta}),
+                    meta
+                }
+            end
+            _ => res
+        end
     end
 
     fn try_parse_type(mut self) Type? throws ParseError:

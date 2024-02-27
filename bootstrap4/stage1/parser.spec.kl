@@ -24,18 +24,61 @@ fn main():
 
     test.group("fully qualified names", fn():
         test.it("passes the happy path", fn() throws:
-            assert(expr("A<T>") == "(@fqn (@name (@ident A) (@type (@fqn (@name (@ident T))))))")
+            assert(
+                expr("A<T>") 
+                == 
+                "(@fqn (@name (@ident A) (@genericarg (@type (@fqn (@name (@ident T)))))))"
+            )
             assert(expr("a::b") == "(@fqn (@name (@ident a)) (@name (@ident b)))")
             assert(
                 expr("A<B>::C<D>") 
                 == 
-                "(@fqn (@name (@ident A) (@type (@fqn (@name (@ident B))))) " + 
-                "(@name (@ident C) (@type (@fqn (@name (@ident D))))))"
+                "(@fqn (@name (@ident A) (@genericarg (@type (@fqn (@name (@ident B)))))) " + 
+                "(@name (@ident C) (@genericarg (@type (@fqn (@name (@ident D)))))))"
             )
         end)
 
         test.it("distinguishes generics from the less-than operator", fn() throws:
             assert(expr("a < b") == "(@binexpr < (@ident a) (@ident b))")
+        end)
+
+        test.it("parses generics", fn() throws:
+            assert(
+                expr("A<B>") 
+                == 
+                "(@fqn (@name (@ident A) (@genericarg (@type (@fqn (@name (@ident B)))))))"
+            )
+        end)
+
+        test.it("parses generics with multiple arguments", fn() throws:
+            assert(
+                expr("A<B, C>") 
+                == 
+                "(@fqn (@name (@ident A) " +
+                "(@genericarg (@type (@fqn (@name (@ident B))))) " +
+                "(@genericarg (@type (@fqn (@name (@ident C)))))))"
+            )
+        end)
+
+        test.it("parses generics with trait bounds", fn() throws:
+            assert(
+                expr("A<B impl C>") 
+                == 
+                "(@fqn (@name (@ident A) " +
+                "(@genericarg (@type (@fqn (@name (@ident B)))) " +
+                "(@traitbound (@fqn (@name (@ident C)))))))"
+            )
+        end)
+
+        test.it("parses generics with multiple trait bounds", fn() throws:
+            assert(
+                expr("A<B impl C and D>") 
+                == 
+                "(@fqn (@name (@ident A) " +
+                "(@genericarg (@type (@fqn (@name (@ident B)))) " +
+                "(@traitbound (@fqn (@name (@ident C)))) " +
+                "(@traitbound (@fqn (@name (@ident D)))))))"
+            )
         end)
     end)
 
@@ -271,6 +314,22 @@ fn main():
             assert(type("()") == "(@type (@unit))")
             assert(type("( )") == "(@error type expected at test.kl:1:3)")
         end)
+
+        test.it("parses generic types", fn() throws:
+            assert(
+                type("Foo<T>") 
+                == 
+                "(@type (@fqn (@name (@ident Foo) (@genericarg (@type (@fqn (@name (@ident T))))))))"
+            )
+        end)
+
+        test.it("parses optional types", fn() throws:
+            assert(
+                type("Int?") 
+                == 
+                "(@type (@fqn (@name (@ident Option) (@genericarg (@type (@fqn (@name (@ident Int))))))))"
+            )
+        end)
     end)
 
     test.group("variable declarations", fn():
@@ -411,7 +470,7 @@ fn main():
                     end
                     """) 
                 == 
-                "(@trait (@name (@ident Foo) (@type (@fqn (@name (@ident T))))) " +
+                "(@trait (@name (@ident Foo) (@genericarg (@type (@fqn (@name (@ident T)))))) " +
                 "(@fndecl (@ident bar) (@type (@unit))))"
             )
         end)
@@ -475,7 +534,7 @@ fn main():
                     end
                     """) 
                 == 
-                "(@enum (@name (@ident Foo) (@type (@fqn (@name (@ident T))))) " +
+                "(@enum (@name (@ident Foo) (@genericarg (@type (@fqn (@name (@ident T)))))) " +
                 "(@variant (@ident Bar) (@unit)))"
             )
         end)
@@ -522,8 +581,8 @@ fn main():
                     """) 
                 == 
                 "(@impl (@fqn (@name (@ident Foo) " +
-                "(@type (@fqn (@name (@ident T)))))) " +
-                "(@fqn (@name (@ident Bar) (@type (@fqn (@name (@ident U)))))) " +
+                "(@genericarg (@type (@fqn (@name (@ident T))))))) " +
+                "(@fqn (@name (@ident Bar) (@genericarg (@type (@fqn (@name (@ident U))))))) " +
                 "(@fn (@fndecl (@ident bar) (@type (@unit))) (@block)))"
             )
         end)
@@ -577,7 +636,7 @@ fn main():
             )
         end)
 
-        test.it("pareses generics", fn() throws:
+        test.it("parses generics", fn() throws:
             assert(
                 item("""
                     struct Foo<T>:
@@ -585,7 +644,7 @@ fn main():
                     end
                     """) 
                 == 
-                "(@struct (@name (@ident Foo) (@type (@fqn (@name (@ident T))))) " +
+                "(@struct (@name (@ident Foo) (@genericarg (@type (@fqn (@name (@ident T)))))) " +
                 "(@field (@ident a) (@type (@fqn (@name (@ident T))))))"
             )
         end)
@@ -720,7 +779,7 @@ fn main():
             assert(
                 expr("Foo<Int>{a: 42}") 
                 == 
-                "(@structinst (@fqn (@name (@ident Foo) (@type (@fqn (@name (@ident Int)))))) " +
+                "(@structinst (@fqn (@name (@ident Foo) (@genericarg (@type (@fqn (@name (@ident Int))))))) " +
                 "(@field (@ident a) (@int 42)))"
             )
         end)

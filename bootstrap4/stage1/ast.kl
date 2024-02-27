@@ -257,6 +257,7 @@ end
 
 struct GenericArg:
     type_ Type
+    trait_bounds Vector<FQN>?
     meta Meta
 end
 
@@ -447,12 +448,25 @@ impl ToDebugStr for Meta:
     end
 end
 
+impl ToDebugStr for GenericArg:
+    fn to_debug_str(self) Str:
+        let trait_bounds = match self.trait_bounds:
+            Some(x) => 
+                " ".join(
+                    x.iter().map<Str>(fn(it FQN) Str => f"(@traitbound {it.to_debug_str()})")
+                )
+            None => ""
+        end
+        f"(@genericarg {self.type_.to_debug_str()}{" ".when(trait_bounds.len() > 0)}{trait_bounds})"
+    end
+end
+
 impl ToDebugStr for Name:
     fn to_debug_str(self) Str:
         let generics = match self.generics:
             Some(x) => 
                 " ".join(
-                    x.iter().map<Str>(fn(it GenericArg) Str => it.type_.to_debug_str())
+                    x.iter().map<Str>(fn(it GenericArg) Str => it.to_debug_str())
                 )
             None => ""
         end
@@ -889,7 +903,7 @@ impl ToDebugStr for StructInst:
         let generics = match self.generics:
             Some(x) => 
                 " ".join(
-                    x.iter().map<Str>(fn(it GenericArg) Str => it.type_.to_debug_str())
+                    x.iter().map<Str>(fn(it GenericArg) Str => it.to_debug_str())
                 )
             None => ""
         end

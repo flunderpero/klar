@@ -910,12 +910,13 @@ impl Parser:
     fn parse_fn_decl(mut self, token Token) FnDecl throws ParseError:
         let mark = self.iter.mark_prev()
         let ident = self.parse_ident(self.iter.force_next()!)!
+        let generics = self.parse_generics()!
         self.iter.expect_lexical_token(TokenKind::LParen)!
         let params = self.parse_params(false)!
         let return_type = self.try_parse_type()!.unwrap_or(
             Type{kind: TypeKind::Unit, meta: self.meta(mark)}
         )
-        FnDecl{ident, params, return_type, meta: self.meta(mark)}
+        FnDecl{ident, generics, params, return_type, meta: self.meta(mark)}
     end
 
     fn parse_closure(mut self) Closure throws ParseError:

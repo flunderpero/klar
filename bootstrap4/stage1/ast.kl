@@ -298,6 +298,7 @@ end
 
 struct FnDecl:
     ident Ident
+    generics Vector<GenericArg>?
     params Vector<Param>
     return_type Type
     meta Meta
@@ -509,11 +510,20 @@ end
 
 impl ToDebugStr for FnDecl:
     fn to_debug_str(self) Str:
+        let generics = match self.generics:
+            Some(x) => 
+                " ".join(
+                    x.iter().map<Str>(fn(it GenericArg) Str => it.to_debug_str())
+                )
+            None => ""
+        end
         let params = " ".join(
             self.params.iter().map<Str>(fn(it Param) Str => it.to_debug_str())
         )
         let return_type = self.return_type.to_debug_str()
-        f"(@fndecl {self.ident.to_debug_str()}{" ".when(params.len() > 0)}{params} {return_type})"
+        f"(@fndecl {self.ident.to_debug_str()}" +
+        f"{" ".when(generics.len() > 0)}{generics}" +
+        f"{" ".when(params.len() > 0)}{params} {return_type})"
     end
 end
 

@@ -155,6 +155,16 @@ fn main():
                 "(@type (@unit))) (@block))"
             )
         end)
+
+        test.it("parses generics", fn() throws:
+            assert(
+                fndecl("fn test<T>()") 
+                == 
+                "(@fndecl (@ident test) " +
+                "(@genericarg (@type (@fqn (@name (@ident T))))) " +
+                "(@type (@unit)))"
+            )
+        end)
     end)
 
     test.group("fn", fn():
@@ -282,6 +292,14 @@ fn main():
 
         test.it("can chain calls", fn() throws:
             assert(expr("test()()") == "(@call (@call (@ident test)))")
+        end)
+
+        test.it("parses generics (if target is a FQN)", fn() throws:
+            assert(
+                expr("test<Int>()") 
+                == 
+                "(@call (@fqn (@name (@ident test) (@genericarg (@type (@fqn (@name (@ident Int))))))))"
+            )
         end)
     end)
 

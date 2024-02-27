@@ -298,7 +298,6 @@ fn main():
     let planet = Planet{name: "Earth"}
     let body = CelestialBody{body: planet}
     assert(body.to_str() == "Earth")
-    -- todo (lang-feat): We should not need to specify the type `<Planet>` here.
     assert(combine_id_and_to_str(planet) == "Earth + Planet Earth")
 end
 ```

@@ -472,7 +472,8 @@ impl Parser:
                         return None
                     end
                     return match self.iter.peek():
-                        Some(token) => parse_error(TypeExpected(token), token)
+                        -- todo (lang-feat): We should have to wrap the token in a `Some` here.
+                        Some(token) => parse_error(TypeExpected(Some(token)), token)
                         _ => parse_error(UnexpectedEOF, None)
                     end
                 end
@@ -926,7 +927,8 @@ impl Parser:
                 None => 
                     match type_is_optional:
                         true => Type{kind: TypeKind::Infer, meta: self.meta(mark)}
-                        false => return parse_error(TypeExpected(next_token), next_token)
+                        -- todo (lang-feat): We should have to wrap the token in a `Some` here.
+                        false => return parse_error(TypeExpected(Some(next_token)), next_token)
                     end
             end
         end
@@ -1101,7 +1103,8 @@ impl Parser:
             match next_token.kind:
                 TokenKind::RParen => break
                 TokenKind::Comma:
-                    if got_comma => return parse_error(TypeExpected(next_token), next_token)
+                    -- todo (lang-feat): We should have to wrap the token in a `Some` here.
+                    if got_comma => return parse_error(TypeExpected(Some(next_token)), next_token)
                     got_comma = true
                     continue
                 end

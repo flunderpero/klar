@@ -1,0 +1,119 @@
+--- Run all tests found in `the_book.md`.
+---
+
+use .ast::ParseErrorKind
+use .ast::Module
+use .lexer::Lexer
+use .lexer::Span
+use .lexer::TokenKind
+use .lexer::Token
+use .parser::Parser
+use .parser::TokenIter
+
+struct Spec:
+    name Str
+    path Str
+    num Int
+    code Str
+    span Span
+end
+
+fn color(s Str, color Str) Str => f"\x1b[{color}m{s}\x1b[0m"
+
+fn run_spec(spec Spec) Bool:
+    let prefix = f"{spec.path} #{spec.num}"
+    let tokens = Lexer::lex(spec.code, "the_book.kl").collect()
+    let lex_errors = tokens.iter().filter(
+        fn(token Token) Bool:
+            match token.kind:
+                TokenKind::LexError(_) => true
+                _ => false
+            end
+        end
+    ).collect()
+    if lex_errors.len() > 0:
+        print(f"{color("✗", "31")} {prefix} Lexing failed")
+        lex_errors.iter().for_each(fn(error Token) ():
+            print(f"  {error} at {error.span}")
+            print("\n".join(error.span.src_lines().map<Str>(fn(it Str) => f"    {it}")))
+        end)
+        return false
+    end
+    let parser = Parser::new(TokenIter::new(tokens))
+    match parser.parse_module():
+        Ok(x):
+            print(f"{color("✓", "32")} {prefix}")
+            true
+        end
+        Error(error):
+            print(f"{color("✗", "31")} {prefix} Parsing failed")
+            print(f"  {error}")
+            false
+        end
+    end
+end
+
+fn parse_specs(the_book_src Str) Vector<Spec>:
+    mut specs = Vector<Spec>::new()
+    mut section = Vector<(Str, Int)>::new()
+    mut num = 0
+    mut pos = 0
+    mut iter Iterator<Str> = the_book_src.split('\n')
+    loop:
+        let line = match iter.next():
+            Some(x) => x
+            None => break
+        end
+        pos = pos + line.len() + 1
+        if line.starts_with("##"):
+            let section_level = line.iter().take_while(fn(it Char) => it == '#').count()
+            let section_name = line.slice_copy(section_level + 1, line.len())
+            section = section.iter().filter(fn(it (Str, Int)) Bool => it.1 < section_level).collect() 
+            section.push((section_name, section_level))
+            num = 0
+        end 
+        if line.starts_with("```klar"):
+            num = num + 1
+            let code = "\n".join(iter.take_while(fn(it Str) Bool: 
+                -- todo (lang-feat): `not` is broken in stage0.
+                if it.starts_with("```"):
+                    return false
+                end
+                true
+            end))
+            let span = Span{
+                from: pos,
+                to: pos + code.len(),
+                src: code,
+                file: "the_book.md"
+            }
+            pos = pos + code.len() + 1
+            let path = " > ".join(section.iter().map<Str>(fn(it (Str, Int)) => it.0))
+            let name = f"{path} at {span}"
+            let spec = Spec{name, path, num, code, span}
+            specs.push(spec)
+        end
+    end
+    specs
+end
+
+fn main() throws:
+    let src = File::at("../the_book.md").read_str()!
+    let specs = parse_specs(src)
+    print(f"Found {specs.len()} specs")
+    mut spec_iter = specs.iter()
+    mut failed = 0
+    loop:
+        let spec = match spec_iter.next():
+            Some(x) => x
+            None => break
+        end
+        if not run_spec(spec) => failed = failed + 1
+    end
+    if failed > 0:
+        print(f"{color("✗", "31")} {failed} specs failed")
+        exit(1)
+    end
+    -- todo (lang-feat): This `return` should not be necessary.
+    return ()
+end

@@ -131,6 +131,43 @@ trait Iterator<T>:
         self.for_each(fn(value) => vec.push(value))
         vec
     end
+    
+    fn count(self) Int:
+        mut count = 0
+        loop:
+            match self.next():
+                None => break
+                Some(_) => count = count + 1
+            end
+        end
+        count
+    end
+
+    fn take_while(self, f (fn(T) Bool)) Iterator<T>:
+        mut vec = Vector<T>::new()
+        loop:
+            match self.next():
+                None => break
+                Some(value):
+                    if f(value) => vec.push(value)
+                    else => break
+                end
+            end
+        end
+        vec.iter()
+    end
+
+    fn skip(self, n Int) Iterator<T>:
+        mut i = 0
+        loop:
+            if i >= n => break
+            match self.next():
+                None => break
+                Some(_) => i = i + 1
+            end
+        end
+        self
+    end
 
     fn any(self, predicate (fn(T) Bool)) Bool:
         loop:
@@ -238,7 +275,6 @@ extern:
     impl Len for Str
     impl IndexedGet<Int, Char> for Str
     impl Str:
-        fn iter(self) Iterator<Char>
         fn push(mut self, s Str) Str
         fn push_char(mut self, c Char) Str
         fn slice_copy(self, from Int, to Int) Str
@@ -322,11 +358,61 @@ impl Str:
         s
     end
 
+    fn split(self, sep Char) Iterator<Str>:
+        let vec = Vector<Str>::new()
+        mut iter = self.iter()
+        mut s = ""
+        loop:
+            match iter.next():
+                None => break
+                Some(c):
+                    if c == sep:
+                        vec.push(s)
+                        s = ""
+                    else => s.push_char(c)
+                end
+            end
+        end
+        if s.len() > 0 => vec.push(s)
+        vec.iter()
+    end
+
+    fn starts_with(self, prefix Str) Bool:
+        if self.len() < prefix.len() => return false
+        mut i = 0
+        loop:
+            if i == prefix.len() => break
+            if self[i] != prefix[i] => return false
+            i = i + 1
+        end
+        true
+    end
+
     fn when(self, condition Bool) Str:
         --- Returns `self` if the condition is met, otherwise an empty string.
             This is useful in f-strings to insert a space only if a condition is met.
         ---
         if condition => self else => ""
+    end
+
+    fn iter(self) Iterator<Char>:
+        StrIterator { str: self, index: 0 }
+    end
+end
+
+struct StrIterator:
+    str Str
+    index Int
+end
+
+impl Iterator<Char> for StrIterator:
+    fn next(mut self) Option<Char>:
+        if self.index == self.str.len():
+            return None
+        end
+        let c = self.str[self.index]
+        self.index = self.index + 1
+        Some(c)
     end
 end
 

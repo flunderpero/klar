@@ -373,6 +373,24 @@ impl Span:
             to: if self.to > other.to => self.to else => other.to
         }
     end
+
+    fn src_lines(self) Iterator<Str>:
+        --- Get the lines of source code that are covered by this span.
+        ---
+        mut x = self.from
+        loop:
+            if x == 0 => break
+            if self.src[x - 1] == '\n' => break
+            x = x - 1
+        end
+        mut y = self.to
+        loop:
+            if y == self.src.len() => break
+            if self.src[y] == '\n' => break
+            y = y + 1
+        end
+        self.src.slice_copy(x, y).split('\n')
+    end
 end
 
 impl ToStr for Span:

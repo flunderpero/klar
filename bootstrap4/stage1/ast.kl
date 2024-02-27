@@ -683,6 +683,7 @@ impl ToDebugStr for ParseErrorKind:
             ParseErrorKind::TypeExpected(token):
                 let span_str = match token:
                     Some(x) => x.span.to_str()
+                    -- x => "ooo"
                     None => "EOF"
                 end
                 f"(@error type expected at {span_str})"

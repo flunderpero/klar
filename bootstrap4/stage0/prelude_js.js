@@ -157,19 +157,6 @@ class klar_Str {
         return new klar_Int(this.value.length)
     }
 
-    klar_iter() {
-        let idx = 0
-        return {
-            klar_next: () => {
-                if (idx < this.value.length) {
-                    return new klar_Option_Some(new klar_Char(this.value[idx++]))
-                } else {
-                    return new klar_Option_None()
-                }
-            },
-        }
-    }
-
     klar_join(iter) {
         let result = ""
         let first = true

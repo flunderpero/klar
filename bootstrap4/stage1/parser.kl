@@ -945,18 +945,61 @@ impl Parser:
 
     fn parse_return_type(mut self) Type throws ParseError:
         let mark = self.iter.mark()
-        self.try_parse_type()!.unwrap_or(
+        let return_type = self.try_parse_type()!.unwrap_or(
             Type{kind: TypeKind::Unit, meta: self.meta(mark)}
         )
+        let throws_mark = self.iter.mark()
+        match self.iter.peek():
+            Some(Token{kind: TokenKind::Throws, span: _}):
+                self.iter.force_next()!
+                let error_type = match self.try_parse_type()!:
+                    Some(t) => t
+                    None:
+                        -- todo (lang-feat): The default error type should not be `Str` but some
+                        --                   kind of marker interface or trait. But `Str` and everything
+                        --                   that implements `ToStr` should automatically implement it.
+                        let str_name = Name{
+                            ident: Ident{name: "Str", meta: self.meta(throws_mark)},
+                            generics: None,
+                            meta: self.meta(throws_mark)
+                        }
+                        Type{
+                            kind: TypeKind::FQN(
+                                FQN{names: Vector::from([str_name]), meta: self.meta(throws_mark)}
+                            ), 
+                            meta: self.meta(throws_mark)
+                        }
+                    end
+                end
+                let result_name = Name{
+                    ident: Ident{name: "Result", meta: self.meta(throws_mark)},
+                    generics: Some(
+                        Vector::from([
+                            GenericArg{type_: return_type, trait_bounds: None, meta: return_type.meta}, 
+                            GenericArg{ type_: error_type, trait_bounds: None, meta: error_type.meta}
+                        ])
+                    ),
+                    meta: self.meta(throws_mark)
+                }
+                Type{
+                    kind: TypeKind::FQN(
+                        FQN{names: Vector::from([result_name]), meta: self.meta(throws_mark)}
+                    ), 
+                    meta: self.meta(mark)
+                }
+            end
+            _ => return_type
+        end
     end
 
     fn parse_closure(mut self) Closure throws ParseError:
         let mark = self.iter.mark_prev()
         self.iter.expect_lexical_token(TokenKind::LParen)!
         let params = self.parse_params(true)!
-        let return_type = match self.try_parse_type()!:
-            Some(t) => t
-            None => Type{kind: TypeKind::Infer, meta: self.meta(mark)}
+        let return_type = match self.iter.peek():
+            Some(Token{kind: TokenKind::FatArrow | TokenKind::Colon, span: _}) =>
+                Type{kind: TypeKind::Infer, meta: self.meta(mark)}
+            _ => self.parse_return_type()!
         end
         let body = self.parse_block()!
         Closure{params, return_type, body, meta: self.meta(mark)}

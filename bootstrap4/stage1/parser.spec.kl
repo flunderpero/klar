@@ -165,6 +165,42 @@ fn main():
                 "(@type (@unit)))"
             )
         end)
+
+        test.group("throws", fn():
+            test.it("passes the happy path", fn() throws:
+                assert(
+                    fndecl("fn test() throws") 
+                    == 
+                    "(@fndecl (@ident test) " +
+                    "(@type (@fqn (@name (@ident Result) " +
+                    "(@genericarg (@type (@unit))) " +
+                    "(@genericarg (@type (@fqn (@name (@ident Str)))))))))"
+                )
+            end)
+
+            test.it("parses the return type", fn() throws:
+                assert(
+                    fndecl("fn test() Int throws") 
+                    == 
+                    "(@fndecl (@ident test) " +
+                    "(@type (@fqn (@name (@ident Result) " +
+                    "(@genericarg (@type (@fqn (@name (@ident Int))))) " +
+                    "(@genericarg (@type (@fqn (@name (@ident Str)))))))))"
+                )
+            end)
+
+            test.it("it parses error types", fn() throws:
+                assert(
+                    fndecl("fn test() Int throws MyError") 
+                    == 
+                    "(@fndecl (@ident test) " +
+                    "(@type (@fqn (@name (@ident Result) " +
+                    "(@genericarg (@type (@fqn (@name (@ident Int))))) " +
+                    "(@genericarg (@type (@fqn (@name (@ident MyError)))))))))"
+                )
+            end)
+
+        end)
     end)
 
     test.group("fn", fn():
@@ -198,6 +234,18 @@ fn main():
                 == 
                 "(@closure (@param (@ident a) (@type (@infer))) " +
                 "(@type (@infer)) (@block (@int 42)))"
+            )
+        end)
+
+        test.it("parses the `throws` keyword", fn() throws:
+            assert(
+                expr("fn() throws => 42") 
+                == 
+                "(@closure " +
+                "(@type (@fqn (@name (@ident Result) " +
+                "(@genericarg (@type (@unit))) " +
+                "(@genericarg (@type (@fqn (@name (@ident Str)))))))) " +
+                "(@block (@int 42)))"
             )
         end)
     end)
@@ -363,6 +411,16 @@ fn main():
                     type("(fn(Int))") 
                     == 
                     "(@fntype (@type (@fqn (@name (@ident Int)))) (@type (@unit)))"
+                )
+            end)
+
+            test.it("parses the `throws` keyword", fn() throws:
+                assert(
+                    type("(fn() throws)") 
+                    == 
+                    "(@fntype (@type (@fqn (@name (@ident Result) " +
+                    "(@genericarg (@type (@unit))) " +
+                    "(@genericarg (@type (@fqn (@name (@ident Str)))))))))"
                 )
             end)
         end)

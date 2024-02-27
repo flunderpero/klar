@@ -169,14 +169,24 @@ trait Iterator<T>:
         self
     end
 
-    fn any(self, predicate (fn(T) Bool)) Bool:
+    fn find_index(self, f (fn(T) Bool)) Int?:
+        mut i = 0
         loop:
             match self.next():
-                None => return false
-                Some(value) => if predicate(value) => break 
+                None => return None
+                Some(value) => if f(value) => return Some(i)
             end
+            i = i + 1
         end
-        true
+        -- todo (lang-feat): The flow analysis should be able to detect that this is unreachable.
+        None
+    end
+
+    fn any(self, predicate (fn(T) Bool)) Bool:
+        match self.find_index(predicate):
+            None => false
+            Some(_) => true
+        end
     end
 end
 
@@ -386,6 +396,25 @@ impl Str:
             i = i + 1
         end
         true
+    end
+
+    fn contains(self, s Str) Bool:
+        mut i = 0
+        mut match_ = ""
+        loop:
+            if i == self.len() => break
+            let c = self[i]
+            if c == s[match_.len()]:
+                match_.push_char(c)
+                if match_ == s:
+                    return true
+                end
+            else:
+                match_ = ""
+            end
+            i = i + 1
+        end
+        false
     end
 
     fn when(self, condition Bool) Str:

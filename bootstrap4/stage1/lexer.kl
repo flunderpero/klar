@@ -374,6 +374,29 @@ impl Span:
         }
     end
 
+    fn position(self) (Int, Int):
+        --- Get the line and column number of the start of the span.
+        ---
+        mut line = 1
+        mut col = 0
+        mut iter = self.src.iter()
+        mut idx = 0
+        loop:
+            match iter.next():
+                Some<Char>('\n'):
+                    line = line + 1
+                    col = 0
+                end
+                Some<Char>(c) => col = col + 1
+                None => break
+            end
+            if idx == self.from => break
+            idx = idx + 1
+        end
+        -- todo (lang-feat): The `return` should not be necessary here.
+        return (line, col)
+    end
+
     fn src_lines(self) Iterator<Str>:
         --- Get the lines of source code that are covered by this span.
         ---

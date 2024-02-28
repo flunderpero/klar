@@ -2,6 +2,71 @@
 
 This is the living documentation and spec of Klar.
 
+## Goals
+
+Klar should be - in no particular order - the following:
+
+### Simple And - As The Name Says - Clear
+
+The language should be easy to learn and use. It should be expressive but not
+overly complex. The type system should be powerful but not overwhelming. Working
+with errors and optional values should be idiomatic and easy.
+
+### Memory Safe
+
+Klar will use an optimized reference counting garbage collector. With the help
+of static analysis, many use cases should not require runtime garbage collection.
+
+#### Cyclic References
+
+Resolving cyclic references is a challenge for reference counting garbage collectors.
+Klar will not go the route of other reference counting garbage collectors (like Python)
+and use a second garbage collector (like a mark-and-sweep collector) for that. And unlike
+Swift, Klar will not leave the burden on the programmer to break or prevent cyclic 
+references. Klar will first determine through static analysis if a reference may be
+part of a cycle and then add the proper logic to break that specific cycle. 
+It remains to be seen if this is feasible.
+
+#### Explicit Mutability
+
+Klar will not have implicit mutability. This means that you have to declare a variable 
+or a parameter as mutable. This improves the readability of the code and improves static
+analysis.
+
+#### References By Default And No Implicit Copying
+
+By default, everything except for primitive types (number and boolean types) will be 
+references. Value types (especially in structs) might be introduced later. It should
+always be clear if a value is copied or referenced.
+
+#### No Null References
+
+Klar will not have null references. Instead, it will have an `Option` type that is
+idiomatic to use.
+
+### Easy To Write Secure And Fast Concurrent Code
+
+Klar will have a powerful concurrency model that lends itself from Go's principle: 
+
+Share memory by communicating, don't communicate by sharing memory. 
+
+The developer should be able to write asynchronous code without the need for callbacks,
+promises, or async/await. There will be no "colored functions" - i.e. types of functions
+that cannot be called from other types of functions - like in other languages 
+that support concurrent programming with async/await.
+
+Working with threads should be easy and safe. The language should be able
+
+### Fast To Compile
+
+This one goes without saying.
+
+### Fast To Execute
+
+The goal is to be at most 20% slower than C in most scenarios. This is a very ambitious 
+goal and it remains to be seen if this is feasible. 
+It should be faster than JavaScript and Java, though.
+
 ## Common Concepts
 
 ### Comments
@@ -764,7 +829,7 @@ end
 use Planet::* -- Bring all enum variants into the current scope.
 
 fn main():
-    let planet = Earth(15) -- Remember: Enum variants are visible automatically.
+    let planet = Earth(15) 
     let name = match planet:
         -- Capture the value of the `Earth` variant.
         Earth(average_temp) => f"Earth (average temp: {average_temp})"

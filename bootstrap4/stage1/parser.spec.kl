@@ -1231,6 +1231,24 @@ fn main():
                     "(@block (@int 1))))"
                 )
             end)
+
+            test.it("parses or patterns in nested patterns", fn() throws:
+                assert(
+                    expr("""
+                        match a:
+                            Foo{a: 1 | 2, b: "foo" | "bar"} => 1
+                        end
+                        """)
+                    == 
+                    "(@match (@ident a) " +
+                    "(@matcharm (@pattern (@struct (@fqn (@name (@ident Foo))) " +
+                    "(@field (@ident a) (@pattern (@or (@pattern (@literal (@int 1))) " +
+                    "(@pattern (@literal (@int 2)))))) (@field (@ident b) " +
+                    "(@pattern (@or (@pattern (@literal (@str foo))) " +
+                    "(@pattern (@literal (@str bar)))))))) " +
+                    "(@block (@int 1))))"
+                )
+            end)
         end)
     end)
 

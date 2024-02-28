@@ -742,7 +742,7 @@ impl Parser:
             end
             fields
         end
-        fn parse_it(token Token) Pattern throws ParseError:
+        fn parse_single(token Token) Pattern throws ParseError:
             let mark = self.iter.mark_prev()
             let kind = match token.kind:
                 TokenKind::Ident(name):
@@ -794,20 +794,23 @@ impl Parser:
             end
             Pattern{kind, meta: self.meta(mark)}
         end
-        let mark = self.iter.mark()
-        mut patterns = Vector<Pattern>::new()
-        patterns.push(parse_it(token)!)
-        loop:
-            match self.iter.peek():
-                Some(Token{kind: TokenKind::Pipe, span: _}):
-                    self.iter.force_next()!
-                    patterns.push(parse_it(self.iter.force_next()!)!)
+        fn parse_it(token Token) Pattern throws ParseError:
+            let mark = self.iter.mark()
+            mut patterns = Vector<Pattern>::new()
+            patterns.push(parse_single(token)!)
+            loop:
+                match self.iter.peek():
+                    Some(Token{kind: TokenKind::Pipe, span: _}):
+                        self.iter.force_next()!
+                        patterns.push(parse_single(self.iter.force_next()!)!)
+                    end
+                    _ => break
                 end
-                _ => break
             end
+            if patterns.len() == 1 => patterns[0]
+            else => Pattern{kind: PatternKind::Or(patterns), meta: self.meta(mark)}
         end
-        if patterns.len() == 1 => patterns[0]
-        else => Pattern{kind: PatternKind::Or(patterns), meta: self.meta(mark)}
+        parse_it(token)!
     end
 
     fn parse_let_or_mut(mut self, token Token) Let throws ParseError:

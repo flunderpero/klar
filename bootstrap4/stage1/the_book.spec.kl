@@ -110,9 +110,12 @@ fn parse_specs(the_book_src Str) Vector<Spec>:
     specs
 end
 
-fn main() throws:
+fn main():
     let bail = env.args.iter().any(fn(arg Str) => arg == "--bail") 
-    let src = File::at("../the_book.md").read_str()!
+    let src = match File::at("../../doc/the_book.md").read_str():
+        Ok(x) => x
+        Error(e) => panic(f"Could not read `the_book.md`: {e}")
+    end
     let specs = parse_specs(src)
     print(f"Found {specs.len()} specs")
     mut spec_iter = specs.iter()

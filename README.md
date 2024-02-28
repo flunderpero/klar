@@ -5,6 +5,9 @@ programming language.
 
 This is all work-in-progress and definitely not ready for anything.
 
+Read the ["The Book"](docs/the_book.md) for more information about the language and
+how to use it.
+
 Ignore everything outside of `bootstrap4`.
 
 ## Self-Hosting Compiler
@@ -34,8 +37,8 @@ $ bun strings.js
 
 ## Stage1 (bootstrap4/stage1)
 
-The stage1-compiler is written in Klar. Currently the lexer and most of the parser
-is implemented. I am currently unsure about the compilation target. Most likely it
+The stage1-compiler is written in Klar. Currently the lexer and the parser
+are implemented. I am currently unsure about the compilation target. Most likely it
 will be LLVM IR like in other bootstrapping attempts. 
 
 ## Syntax Highlighting

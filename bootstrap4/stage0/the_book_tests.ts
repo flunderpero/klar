@@ -45,7 +45,7 @@ async function run_test(test: Test): Promise<boolean> {
     let compiled
     try {
         compiled = await compile({
-            file: `${dir}/../../doc/the_book.md:${test.path}`,
+            file: `${dir}/../../docs/the_book.md:${test.path}`,
             src: test.src,
             env: the_book_prelude.env,
             modules: new Map(),
@@ -100,7 +100,7 @@ async function run_test(test: Test): Promise<boolean> {
 }
 
 async function cli() {
-    const book = fs.readFileSync(`${dir}/../../doc/the_book.md`, "utf8")
+    const book = fs.readFileSync(`${dir}/../../docs/the_book.md`, "utf8")
 
     // parse `book` into `tests` where Test.section is the list of markdown section titles that lead up to
     // the test, Test.num is the number of the test in the current section, Test.src is the

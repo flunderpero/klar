@@ -112,7 +112,7 @@ end
 
 fn main():
     let bail = env.args.iter().any(fn(arg Str) => arg == "--bail") 
-    let src = match File::at("../../doc/the_book.md").read_str():
+    let src = match File::at("../../docs/the_book.md").read_str():
         Ok(x) => x
         Error(e) => panic(f"Could not read `the_book.md`: {e}")
     end

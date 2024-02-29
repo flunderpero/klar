@@ -57,6 +57,10 @@ that support concurrent programming with async/await.
 
 Working with threads should be easy and safe. The language should be able
 
+### Suitable For Application And Web Development
+
+Klar should compile to native code. WebAssembly support is also a first-class citizen.
+
 ### Fast To Compile
 
 This one goes without saying.
@@ -320,81 +324,6 @@ fn main():
 end
 ```
 
-#### Generic Types
-
-##### Trait Bounds
-
-```klar
-struct Planet:
-    name Str
-end
-
-trait HasId:
-    fn id(self) Str
-end
-
-impl HasId for Planet:
-    fn id(self) Str => self.name
-end
-
-struct CelestialBody<T impl HasId>:
-    body T
-end
-
-impl ToStr for CelestialBody<T>:
-    -- We can use the trait function `HasId.id` here, because we
-    -- know that `self.body` is of a type that implements `HasId`.
-    fn to_str(self) Str => self.body.id()
-end
-
--- You can have multiple trait bounds. This means that a type
--- has to implement _all_ traits.
-fn combine_id_and_to_str<T impl HasId and ToStr>(obj T) Str:
-    let obj_id = obj.id()
-    let obj_str = obj.to_str()
-    f"{obj_id} + {obj_str}"
-end
-
-impl ToStr for Planet:
-    fn to_str(self) Str => f"Planet {self.name}"
-end
-
-fn main():
-    let planet = Planet{name: "Earth"}
-    let body = CelestialBody{body: planet}
-    assert(body.to_str() == "Earth")
-    assert(combine_id_and_to_str(planet) == "Earth + Planet Earth")
-end
-```
-
-Traits themselves can have trait bounds.
-
-```klar
-trait HasId impl ToStr:
-    fn id(self) Str
-end
-
-struct Planet:
-    name Str
-end
-
--- Now `Planet` has to implement `ToStr` as well.
-impl ToStr for Planet:
-    fn to_str(self) Str => f"Planet {self.name}"
-end
-
-impl HasId for Planet:
-    fn id(self) Str => self.name
-end
-
-fn main():
-    let planet = Planet{name: "Earth"}
-    let id = planet.id()
-    assert(planet.id() == "Earth")
-    assert(planet.to_str() == "Planet Earth")
-end
-```
-
 #### Compound Types
 
 ##### Structs
@@ -509,7 +438,82 @@ fn main():
 end
 ```
 
-### Expressions and Statements
+#### Generic Types
+
+##### Trait Bounds
+
+```klar
+struct Planet:
+    name Str
+end
+
+trait HasId:
+    fn id(self) Str
+end
+
+impl HasId for Planet:
+    fn id(self) Str => self.name
+end
+
+struct CelestialBody<T impl HasId>:
+    body T
+end
+
+impl ToStr for CelestialBody<T>:
+    -- We can use the trait function `HasId.id` here, because we
+    -- know that `self.body` is of a type that implements `HasId`.
+    fn to_str(self) Str => self.body.id()
+end
+
+-- You can have multiple trait bounds. This means that a type
+-- has to implement _all_ traits.
+fn combine_id_and_to_str<T impl HasId and ToStr>(obj T) Str:
+    let obj_id = obj.id()
+    let obj_str = obj.to_str()
+    f"{obj_id} + {obj_str}"
+end
+
+impl ToStr for Planet:
+    fn to_str(self) Str => f"Planet {self.name}"
+end
+
+fn main():
+    let planet = Planet{name: "Earth"}
+    let body = CelestialBody{body: planet}
+    assert(body.to_str() == "Earth")
+    assert(combine_id_and_to_str(planet) == "Earth + Planet Earth")
+end
+```
+
+Traits themselves can have trait bounds.
+
+```klar
+trait HasId impl ToStr:
+    fn id(self) Str
+end
+
+struct Planet:
+    name Str
+end
+
+-- Now `Planet` has to implement `ToStr` as well.
+impl ToStr for Planet:
+    fn to_str(self) Str => f"Planet {self.name}"
+end
+
+impl HasId for Planet:
+    fn id(self) Str => self.name
+end
+
+fn main():
+    let planet = Planet{name: "Earth"}
+    let id = planet.id()
+    assert(planet.id() == "Earth")
+    assert(planet.to_str() == "Planet Earth")
+end
+```
+
+### Expressions And Statements
 
 In Klar, almost everything is an expression. Expressions return a value.
 
@@ -1031,3 +1035,40 @@ fn main():
 end
 
 ```
+
+### Get Rid of the `;` Operator
+
+We only need it in contexts where an expression is returned from a function that 
+returns the unit type `()`:
+
+```
+fn test():
+    42;  -- The `;` is needed here because `test` returns the unit type `()`.
+end
+```
+
+This is especially problematic in closures:
+
+```
+-- The `;` is needed here because `for_each` returns the unit type `()`.
+my_iter.for_each(fn(x) => x + 1;)  
+```
+
+We could instead introduce the rule that expressions returned in unit-type-returning functions
+are automatically converted to statements.
+
+If there are other cases that need the conversion into a statement (i.e. having the 
+unit type `()`) you can always use the unit literal `()`. The example above could also be
+written as:
+
+```
+fn test():
+    42
+    ()  -- This is the unit literal.
+end
+```
+
+#### Type Inference
+
+This should not lead to problems with type inference because we require return types to be 
+explicitly annotated in the function signature.

@@ -214,7 +214,6 @@ end
 
 struct StructInst:
     fqn FQN
-    generics Vector<GenericArg>?
     fields Vector<(Ident, Expr)>
     meta Meta
 end
@@ -939,18 +938,11 @@ end
 
 impl ToDebugStr for StructInst:
     fn to_debug_str(self) Str:
-        let generics = match self.generics:
-            Some(x) => 
-                " ".join(
-                    x.iter().map<Str>(fn(it GenericArg) Str => it.to_debug_str())
-                )
-            None => ""
-        end
         let fields = " ".join(
             self.fields.iter().map<Str>(fn(it (Ident, Expr)) Str 
                 => f"(@field {it.0.to_debug_str()} {it.1.to_debug_str()})")
         )
-        f"(@structinst {self.fqn.to_debug_str()}{" ".when(generics.len() > 0)}{generics}{" ".when(fields.len() > 0)}{fields})"
+        f"(@structinst {self.fqn.to_debug_str()}{" ".when(fields.len() > 0)}{fields})"
     end
 end
 

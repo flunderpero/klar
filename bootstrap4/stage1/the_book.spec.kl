@@ -46,7 +46,7 @@ fn run_spec(spec Spec) Bool:
             true
         end
         Error(error):
-            let span = error.meta.span()
+            let span = error.meta.span
             let l = spec.code.split('\n').find_index(fn(it Str) => it.contains("-- Compile error"))
             match l:
                 -- todo (lang-feat): The `<Int>` is necessary because of a bug in stage0.

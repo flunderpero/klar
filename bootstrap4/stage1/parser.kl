@@ -79,6 +79,7 @@ use .ast::UnaryExpr
 use .ast::UnaryExprKind
 use .ast::Use
 use .lexer::FStrItem
+use .lexer::Span
 use .lexer::Token
 use .lexer::TokenKind
 use ParseErrorKind::*
@@ -174,6 +175,15 @@ impl Iterator<Token> for TokenIter:
 
     fn reset(mut self, mark Int):
         self.idx = mark
+    end
+
+    fn span_at_current_pos(self) Span throws ParseError:
+        --- Return the span of the current token.
+        ---
+        match self.current():
+            Some(token) => Span{from: token.span.to, to: token.span.to, src: token.span.src, file: token.span.file}
+            None => return parse_error(UnexpectedEOF, None)
+        end
     end
 
     fn tokens_since(mut self, mark Int) Vector<Token>:
@@ -734,7 +744,11 @@ impl Parser:
                                 fields.push((ident, parse_it(self.iter.force_next()!)!))
                             end
                             _ => fields.push(
-                                (ident, Pattern{kind: PatternKind::Ident(ident), meta: self.meta(mark)})
+                                (ident, 
+                                Pattern{
+                                    kind: PatternKind::Ident(ident), 
+                                    meta: self.meta_from_span(self.iter.span_at_current_pos()!)
+                                })
                             )
                         end
                     end
@@ -821,7 +835,7 @@ impl Parser:
         let ident = self.parse_ident(self.iter.force_next()!)!
         let type_ = match self.try_parse_type()!:
             Some(t) => t
-            None => Type{kind: TypeKind::Infer, meta: self.meta_from_token(ident.meta.tokens[0])}
+            None => Type{kind: TypeKind::Infer, meta: self.meta_from_span(self.iter.span_at_current_pos()!)}
         end
         self.iter.expect_lexical_token(TokenKind::Equal)!
         let expr_token = self.iter.force_next()!
@@ -948,9 +962,10 @@ impl Parser:
 
     fn parse_return_type(mut self) Type throws ParseError:
         let mark = self.iter.mark()
-        let return_type = self.try_parse_type()!.unwrap_or(
-            Type{kind: TypeKind::Unit, meta: self.meta(mark)}
-        )
+        let return_type = match self.try_parse_type()!:
+            Some(t) => t
+            None => Type{kind: TypeKind::Unit, meta: self.meta_from_span(self.iter.span_at_current_pos()!)}
+        end
         let throws_mark = self.iter.mark()
         match self.iter.peek():
             Some(Token{kind: TokenKind::Throws, span: _}):
@@ -1001,7 +1016,7 @@ impl Parser:
         let params = self.parse_params(true)!
         let return_type = match self.iter.peek():
             Some(Token{kind: TokenKind::FatArrow | TokenKind::Colon, span: _}) =>
-                Type{kind: TypeKind::Infer, meta: self.meta(mark)}
+                Type{kind: TypeKind::Infer, meta: self.meta_from_span(self.iter.span_at_current_pos()!)}
             _ => self.parse_return_type()!
         end
         let body = self.parse_block()!
@@ -1049,7 +1064,7 @@ impl Parser:
                 Some(t) => t
                 None => 
                     match type_is_optional:
-                        true => Type{kind: TypeKind::Infer, meta: self.meta(mark)}
+                        true => Type{kind: TypeKind::Infer, meta: self.meta_from_span(self.iter.span_at_current_pos()!)}
                         -- todo (lang-feat): We should have to wrap the token in a `Some` here.
                         false => return parse_error(TypeExpected(Some(next_token)), next_token)
                     end
@@ -1060,7 +1075,10 @@ impl Parser:
 
     fn parse_fn_def(mut self, decl FnDecl) Fn throws ParseError: 
         let body = self.parse_block()!
-        Fn{decl, body, meta: Meta::new(decl.meta.tokens + body.meta.tokens)}
+        Fn{decl, body, meta: self.meta_from_tokens(
+            decl.meta.tokens.unwrap_or(Vector<Token>::new()) 
+            + body.meta.tokens.unwrap_or(Vector<Token>::new()))
+        }
     end
 
     fn parse_impl_signature(mut self) (FQN, FQN?) throws ParseError:
@@ -1500,17 +1518,28 @@ impl Parser:
     end
 
     fn meta(self, mark Int) Meta:
-        Meta::new(self.iter.tokens_since(mark))
+        Meta::from_tokens(self.iter.tokens_since(mark))
+    end
+
+    fn meta_from_tokens(self, tokens Vector<Token>) Meta:
+        Meta::from_tokens(tokens)
     end
 
     fn meta_from_token(self, token Token) Meta:
-        Meta::new(Vector<Token>::from([token]))
+        Meta::from_tokens(Vector<Token>::from([token]))
+    end
+
+    fn meta_from_span(self, span Span) Meta:
+        Meta::from_span(span)
     end
 end
 
 fn parse_error(kind ParseErrorKind, token Token?) Error<(), ParseError>:
-    let tokens = if token.is_some() => Vector<Token>::from([token.unwrap()]) else => Vector<Token>::new()
-    Error(ParseError{meta: Meta::new(tokens), kind})
+    let meta = match token:
+        Some(t) => Meta::from_tokens(Vector::from([t]))
+        None => Meta::from_span(Span{src: "<unknown>", file: "<unknown>", from: 0, to: 0})
+    end
+    Error(ParseError{meta, kind})
 end
 
 enum ParseItem:

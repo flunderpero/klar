@@ -435,25 +435,29 @@ struct Meta:
     --- The tokens taken from the source code. These tokens never
         change even if the item is desugared.
     ---
-    tokens Vector<Token>
+    tokens Vector<Token>?
+    span Span
 end
 
 impl Meta:
-    fn new(tokens Vector<Token>) Meta:
+    fn from_tokens(tokens Vector<Token>) Meta:
+        assert(tokens.len() > 0)
+        let last = tokens.len() - 1
+        -- todo (lang-feat): We should be able to just use `-1` as the end index.
+        let span = tokens[0].span.combine(tokens[last].span)
         let id = Id{id: int_next()} 
-        Meta{id: id, tokens}
+        Meta{id: id, tokens: Some(tokens), span}
     end
 
-    fn span(self) Span:
-        let last = self.tokens.len() - 1
-        -- todo (lang-feat): We should be able to just use `-1` as the end index.
-        self.tokens[0].span.combine(self.tokens[last].span)
+    fn from_span(span Span) Meta:
+        let id = Id{id: int_next()} 
+        Meta{id, tokens: None, span}
     end
 end
 
 impl ToDebugStr for Meta:
     fn to_debug_str(self) Str:
-        f"(@meta {self.id.id} {self.span()})"
+        f"(@meta {self.id.id} {self.span})"
     end
 end
 
@@ -741,7 +745,7 @@ impl ToDebugStr for ParseErrorKind:
                 f"(@error type expected at {span_str})"
             end
             ParseErrorKind::UnexpectedEOF => "(@error eof)"
-            ParseErrorKind::UnexpectedFnDecl(decl) => f"(@error unexpected fn decl `{decl.ident}` at {decl.meta.span()})"
+            ParseErrorKind::UnexpectedFnDecl(decl) => f"(@error unexpected fn decl `{decl.ident}` at {decl.meta.span})"
             ParseErrorKind::UnexpectedToken(token) => f"(@error unexpected token `{token}` at {token.span})"
         end
     end

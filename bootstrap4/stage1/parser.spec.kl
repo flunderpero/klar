@@ -189,7 +189,7 @@ fn main():
                 )
             end)
 
-            test.it("it parses error types", fn() throws:
+            test.it("parses error types", fn() throws:
                 assert(
                     fndecl("fn test() Int throws MyError") 
                     == 

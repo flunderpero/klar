@@ -911,7 +911,7 @@ impl Parser:
             let item = items[idx]
             idx = idx + 1
             let expr = match item:
-                FStrItem::FStrTokensItem(tokens):
+                FStrItem::FStrTokensItem(tokens, span):
                     mut parser = Parser::new(TokenIter::new(tokens))
                     let expr = parser.parse_expr(parser.iter.force_next()!)!
                     match expr:
@@ -919,7 +919,7 @@ impl Parser:
                         None => return parse_error(ExprExpected(tokens[0]), tokens[0])
                     end
                 end
-                FStrItem::FStrStrItem(s):
+                FStrItem::FStrStrItem(s, span):
                     Expr::Literal(Literal{kind: LiteralKind::StrLiteral(s), meta: self.meta(mark)})
                 end
             end

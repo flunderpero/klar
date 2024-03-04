@@ -102,14 +102,15 @@ impl Iterator<Token> for Lexer:
                     _ => Token{kind: GreaterThan, span}
                 end
             '0'..'9' => self.match_int_literal(next, span)
-            '"' => self.match_string(false)
+            '"' => self.match_string(false, self.span())
             '\'' => self.match_char()
             'a'..'z' | 'A'..'Z' | '_':
                 if next == 'f':
                     match self.iter.peek():
                         Some<Char>('"'):
+                            let span = self.span()
                             self.iter.next()
-                            return self.match_string(true)
+                            return self.match_string(true, span)
                         end
                         _ => ()
                     end
@@ -198,9 +199,9 @@ impl Iterator<Token> for Lexer:
         Token{kind: CharLiteral(c), span: span.combine(self.span())}
     end
 
-    fn match_string(mut self, is_fstr Bool) Token:
-        let span = self.span()
+    fn match_string(mut self, is_fstr Bool, span Span) Token:
         mut s = ""
+        let start_span = self.span()
         mut fstr_items = Vector<FStrItem>::new()
         mut quotes = ""
         let required_closing_quotes = match self.iter.peek():
@@ -217,6 +218,8 @@ impl Iterator<Token> for Lexer:
             _ => 1
         end
         let multi_line = required_closing_quotes == 3
+        mut span = self.span()
+        span.from = span.from + 1
         loop:
             if quotes.len() == required_closing_quotes:
                 break
@@ -237,7 +240,10 @@ impl Iterator<Token> for Lexer:
                         continue
                     end
                     if s.len() > 0:
-                        fstr_items.push(FStrStrItem(s))
+                        span = span.combine(self.span())
+                        span.to = span.to - 1
+                        fstr_items.push(FStrStrItem(s, span))
+                        span = self.span()
                         s = ""
                     end
                     mut item_tokens = Vector<Token>::new()
@@ -251,7 +257,9 @@ impl Iterator<Token> for Lexer:
                             _ => item_tokens.push(self.next().unwrap())
                         end
                     end
-                    fstr_items.push(FStrTokensItem(item_tokens))
+                    fstr_items.push(FStrTokensItem(item_tokens, span.combine(self.span())))
+                    span = self.span()
+                    span.from = span.from + 1
                 end
                 Some<Char>('\n') => 
                     if multi_line => s.push_char('\n')
@@ -263,11 +271,13 @@ impl Iterator<Token> for Lexer:
         end
         let kind = if is_fstr:
             if s.len() > 0:
-                fstr_items.push(FStrStrItem(s))
+                span = span.combine(self.span())
+                span.to = span.to - 1
+                fstr_items.push(FStrStrItem(s, span))
             end
             FStr(fstr_items, multi_line)
         else => StrLiteral(s, multi_line)
-        Token{kind, span: span.combine(self.span())}
+        Token{kind, span: start_span.combine(self.span())}
     end
 
     fn match_comment(mut self) Token:
@@ -414,6 +424,12 @@ impl Span:
         end
         self.src.slice_copy(x, y).split('\n')
     end
+
+    fn raw_src(self) Str:
+        --- Return the raw source code covered by this span.
+        ---
+        self.src.slice_copy(self.from, self.to + 1)
+    end
 end
 
 impl ToStr for Span:
@@ -450,8 +466,8 @@ enum FStrItem:
     -- todo (lang-feat): We should only allow `Ident`, `Dot`, `LBracket`, and `RBracket` here.
     --                   Allowing arbitrary expressions leads to complex code. Perhaps this check
     --                   should be done in the parser instead.
-    FStrTokensItem(Vector<Token>)
-    FStrStrItem(Str)
+    FStrTokensItem(Vector<Token>, Span)
+    FStrStrItem(Str, Span)
 end
 
 use FStrItem::*
@@ -551,13 +567,13 @@ impl ToStr for TokenKind:
                 let items_to_str = items<FStrItem>.iter().map<Str>(
                     fn(token FStrItem) Str:
                         match token:
-                            FStrTokensItem(tokens) => 
+                            FStrTokensItem(tokens, _) => 
                                 " ".join(
                                     tokens<Token>.iter().map<Str>(
                                         fn(token Token) Str => token.to_str()
                                     )
                                 )
-                            FStrStrItem(s) => s
+                            FStrStrItem(s, _) => s
                         end
                     end
                 )
@@ -630,13 +646,13 @@ impl Token:
                 let items = items<FStrItem>.iter().map<Str>(
                     fn(token FStrItem) Str:
                         match token:
-                            FStrTokensItem(tokens) => 
+                            FStrTokensItem(tokens, _) => 
                                 "".join(
                                     tokens<Token>.iter().map<Str>(
                                         fn(token Token) Str => token.to_str()
                                     )
                                 )
-                            FStrStrItem(s) => s
+                            FStrStrItem(s, _) => s
                         end
                     end
                 )

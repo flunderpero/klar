@@ -150,28 +150,36 @@ x
                     assert(is_multi_line == false)
                     assert(items.len() == 4)
                     match items[0]:
-                        FStrStrItem(s) => assert(s == "the ")
+                        FStrStrItem(s, span):
+                            assert(s == "the ")
+                            assert(span.raw_src() == "the ")
+                        end
                         _ => return Error("expected FStrStrItem.")
                     end
                     match items[1]:
-                        FStrTokensItem(tokens):
+                        FStrTokensItem(tokens, span):
                             let kinds = tokens.iter().map<TokenKind>(
                                 fn(token Token) => token.kind).collect()
                             assert(kinds == Vector<TokenKind>::from(
                                 [Ident("question"), Dot, Ident("answer")])
                             )
+                            assert(span.raw_src() == "{question.answer}")
                         end
                         _ => return Error("expected FStrTokensItem.")
                     end
                     match items[2]:
-                        FStrStrItem(s) => assert(s == " is ")
+                        FStrStrItem(s, span):
+                            assert(s == " is ")
+                            assert(span.raw_src() == " is ")
+                        end
                         _ => return Error("expected FStrStrItem.")
                     end
                     match items[3]:
-                        FStrTokensItem(tokens):
+                        FStrTokensItem(tokens, span):
                             let kinds = tokens.iter().map<TokenKind>(
                                 fn(token Token) => token.kind).collect()
                             assert(kinds == Vector<TokenKind>::from([IntLiteral("42")]))
+                            assert(span.raw_src() == "{42}")
                         end
                         _ => return Error("expected FStrTokensItem.")
                     end
@@ -188,28 +196,36 @@ x
                     assert(is_multi_line == true)
                     assert(items.len() == 4)
                     match items[0]:
-                        FStrStrItem(s) => assert(s == "the \n")
+                        FStrStrItem(s, span):
+                            assert(s == "the \n")
+                            assert(span.raw_src() == "the \n")
+                        end
                         _ => return Error("expected FStrStrItem.")
                     end
                     match items[1]:
-                        FStrTokensItem(tokens):
+                        FStrTokensItem(tokens, span):
                             let kinds = tokens.iter().map<TokenKind>(
                                 fn(token Token) => token.kind).collect()
                             assert(kinds == Vector<TokenKind>::from(
                                 [Ident("question"), Dot, WhiteSpace('\n'), Ident("answer")])
                             )
+                            assert(span.raw_src() == "{question.\nanswer}")
                         end
                         _ => Error("expected FStrTokensItem.")
                     end
                     match items[2]:
-                        FStrStrItem(s) => assert(s == " is ")
+                        FStrStrItem(s, span):
+                            assert(s == " is ")
+                            assert(span.raw_src() == " is ")
+                        end
                         _ => return Error("expected FStrStrItem.")
                     end
                     match items[3]:
-                        FStrTokensItem(tokens):
+                        FStrTokensItem(tokens, span):
                             let kinds = tokens.iter().map<TokenKind>(
                                 fn(token Token) => token.kind).collect()
                             assert(kinds == Vector<TokenKind>::from([IntLiteral("42")]))
+                            assert(span.raw_src() == "{42}")
                         end
                         _ => return Error("expected FStrTokensItem.")
                     end
@@ -219,27 +235,30 @@ x
         end)
 
         test.it("lexes escape sequences", fn() throws:
-            fn test_escape(src Str, expected_str Str) throws:
+            fn test_escape(src Str, expected_str Str, expected_raw_str Str) throws:
                 let res = lex_only(src) 
                 assert(res.len() == 1)
                 match res[0].kind:
                     FStr(items, _):
                         assert(items.len() == 1)
                         match items[0]:
-                            FStrStrItem(s) => assert(s == expected_str)
+                            FStrStrItem(s, span):
+                                assert(s == expected_str)
+                                assert(span.raw_src() == expected_raw_str)
+                            end
                             _ => return Error("expected FStrStrItem.")
                         end
                     end
                     _ => return Error("expected FStr.")
                 end
             end
-            test_escape("f\"\\n\"", "\n")!
-            test_escape("f\"\\r\"", "\r")!
-            test_escape("f\"\\t\"", "\t")!
-            test_escape("f\"\\\\\"", "\\")!
-            test_escape("f\"\\\"\"", "\"")!
-            test_escape("f\"\\x41\"", "A")!
-            test_escape("f\"\\u0041\"", "A")!
+            test_escape("f\"\\n\"", "\n", "\\n")!
+            test_escape("f\"\\r\"", "\r", "\\r")!
+            test_escape("f\"\\t\"", "\t", "\\t")!
+            test_escape("f\"\\\\\"", "\\", "\\\\")!
+            test_escape("f\"\\\"\"", "\"", "\\\"")!
+            test_escape("f\"\\x41\"", "A", "\\x41")!
+            test_escape("f\"\\u0041\"", "A", "\\u0041")!
         end)
 
         test.it("detects unterminated f-strings and recovers", fn() throws:

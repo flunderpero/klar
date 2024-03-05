@@ -4,7 +4,7 @@ use .lexer::Token
 use .ast::Module
 use .parser::Parser
 use .parser::TokenIter
-use .ast::ParseErrorKind
+use .ast::ParseError
 
 enum DebugLevel:
     Off
@@ -34,12 +34,11 @@ end
 fn lex(src Str, file Str, debug_level DebugLevel) Vector<Token>:
     let tokens = Lexer::lex(src, file).collect()
     let lex_errors = tokens.iter().filter(
-        fn(token Token) Bool:
+        fn(token Token) =>
             match token.kind:
                 TokenKind::LexError(_) => true
                 _ => false
             end
-        end
     ).collect()
     if debug_level == DebugLevel::Debug:
         print("Tokens:")
@@ -66,7 +65,7 @@ fn lex(src Str, file Str, debug_level DebugLevel) Vector<Token>:
     tokens
 end
 
-fn parse(tokens Vector<Token>) Module throws ParseErrorKind:
+fn parse(tokens Vector<Token>) Module throws ParseError:
     Parser::new(TokenIter::new(tokens)).parse_module()
 end
 
@@ -84,7 +83,6 @@ fn main():
     end)()
     let src_file = env.args[2]
     let dst_file = env.args[3]
-    let src_read = File::at(src_file).read_str()
     let src = match File::at(src_file).read_str():
         Ok<Str>(src) => src
         Error(error):
@@ -95,8 +93,8 @@ fn main():
     end
     let tokens = lex(src, src_file, debug_level)
     match parse(tokens):
-        Ok<Module>(module) => print(module.to_debug_str_multiline())
-        Error<(), ParseErrorKind>(error):
+        Ok(module) => print(module.to_debug_str_multiline())
+        Error(error):
             print(error.to_debug_str())
             exit(3)
         end

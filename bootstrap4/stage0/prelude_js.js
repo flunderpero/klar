@@ -175,7 +175,7 @@ class klar_Str {
 
     klar_get(index) {
         if (index.value > this.klar_len().value || index.value < 0) {
-            panic(
+            klar_panic(
                 `index out of bound in \`Str[${index.value}]\`, Str has length \`${
                     this.klar_len().value
                 }`,
@@ -234,6 +234,10 @@ class klar_JSArray extends Array {
     klar_push(value) {
         this.push(value)
     }
+
+    klar_pop() {
+        this.pop()
+    }
 }
 
 class klar_File {
@@ -285,7 +289,7 @@ klar_Int.counter = 0
 
 // Used in `compiler.ts` only.
 function to_debug_str(s) {
-    if (s.value !== undefined) {
+    if (s?.value !== undefined) {
         s = s.value
     }
     if (typeof s === "number" || typeof s === "boolean") {
@@ -295,7 +299,6 @@ function to_debug_str(s) {
         s = JSON.stringify(s, null, 2)
     } else {
         for (const [Char, replacement] of Object.entries({
-            "\n": "\\n",
             "\r": "\\r",
             "\t": "\\t",
             "\0": "\\0",

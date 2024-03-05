@@ -272,7 +272,7 @@ impl Iterator<Token> for Lexer:
         let kind = if is_fstr:
             if s.len() > 0:
                 span = span.combine(self.span())
-                span.to = span.to - 1
+                span.to = span.to - quotes.len()
                 fstr_items.push(FStrStrItem(s, span))
             end
             FStr(fstr_items, multi_line)

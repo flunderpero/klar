@@ -1,0 +1,1229 @@
+use .klarfmt::format
+use .test::Test
+
+fn test_format(src Str) Str throws:
+    format(src, "spec")!
+end
+
+fn main():
+    mut test = Test::new_from_args("klarfmt", env.args)
+
+    test.it("passes the happy path", fn() throws:
+        assert(test_format(
+            """
+            fn   test(
+            a Str, b    Int
+            ) 
+         Int:
+            1 2end
+            """.dedent()
+        )! == 
+            """
+            fn test(a Str, b Int) Int:
+                1
+                2
+            end
+            """.dedent().trim()
+        )
+    end)
+
+    test.group("literals", fn():
+        test.group("string literals", fn():
+            test.it("formats single-line strings", fn() throws:
+                assert(test_format(
+                    """
+                    fn test() Str => "hello"
+                    """.dedent()
+                )! == 
+                    """
+                    fn test() Str => "hello"
+                    """.dedent().trim()
+                )
+            end)
+
+            test.it("formats multi-line strings", fn() throws:
+                assert(test_format(
+                    """
+                    fn test() Str => \"""hello
+                    world\"""
+                    """.dedent()
+                )! == 
+                    """
+                    fn test() Str => \"""hello
+                    world\"""
+                    """.dedent().trim()
+                )
+            end)
+
+            test.it("keeps escaped newlines", fn() throws:
+                assert(test_format(
+                    """
+                    fn test() Str => "hello\\nworld"
+                    """.dedent()
+                )! == 
+                    """
+                    fn test() Str => "hello\\nworld"
+                    """.dedent().trim()
+                )
+            end)
+        end)
+
+        test.group("char literals", fn():
+            test.it("passes the happy path", fn() throws:
+                assert(test_format(
+                    """
+                    fn test() Char => 'a'
+                    """.dedent()
+                )! == 
+                    """
+                    fn test() Char => 'a'
+                    """.dedent().trim()
+                )
+            end)
+
+            test.it("keeps escaped characters", fn() throws:
+                assert(test_format(
+                    """
+                    fn test() Char => '\\n'
+                    """.dedent()
+                )! == 
+                    """
+                    fn test() Char => '\\n'
+                    """.dedent().trim()
+                )
+            end)
+        end)
+
+        test.group("array literals", fn():
+            test.it("passes the happy path", fn() throws:
+                assert(test_format(
+                    """
+                    fn test() => [1, 2, 3]
+                    """.dedent()
+                )! == 
+                    """
+                    fn test() => [1, 2, 3]
+                    """.dedent().trim()
+                )
+            end)
+
+            test.it("wraps long array literals", fn() throws:
+                assert(test_format(
+                    """
+                    fn test() => [a_very_long_variable_name_that_is_very_long, another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long, c]
+                    """.dedent()
+                )! == 
+                    """
+                    fn test()
+                     => [
+                            a_very_long_variable_name_that_is_very_long,
+                            another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long,
+                            c
+                        ]
+                    """.dedent().trim()
+                )
+            end)
+        end)
+
+        test.it("formats integer literals", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int => 123
+                """.dedent()
+            )! == 
+                """
+                fn test() Int => 123
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats boolean literals", fn() throws:
+            assert(test_format(
+                """
+                fn test() Bool => true
+                """.dedent()
+            )! == 
+                """
+                fn test() Bool => true
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats unit literals", fn() throws:
+            assert(test_format(
+                """
+                fn test() => ()
+                """.dedent()
+            )! == 
+                """
+                fn test() => ()
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("types", fn():
+        test.it("formats FQN types", fn() throws:
+            assert(test_format(
+                """
+                fn test() Str => "hello"
+                """.dedent()
+            )! == 
+                """
+                fn test() Str => "hello"
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats function types", fn() throws:
+            assert(test_format(
+                """
+                fn test(a (fn ( Int , Str ) Int  ) ) Int => 1
+                """.dedent()
+            )! == 
+                """
+                fn test(a (fn(Int, Str) Int)) Int => 1
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats tuple types", fn() throws:
+            assert(test_format(
+                """
+                fn test(a (Int, Str)) Int => 1
+                """.dedent()
+            )! == 
+                """
+                fn test(a (Int, Str)) Int => 1
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("fndecl", fn():
+        test.it("wraps long function declarations", fn() throws:
+            assert(test_format(
+                """
+                fn this_is_a_very_long_function_name(and_a_very_long_parameter_name with::a::very::long::TypeName, str Str) Int:
+                    1
+                    2
+                end
+                """.dedent()
+            )! == 
+                """
+                fn this_is_a_very_long_function_name(
+                    and_a_very_long_parameter_name with::a::very::long::TypeName,
+                    str Str
+                ) Int:
+                    1
+                    2
+                end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("closure", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int => 
+                    some_func(
+                        fn(  a Int, b   Str) Int =>  1)
+                """.dedent()
+            )! == 
+                """
+                fn test() Int => some_func(fn(a Int, b Str) Int => 1)
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("works without parameter type annotations", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int => 
+                    some_func(
+                        fn(a,  b)  => 1)
+                """.dedent()
+            )! == 
+                """
+                fn test() Int => some_func(fn(a, b) => 1)
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("f-string", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test() Str => f"hello {world}"
+                """.dedent()
+            )! == 
+                """
+                fn test() Str => f"hello {world}"
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats expressions inside f-strings", fn() throws:
+            assert(test_format(
+                """
+                fn test() Str => f"hello {  world +  1} { a_very_long_variable_name_that_is_very_long > another_very_long_variable_name_that_is_very_long } and { a_very_long_variable_name_that_is_very_long + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long } so on"
+                """.dedent()
+            )! == 
+                """
+                fn test() Str
+                 => f"hello {world + 1} {
+                        a_very_long_variable_name_that_is_very_long > another_very_long_variable_name_that_is_very_long
+                    } and {
+                        a_very_long_variable_name_that_is_very_long
+                            + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                    } so on"
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats multi-line f-strings", fn() throws:
+            assert(test_format(
+                """
+                fn test() Str => f\"\"\"hello {world}
+                {another_very_long_variable_name_that_is_very_long}
+                \"\"\"
+                """.dedent()
+            )! == 
+                """
+                fn test() Str => f\"\"\"hello {world}
+                {another_very_long_variable_name_that_is_very_long}
+                \"\"\"
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("handles escaped newlines correctly", fn() throws:
+            assert(test_format(
+                """
+                fn test() Str => f"hello \\n world"
+                """.dedent()
+            )! == 
+                """
+                fn test() Str => f"hello \\n world"
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("match", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test() =>
+                    match some_var:
+                        1   =>  2
+                        3 => 
+                            4
+                    end
+                """.dedent()
+            )! == 
+                """
+                fn test()
+                 => match some_var:
+                        1 => 2
+                        3 => 4
+                    end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats literal patterns", fn() throws:
+            assert(test_format(
+                """
+                fn test() =>
+                    match some_var:
+                        1   =>  2
+                        "hello" => 
+                            4
+                    end
+                """.dedent()
+            )! == 
+                """
+                fn test()
+                 => match some_var:
+                        1 => 2
+                        "hello" => 4
+                    end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats enum variant patterns", fn() throws:
+            assert(test_format(
+                """
+                fn test() =>
+                    match some_var:
+                        SomeVeryLongEnumVariantThatIsVeryLong(some_very_long_array_name_that_is_very_very_long_so_long_in_fact_that_it_is_long, and_a_short_one):
+                            1
+                            2
+                        end
+                        VariantWithOneField(a) => a
+                        VariantWithNoFields => 
+                            4
+                    end
+                """.dedent()
+            )! == 
+                """
+                fn test()
+                 => match some_var:
+                        SomeVeryLongEnumVariantThatIsVeryLong(
+                            some_very_long_array_name_that_is_very_very_long_so_long_in_fact_that_it_is_long,
+                            and_a_short_one
+                        ):
+                            1
+                            2
+                        end
+                        VariantWithOneField(a) => a
+                        VariantWithNoFields => 4
+                    end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats FQN patterns", fn() throws:
+            assert(test_format(
+                """
+                fn test() =>
+                    match some_var:
+                        some::TypeName => a
+                        some::other::TypeName => 
+                            4
+                    end
+                """.dedent()
+            )! == 
+                """
+                fn test()
+                 => match some_var:
+                        some::TypeName => a
+                        some::other::TypeName => 4
+                    end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats struct patterns", fn() throws:
+            assert(test_format(
+                """
+                fn test() =>
+                    match some_var:
+                        MyStruct{a: 1, b: "hello"} => a
+                        MyStruct{a_very_long_field: "a very long string that is very long", another_long_field_name_that_is_very_long: "a string that is very long"} =>
+                            4
+                    end
+                """.dedent()
+            )! == 
+                """
+                fn test()
+                 => match some_var:
+                        MyStruct{ a: 1, b: "hello" } => a
+                        MyStruct{
+                            a_very_long_field: "a very long string that is very long",
+                            another_long_field_name_that_is_very_long: "a string that is very long"
+                        } => 4
+                    end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats or-patterns", fn() throws:
+            assert(test_format(
+                """
+                fn test() =>
+                    match some_var:
+                        1 | 2 | 3 => a
+                        a_very_long_variable_name_that_is_very_long | another_pattern | MyStruct{a_very_long_field: "test", another_long_field_name_that_is_very_long: "a string that is very long", a_third_field: 3} | the_longest_name_you_have_ever_seen_that_is_surprisingly_short_for_a_very_long_name => 4
+                    end
+                """.dedent()
+            )! == 
+                """
+                fn test()
+                 => match some_var:
+                        1 | 2 | 3 => a
+                        a_very_long_variable_name_that_is_very_long
+                          | another_pattern
+                          | MyStruct{
+                                a_very_long_field: "test",
+                                another_long_field_name_that_is_very_long: "a string that is very long",
+                                a_third_field: 3
+                            }
+                          | the_longest_name_you_have_ever_seen_that_is_surprisingly_short_for_a_very_long_name
+                         => 4
+                    end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats range patterns", fn() throws:
+            assert(test_format(
+                """
+                fn test() =>
+                    match some_var:
+                        1..<3 => a
+                        'a'..'z' => 4
+                    end
+                """.dedent()
+            )! == 
+                """
+                fn test()
+                 => match some_var:
+                        1..<3 => a
+                        'a'..'z' => 4
+                    end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats tuple patterns", fn() throws:
+            assert(test_format(
+                """
+                fn test() =>
+                    match some_var:
+                        (1, 2) => a
+                        (a_very_long_variable_name_that_is_very_long, another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long) => 4
+                    end
+                """.dedent()
+            )! == 
+                """
+                fn test()
+                 => match some_var:
+                        (1, 2) => a
+                        (
+                            a_very_long_variable_name_that_is_very_long,
+                            another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                        ) => 4
+                    end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("parses wildcard patterns", fn() throws:
+            assert(test_format(
+                """
+                fn test() =>
+                    match some_var:
+                        _ => a
+                    end
+                """.dedent()
+            )! == 
+                """
+                fn test()
+                 => match some_var:
+                        _ => a
+                    end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.it("formats return and never wraps it", fn() throws:
+        -- todo: Unnecessary return keywords should be removed. But that's a job for the analyzer.
+        assert(test_format(
+            """
+            fn test() => 
+                return very_long_return_expressions_that_are_very_long_that_it_is_almost_comical_but_hey_here_it_is_marvel_at_its_length
+            """.dedent()
+        )! == 
+            """
+            fn test()
+             => return very_long_return_expressions_that_are_very_long_that_it_is_almost_comical_but_hey_here_it_is_marvel_at_its_length
+            """.dedent().trim()
+        )
+    end)
+
+    test.group("tuple", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test() (Int, Str) => (1, "hello")
+                """.dedent()
+            )! == 
+                """
+                fn test() (Int, Str) => (1, "hello")
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wraps long tuples", fn() throws:
+            assert(test_format(
+                """
+                fn test() (Int, Str) => (a_very_long_variable_name_that_is_very_long, another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long)
+                """.dedent()
+            )! == 
+                """
+                fn test() (Int, Str)
+                 => (
+                        a_very_long_variable_name_that_is_very_long,
+                        another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                    )
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("field access", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int => some_struct.  some_field
+                """.dedent()
+            )! == 
+                """
+                fn test() Int => some_struct.some_field
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wraps long field accesses", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int: some_very_long_struct_name_that_is_very_very_long_so_long_in_fact_that_it_is_long.  some_very_long_field_name + 7 * 8
+                print("wot")
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test() Int:
+                    some_very_long_struct_name_that_is_very_very_long_so_long_in_fact_that_it_is_long
+                        .some_very_long_field_name
+                        + 7 * 8
+                    print("wot")
+                end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.it("formats tuple access", fn() throws:
+        assert(test_format(
+            """
+            fn test() Int => some_tuple.  1
+            """.dedent()
+        )! == 
+            """
+            fn test() Int => some_tuple.1
+            """.dedent().trim()
+        )
+    end)
+
+    test.group("unary expressions", fn():
+        test.it("formats `not` expressions", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int => not   a
+                """.dedent()
+            )! == 
+                """
+                fn test() Int => not a
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats `negate` expressions", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int => - 1
+                """.dedent()
+            )! == 
+                """
+                fn test() Int => -1
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("index access", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int => some_array[ 1 ]
+                """.dedent()
+            )! == 
+                """
+                fn test() Int => some_array[1]
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wraps long index accesses", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int: some_very_long_array_name_that_is_very_very_long_so_long_in_fact_that_it_is_long_it_itself_causes_the_line_to_wrap[ 1 + 2 * 3 ]
+                    some_very_long_array_name_that_is_very_very_long_so_long_in_fact_that_it_is_long[
+                    a_very_long_variable_name_that_is_very_long + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                    ]
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test() Int:
+                    some_very_long_array_name_that_is_very_very_long_so_long_in_fact_that_it_is_long_it_itself_causes_the_line_to_wrap
+                        [1 + 2 * 3]
+                    some_very_long_array_name_that_is_very_very_long_so_long_in_fact_that_it_is_long
+                        [a_very_long_variable_name_that_is_very_long
+                            + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                        ]
+                end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("if", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int =>
+                    if 1 > 2 => 1 else => 2
+                """.dedent()
+            )! == 
+                """
+                fn test() Int => if 1 > 2 => 1 else => 2
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("puts `if` on the next line if the then-block or the else-block is a multi-line block", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int =>
+                    if 1 > 2:
+                        1
+                        2
+                    else => 3
+                """.dedent()
+            )! == 
+                """
+                fn test() Int
+                 => if 1 > 2:
+                        1
+                        2
+                    else => 3
+                """.dedent().trim()
+            )
+            assert(test_format(
+                """
+                fn test() Int
+                 => if 1 > 2 => 1
+                    else:
+                        3
+                        4
+                    end
+                """.dedent()
+            )! == 
+                """
+                fn test() Int
+                 => if 1 > 2 => 1
+                    else:
+                        3
+                        4
+                    end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats if-else with multi-line blocks", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int =>
+                    if 1 > 2:
+                        1
+                        2
+                    else:
+                        3
+                        4
+                    end
+                """.dedent()
+            )! == 
+                """
+                fn test() Int
+                 => if 1 > 2:
+                        1
+                        2
+                    else:
+                        3
+                        4
+                    end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("let", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test():
+                    let a = 1
+                    mut b = 2
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test():
+                    let a = 1
+                    mut b = 2
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wraps long let bindings", fn() throws:
+            assert(test_format(
+                """
+                fn test():
+                    let a_very_long_variable_name_that_is_very_long_that_is_very_long = another_very_long_variable_name_that_is_very_long_that_is_very_long
+                    mut a_very_long_variable_name_that_is_very_long_that_is_very_long = another_very_long_variable_name_that_is_very_long_that_is_very_long + 3
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test():
+                    let a_very_long_variable_name_that_is_very_long_that_is_very_long
+                        = another_very_long_variable_name_that_is_very_long_that_is_very_long
+                    mut a_very_long_variable_name_that_is_very_long_that_is_very_long
+                        = another_very_long_variable_name_that_is_very_long_that_is_very_long + 3
+                end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("loop", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test(): loop:
+                        1
+                        2
+                    end
+                    3
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test():
+                    loop:
+                        1
+                        2
+                    end
+                    3
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("breaks onto a new line if it is mult-line", fn() throws:
+            assert(test_format(
+                """
+                fn test(): loop:
+                        1
+                        2
+                    end
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test()
+                 => loop:
+                        1
+                        2
+                    end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("idiomatic Option and Result", fn():
+        test.it("converts Option<T> to idiomatic T?", fn() throws:
+            assert(test_format(
+                """
+                fn test() Option<Int> => None
+                """.dedent()
+            )! == 
+                """
+                fn test() Int? => None
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("converts Result<T, E> to idiomatic T throws E", fn() throws:
+            assert(test_format(
+                """
+                fn test() Result<Int, MyError> => 1
+                """.dedent()
+            )! == 
+                """
+                fn test() Int throws MyError => 1
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("converts Result<T, Str> to idiomatic T throws", fn() throws:
+            assert(test_format(
+                """
+                fn test() Result<Int, Str> => 1
+                """.dedent()
+            )! == 
+                """
+                fn test() Int throws => 1
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("converts Result<(), Str> to idiomatic throws", fn() throws:
+            assert(test_format(
+                """
+                fn test() Result<(), Str> => 1
+                """.dedent()
+            )! == 
+                """
+                fn test() throws => 1
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.it("formats structs", fn() throws:
+        assert(test_format(
+            """
+            struct 
+            Test: a Int
+                b Str
+            end
+            """.dedent()
+        )! == 
+            """
+            struct Test:
+                a Int
+                b Str
+            end
+            """.dedent().trim()
+        )
+    end)
+
+    test.group("struct instantiation", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test() Test => Test{  a: 1, 
+                        b: 
+                        "hello"}
+                """.dedent()
+            )! == 
+                """
+                fn test() Test => Test{ a: 1, b: "hello" }
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("converts a:a to a", fn() throws:
+            assert(test_format(
+                """
+                fn test() Test => Test{  a: a, 
+                        b: 
+                        "hello"}
+                """.dedent()
+            )! == 
+                """
+                fn test() Test => Test{ a, b: "hello" }
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wraps if the line is too long", fn() throws:
+            assert(test_format(
+                """
+                fn test() Test => Test{  a: 1, b: "a very long string that exceeds 100 characters and should cause the struct instantiation to be wrapped"}
+                """.dedent()
+            )! == 
+                """
+                fn test() Test
+                 => Test{
+                        a: 1,
+                        b: "a very long string that exceeds 100 characters and should cause the struct instantiation to be wrapped"
+                    }
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.it("formats traits", fn() throws:
+        assert(test_format(
+            """
+            trait 
+            Test: 
+                fn decl_only(
+                    self, a Int,
+                ) 
+
+                fn with_default_impl(
+                    self, a Int,   x Str
+                ) Int:
+                    1
+                    2
+                end
+
+                fn another_decl_only( self )
+            end
+            """.dedent()
+        )! == 
+            """
+            trait Test:
+                fn decl_only(self, a Int)
+
+                fn with_default_impl(self, a Int, x Str) Int:
+                    1
+                    2
+                end
+
+                fn another_decl_only(self)
+            end
+            """.dedent().trim()
+        )
+    end)
+
+    test.group("impl", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                impl Test: fn some_fn(self, a Int) Int:
+                        1 2
+                    end 
+                    fn another_fn(self) Int => 1
+
+                    fn third_fn(self) Int: 1 2 end
+
+                    end
+                """.dedent()
+            )! == 
+                """
+                impl Test:
+                    fn some_fn(self, a Int) Int:
+                        1
+                        2
+                    end
+
+                    fn another_fn(self) Int => 1
+
+                    fn third_fn(self) Int:
+                        1
+                        2
+                    end
+                end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("block", fn():
+        test.it("converts multi-line block syntax to single-line", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int:
+                    1
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test() Int => 1
+                """.dedent().trim()
+            )
+        end)
+        
+        test.it("puts the `=>` on the next line if the line is too long", fn() throws:
+            assert(test_format(
+                """
+                fn test() Str:
+                    "a very long string that exceeds 100 characters and should be wrapped to the next line to avoid exceeding the maximum line length"
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test() Str
+                 => "a very long string that exceeds 100 characters and should be wrapped to the next line to avoid exceeding the maximum line length"
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("considers an empty block a multi-line block", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int:
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test() Int:
+                end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("assignment", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test(): a = 1
+                b = 2
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test():
+                    a = 1
+                    b = 2
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wrap long assignments", fn() throws:
+            assert(test_format(
+                """
+                fn test(): a_very_long_variable_name_that_is_very_long = another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                b = a_very_long_variable_name_that_is_very_long + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test():
+                    a_very_long_variable_name_that_is_very_long
+                        = another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                    b = a_very_long_variable_name_that_is_very_long
+                        + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("call", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int => some_fn( 1 , 2  )
+                """.dedent()
+            )! == 
+                """
+                fn test() Int => some_fn(1, 2)
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wraps long calls", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int => some_long_function_name(a_very_long_variable_name_that_is_very_long, another_very_long_variable_name_that_is_very_long)
+                """.dedent()
+            )! == 
+                """
+                fn test() Int
+                 => some_long_function_name(
+                        a_very_long_variable_name_that_is_very_long,
+                        another_very_long_variable_name_that_is_very_long
+                    )
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("binary expressions", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int => 1 + 2 * 3
+                """.dedent()
+            )! == 
+                """
+                fn test() Int => 1 + 2 * 3
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wraps long binary expressions", fn() throws:
+            assert(
+                test_format(
+                    """
+                    fn test() Int:
+                        this_very_long_variable_name_that_is_very_long == this_other_very_long_variable_name_that_is_very_long
+                        1
+                    end
+                    """.dedent()
+                )! 
+                == """
+                fn test() Int:
+                    this_very_long_variable_name_that_is_very_long
+                        == this_other_very_long_variable_name_that_is_very_long
+                    1
+                end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("line wrapping and blank lines", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int:
+                    a_very_long_variable_name_that_is_very_long == a_very_long_function_name(a_very_long_variable_name_that_is_very_long, another_very_long_variable_name_that_is_very_long)
+                    a_very_long_number > another_very_long_number + a_third_very_long_number_that_is_very_long / a_fourth_very_long_number_that_is_very_long + a_very_long_function_name()
+                    1 + 2 - 3 * 4 / 5
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test() Int:
+                    a_very_long_variable_name_that_is_very_long
+                        == a_very_long_function_name(
+                            a_very_long_variable_name_that_is_very_long,
+                            another_very_long_variable_name_that_is_very_long
+                        )
+                    a_very_long_number
+                        > another_very_long_number
+                            + a_third_very_long_number_that_is_very_long / a_fourth_very_long_number_that_is_very_long
+                            + a_very_long_function_name()
+                    1 + 2 - 3 * 4 / 5
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("adds a newline after a function definition only on module level functions", fn() throws:
+            assert(test_format(
+                """
+                fn module_level_fn() Int:
+                    fn nested_fn() Int: 
+                        1 
+                        2 
+                    end
+
+
+                    1
+                end
+                """.dedent()
+            )! == 
+                """
+                    fn module_level_fn() Int:
+                        fn nested_fn() Int:
+                            1
+                            2
+                        end
+                        1
+                    end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.run_and_exit()
+end

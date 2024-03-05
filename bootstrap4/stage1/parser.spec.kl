@@ -166,6 +166,19 @@ fn main():
             )
         end)
 
+        test.it("parses function type as parameter", fn() throws:
+            assert(
+                fndecl("fn test(a (fn(Int) Int))") 
+                == 
+                "(@fndecl (@ident test) " +
+                "(@param (@ident a) " +
+                "(@fntype " +
+                "(@type (@fqn (@name (@ident Int)))) " +
+                "(@type (@fqn (@name (@ident Int)))))) " +
+                "(@type (@unit)))"
+            )
+        end)
+
         test.group("throws", fn():
             test.it("passes the happy path", fn() throws:
                 assert(
@@ -404,9 +417,12 @@ fn main():
         test.group("function types", fn():
             test.it("passes the happy path", fn() throws:
                 assert(
-                    type("(fn(Int) Int)") 
+                    type("(fn(Int, Str) Int)") 
                     == 
-                    "(@fntype (@type (@fqn (@name (@ident Int)))) (@type (@fqn (@name (@ident Int)))))"
+                    "(@fntype " + 
+                    "(@type (@fqn (@name (@ident Int)))) " +
+                    "(@type (@fqn (@name (@ident Str)))) " +
+                    "(@type (@fqn (@name (@ident Int)))))"
                 )
             end)
 

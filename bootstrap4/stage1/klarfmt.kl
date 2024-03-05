@@ -1,0 +1,1004 @@
+-- dear Copilot: Read the ast definition in ast.kl to understand the types used in this file
+use .lexer::Lexer
+use .lexer::TokenKind
+use .lexer::Token
+use .ast::Assignment
+use .ast::BinaryExpr
+use .ast::BinaryExprKind
+use .ast::Block
+use .ast::BlockItem
+use .ast::Break
+use .ast::Call
+use .ast::Closure
+use .ast::Continue
+use .ast::Expr
+use .ast::Field
+use .ast::FieldAccess
+use .ast::Fn
+use .ast::FnDecl
+use .ast::FQN
+use .ast::FStr
+use .ast::GenericArg
+use .ast::Ident
+use .ast::If
+use .ast::Impl
+use .ast::IndexAccess
+use .ast::Let
+use .ast::Loop
+use .ast::Literal
+use .ast::LiteralKind
+use .ast::Match
+use .ast::MatchArm
+use .ast::Module
+use .ast::ModuleItem
+use .ast::Name
+use .ast::Param
+use .ast::Pattern
+use .ast::PatternKind
+use .ast::Range
+use .ast::Return
+use .ast::Struct
+use .ast::StructInst
+use .ast::Trait
+use .ast::TupleAccess
+use .ast::Type
+use .ast::TypeKind
+use .ast::Visitor
+use .ast::UnaryExpr
+use .ast::UnaryExprKind
+use .parser::Parser
+use .parser::TokenIter
+use .ast::ParseError
+
+struct Formatter:
+    out Vector<Str>
+    line Str
+    indent_ Int
+    indent_str Str
+    --- The number of wrap-able nodes on the current line.
+    ---
+    wrap_idx Int
+    --- The remaining depth of wraps.
+    ---
+    wrap_depth Int
+end
+
+impl Formatter:
+    fn new() Formatter:
+        Formatter{out: Vector<Str>::new(), indent_: 0, line: "", wrap_idx: 0, wrap_depth: 0, indent_str: ""}
+    end
+
+    fn w_nl_indent(mut self) Self:
+        self.w_nl()
+        self.indent_ = self.indent_ + 1
+        self
+    end
+
+    fn w_nl_indent_with_str(mut self, s Str) Self:
+        self.w_nl_indent()
+        self.indent_str = s
+        self
+    end
+
+    fn w_nl_dedent(mut self) Self:
+        self.w_nl()
+        self.indent_ = self.indent_ - 1
+        self
+    end
+
+    fn w(mut self, s ToStr) Self:
+        self.line.push(s.to_str())
+        self
+    end
+
+    fn w_empty_line(mut self) Self:
+        --- Add an empty line if the last line is not empty.
+        ---
+        self.w_nl()
+        if self.out.len() > 0 and self.out[self.out.len() - 1].len() > 0 
+            => self.out.push("")
+        self
+    end
+
+    fn w_nl(mut self) Self:
+        if self.line.iter().any(fn(c Char) Bool => c != ' '):
+            let line = (if self.indent_ > 0 => " ".repeat((self.indent_ - 1) * 4) + self.indent_str else => "") + self.line
+            self.out.push(line)
+        end
+        self.indent_str = "    "
+        self.line = ""
+        self.wrap_idx = 0
+        self.wrap_depth = 0
+        self
+    end
+
+    fn w_space(mut self) Self:
+        --- Add a space to the current line if it is not emply and does not end with a space.
+        ---
+        if self.line.len() > 0 and self.line[self.line.len() - 1] != ' ' => self.line.push(" ")
+        self
+    end
+
+    fn d_empty_lines(mut self) Self:
+        --- Delete the last empty lines from the output.
+        ---
+        self.w_nl()
+        mut i = self.out.len() - 1
+        loop:
+            if i < 0 => break
+            if self.out[i].len() > 0 => break
+            self.out.pop()
+            i = i - 1
+        end
+        self
+    end
+
+    fn d_space(mut self) Self:
+        --- Delete the last character from the current line if it is a space.
+        ---
+        if self.line.len() > 0 and self.line[self.line.len() - 1] == ' ':
+            self.line = self.line.slice_copy(0, self.line.len() - 1)
+        end
+        self
+    end
+
+    fn line_too_long(self) Bool:
+        self.line.len() > 100
+    end
+
+    fn mark_line(self) Int:
+        --- Return the length of the current line.
+        ---
+        self.line.len()
+    end
+
+    fn reset_line(mut self, mark_line Int) Self:
+        --- Reset the current line to the given length.
+        ---
+        self.line = self.line.slice_copy(0, mark_line)
+        self
+    end
+
+    fn reset_wrap(mut self) Self:
+        self.wrap_idx = 0
+        self.wrap_depth = 0
+        self
+    end
+
+    fn inc_wrap_depth(mut self) Self:
+        self.wrap_depth = self.wrap_depth + 1
+        self
+    end
+
+    fn dec_wrap_depth(mut self) Self:
+        self.wrap_depth = self.wrap_depth - 1
+        self
+    end
+
+    fn inc_wrap_idx(mut self) Self:
+        self.wrap_idx = self.wrap_idx + 1
+        self
+    end
+
+    fn maybe_wrap(mut self, f (fn(Bool))):
+        self.inc_wrap_idx()
+        if self.wrap_idx == 1:
+            -- This is the first wrap-able node on the line.
+            -- It controls the wrapping of the entire line.
+            let mark = self.mark_line()
+            f(false)
+            mut cur_line = ""
+            loop:
+                if not self.line_too_long() or cur_line == self.line => break
+                self.reset_line(mark)
+                self.inc_wrap_depth()
+                self.wrap_idx = 0
+                f(true)
+                cur_line = self.line
+            end
+            self.reset_wrap()
+            return ()
+        end
+        -- This is a deeper wrap-able node on the line.
+        let wrap = self.wrap_idx <= self.wrap_depth
+        f(wrap)
+    end
+
+    fn force_wrap(mut self, f (fn())) Bool:
+        --- Force wrapping of the next wrap-able node inside the given function.
+
+            If the current line is too long after applying the function, 
+            the current line is reset.
+
+            @return true if the the line-length is not exceeded.
+        ---
+        self.inc_wrap_depth()
+        let mark = self.mark_line()
+        f()
+        self.dec_wrap_depth()
+        if self.line_too_long():
+            self.reset_line(mark)
+            return false
+        end
+        true
+    end
+
+    fn finish(mut self) Str:
+        self.d_empty_lines()
+        "\n".join(self.out.iter())
+    end
+end
+
+impl Visitor for Formatter:
+    fn visit_module(mut self, mut node Module):
+        self.walk_module(node)
+    end
+
+    fn visit_module_item(mut self, mut node ModuleItem):
+        match node:
+            ModuleItem::Fn(fn_) => self.visit_fn(fn_)
+            ModuleItem::Struct(struct_) => self.visit_struct(struct_)
+            ModuleItem::Trait(trait_) => self.visit_trait(trait_)
+            ModuleItem::Impl(impl_) => self.visit_impl(impl_)
+            _ => self.w("todo: visit_module_item")
+        end
+        self.w_empty_line()
+        return ()
+    end
+
+    fn visit_fn(mut self, mut node Fn):
+        self.visit_fndecl(node.decl)
+        self.visit_block(node.body)
+        self.w_nl()
+        return ()
+    end
+
+    fn visit_closure(mut self, mut node Closure):
+        self.visit_fn_or_closure_decl(node.params, node.return_type, None)
+        self.visit_block(node.body)
+    end
+
+    fn visit_fndecl(mut self, mut node FnDecl):
+        self.visit_fn_or_closure_decl(node.params, node.return_type, Some(node.ident))
+    end
+
+    fn visit_fn_or_closure_decl(mut self, params Vector<Param>, return_type Type, ident Ident?):
+        self.maybe_wrap(fn(wrap Bool):
+            self.w("fn")
+            match ident:
+                Some(ident_) => self.w_space().w(ident_.name)
+                None => ()
+            end
+            self.w("(")
+            if wrap => self.w_nl_indent()
+            mut iter = PeekableIterator::new(params.iter())
+            iter.for_each(fn(param Param):
+                self.w(param.ident)
+                if param.ident.name != "self":  
+                    self.w_space()
+                    self.visit_type(param.type_)
+                end
+                if not iter.at_end():
+                    if wrap => self.w(",").w_nl()
+                    else => self.w(", ")
+                end
+                return ()
+            end)
+            if wrap => self.w_nl_dedent()
+            self.w(") ")
+            self.w_return_type(return_type);
+        end)
+    end
+
+    fn visit_struct(mut self, mut node Struct):
+        self.w("struct ").w_name(node.name).w(":")
+        self.w_nl_indent()
+        node.fields.iter().for_each(fn(field Field):
+            self.w_nl().w(field.ident).w_space()
+            self.visit_type(field.type_);
+        end)
+        self.w_nl_dedent()
+        self.w("end").w_nl()
+        return ()
+    end
+
+    fn visit_trait(mut self, mut node Trait):
+        self.w("trait ").w_name(node.name).w(":")
+        self.w_nl_indent()
+        -- Make sure we keep the declaration order.
+        mut fn_decls = PeekableIterator::new(node.fn_decls.iter())
+        mut fn_impls = PeekableIterator::new(node.fn_impls.iter())
+        loop:
+            let next_decl_pos = match fn_decls.peek():
+                Some(fn_decl) => fn_decl.meta.span.from
+                None => 10000000 -- todo (lang-feat) use max integer constant
+            end
+            let next_impl_pos = match fn_impls.peek():
+                Some(fn_impl) => fn_impl.meta.span.from
+                None => 10000000 -- todo (lang-feat) use max integer constant
+            end
+            if next_decl_pos == 10000000 and next_impl_pos == 10000000 => break
+            if next_decl_pos < next_impl_pos:
+                let fn_decl = fn_decls.next().unwrap()
+                self.visit_fndecl(fn_decl)
+            else:
+                let fn_impl = fn_impls.next().unwrap()
+                self.visit_fn(fn_impl)
+            end
+            self.w_empty_line()
+        end
+        self.d_empty_lines()
+        self.w_nl_dedent()
+        self.w("end").w_nl()
+        return ()
+    end
+
+    fn visit_block(mut self, node Block):
+        self.w_block(node, true);
+    end
+
+    fn w_block(mut self, node Block, add_end_to_then_block Bool) Self:
+        if node.is_single_line():
+            self.maybe_wrap(fn (force_wrap Bool):
+                -- We always wrap if the block item is
+                -- - a loop with a multi-line body
+                -- - an if-expression with a multi-line body (then or else block)
+                -- - a match-expression
+                let wrap = force_wrap or match node.items[0]:
+                    BlockItem::Expr(Expr::Loop(loop_)) => not loop_.body.is_single_line()
+                    BlockItem::Expr(Expr::Match(_)) => true
+                    BlockItem::Expr(Expr::If(if_)) => not if_.then_block.is_single_line() or 
+                        match if_.else_block:
+                            Some(else_block) => not else_block.is_single_line()
+                            _ => false
+                        end
+                    _ => false
+                end
+                self.dec_wrap_depth()
+                if wrap => self.w_nl_indent_with_str(" => ")
+                else => self.w(" => ")
+                self.walk_block_item(node.items[0])
+                if wrap => self.w_nl_dedent()
+                return ()
+            end)
+        else:
+            self.w(":").w_nl_indent()
+            node.items.iter().for_each(fn(item BlockItem):
+                self.walk_block_item(item)
+                self.w_nl();
+            end)
+            self.w_nl_dedent()
+            if add_end_to_then_block => self.w("end")
+        end
+        return self
+    end
+
+    fn visit_impl(mut self, node Impl):
+        self.w("impl ")
+        match node.trait_:
+            Some(trait_) => self.w_fqn(trait_).w(" for ")
+            None => ()
+        end
+        self.w_fqn(node.type_).w(":").w_nl_indent()
+        node.fn_impls.iter().for_each(fn(fn_impl Fn):
+            self.visit_fn(fn_impl)
+            self.w_empty_line()
+            return ()
+        end)
+        self.d_empty_lines()
+        self.w_nl_dedent()
+        self.w("end").w_empty_line();
+    end
+
+    fn visit_expr(mut self, mut node Expr):
+        match node:
+            Expr::Assignment(assignment) => self.visit_assignment(assignment)
+            Expr::BinaryExpr(bin_expr) => self.visit_binary_expr(bin_expr)
+            Expr::Break(_) => self.w("break")
+            Expr::Call(call) => self.visit_call(call)
+            Expr::Closure(closure) => self.visit_closure(closure)
+            Expr::Continue(_) => self.w("continue")
+            Expr::FQN(fqn) => self.w_fqn(fqn)
+            Expr::FStr(fstr) => self.visit_fstr(fstr)
+            Expr::FieldAccess(field_access) => self.visit_field_access(field_access)
+            Expr::Ident(ident) => self.w(ident.name)
+            Expr::IndexAccess(index_access) => self.visit_index_access(index_access)
+            Expr::If(if_) => self.visit_if(if_)
+            Expr::Let(let_) => self.visit_let(let_)
+            Expr::Literal(lit) => self.visit_literal(lit)
+            Expr::Loop(loop_) => self.visit_loop(loop_)
+            Expr::Match(match_) => self.visit_match(match_)
+            Expr::Return(expr) => self.visit_return(expr)
+            Expr::StructInst(struct_) => self.visit_struct_inst(struct_)
+            Expr::TerminatorExpr(_) => self.w(";")
+            Expr::Tuple(exprs) => self.visit_tuple(exprs)
+            Expr::TupleAccess(tuple_access) => self.visit_tuple_access(tuple_access)
+            Expr::UnaryExpr(unary_expr) => self.visit_unary_expr(unary_expr)
+        end
+        return ()
+    end
+
+    fn visit_unary_expr(mut self, mut unary_expr UnaryExpr):
+        match unary_expr.kind:
+            UnaryExprKind::Neg => self.w("-")
+            UnaryExprKind::Not => self.w("not ")
+        end
+        self.visit_expr(unary_expr.expr)
+    end
+
+    fn visit_tuple_access(mut self, tuple_access TupleAccess):
+        self.visit_expr(tuple_access.target)
+        self.w(".")
+        self.w(tuple_access.index)
+        return ()
+    end
+
+    fn visit_tuple(mut self, exprs Vector<Expr>):
+        self.maybe_wrap(fn (wrap Bool):
+            self.w("(")
+            if wrap => self.w_nl_indent()
+            mut iter = PeekableIterator::new(exprs.iter())
+            iter.for_each(fn(expr Expr):
+                self.visit_expr(expr)
+                if not iter.at_end():
+                    if wrap => self.w(",").w_nl()
+                    else => self.w(", ")
+                end
+                return ()
+            end)
+            if wrap => self.w_nl_dedent()
+            self.w(")")
+            return ()
+        end)
+    end
+
+    fn visit_return(mut self, return_ Return):
+        --- Note: We don't wrap the return expressions on purpose.
+        ---
+        self.w("return ")
+        self.visit_expr(return_.expr)
+    end
+
+    fn visit_match(mut self, match_ Match):
+        self.w("match ")
+        self.visit_expr(match_.expr)
+        self.w(":").w_nl_indent()
+        match_.arms.iter().for_each(fn(arm MatchArm):
+            self.visit_pattern(arm.pattern)
+            self.visit_block(arm.block)
+            self.w_nl()
+            return ()
+        end)
+        self.w_nl_dedent()
+        self.w("end")
+        return ()
+    end
+
+    fn visit_pattern(mut self, pattern Pattern):
+        match pattern.kind:
+            PatternKind::EnumVariant(fqn, fields) => self.visit_enum_variant_pattern(fqn, fields)
+            PatternKind::Ident(ident) => self.w(ident.name)
+            PatternKind::FQN(fqn) => self.w_fqn(fqn)
+            PatternKind::Literal(lit) => self.visit_literal(lit)
+            PatternKind::Or(patterns) => self.visit_or_pattern(patterns)
+            PatternKind::Range(range) => self.visit_range_pattern(range)
+            PatternKind::Struct(fqn, fields) => self.visit_struct_pattern(fqn, fields)
+            PatternKind::Tuple(patterns) => self.visit_tuple_pattern(patterns)
+            PatternKind::Wildcard => self.w("_")
+        end
+        return ()
+    end
+
+    fn visit_tuple_pattern(mut self, patterns Vector<Pattern>):
+        self.maybe_wrap(fn (wrap Bool):
+            self.w("(")
+            if wrap => self.w_nl_indent()
+            mut iter = PeekableIterator::new(patterns.iter())
+            iter.for_each(fn(pattern Pattern):
+                self.visit_pattern(pattern)
+                if not iter.at_end():
+                    if wrap => self.w(",").w_nl()
+                    else => self.w(", ")
+                end
+                return ()
+            end)
+            if wrap => self.w_nl_dedent()
+            self.w(")")
+            return ()
+        end)
+    end
+
+    fn visit_range_pattern(mut self, range Range):
+        self.maybe_wrap(fn (wrap Bool):
+            self.visit_literal(range.start)
+            if wrap => self.w_nl_indent()
+            if range.end_is_exclusive => self.w("..<")
+            else => self.w("..")
+            self.visit_literal(range.end_)
+        end)
+    end
+
+    fn visit_struct_pattern(mut self, fqn FQN, fields Vector<(Ident, Pattern)>):
+        self.maybe_wrap(fn (wrap Bool):
+            self.w_fqn(fqn)
+            self.w("{")
+            if fields.len() == 0 => return ()
+            if wrap => self.w_nl_indent()
+            else => self.w_space()
+            mut iter = PeekableIterator::new(fields.iter())
+            iter.for_each(fn(it (Ident, Pattern)):
+                self.w(it.0)
+                self.w(": ")
+                self.visit_pattern(it.1)
+                if not iter.at_end():
+                    if wrap => self.w(",").w_nl()
+                    else => self.w(", ")
+                end
+                return ()
+            end)
+            if wrap => self.w_nl_dedent()
+            else => self.w_space()
+            self.w("}");
+        end)
+    end
+
+    fn visit_or_pattern(mut self, patterns Vector<Pattern>):
+        self.maybe_wrap(fn (wrap Bool):
+            let indent = self.indent_
+            mut iter = PeekableIterator::new(patterns.iter())
+            iter.for_each(fn(pattern Pattern):
+                if not iter.at_start():
+                    if wrap => self.w_nl_indent_with_str("  | ")
+                    else => self.w(" | ")
+                end
+                self.visit_pattern(pattern)
+                if not iter.at_start() and wrap => self.w_nl_dedent()
+                return ()
+            end)
+            return ()
+        end)
+    end
+
+    fn visit_enum_variant_pattern(mut self, fqn FQN, fields Vector<Pattern>):
+        self.maybe_wrap(fn (wrap Bool):
+            self.w_fqn(fqn)
+            if fields.len() == 0 => return ()
+            self.w("(")
+            if wrap => self.w_nl_indent()
+            mut iter = PeekableIterator::new(fields.iter())
+            iter.for_each(fn(field Pattern):
+                self.visit_pattern(field)
+                if not iter.at_end():
+                    if wrap => self.w(",").w_nl()
+                    else => self.w(", ")
+                end
+                return ()
+            end)
+            if wrap => self.w_nl_dedent()
+            self.w(")")
+            return ()
+        end)
+    end
+
+    fn visit_literal(mut self, lit Literal):
+        match lit.kind:
+            LiteralKind::ArrayLiteral(exprs) => self.visit_array_literal(exprs)
+            LiteralKind::IntLiteral(i) => self.w(i)
+            LiteralKind::StrLiteral(s, raw_str) => self.w(raw_str)
+            LiteralKind::BoolLiteral(b) => self.w(f"{b}")
+            LiteralKind::CharLiteral(c, raw_str) => self.w(raw_str)
+            LiteralKind::UnitLiteral => self.w("()")
+        end
+        return ()
+    end
+
+    fn visit_array_literal(mut self, exprs Vector<Expr>):
+        self.maybe_wrap(fn (wrap Bool):
+            self.w("[")
+            if wrap => self.w_nl_indent()
+            mut iter = PeekableIterator::new(exprs.iter())
+            iter.for_each(fn(expr Expr):
+                self.visit_expr(expr)
+                if not iter.at_end():
+                    if wrap => self.w(",").w_nl()
+                    else => self.w(", ")
+                end
+                return ()
+            end)
+            if wrap => self.w_nl_dedent()
+            self.w("]")
+            return ()
+        end)
+    end
+
+    fn visit_loop(mut self, loop_ Loop):
+        self.w("loop")
+        self.visit_block(loop_.body)
+        return ()
+    end
+
+    fn visit_let(mut self, let_ Let):
+        self.maybe_wrap(fn (wrap Bool):
+            if let_.is_mut => self.w("mut ")
+            else => self.w("let ")
+            self.w(let_.ident.name)
+            self.visit_type(let_.type_)
+            if wrap => self.w_nl_indent()
+            else => self.w_space()
+            self.w("= ")
+            self.visit_expr(let_.expr)
+            if wrap => self.w_nl_dedent()
+            return ()
+        end)
+    end
+
+    fn visit_if(mut self, if_ If):
+        self.maybe_wrap(fn (wrap Bool):
+            self.w("if")
+            if wrap => self.w_nl_indent()
+            else => self.w_space()
+            self.visit_expr(if_.cond)
+            self.w_block(if_.then_block, not if_.else_block.is_some())
+            match if_.else_block:
+                Some(else_block):
+                    if wrap or not else_block.is_single_line() => self.w_nl()
+                    else => self.w_space()
+                    self.w("else")
+                    self.visit_block(else_block)
+                end
+                None => ()
+            end
+            if wrap => self.w_nl_dedent()
+            return ()
+        end)
+        return ()
+    end
+
+    fn visit_index_access(mut self, index_access IndexAccess):
+        self.maybe_wrap(fn (wrap Bool):
+            self.visit_expr(index_access.target)
+            if wrap => self.w_nl_indent()
+            self.w("[")
+            self.visit_expr(index_access.index)
+            self.w("]")
+            if wrap => self.w_nl_dedent()
+            return ()
+        end)
+    end
+
+    fn visit_field_access(mut self, field_access FieldAccess):
+        self.maybe_wrap(fn (wrap Bool):
+            self.visit_expr(field_access.target)
+            if wrap => self.w_nl_indent()
+            self.w(".").w(field_access.field.name)
+            if wrap => self.w_nl_dedent()
+            return ()
+        end)
+    end
+
+    fn visit_fstr(mut self, fstr FStr):
+        -- todo: the first line of a multi-line str should count towards the current line length.
+        --       Right now, a multi-line str with a long first line will never cause 
+        --       a line to be wrapped.
+        let is_multi_line = fstr.exprs.iter().any(fn(expr Expr) Bool =>
+            match expr:
+                Expr::Literal(Literal{kind: LiteralKind::StrLiteral(_, raw_str), meta}) => raw_str.contains("\n")
+                _ => false
+            end
+        )
+        self.w("f")
+        if is_multi_line => self.w("\"\"\"")
+        else => self.w("\"")
+        fstr.exprs.iter().for_each(fn(expr Expr):
+            match expr:
+                Expr::Literal(Literal{kind: LiteralKind::StrLiteral(_, raw_str), meta}):
+                    self.w(raw_str)
+                end
+                _ =>
+                    self.maybe_wrap(fn (wrap Bool):
+                        self.w("{")
+                        if wrap => self.w_nl_indent()
+                        self.visit_expr(expr)
+                        if wrap => self.w_nl_dedent()
+                        self.w("}")
+                        return ()
+                    end)
+            end
+            return ()
+        end)
+        if is_multi_line => self.w("\"\"\"")
+        else => self.w("\"")
+        return ()
+    end
+
+    fn visit_call(mut self, mut call Call):
+        self.maybe_wrap(fn (wrap Bool):
+            self.visit_expr(call.target)
+            self.w("(")
+            if wrap => self.w_nl_indent()
+            mut iter = PeekableIterator::new(call.args.iter())
+            iter.for_each(fn(arg Expr):
+                self.visit_expr(arg)
+                if not iter.at_end():
+                    if wrap => self.w(",").w_nl()
+                    else => self.w(", ")
+                end
+                return ()
+            end)
+            if wrap => self.w_nl_dedent()
+            self.w(")")
+            return ()
+        end)
+    end
+
+    fn visit_assignment(mut self, mut assignment Assignment):
+        self.maybe_wrap(fn (wrap Bool):
+            self.visit_expr(assignment.lhs)
+            -- First try to wrap the rhs.
+            if self.force_wrap(fn():
+                self.w(" = ")
+                self.visit_expr(assignment.rhs)
+            end) => return ()
+            -- If the rhs can't be wrapped, resume with regular wrapping rules.
+            if wrap => self.w_nl_indent()
+            else => self.w_space()
+            self.w("= ")
+            self.visit_expr(assignment.rhs)
+            if wrap => self.w_nl_dedent()
+            return ()
+        end)
+        return ()
+    end
+
+    fn visit_binary_expr(mut self, mut bin_expr BinaryExpr):
+        self.maybe_wrap(fn (wrap Bool):
+            self.visit_expr(bin_expr.lhs)
+            if wrap => self.w_nl_indent()
+            else => self.w_space()
+            match bin_expr.kind:
+                BinaryExprKind::Add => self.w("+")
+                BinaryExprKind::And => self.w("and")
+                BinaryExprKind::Div => self.w("/")
+                BinaryExprKind::Equal => self.w("==")
+                BinaryExprKind::GreaterThan => self.w(">")
+                BinaryExprKind::GreaterThanOrEqual => self.w(">=")
+                BinaryExprKind::LessThan => self.w(" < ")
+                BinaryExprKind::LessThanOrEqual => self.w("<=")
+                BinaryExprKind::Mul => self.w("*")
+                BinaryExprKind::NotEqual => self.w("!=")
+                BinaryExprKind::Or => self.w("or")
+                BinaryExprKind::Sub => self.w("-")
+            end
+            self.w_space()
+            self.visit_expr(bin_expr.rhs)
+            if wrap => self.w_nl_dedent()
+            return ()
+        end)
+        return ()
+    end
+
+    fn visit_struct_inst(mut self, struct_ StructInst):
+        self.maybe_wrap(fn (wrap Bool):
+            self.w_fqn(struct_.fqn).w("{")
+            if struct_.fields.len() > 0:
+                if wrap => self.w_nl_indent()
+                else => self.w_space()
+                mut iter = PeekableIterator::new(struct_.fields.iter())
+                iter.for_each(fn(it (Ident, Expr)):
+                    self.w(it.0)
+                    -- todo (lang-feat) this code is needlessly complex
+                    let write_expr = match it.1:
+                        Expr::Ident(ident) => ident.name != it.0.name
+                        _ => true
+                    end
+                    if write_expr:
+                        self.w(": ")
+                        self.visit_expr(it.1)
+                    end
+                    if not iter.at_end():
+                        if wrap => self.w(",").w_nl()
+                        else => self.w(", ")
+                    end
+                    return ()
+                end)
+                if wrap => self.w_nl_dedent()
+                else => self.w_space()
+            end
+            self.w("}");
+        end)
+    end
+
+    fn visit_type(mut self, mut type_ Type):
+        match type_.is_option_type():
+            Some(inner_type_):
+                self.visit_type(inner_type_)
+                self.w("?")
+                return ()
+            end
+            _ => ()
+        end
+        match type_.is_result_type():
+            Some(types):
+                self.w_return_type(types.0)
+                match types.1.kind:
+                    TypeKind::FQN(fqn):
+                        if fqn.names[0].ident.name == "Str":
+                            self.w(" throws")
+                        else:
+                            self.w(" throws ")
+                            self.visit_type(types.1)
+                        end
+                    end
+                    _:
+                        self.w(" throws ")
+                        self.visit_type(types.1)
+                    end
+                end
+                return ()
+            end
+            _ => ()
+        end
+        match type_.kind:
+            TypeKind::Fn(fn_):
+                self.w("(fn(")
+                mut i = 0
+                loop:
+                    if i == fn_.param_types.len() => break
+                    self.visit_type(fn_.param_types[i])
+                    if i < fn_.param_types.len() - 1:
+                        self.w(", ")
+                    end
+                    i = i + 1
+                end
+                self.w(")").w_space()
+                self.w_return_type(fn_.return_type)
+                self.w(")")
+            end
+            TypeKind::FQN(fqn) => self.w_fqn(fqn)
+            TypeKind::Infer => self.d_space()
+            TypeKind::Self => self.w("Self")
+            TypeKind::Tuple(types):
+                self.w("(")
+                mut iter = PeekableIterator::new(types.iter())
+                iter.for_each(fn(type_ Type):
+                    self.visit_type(type_)
+                    if not iter.at_end() => self.w(", ")
+                    return ()
+                end)
+                self.w(")")
+            end
+            TypeKind::Unit => self.w("()")
+        end
+        return ()
+    end
+
+    fn w_return_type(mut self, return_type Type) Self:
+        match return_type.kind:
+            TypeKind::Unit => self.d_space()
+            _ => self.visit_type(return_type)
+        end
+        self
+    end
+
+    fn w_generics(mut self, generics_ Vector<GenericArg>?) Self:
+        let generics = match generics_:
+            Some(x) => x
+            None => return self
+        end
+        if generics.len() == 0 => return self
+        self.d_space()
+        self.w("<")
+        mut generics_iter = PeekableIterator::new(generics.iter())
+        generics_iter.for_each(fn(generic_arg GenericArg):
+            self.visit_type(generic_arg.type_)
+            match generic_arg.trait_bounds:
+                Some(trait_bounds):
+                    self.w(" impl ")
+                    mut trait_bounds_iter = PeekableIterator::new(trait_bounds.iter())
+                    trait_bounds_iter.for_each(fn(fqn FQN):
+                        self.w_fqn(fqn)
+                        if not trait_bounds_iter.at_end():
+                            self.w(" and ")
+                        end
+                        return ()
+                    end)
+                end
+                None => ()
+            end
+            if not generics_iter.at_end():
+                self.w(", ")
+            end
+            return ()
+        end)
+        self.w(">")
+        self
+    end
+
+    fn w_name(mut self, name Name) Self:
+        self.w(name.ident.name)
+        self.w_generics(name.generics)
+        self
+    end
+
+    fn w_fqn(mut self, fqn FQN) Self:
+        mut iter = PeekableIterator::new(fqn.names.iter())
+        iter.for_each(fn(name Name):
+            self.w_name(name)
+            if not iter.at_end():
+                self.w("::")
+            end
+            return ()
+        end)
+        self
+    end
+
+end
+
+fn format(src Str, src_file Str) Str throws:
+    let tokens = lex(src, src_file)!
+    let module = parse(tokens)!
+    let formatter = Formatter::new()
+    formatter.visit_module(module)
+    formatter.finish()
+end
+
+fn lex(src Str, file Str) Vector<Token> throws:
+    let tokens = Lexer::lex(src, file).collect()
+    let lex_errors = tokens.iter().filter(
+        fn(token Token) =>
+            match token.kind:
+                TokenKind::LexError(_) => true
+                _ => false
+            end
+    ).map<Str>(fn(token Token) Str =>
+        match token.kind:
+            TokenKind::LexError(msg) => msg
+            _ => "unexpected token in lex errors filter"
+        end
+    ).collect()
+    if lex_errors.len() > 0:
+        let lex_errors_str = "\n".join(lex_errors.iter())
+        return Error(f"Lex errors:\n{lex_errors_str}")
+    end
+    tokens
+end
+
+fn parse(tokens Vector<Token>) Module throws ParseError:
+    Parser::new(TokenIter::new(tokens)).parse_module()
+end
+
+fn main():
+    if env.args.len() < 3:
+        print("Usage: klarfmt <src> [-w]")
+        exit(1)
+        return ()
+    end
+    let src_file = env.args[2]
+    let write = env.args.iter().any(fn(arg Str) Bool => arg == "-w")
+    let src = match File::at(src_file).read_str():
+        Ok(src) => src
+        Error(error):
+            print(f"Error reading file {src_file}: {error}")
+            exit(2)
+            return ()
+        end
+    end
+    match format(src, src_file):
+        Ok(formatted_src):
+            if write:
+                match File::at(src_file).write_str(formatted_src):
+                    Ok(_) => ()
+                    Error(error):
+                        print(f"Error writing file {src_file}: {error}")
+                        exit(2)
+                        return ()
+                    end
+                end
+            else => print(formatted_src)
+        end
+        Error(error):
+            print(error)
+            exit(3)
+        end
+    end
+end

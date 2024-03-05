@@ -1072,3 +1072,54 @@ end
 
 This should not lead to problems with type inference because we require return types to be 
 explicitly annotated in the function signature.
+
+
+### Forbid `,` In Multi-Line Lists Of Parameters, Arguments, etc.
+
+In structs and enums declarations, we don't use `,` to separate fields or variants. 
+Why should we seperate parameters in function declartions or calls with `,` when they are
+each on their own line? 
+
+```
+fn test(a Int, b Str):
+end
+
+fn test(
+    a Int,  -- This looks inconsistent to me.
+    b Str
+):
+end
+
+fn test(
+    a Int   -- No `,` here.
+    b Str
+):
+end
+```
+
+In struct instantiations, it lookes even more inconsistent, because of the resemblance to
+struct declarations:
+
+```
+struct Test:
+    a Int
+    b Str
+end
+
+let t = Test{
+    a: 42,  -- This looks inconsistent to me.
+    b: "Hello"
+}
+
+let t = Test{
+    a: 42   -- No `,` here.
+    b: "Hello"
+}
+```
+
+_Cons_: In some user's eyes, this might come off as a quirky rule, because no other (mainstream)
+language does this.
+
+_Radical version_: Get rid of `,` in function declarations, calls, etc. altogether. Our grammar
+would allow for that.
+

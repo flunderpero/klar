@@ -6,12 +6,14 @@ compiler=0
 lexer=0
 parser=0
 the_book=0
+klarfmt=0
 files=0
 
 if [ "$1" == "" ]; then
     lexer=1
     parser=1
     the_book=1
+    klarfmt=1
     files=1
 else
     case $1 in
@@ -26,6 +28,9 @@ else
             ;;
         the_book)
             the_book=1
+            ;;
+        klarfmt)
+            klarfmt=1
             ;;
         files)
             files=1
@@ -53,6 +58,12 @@ if [ "$parser" -eq 1 ]; then
     echo "Testing parser ..."
     bun ../stage0/compiler.ts parser.spec.kl build/parser.spec.js --debug-errors
     build/parser.spec.js $@
+fi
+
+if [ "$klarfmt" -eq 1 ]; then
+    echo "Testing klarfmt ..."
+    bun ../stage0/compiler.ts klarfmt.spec.kl build/klarfmt.spec.js --debug-errors
+    build/klarfmt.spec.js $@ 
 fi
 
 if [ "$the_book" -eq 1 ]; then

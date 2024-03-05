@@ -206,6 +206,14 @@ impl PeekableIterator<T>:
         self.peeked = self.iter.next()
         self.peeked 
     end
+
+    fn at_end(self) Bool:
+        self.peek().is_none()
+    end
+
+    fn at_start(self) Bool:
+        self.idx <= 0
+    end
 end
 
 impl Iterator<T> for PeekableIterator<T>:
@@ -304,6 +312,7 @@ extern:
         fn new(size Int) Self
         fn len(self) Int
         fn push(mut self, s T) 
+        fn pop(mut self)
         fn get(self, i Int) T
         fn set(mut self, i Int, v T)
     end
@@ -426,6 +435,46 @@ impl Str:
 
     fn iter(self) Iterator<Char>:
         StrIterator { str: self, index: 0 }
+    end
+
+    fn dedent(self) Str:
+        --- Remove leading spaces from each line so that the line with the least
+            number of leading spaces has none.
+        ---
+        mut min_indent = 10000000
+        self.split('\n').for_each(fn(line Str):
+            let indent = line.iter().take_while(fn(c Char) Bool => c == ' ').count()
+            if indent > 0 and indent != line.len() and indent < min_indent 
+                => min_indent = indent
+            end
+        )
+        let result = self.split('\n').map<Str>(fn(line Str) Str => line.slice_copy(min_indent, line.len()))
+        "\n".join(result)
+    end
+
+    fn trim_end(self) Str:
+        mut i = self.len()
+        loop:
+            if i == 0 => break
+            if self[i - 1] != ' ' and self[i - 1] != '\n' => break
+            i = i - 1
+        end
+        self.slice_copy(0, i)
+    end
+
+    fn trim_start(self) Str:
+        mut i = 0
+        loop:
+            if i == self.len() => break
+            if self[i] != ' ' and self[i] != '\n' => break
+            i = i + 1
+        end
+        self.slice_copy(i, self.len())
+    end
+
+    fn trim(self) Str:
+        if self.len() == 0 => return ""
+        self.trim_start().trim_end()
     end
 end
 
@@ -556,6 +605,13 @@ impl Vector<T>:
 
     fn push(mut self, s T):
         self.data.push(s)
+    end
+
+    fn pop(mut self) Option<T>:
+        if self.len() == 0 => return None
+        let value = self.data.get(self.len() - 1)
+        self.data.pop()
+        Some(value)
     end
 
     fn iter(self) VectorIter<T> => VectorIter<T> { vec: self, index: 0 }

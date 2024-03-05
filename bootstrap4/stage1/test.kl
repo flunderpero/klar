@@ -88,6 +88,11 @@ impl Test:
         self.collect_group.tests.push(TestCase{name, f})
     end
 
+    fn skip_it(self, name Str, f (fn() throws)):
+        --- Ignore a test.
+        ---
+    end
+
     fn group(mut self, name Str, collect (fn())):
         --- Create a new group of tests. All tests and groups added within the 
             `collect` function will be added to the new group. 

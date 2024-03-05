@@ -367,9 +367,9 @@ impl Parser:
             TokenKind::BoolLiteral(b) => 
                 Expr::Literal(Literal{kind: LiteralKind::BoolLiteral(b), meta: self.meta(mark)})
             TokenKind::CharLiteral(c) => 
-                Expr::Literal(Literal{kind: LiteralKind::CharLiteral(c), meta: self.meta(mark)})
+                Expr::Literal(Literal{kind: LiteralKind::CharLiteral(c, token.span.raw_src()), meta: self.meta(mark)})
             TokenKind::StrLiteral(s, _) => 
-                Expr::Literal(Literal{kind: LiteralKind::StrLiteral(s), meta: self.meta(mark)})
+                Expr::Literal(Literal{kind: LiteralKind::StrLiteral(s, token.span.raw_src()), meta: self.meta(mark)})
             TokenKind::LParen => self.parse_unit_or_tuple_literal_or_parentheses(token)!
             TokenKind::LBracket => Expr::Literal(self.parse_array_literal()!)
             TokenKind::Ident(name):
@@ -789,7 +789,7 @@ impl Parser:
                     )
                 TokenKind::StrLiteral(s, _) 
                     => PatternKind::Literal(
-                        Literal{kind: LiteralKind::StrLiteral(s), meta: self.meta(mark)}
+                        Literal{kind: LiteralKind::StrLiteral(s, token.span.raw_src()), meta: self.meta(mark)}
                     )
                 TokenKind::CharLiteral(c) 
                     => parse_literal_or_range(
@@ -797,7 +797,7 @@ impl Parser:
                             fn (token Token) Literal throws ParseError:
                                 match token.kind:
                                     TokenKind::CharLiteral(c) => 
-                                        Literal{kind: LiteralKind::CharLiteral(c), meta: self.meta(mark)}
+                                        Literal{kind: LiteralKind::CharLiteral(c, token.span.raw_src()), meta: self.meta(mark)}
                                     _ => return parse_error(CharLiteralExpected(token), token)
                                 end
                             end
@@ -934,7 +934,7 @@ impl Parser:
                     end
                 end
                 FStrItem::FStrStrItem(s, span):
-                    Expr::Literal(Literal{kind: LiteralKind::StrLiteral(s), meta: self.meta(mark)})
+                    Expr::Literal(Literal{kind: LiteralKind::StrLiteral(s, span.raw_src()), meta: self.meta(mark)})
                 end
             end
             exprs.push(expr)

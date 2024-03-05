@@ -60,7 +60,7 @@ x
 
     test.it("lexes all keywords", fn() throws:
         lex_run(
-            """
+                """
             and break continue else end enum extern false fn for if impl 
             let loop match mut not or return struct throws trait true use
             """, [
@@ -236,7 +236,7 @@ x
 
         test.it("lexes escape sequences", fn() throws:
             fn test_escape(src Str, expected_str Str, expected_raw_str Str) throws:
-                let res = lex_only(src) 
+                let res = lex_only(src)
                 assert(res.len() == 1)
                 match res[0].kind:
                     FStr(items, _):
@@ -293,9 +293,9 @@ x
                 if idx >= expected.len():
                     panic(f"more tokens than expected: {token}")
                 end
-                assert(idx < expected.len())
-                assert(token.kind == expected[idx]) 
-                idx = idx + 1
+            assert(idx  < expected.len())
+            assert(token.kind == expected[idx])
+            idx = idx + 1
             end
         )
         if idx < expected.len():

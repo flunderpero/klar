@@ -59,8 +59,8 @@ enum LiteralKind:
     ArrayLiteral(Vector<Expr>)
     IntLiteral(Int)
     BoolLiteral(Bool)
-    StrLiteral(Str)
-    CharLiteral(Char)
+    StrLiteral(Str, Str)
+    CharLiteral(Char, Str)
     UnitLiteral
 end
 
@@ -184,7 +184,7 @@ end
 
 struct MatchArm:
     pattern Pattern
-    block Block
+    block Block -- todo: Sometimes it's called `body` and sometimes `block`.
     meta Meta
 end
 
@@ -250,7 +250,7 @@ enum Expr:
     Return(Return)
     StructInst(StructInst)
     TerminatorExpr(TerminatorExpr)
-    Tuple(Vector<Expr>)
+    Tuple(Vector<Expr>) -- todo: I think this should be LiteralKind::Tuple
     TupleAccess(TupleAccess)
     UnaryExpr(UnaryExpr)
 end
@@ -436,8 +436,146 @@ struct Meta:
         change even if the item is desugared.
     ---
     tokens Vector<Token>?
+    --- The span of the node in the source code.
+    ---
     span Span
 end
+
+impl Type:
+    fn is_option_type(self) Type?:
+        match self.kind:
+            TypeKind::FQN(fqn) =>
+                if fqn.names.len() == 1 and fqn.names[0].ident.name == "Option":
+                    match fqn.names[0].generics:
+                        Some(x) =>
+                            if x.len() == 1 => Some(x[0].type_)
+                            else => None
+                        None => None
+                    end
+                else:
+                    None
+                end
+            _ => None
+        end
+    end
+
+    fn is_result_type(self) (Type, Type)?:
+        match self.kind:
+            TypeKind::FQN(fqn) =>
+                if fqn.names.len() == 1 and fqn.names[0].ident.name == "Result" =>
+                    match fqn.names[0].generics:
+                        Some(x) =>
+                            if x.len() == 2 => Some((x[0].type_, x[1].type_))
+                            else => None
+                        None => None
+                    end
+                else => None
+            _ => None
+        end
+    end
+end
+
+trait Visitor:
+    --- Walk the AST.
+
+        Each AST node has a corresponding `visit_` method. This method is called
+        when the node is visited.
+
+        The `walk_` method has to be called to visit the children of the node.
+
+        This is work in progress and not yet complete.
+    ---
+    fn visit_module(mut self, mut node Module)
+
+    fn visit_module_item(mut self, mut node ModuleItem)
+
+    fn visit_fn(mut self, mut node Fn)
+
+    fn visit_fndecl(mut self, mut node FnDecl)
+
+    fn visit_struct(mut self, mut node Struct)
+
+    fn visit_trait(mut self, mut node Trait)
+
+    fn visit_impl(mut self, mut node Impl)
+
+    fn visit_block(mut self, mut node Block)
+
+    fn visit_expr(mut self, mut node Expr)
+
+    fn walk_module(mut self, node Module):
+        node.items.iter().for_each(fn(item ModuleItem) => self.visit_module_item(item))
+    end
+
+    fn walk_enum(mut self, node Enum):
+    end
+
+    fn walk_extern(mut self, node Extern):
+    end
+
+    fn walk_fn(mut self, node Fn):
+        self.visit_fndecl(node.decl)
+        self.visit_block(node.body)
+    end
+
+    fn walk_fndecl(mut self, node FnDecl):
+    end
+
+    fn walk_block(mut self, node Block):
+        node.items.iter().for_each(fn(item BlockItem) => self.walk_block_item(item))
+    end
+
+    fn walk_block_item(mut self, node BlockItem):
+        match node:
+            BlockItem::Enum(child) => self.walk_enum(child)
+            BlockItem::Expr(child) => self.visit_expr(child)
+            BlockItem::Fn(child) => self.visit_fn(child)
+            BlockItem::Impl(child) => self.visit_impl(child)
+            BlockItem::Trait(child) => self.visit_trait(child)
+            BlockItem::Struct(child) => self.visit_struct(child)
+        end
+    end
+
+    fn walk_expr(mut self, node Expr):
+        -- match node:
+        --     Expr::Assignment(child) => self.visit_assignment(child)
+        --     Expr::BinaryExpr(child) => self.visit_binary_expr(child)
+        --     Expr::Break(child) => self.visit_break(child)
+        --     Expr::Call(child) => self.visit_call(child)
+        --     Expr::Closure(child) => self.visit_closure(child)
+        --     Expr::Continue(child) => self.visit_continue(child)
+        --     Expr::FQN(child) => self.visit_fqn(child)
+        --     Expr::FStr(child) => self.visit_fstr(child)
+        --     Expr::FieldAccess(child) => self.visit_field_access(child)
+        --     Expr::Ident(child) => self.visit_ident(child)
+        --     Expr::IndexAccess(child) => self.visit_index_access(child)
+        --     Expr::If(child) => self.visit_if(child)
+        --     Expr::Let(child) => self.visit_let(child)
+        --     Expr::Literal(child) => self.visit_literal(child)
+        --     Expr::Loop(child) => self.visit_loop(child)
+        --     Expr::Match(child) => self.visit_match(child)
+        --     Expr::Return(child) => self.visit_return(child)
+        --     Expr::StructInst(child) => self.visit_struct_inst(child)
+        --     Expr::TerminatorExpr(child) => self.visit_terminator_expr(child)
+        --     Expr::Tuple(child) => self.visit_tuple(child)
+        --     Expr::TupleAccess(child) => self.visit_tuple_access(child)
+        --     Expr::UnaryExpr(child) => self.visit_unary_expr(child)
+        -- end
+    end
+
+    fn walk_impl(mut self, node Impl):
+    end
+
+    fn walk_struct(mut self, node Struct):
+    end
+
+    fn walk_use(mut self, node Use):
+    end
+
+    fn walk_trait(mut self, node Trait):
+    end
+end
+
 
 impl Meta:
     fn from_tokens(tokens Vector<Token>) Meta:
@@ -452,6 +590,15 @@ impl Meta:
     fn from_span(span Span) Meta:
         let id = Id{id: int_next()} 
         Meta{id, tokens: None, span}
+    end
+end
+
+impl Block:
+    fn is_single_line(self) Bool:
+        --- A block is considered single line if it has only one item.
+            Note: An empty block is not considered single line.
+        ---
+        self.items.len() == 1
     end
 end
 
@@ -761,9 +908,9 @@ impl ToDebugStr for Literal:
                 f"(@array{" ".when(exprs_str.len() > 0)}{exprs_str})"
             end
             LiteralKind::BoolLiteral(value) => f"(@bool {value})"
-            LiteralKind::CharLiteral(value) => f"(@char {value})"
+            LiteralKind::CharLiteral(value, _) => f"(@char {value})"
             LiteralKind::IntLiteral(value) => f"(@int {value})"
-            LiteralKind::StrLiteral(value) => f"(@str{" ".when(value.len() > 0)}{value.replace("\n", "\\n")})"
+            LiteralKind::StrLiteral(value, _) => f"(@str{" ".when(value.len() > 0)}{value.replace("\n", "\\n")})"
             LiteralKind::UnitLiteral=> "(@unit)"
         end
         f"{lit}"

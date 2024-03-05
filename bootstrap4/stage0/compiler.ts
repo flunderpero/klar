@@ -321,7 +321,7 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             return `${target}.klar_get(${index})`
         } else if (e instanceof AST.Not) {
             const value = transpile_expression(e.expression, {...ctx, used_in_expression: true})
-            return `!${value}`
+            return `new klar_Bool(!${value}.value)`
         } else if (e instanceof AST.ParenthesizedExpression) {
             const value = transpile_expression(e.expression, ctx)
             return `(${value})`
@@ -388,12 +388,12 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             return `(function() {
 const lhs = ${lhs};
 const rhs = ${rhs};
-const lhs_str = to_debug_str(lhs);
-const rhs_str = to_debug_str(rhs);
-let first_diff_index = -1;
+let lhs_str = to_debug_str(lhs);
+let rhs_str = to_debug_str(rhs);
 for (let i = 0; i < lhs_str.length && i < rhs_str.length; i++) {
     if (lhs_str[i] !== rhs_str[i]) {
-        first_diff_index = i;
+        lhs_str = lhs_str.slice(0, i) + "\x1b[31m[" + lhs_str[i] + "]\x1b[0m" + lhs_str.slice(i + 1);
+        rhs_str = rhs_str.slice(0, i) + "\x1b[31m[" + rhs_str[i] + "]\x1b[0m" + rhs_str.slice(i + 1);
         break;
     }
 }
@@ -406,7 +406,6 @@ expected: ${escape_str_str(e.lhs.span.src_text)} ${e.operator} ${escape_str_str(
             )}
 got:      \${lhs_str} ${e.operator} \${rhs_str}
 
-first difference at index \${first_diff_index} (\\\"\${lhs_str[first_diff_index]}\\\" vs \\\"\${rhs_str[first_diff_index]}\\\")
 \`), new klar_Str("${location}"), new klar_Str(""));}})();`
         } else if (e instanceof AST.Not) {
             const inner = transpile_expression(e.expression, {used_in_expression: true})

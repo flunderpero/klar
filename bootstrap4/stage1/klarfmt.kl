@@ -12,6 +12,7 @@ use .ast::Call
 use .ast::Closure
 use .ast::Continue
 use .ast::Expr
+use .ast::ExprKind
 use .ast::Field
 use .ast::FieldAccess
 use .ast::Fn
@@ -345,9 +346,9 @@ impl Visitor for Formatter:
                 -- - an if-expression with a multi-line body (then or else block)
                 -- - a match-expression
                 let wrap = force_wrap or match node.items[0]:
-                    BlockItem::Expr(Expr::Loop(loop_)) => not loop_.body.is_single_line()
-                    BlockItem::Expr(Expr::Match(_)) => true
-                    BlockItem::Expr(Expr::If(if_)) => not if_.then_block.is_single_line() or 
+                    BlockItem::Expr(Expr{ kind: ExprKind::Loop(loop_), meta: _}) => not loop_.body.is_single_line()
+                    BlockItem::Expr(Expr{ kind: ExprKind::Match(_), meta: _}) => true
+                    BlockItem::Expr(Expr{ kind: ExprKind::If(if_), meta: _}) => not if_.then_block.is_single_line() or 
                         match if_.else_block:
                             Some(else_block) => not else_block.is_single_line()
                             _ => false
@@ -391,29 +392,29 @@ impl Visitor for Formatter:
     end
 
     fn visit_expr(mut self, mut node Expr):
-        match node:
-            Expr::Assignment(assignment) => self.visit_assignment(assignment)
-            Expr::BinaryExpr(bin_expr) => self.visit_binary_expr(bin_expr)
-            Expr::Break(_) => self.w("break")
-            Expr::Call(call) => self.visit_call(call)
-            Expr::Closure(closure) => self.visit_closure(closure)
-            Expr::Continue(_) => self.w("continue")
-            Expr::FQN(fqn) => self.w_fqn(fqn)
-            Expr::FStr(fstr) => self.visit_fstr(fstr)
-            Expr::FieldAccess(field_access) => self.visit_field_access(field_access)
-            Expr::Ident(ident) => self.w(ident.name)
-            Expr::IndexAccess(index_access) => self.visit_index_access(index_access)
-            Expr::If(if_) => self.visit_if(if_)
-            Expr::Let(let_) => self.visit_let(let_)
-            Expr::Literal(lit) => self.visit_literal(lit)
-            Expr::Loop(loop_) => self.visit_loop(loop_)
-            Expr::Match(match_) => self.visit_match(match_)
-            Expr::Return(expr) => self.visit_return(expr)
-            Expr::StructInst(struct_) => self.visit_struct_inst(struct_)
-            Expr::TerminatorExpr(_) => self.w(";")
-            Expr::Tuple(exprs) => self.visit_tuple(exprs)
-            Expr::TupleAccess(tuple_access) => self.visit_tuple_access(tuple_access)
-            Expr::UnaryExpr(unary_expr) => self.visit_unary_expr(unary_expr)
+        match node.kind:
+            ExprKind::Assignment(assignment) => self.visit_assignment(assignment)
+            ExprKind::BinaryExpr(bin_expr) => self.visit_binary_expr(bin_expr)
+            ExprKind::Break(_) => self.w("break")
+            ExprKind::Call(call) => self.visit_call(call)
+            ExprKind::Closure(closure) => self.visit_closure(closure)
+            ExprKind::Continue(_) => self.w("continue")
+            ExprKind::FQN(fqn) => self.w_fqn(fqn)
+            ExprKind::FStr(fstr) => self.visit_fstr(fstr)
+            ExprKind::FieldAccess(field_access) => self.visit_field_access(field_access)
+            ExprKind::Ident(ident) => self.w(ident.name)
+            ExprKind::IndexAccess(index_access) => self.visit_index_access(index_access)
+            ExprKind::If(if_) => self.visit_if(if_)
+            ExprKind::Let(let_) => self.visit_let(let_)
+            ExprKind::Literal(lit) => self.visit_literal(lit)
+            ExprKind::Loop(loop_) => self.visit_loop(loop_)
+            ExprKind::Match(match_) => self.visit_match(match_)
+            ExprKind::Return(expr) => self.visit_return(expr)
+            ExprKind::StructInst(struct_) => self.visit_struct_inst(struct_)
+            ExprKind::TerminatorExpr(_) => self.w(";")
+            ExprKind::Tuple(exprs) => self.visit_tuple(exprs)
+            ExprKind::TupleAccess(tuple_access) => self.visit_tuple_access(tuple_access)
+            ExprKind::UnaryExpr(unary_expr) => self.visit_unary_expr(unary_expr)
         end
         return ()
     end
@@ -681,8 +682,8 @@ impl Visitor for Formatter:
         --       Right now, a multi-line str with a long first line will never cause 
         --       a line to be wrapped.
         let is_multi_line = fstr.exprs.iter().any(fn(expr Expr) Bool =>
-            match expr:
-                Expr::Literal(Literal{kind: LiteralKind::StrLiteral(_, raw_str), meta}) => raw_str.contains("\n")
+            match expr.kind:
+                ExprKind::Literal(Literal{kind: LiteralKind::StrLiteral(_, raw_str), meta}) => raw_str.contains("\n")
                 _ => false
             end
         )
@@ -690,8 +691,8 @@ impl Visitor for Formatter:
         if is_multi_line => self.w("\"\"\"")
         else => self.w("\"")
         fstr.exprs.iter().for_each(fn(expr Expr):
-            match expr:
-                Expr::Literal(Literal{kind: LiteralKind::StrLiteral(_, raw_str), meta}):
+            match expr.kind:
+                ExprKind::Literal(Literal{kind: LiteralKind::StrLiteral(_, raw_str), meta}):
                     self.w(raw_str)
                 end
                 _ =>
@@ -787,8 +788,8 @@ impl Visitor for Formatter:
                 iter.for_each(fn(it (Ident, Expr)):
                     self.w(it.0)
                     -- todo (lang-feat) this code is needlessly complex
-                    let write_expr = match it.1:
-                        Expr::Ident(ident) => ident.name != it.0.name
+                    let write_expr = match it.1.kind:
+                        ExprKind::Ident(ident) => ident.name != it.0.name
                         _ => true
                     end
                     if write_expr:

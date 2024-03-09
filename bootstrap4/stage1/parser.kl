@@ -34,6 +34,7 @@ use .ast::Enum
 use .ast::EnumVariant
 use .ast::EnumVariantKind
 use .ast::Expr
+use .ast::ExprKind
 use .ast::Extern
 use .ast::ExternImpl
 use .ast::ExternImplTrait
@@ -302,7 +303,9 @@ impl Parser:
                 match self.iter.peek():
                     Some(Token{kind: TokenKind::Semicolon, span: _}):
                         self.iter.force_next()!
-                        Expr::TerminatorExpr(TerminatorExpr{expr, meta: self.meta(mark)})
+                        Expr::from_kind(
+                            ExprKind::TerminatorExpr(TerminatorExpr{expr, meta: self.meta(mark)})
+                        )
                     end
                     _ => expr
                 end
@@ -332,7 +335,7 @@ impl Parser:
             if op_token.is_none() => break
             let kind_and_prec = match op_token.unwrap().kind:
                 None => break
-                TokenKind::Equal => return self.parse_assignment(lhs, mark)!
+                TokenKind::Equal => return Expr::from_kind(self.parse_assignment(lhs, mark)!)
                 TokenKind::Or => (BinaryExprKind::Or, 1)
                 TokenKind::And => (BinaryExprKind::And, 2)
                 TokenKind::DoubleEqual => (BinaryExprKind::Equal, 3)
@@ -355,66 +358,70 @@ impl Parser:
             let rhs_token = self.iter.force_next()!
             let rhs = self.parse_binary_expr(rhs_token, prec + 1)!
             if rhs.is_none() => return parse_error(ExprExpected(rhs_token), rhs_token)
-            lhs = Expr::BinaryExpr(BinaryExpr{kind, lhs, rhs: rhs.unwrap(), meta: self.meta(mark)})
+            lhs = Expr::from_kind(
+                ExprKind::BinaryExpr(BinaryExpr{kind, lhs, rhs: rhs.unwrap(), meta: self.meta(mark)})
+            )
         end
         lhs
     end
 
     fn parse_primary_expr(mut self, token Token) Expr? throws ParseError:
         let mark = self.iter.mark_prev()
-        mut expr = match token.kind:
-            TokenKind::IntLiteral(_) => Expr::Literal(self.parse_int_literal( token)!)
+        mut kind = match token.kind:
+            TokenKind::IntLiteral(_) => ExprKind::Literal(self.parse_int_literal(token)!)
             TokenKind::BoolLiteral(b) => 
-                Expr::Literal(Literal{kind: LiteralKind::BoolLiteral(b), meta: self.meta(mark)})
+                ExprKind::Literal(Literal{kind: LiteralKind::BoolLiteral(b), meta: self.meta(mark)})
             TokenKind::CharLiteral(c) => 
-                Expr::Literal(Literal{kind: LiteralKind::CharLiteral(c, token.span.raw_src()), meta: self.meta(mark)})
+                ExprKind::Literal(Literal{kind: LiteralKind::CharLiteral(c, token.span.raw_src()), meta: self.meta(mark)})
             TokenKind::StrLiteral(s, _) => 
-                Expr::Literal(Literal{kind: LiteralKind::StrLiteral(s, token.span.raw_src()), meta: self.meta(mark)})
+                ExprKind::Literal(Literal{kind: LiteralKind::StrLiteral(s, token.span.raw_src()), meta: self.meta(mark)})
             TokenKind::LParen => self.parse_unit_or_tuple_literal_or_parentheses(token)!
-            TokenKind::LBracket => Expr::Literal(self.parse_array_literal()!)
+            TokenKind::LBracket => ExprKind::Literal(self.parse_array_literal()!)
             TokenKind::Ident(name):
                 let fqn = self.parse_fqn(token)!
                 let ident = if fqn.names.len() == 1 and fqn.names[0].generics.is_none()
-                    => Expr::Ident(fqn.names[0].ident)
-                else => Expr::FQN(fqn)
+                    => ExprKind::Ident(fqn.names[0].ident)
+                else => ExprKind::FQN(fqn)
                 match self.iter.peek():
                     Some(Token{kind: TokenKind::LBrace, span: _}):
                         self.iter.force_next()!
-                        Expr::StructInst(self.parse_struct_inst_expr(fqn)!)
+                        ExprKind::StructInst(self.parse_struct_inst_expr(fqn)!)
                     end
                     _ => ident
                 end
             end
-            TokenKind::If => Expr::If(self.parse_if(token)!)
-            TokenKind::Fn => Expr::Closure(self.parse_closure()!)
-            TokenKind::FStr(items, _) => Expr::FStr(self.parse_fstr(items)!)
-            TokenKind::Let => Expr::Let(self.parse_let_or_mut(token)!)
-            TokenKind::Match => Expr::Match(self.parse_match()!)
-            TokenKind::Mut => Expr::Let(self.parse_let_or_mut(token)!)
-            TokenKind::Break => Expr::Break(Break{meta: self.meta(mark)})
-            TokenKind::Continue => Expr::Continue(Continue{meta: self.meta(mark)})
-            TokenKind::Loop => Expr::Loop(self.parse_loop(token)!)
-            TokenKind::Return => Expr::Return(self.parse_return()!)
+            TokenKind::If => ExprKind::If(self.parse_if(token)!)
+            TokenKind::Fn => ExprKind::Closure(self.parse_closure()!)
+            TokenKind::FStr(items, _) => ExprKind::FStr(self.parse_fstr(items)!)
+            TokenKind::Let => ExprKind::Let(self.parse_let_or_mut(token)!)
+            TokenKind::Match => ExprKind::Match(self.parse_match()!)
+            TokenKind::Mut => ExprKind::Let(self.parse_let_or_mut(token)!)
+            TokenKind::Break => ExprKind::Break(Break{meta: self.meta(mark)})
+            TokenKind::Continue => ExprKind::Continue(Continue{meta: self.meta(mark)})
+            TokenKind::Loop => ExprKind::Loop(self.parse_loop(token)!)
+            TokenKind::Return => ExprKind::Return(self.parse_return()!)
             _:
                 let unary_expr = self.parse_unary_expr(token)!
                 match unary_expr:
-                    Some<UnaryExpr>(x) => Expr::UnaryExpr(x)
+                    Some<UnaryExpr>(x) => ExprKind::UnaryExpr(x)
                     None => return None
                 end
             end
         end
+        mut expr = Expr::from_kind(kind)
         loop:
-            expr = match self.iter.peek_immediate():
+            kind = match self.iter.peek_immediate():
                 Some(Token{kind: TokenKind::LParen, span: _}) => 
-                    Expr::Call(self.parse_call(expr)!)
+                    ExprKind::Call(self.parse_call(expr)!)
                 _ => match self.iter.peek():
                     Some(Token{kind: TokenKind::Dot, span: _}) => 
                         self.parse_field_or_tuple_access_expr(expr)!
                     Some(Token{kind: TokenKind::LBracket, span: _}) => 
-                        Expr::IndexAccess(self.parse_index_access(expr)!)
+                        ExprKind::IndexAccess(self.parse_index_access(expr)!)
                     _ => break
                 end
             end
+            expr = Expr::from_kind(kind)
         end
         expr
     end
@@ -894,20 +901,20 @@ impl Parser:
         Literal{kind: LiteralKind::ArrayLiteral(exprs), meta: self.meta(mark)}
     end
 
-    fn parse_unit_or_tuple_literal_or_parentheses(mut self, token Token) Expr throws ParseError:
+    fn parse_unit_or_tuple_literal_or_parentheses(mut self, token Token) ExprKind throws ParseError:
         let mark = self.iter.mark_prev()
         -- todo (lang-feat): All these `return` statements should not be needed.
         match self.iter.peek_immediate():
             Some(Token{kind: TokenKind::RParen, span: _}):
                 self.iter.force_next()!
-                Expr::Literal(Literal{kind: LiteralKind::UnitLiteral, meta: self.meta(mark)})
+                ExprKind::Literal(Literal{kind: LiteralKind::UnitLiteral, meta: self.meta(mark)})
             end
             Some(immediate):
                 let exprs = self.parse_comma_separated_exprs(TokenKind::RParen)!
                 match exprs.len():
                     0 => return parse_error(UnexpectedToken(immediate), immediate)
-                    1 => exprs[0]
-                    _ => Expr::Tuple(exprs)
+                    1 => exprs[0].kind
+                    _ => ExprKind::Tuple(exprs)
                 end
             end
             None => return parse_error(UnexpectedEOF, None)
@@ -934,7 +941,9 @@ impl Parser:
                     end
                 end
                 FStrItem::FStrStrItem(s, span):
-                    Expr::Literal(Literal{kind: LiteralKind::StrLiteral(s, span.raw_src()), meta: self.meta(mark)})
+                    Expr::from_kind(
+                        ExprKind::Literal(Literal{kind: LiteralKind::StrLiteral(s, span.raw_src()), meta: self.meta(mark)})
+                    )
                 end
             end
             exprs.push(expr)
@@ -942,12 +951,12 @@ impl Parser:
         FStr{exprs, meta: self.meta(mark)}
     end
 
-    fn parse_assignment(mut self, lhs Expr, mark Int) Expr throws ParseError:
+    fn parse_assignment(mut self, lhs Expr, mark Int) ExprKind throws ParseError:
         self.iter.expect_lexical_token(TokenKind::Equal)!
         let rhs_token = self.iter.force_next()!
         let rhs = self.parse_expr(rhs_token)!
         if rhs.is_none() => return parse_error(ExprExpected(rhs_token), rhs_token)
-        Expr::Assignment(Assignment{ lhs, rhs: rhs.unwrap(), meta: self.meta(mark) })
+        ExprKind::Assignment(Assignment{ lhs, rhs: rhs.unwrap(), meta: self.meta(mark) })
     end
 
     fn parse_fn_decl(mut self, token Token) FnDecl throws ParseError:
@@ -1219,7 +1228,7 @@ impl Parser:
                             end
                         end
                         Some(Token{kind: TokenKind::Comma | TokenKind::RBrace, span: _}) =>
-                            fields.push((ident, Expr::Ident(ident)))
+                            fields.push((ident, Expr::from_kind(ExprKind::Ident(ident))))
                         Some(next) => return parse_error(UnexpectedToken(next), next)
                         None => return parse_error(UnexpectedEOF, None)
                     end
@@ -1267,13 +1276,13 @@ impl Parser:
         types
     end
 
-    fn parse_field_or_tuple_access_expr(mut self, target Expr) Expr throws ParseError:
+    fn parse_field_or_tuple_access_expr(mut self, target Expr) ExprKind throws ParseError:
         let mark = self.iter.mark()
         self.iter.expect_lexical_token(TokenKind::Dot)!
         -- todo(lang-feat): The `returns` should not be needed here.
         match self.iter.peek():
             Some(Token{kind: TokenKind::Ident(_), span: _}) => 
-                return Expr::FieldAccess(
+                return ExprKind::FieldAccess(
                     FieldAccess{
                         target, 
                         field: self.parse_ident(self.iter.force_next()!)!, meta: self.meta(mark)
@@ -1281,7 +1290,7 @@ impl Parser:
                 )
             Some(Token{kind: TokenKind::IntLiteral(_), span: _}):
                 let index = self.parse_int_token(self.iter.force_next()!)!
-                return Expr::TupleAccess(TupleAccess{target, index, meta: self.meta(mark)})
+                return ExprKind::TupleAccess(TupleAccess{target, index, meta: self.meta(mark)})
             end
             Some(token) => parse_error(UnexpectedToken(token), token)
             None => parse_error(UnexpectedEOF, None)

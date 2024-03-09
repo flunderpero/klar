@@ -230,7 +230,7 @@ struct TerminatorExpr:
     meta Meta
 end
 
-enum Expr:
+enum ExprKind:
     Assignment(Assignment)
     BinaryExpr(BinaryExpr)
     Break(Break)
@@ -253,6 +253,11 @@ enum Expr:
     Tuple(Vector<Expr>) -- todo: I think this should be LiteralKind::Tuple
     TupleAccess(TupleAccess)
     UnaryExpr(UnaryExpr)
+end
+
+struct Expr:
+    kind ExprKind
+    meta Meta
 end
 
 struct GenericArg:
@@ -441,6 +446,49 @@ struct Meta:
     span Span
 end
 
+impl Expr:
+    fn from_kind(kind ExprKind) Expr:
+        let tokens_and_span = match kind:
+            ExprKind::Assignment(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::BinaryExpr(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::Break(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::Call(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::Closure(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::Continue(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::FQN(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::FStr(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::FieldAccess(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::Ident(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::IndexAccess(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::If(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::Let(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::Literal(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::Loop(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::Match(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::Return(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::StructInst(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::TerminatorExpr(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::Tuple(x):
+                mut tokens = Vector<Token>::new()
+                x.iter().for_each(fn(it Expr):
+                    match it.meta.tokens:
+                        Some(t) => tokens.push_all(t.iter())
+                        None => ()
+                    end
+                end)
+                let span = x[0].meta.span.combine(x[x.len() - 1].meta.span)
+                let res = (Some(tokens), span)
+                res
+            end
+            ExprKind::TupleAccess(x) => (x.meta.tokens, x.meta.span)
+            ExprKind::UnaryExpr(x) => (x.meta.tokens, x.meta.span)
+        end
+        mut meta = Meta::from_span(tokens_and_span.1)
+        meta.tokens = tokens_and_span.0
+        Expr{kind, meta}
+    end
+end
+
 impl Type:
     fn is_option_type(self) Type?:
         match self.kind:
@@ -538,28 +586,28 @@ trait Visitor:
 
     fn walk_expr(mut self, node Expr):
         -- match node:
-        --     Expr::Assignment(child) => self.visit_assignment(child)
-        --     Expr::BinaryExpr(child) => self.visit_binary_expr(child)
-        --     Expr::Break(child) => self.visit_break(child)
-        --     Expr::Call(child) => self.visit_call(child)
-        --     Expr::Closure(child) => self.visit_closure(child)
-        --     Expr::Continue(child) => self.visit_continue(child)
-        --     Expr::FQN(child) => self.visit_fqn(child)
-        --     Expr::FStr(child) => self.visit_fstr(child)
-        --     Expr::FieldAccess(child) => self.visit_field_access(child)
-        --     Expr::Ident(child) => self.visit_ident(child)
-        --     Expr::IndexAccess(child) => self.visit_index_access(child)
-        --     Expr::If(child) => self.visit_if(child)
-        --     Expr::Let(child) => self.visit_let(child)
-        --     Expr::Literal(child) => self.visit_literal(child)
-        --     Expr::Loop(child) => self.visit_loop(child)
-        --     Expr::Match(child) => self.visit_match(child)
-        --     Expr::Return(child) => self.visit_return(child)
-        --     Expr::StructInst(child) => self.visit_struct_inst(child)
-        --     Expr::TerminatorExpr(child) => self.visit_terminator_expr(child)
-        --     Expr::Tuple(child) => self.visit_tuple(child)
-        --     Expr::TupleAccess(child) => self.visit_tuple_access(child)
-        --     Expr::UnaryExpr(child) => self.visit_unary_expr(child)
+        --     ExprKind::Assignment(child) => self.visit_assignment(child)
+        --     ExprKind::BinaryExpr(child) => self.visit_binary_expr(child)
+        --     ExprKind::Break(child) => self.visit_break(child)
+        --     ExprKind::Call(child) => self.visit_call(child)
+        --     ExprKind::Closure(child) => self.visit_closure(child)
+        --     ExprKind::Continue(child) => self.visit_continue(child)
+        --     ExprKind::FQN(child) => self.visit_fqn(child)
+        --     ExprKind::FStr(child) => self.visit_fstr(child)
+        --     ExprKind::FieldAccess(child) => self.visit_field_access(child)
+        --     ExprKind::Ident(child) => self.visit_ident(child)
+        --     ExprKind::IndexAccess(child) => self.visit_index_access(child)
+        --     ExprKind::If(child) => self.visit_if(child)
+        --     ExprKind::Let(child) => self.visit_let(child)
+        --     ExprKind::Literal(child) => self.visit_literal(child)
+        --     ExprKind::Loop(child) => self.visit_loop(child)
+        --     ExprKind::Match(child) => self.visit_match(child)
+        --     ExprKind::Return(child) => self.visit_return(child)
+        --     ExprKind::StructInst(child) => self.visit_struct_inst(child)
+        --     ExprKind::TerminatorExpr(child) => self.visit_terminator_expr(child)
+        --     ExprKind::Tuple(child) => self.visit_tuple(child)
+        --     ExprKind::TupleAccess(child) => self.visit_tuple_access(child)
+        --     ExprKind::UnaryExpr(child) => self.visit_unary_expr(child)
         -- end
     end
 
@@ -1112,34 +1160,34 @@ end
 
 impl ToDebugStr for Expr:
     fn to_debug_str(self) Str:
-        match self:
-            Expr::Assignment(value) => value.to_debug_str()
-            Expr::BinaryExpr(value) => value.to_debug_str()
-            Expr::Break(value) => value.to_debug_str()
-            Expr::Call(value) => value.to_debug_str()
-            Expr::Closure(value) => value.to_debug_str()
-            Expr::Continue(value) => value.to_debug_str()
-            Expr::FieldAccess(value) => value.to_debug_str()
-            Expr::FStr(value) => value.to_debug_str()
-            Expr::FQN(value) => value.to_debug_str()
-            Expr::Ident(value) => value.to_debug_str()
-            Expr::IndexAccess(value) => value.to_debug_str()
-            Expr::If(value) => value.to_debug_str()
-            Expr::Let(value) => value.to_debug_str()
-            Expr::Literal(value) => value.to_debug_str()
-            Expr::Loop(value) => value.to_debug_str()
-            Expr::Match(value) => value.to_debug_str()
-            Expr::Return(value) => value.to_debug_str()
-            Expr::StructInst(value) => value.to_debug_str()
-            Expr::TerminatorExpr(value) => value.to_debug_str()
-            Expr::Tuple(value):
+        match self.kind:
+            ExprKind::Assignment(value) => value.to_debug_str()
+            ExprKind::BinaryExpr(value) => value.to_debug_str()
+            ExprKind::Break(value) => value.to_debug_str()
+            ExprKind::Call(value) => value.to_debug_str()
+            ExprKind::Closure(value) => value.to_debug_str()
+            ExprKind::Continue(value) => value.to_debug_str()
+            ExprKind::FieldAccess(value) => value.to_debug_str()
+            ExprKind::FStr(value) => value.to_debug_str()
+            ExprKind::FQN(value) => value.to_debug_str()
+            ExprKind::Ident(value) => value.to_debug_str()
+            ExprKind::IndexAccess(value) => value.to_debug_str()
+            ExprKind::If(value) => value.to_debug_str()
+            ExprKind::Let(value) => value.to_debug_str()
+            ExprKind::Literal(value) => value.to_debug_str()
+            ExprKind::Loop(value) => value.to_debug_str()
+            ExprKind::Match(value) => value.to_debug_str()
+            ExprKind::Return(value) => value.to_debug_str()
+            ExprKind::StructInst(value) => value.to_debug_str()
+            ExprKind::TerminatorExpr(value) => value.to_debug_str()
+            ExprKind::Tuple(value):
                 let exprs = " ".join(
                     value.iter().map<Str>(fn(it Expr) Str => it.to_debug_str())
                 )
                 f"(@tuple{" ".when(exprs.len() > 0)}{exprs})"
             end
-            Expr::TupleAccess(value) => value.to_debug_str()
-            Expr::UnaryExpr(value) => value.to_debug_str()
+            ExprKind::TupleAccess(value) => value.to_debug_str()
+            ExprKind::UnaryExpr(value) => value.to_debug_str()
         end
     end
 end

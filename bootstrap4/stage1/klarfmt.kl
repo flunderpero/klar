@@ -7,6 +7,7 @@ use .ast::BinaryExpr
 use .ast::BinaryExprKind
 use .ast::Block
 use .ast::BlockItem
+use .ast::BlockItemKind
 use .ast::Break
 use .ast::Call
 use .ast::Closure
@@ -32,6 +33,7 @@ use .ast::Match
 use .ast::MatchArm
 use .ast::Module
 use .ast::ModuleItem
+use .ast::ModuleItemKind
 use .ast::Name
 use .ast::Param
 use .ast::Pattern
@@ -236,11 +238,11 @@ impl Visitor for Formatter:
     end
 
     fn visit_module_item(mut self, mut node ModuleItem):
-        match node:
-            ModuleItem::Fn(fn_) => self.visit_fn(fn_)
-            ModuleItem::Struct(struct_) => self.visit_struct(struct_)
-            ModuleItem::Trait(trait_) => self.visit_trait(trait_)
-            ModuleItem::Impl(impl_) => self.visit_impl(impl_)
+        match node.kind:
+            ModuleItemKind::Fn(fn_) => self.visit_fn(fn_)
+            ModuleItemKind::Struct(struct_) => self.visit_struct(struct_)
+            ModuleItemKind::Trait(trait_) => self.visit_trait(trait_)
+            ModuleItemKind::Impl(impl_) => self.visit_impl(impl_)
             _ => self.w("todo: visit_module_item")
         end
         self.w_empty_line()
@@ -345,10 +347,10 @@ impl Visitor for Formatter:
                 -- - a loop with a multi-line body
                 -- - an if-expression with a multi-line body (then or else block)
                 -- - a match-expression
-                let wrap = force_wrap or match node.items[0]:
-                    BlockItem::Expr(Expr{ kind: ExprKind::Loop(loop_), meta: _}) => not loop_.body.is_single_line()
-                    BlockItem::Expr(Expr{ kind: ExprKind::Match(_), meta: _}) => true
-                    BlockItem::Expr(Expr{ kind: ExprKind::If(if_), meta: _}) => not if_.then_block.is_single_line() or 
+                let wrap = force_wrap or match node.items[0].kind:
+                    BlockItemKind::Expr(Expr{ kind: ExprKind::Loop(loop_), meta: _}) => not loop_.body.is_single_line()
+                    BlockItemKind::Expr(Expr{ kind: ExprKind::Match(_), meta: _}) => true
+                    BlockItemKind::Expr(Expr{ kind: ExprKind::If(if_), meta: _}) => not if_.then_block.is_single_line() or 
                         match if_.else_block:
                             Some(else_block) => not else_block.is_single_line()
                             _ => false

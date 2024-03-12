@@ -26,6 +26,7 @@ use .ast::BinaryExpr
 use .ast::BinaryExprKind
 use .ast::Block
 use .ast::BlockItem
+use .ast::BlockItemKind
 use .ast::Break
 use .ast::Call
 use .ast::Closure
@@ -58,6 +59,7 @@ use .ast::Loop
 use .ast::Meta
 use .ast::Module
 use .ast::ModuleItem
+use .ast::ModuleItemKind
 use .ast::Name
 use .ast::Match
 use .ast::MatchArm
@@ -258,18 +260,18 @@ impl Parser:
             let token = token_option.unwrap()
             let item = match self.parse_item(token)!:
                 Some(item_):
-                    match item_:
-                        ParseItem::Fn(f) => ModuleItem::Fn(f)
-                        ParseItem::Trait(t) => ModuleItem::Trait(t)
-                        ParseItem::Struct(t) => ModuleItem::Struct(t)
-                        ParseItem::Impl(i) => ModuleItem::Impl(i)
-                        ParseItem::Enum(e) => ModuleItem::Enum(e)
-                        ParseItem::FnDecl(f) => return parse_error(UnexpectedFnDecl(f), token)
+                    match item_.kind:
+                        ParseItemKind::Fn(f) => ModuleItem{kind: ModuleItemKind::Fn(f), meta: self.meta(mark)}
+                        ParseItemKind::Trait(t) => ModuleItem{kind: ModuleItemKind::Trait(t), meta: self.meta(mark)}
+                        ParseItemKind::Struct(t) => ModuleItem{kind: ModuleItemKind::Struct(t), meta: self.meta(mark)}
+                        ParseItemKind::Impl(i) => ModuleItem{kind: ModuleItemKind::Impl(i), meta: self.meta(mark)}
+                        ParseItemKind::Enum(e) => ModuleItem{kind: ModuleItemKind::Enum(e), meta: self.meta(mark)}
+                        ParseItemKind::FnDecl(f) => return parse_error(UnexpectedFnDecl(f), token)
                     end
                 end
                 None => match token.kind:
-                    TokenKind::Extern => ModuleItem::Extern(self.parse_extern()!)
-                    TokenKind::Use => ModuleItem::Use(self.parse_use()!)
+                    TokenKind::Extern => ModuleItem{kind: ModuleItemKind::Extern(self.parse_extern()!), meta: self.meta(mark)}
+                    TokenKind::Use => ModuleItem{kind: ModuleItemKind::Use(self.parse_use()!), meta: self.meta(mark)}
                     _ => return parse_error(UnexpectedToken(token), token)
                 end
             end
@@ -279,21 +281,23 @@ impl Parser:
     end
 
     fn parse_item(mut self, token Token) ParseItem? throws ParseError:
-        match token.kind:
+        let mark = self.iter.mark_prev()
+        let kind = match token.kind:
             TokenKind::Fn: 
                 let decl = self.parse_fn_decl(token)!
                 match self.iter.peek():
                     Some(Token{kind: TokenKind::FatArrow | TokenKind::Colon, span: _}) =>
-                        ParseItem::Fn(self.parse_fn_def(decl)!)
-                    _ => ParseItem::FnDecl(decl)
+                        ParseItemKind::Fn(self.parse_fn_def(decl)!)
+                    _ => ParseItemKind::FnDecl(decl)
                 end
             end
-            TokenKind::Trait => ParseItem::Trait(self.parse_trait()!)
-            TokenKind::Enum => ParseItem::Enum(self.parse_enum()!)
-            TokenKind::Struct => ParseItem::Struct(self.parse_struct()!)
-            TokenKind::Impl => ParseItem::Impl(self.parse_impl()!)
+            TokenKind::Trait => ParseItemKind::Trait(self.parse_trait()!)
+            TokenKind::Enum => ParseItemKind::Enum(self.parse_enum()!)
+            TokenKind::Struct => ParseItemKind::Struct(self.parse_struct()!)
+            TokenKind::Impl => ParseItemKind::Impl(self.parse_impl()!)
             _ => return None
         end
+        ParseItem{kind, meta: self.meta(mark)}
     end
 
     fn parse_expr(mut self, token Token) Expr? throws ParseError:
@@ -1475,9 +1479,9 @@ impl Parser:
         mut ended_with_else = false
         match next_token.kind:
             TokenKind::FatArrow:
-                -- This is a signle expression block, an expression has to follow.
+                -- This is a single expression block, an expression has to follow.
                 match self.parse_expr(self.iter.force_next()!)!:
-                    Some<Expr>(expr) => items.push(BlockItem::Expr(expr))
+                    Some<Expr>(expr) => items.push(BlockItem{kind: BlockItemKind::Expr(expr), meta: self.meta(mark)})
                     None => return parse_error(
                         ExprExpected(self.iter.force_next()!), self.iter.force_next()!
                     )
@@ -1509,18 +1513,19 @@ impl Parser:
 
     fn parse_block_item(mut self, token Token) BlockItem throws ParseError:
         -- todo (lang-bug): I would rather write this using `if let` but it is broken
+        let mark = self.iter.mark_prev()
         match self.parse_item(token)!:
             Some(item) => 
-                return match item:
-                    ParseItem::Fn(f) => BlockItem::Fn(f)
-                    ParseItem::Trait(t) => BlockItem::Trait(t)
-                    ParseItem::Enum(e) => BlockItem::Enum(e)
-                    ParseItem::Impl(i) => BlockItem::Impl(i)
-                    ParseItem::Struct(i) => BlockItem::Struct(i)
-                    ParseItem::FnDecl(f) => return parse_error(UnexpectedToken(token), token)
+                return match item.kind:
+                    ParseItemKind::Fn(f) => BlockItem{kind: BlockItemKind::Fn(f), meta: self.meta(mark)}
+                    ParseItemKind::Trait(t) => BlockItem{kind: BlockItemKind::Trait(t), meta: self.meta(mark)}
+                    ParseItemKind::Enum(e) => BlockItem{kind: BlockItemKind::Enum(e), meta: self.meta(mark)}
+                    ParseItemKind::Impl(i) => BlockItem{kind: BlockItemKind::Impl(i), meta: self.meta(mark)}
+                    ParseItemKind::Struct(i) => BlockItem{kind: BlockItemKind::Struct(i), meta: self.meta(mark)}
+                    ParseItemKind::FnDecl(f) => return parse_error(UnexpectedToken(token), token)
                 end
             None => match self.parse_expr(token)!:
-                Some(expr) => BlockItem::Expr(expr)
+                Some(expr) => BlockItem{kind: BlockItemKind::Expr(expr), meta: self.meta(mark)}
                 None => return parse_error(ExprExpected(token), token)
             end
         end
@@ -1551,7 +1556,7 @@ fn parse_error(kind ParseErrorKind, token Token?) Error<(), ParseError>:
     Error(ParseError{meta, kind})
 end
 
-enum ParseItem:
+enum ParseItemKind:
     --- All items that can be declared anywhere in the source code.
         Returned by `Parser.parse_item`.
     ---
@@ -1563,15 +1568,20 @@ enum ParseItem:
     Struct(Struct)
 end
 
+struct ParseItem:
+    kind ParseItemKind
+    meta Meta
+end
+
 impl ToDebugStr for ParseItem:
     fn to_debug_str(self) Str:
-        match self:
-            ParseItem::Fn(f) => f.to_debug_str()
-            ParseItem::FnDecl(f) => f.to_debug_str()
-            ParseItem::Impl(i) => i.to_debug_str()
-            ParseItem::Trait(t) => t.to_debug_str()
-            ParseItem::Enum(e) => e.to_debug_str()
-            ParseItem::Struct(s) => s.to_debug_str()
+        match self.kind:
+            ParseItemKind::Fn(f) => f.to_debug_str()
+            ParseItemKind::FnDecl(f) => f.to_debug_str()
+            ParseItemKind::Impl(i) => i.to_debug_str()
+            ParseItemKind::Trait(t) => t.to_debug_str()
+            ParseItemKind::Enum(e) => e.to_debug_str()
+            ParseItemKind::Struct(s) => s.to_debug_str()
         end
     end
 end

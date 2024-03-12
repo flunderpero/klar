@@ -404,7 +404,7 @@ struct Use:
     meta Meta
 end
 
-enum BlockItem:
+enum BlockItemKind:
     Struct(Struct)
     Enum(Enum)
     Expr(Expr)
@@ -413,7 +413,12 @@ enum BlockItem:
     Trait(Trait)
 end
 
-enum ModuleItem:
+struct BlockItem:
+    kind BlockItemKind
+    meta Meta
+end
+
+enum ModuleItemKind:
     Extern(Extern)
     Use(Use)
     Struct(Struct)
@@ -421,6 +426,11 @@ enum ModuleItem:
     Fn(Fn)
     Impl(Impl)
     Trait(Trait)
+end
+
+struct ModuleItem:
+    kind ModuleItemKind
+    meta Meta
 end
 
 struct Module:
@@ -574,13 +584,13 @@ trait Visitor:
     end
 
     fn walk_block_item(mut self, node BlockItem):
-        match node:
-            BlockItem::Enum(child) => self.walk_enum(child)
-            BlockItem::Expr(child) => self.visit_expr(child)
-            BlockItem::Fn(child) => self.visit_fn(child)
-            BlockItem::Impl(child) => self.visit_impl(child)
-            BlockItem::Trait(child) => self.visit_trait(child)
-            BlockItem::Struct(child) => self.visit_struct(child)
+        match node.kind:
+            BlockItemKind::Enum(child) => self.walk_enum(child)
+            BlockItemKind::Expr(child) => self.visit_expr(child)
+            BlockItemKind::Fn(child) => self.visit_fn(child)
+            BlockItemKind::Impl(child) => self.visit_impl(child)
+            BlockItemKind::Trait(child) => self.visit_trait(child)
+            BlockItemKind::Struct(child) => self.visit_struct(child)
         end
     end
 
@@ -869,14 +879,14 @@ end
 
 impl ToDebugStr for ModuleItem:
     fn to_debug_str(self) Str:
-        match self:
-            ModuleItem::Enum(x) => x.to_debug_str()
-            ModuleItem::Extern(x) => x.to_debug_str()
-            ModuleItem::Fn(x) => x.to_debug_str()
-            ModuleItem::Impl(x) => x.to_debug_str()
-            ModuleItem::Trait(x) => x.to_debug_str()
-            ModuleItem::Struct(x) => x.to_debug_str()
-            ModuleItem::Use(x) => x.to_debug_str()
+        match self.kind:
+            ModuleItemKind::Enum(x) => x.to_debug_str()
+            ModuleItemKind::Extern(x) => x.to_debug_str()
+            ModuleItemKind::Fn(x) => x.to_debug_str()
+            ModuleItemKind::Impl(x) => x.to_debug_str()
+            ModuleItemKind::Trait(x) => x.to_debug_str()
+            ModuleItemKind::Struct(x) => x.to_debug_str()
+            ModuleItemKind::Use(x) => x.to_debug_str()
         end
     end
 end
@@ -892,13 +902,13 @@ end
 
 impl ToDebugStr for BlockItem:
     fn to_debug_str(self) Str:
-        match self:
-            BlockItem::Enum(x) => x.to_debug_str()
-            BlockItem::Expr(x) => x.to_debug_str()
-            BlockItem::Fn(x) => x.to_debug_str()
-            BlockItem::Impl(x) => x.to_debug_str()
-            BlockItem::Trait(x) => x.to_debug_str()
-            BlockItem::Struct(x) => x.to_debug_str()
+        match self.kind:
+            BlockItemKind::Enum(x) => x.to_debug_str()
+            BlockItemKind::Expr(x) => x.to_debug_str()
+            BlockItemKind::Fn(x) => x.to_debug_str()
+            BlockItemKind::Impl(x) => x.to_debug_str()
+            BlockItemKind::Trait(x) => x.to_debug_str()
+            BlockItemKind::Struct(x) => x.to_debug_str()
         end
     end
 end

@@ -1,5 +1,24 @@
 #!/usr/bin/env bun --silent
 
+const call_stack = []
+call_stack.to_str = () =>
+    call_stack
+        .slice()
+        .reverse()
+        .map((x) => x.replaceAll("\n", "\n    "))
+        .join("\n    ")
+
+function klar_stack_trace() {
+    let res = klar_Array.klar_new(new klar_Int(call_stack.length - 1))
+    let st = call_stack.slice()
+    st.pop()
+    st.reverse()
+    for (let i = 0; i < st.length; i++) {
+        res.klar_set(new klar_Int(i), new klar_Str(st[i]))
+    }
+    return res
+}
+
 function klar_print(value) {
     console.log(value.klar_to_str().value)
 }
@@ -9,7 +28,8 @@ const klar_jsprint = console.log
 
 let klar_panic = (value, location, src) => {
     throw new Error(
-        `Panic: ${to_debug_str(value)} at ${to_debug_str(location)}:\n  ${to_debug_str(src)}`,
+        `Panic: ${to_debug_str(value)} at ${to_debug_str(location)}:\n  ${to_debug_str(src)}
+        \nStack trace:\n    ${call_stack.to_str()}`,
     )
 }
 

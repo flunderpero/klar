@@ -147,9 +147,13 @@ impl TestGroup:
             logger.indent()
             let old_panic_handler = register_panic_handler(fn(message, location, src):
                 result.inc_failed()
+                let st_ = stack_trace()
+                let stack_trace_ = st_.iter().take_while(fn(s Str):
+                    not s.contains("test.kl:")
+                end).take(6)
                 logger.log(f"{group_name} {color("FAIL", "31")} {name}: panicked with")
                 logger.indent()
-                logger.log(f"{message}\nat {location}")
+                logger.log(f"\n{message}\n\nat {"\n   ".join(stack_trace_)}")
                 logger.dedent()
                 exit(1)
             end)

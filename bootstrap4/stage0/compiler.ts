@@ -124,8 +124,17 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             )
             return `(function () { const _ = new klar_Str(""); ${parts.join("")}; return _; })()`
         } else if (e instanceof AST.FunctionCall) {
+            const location = escape_str_str(
+                e.span.toString() + "\n    " + e.span.src_lines.split("\n")[0].trim(),
+            )
             if (e.target instanceof AST.IdentifierReference && e.target.name === "assert") {
-                return transpile_assert(e)
+                return `
+                    call_stack.push(\`${location}\`);
+                    try {
+                        ${transpile_assert(e)};
+                    } finally {
+                        call_stack.pop();
+                    }`
             }
             if (e.target instanceof AST.IdentifierReference && e.target.name === "panic") {
                 convert_call_to_panic(e)
@@ -147,7 +156,13 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             }
             if (e.propagate_error) {
                 call = `(function() {
-                    let res = ${call};
+                    call_stack.push(\`${location}\`);
+                    let res;
+                    try {
+                        res = ${call};
+                    } finally {
+                        call_stack.pop();
+                    }
                     if (res.constructor.name == "klar_Result_Error") {
                         const error = new Error("return")
                         error.value = res;
@@ -155,10 +170,22 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
                     }
                     if (res.constructor.name == "klar_Result_Ok") return res[0];
                     return res})()`
-            }
-            if (ctx.used_in_expression) {
-                return call
+                if (ctx.used_in_expression) {
+                    return call
+                }
+                return `${call};`
             } else {
+                call = `(function () {
+                        call_stack.push(\`${location}\`);
+                        try {
+                            return ${call};
+                        } finally {
+                            call_stack.pop();
+                        }
+                    })()`
+                if (ctx.used_in_expression) {
+                    return call
+                }
                 return `${call};`
             }
         } else if (e instanceof AST.StructInstantiation) {
@@ -362,17 +389,8 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
      * the lhs and rhs are printed as well as the source location.
      */
     function transpile_assert(call: AST.FunctionCall) {
-        function escape_str_str(s: string) {
-            let value = s.replace(/\\/g, "\\\\")
-            for (const [Char, replacement] of Object.entries(Lexer.escape_sequences)) {
-                value = value.replaceAll(Char, `\\${replacement}`)
-            }
-            value = value.replace(/`/g, "\\`")
-            return value
-        }
         const e = call.args[0]
         const location = escape_str_str(e.span.toString())
-        const src = call.span.src_text
         if (e instanceof AST.BinaryExpression) {
             const lhs = transpile_expression(e.lhs, {used_in_expression: true})
             const rhs = transpile_expression(e.rhs, {used_in_expression: true})
@@ -414,18 +432,18 @@ let cond = ${inner};
 if (!!(cond.value)) {
 const inner = to_debug_str(cond);
 klar_panic(
-new klar_Str(\`Assertion failed at ${location}:
+new klar_Str(\`Assertion failed:
 
 expected: not ${escape_str_str(e.expression.span.src_text)}
 got:      \${cond.value}
 \`), new klar_Str("${location}"), new klar_Str(""));}})();`
         }
         const cond = transpile_expression(e, {used_in_expression: true})
-        return `(function() {if (!(${cond}.value)) {
-            klar_panic(new klar_Str(\`Assertion failed:\n${escape_str_str(
-                src,
-            )}\`), new klar_Str("${location}"), new klar_Str(""));
-        }})();`
+        return `(function() {
+if (!(${cond}.value)) {
+    klar_panic(new klar_Str(\`Assertion failed:\\n\`), 
+    new klar_Str("${location}"), new klar_Str(""));
+}})();`
     }
     /**
      * Add additional parameters to `panic()` so that the source and location
@@ -627,6 +645,14 @@ got:      \${cond.value}
         }
         value = value.replace(/"/g, '\\"')
         return `"${value}"`
+    }
+    function escape_str_str(s: string) {
+        let value = s.replace(/\\/g, "\\\\")
+        for (const [Char, replacement] of Object.entries(Lexer.escape_sequences)) {
+            value = value.replaceAll(Char, `\\${replacement}`)
+        }
+        value = value.replace(/`/g, "\\`")
+        return value
     }
     function transpile_match_pattern_to_condition(
         match_expression: string,

@@ -157,6 +157,10 @@ trait Iterator<T>:
         vec.iter()
     end
 
+    fn take(self, n Int) Iterator<T>:
+        Take<T> { iter: self, n }
+    end
+
     fn skip(self, n Int) Iterator<T>:
         mut i = 0
         loop:
@@ -187,6 +191,21 @@ trait Iterator<T>:
             None => false
             Some(_) => true
         end
+    end
+end
+
+struct Take<T>:
+    iter Iterator<T>
+    n Int
+end
+
+impl Iterator<T> for Take<T>:
+    fn next(mut self) Option<T>:
+        if self.n <= 0:
+            return None
+        end
+        self.n = self.n - 1
+        self.iter.next()
     end
 end
 
@@ -278,6 +297,56 @@ impl ToStr for Result<T, E>:
     end
 end
 
+-- Fixed size array
+
+struct Array<T>:
+    data JSArray<T>
+end
+
+impl Array<T>:
+    fn new(size Int) Array<T> => Array<T> { data: JSArray<T>::new(size) }
+    fn iter(self) ArrayIter<T> => ArrayIter<T> { arr: self, index: 0 }
+end
+
+impl Len for Array<T>:
+    fn len(self) Int => self.data.len()
+end
+
+impl IndexedGet<Int, T> for Array<T>:
+    fn get(self, i Int) T:
+        if i >= self.len():
+            panic("Array index out of bounds")
+        end
+        self.data.get(i)
+    end
+end
+
+impl IndexedSet<Int, T> for Array<T>:
+    fn set(mut self, i Int, v T):
+        if i >= self.len():
+            panic("Array index out of bounds")
+        end
+        self.data.set(i, v)
+    end
+end
+
+struct ArrayIter<T>:
+    arr Array<T>
+    index Int
+end
+
+impl Iterator<T> for ArrayIter<T>:
+    fn next(mut self) Option<T>:
+        if self.index >= self.arr.len():
+            return None
+        end
+        let value = self.arr.get(self.index)
+        self.index = self.index + 1
+        Some(value)
+    end
+end
+
+
 extern:
 
     fn print(s ToStr)
@@ -285,6 +354,7 @@ extern:
     fn exit(code Int)
     fn assert(cond Bool)
     fn register_panic_handler(handler (fn(Str, Str, Str))) (fn(Str, Str, Str))
+    fn stack_trace() Array<Str>
 
     -- todo: We should not need this function. We use it to work around
     --       the fact that Klar does not support global variables.
@@ -527,56 +597,6 @@ impl Int:
         end
         -- todo (lang-feat): We should be able to write `-value`.
         if s[0] == '-' => -1 * value else => value
-    end
-end
-
--- Fixed size array
--- This is an internal data structure used by the compiler. 
-
-struct Array<T>:
-    data JSArray<T>
-end
-
-impl Array<T>:
-    fn new(size Int) Array<T> => Array<T> { data: JSArray<T>::new(size) }
-    fn iter(self) ArrayIter<T> => ArrayIter<T> { arr: self, index: 0 }
-end
-
-impl Len for Array<T>:
-    fn len(self) Int => self.data.len()
-end
-
-impl IndexedGet<Int, T> for Array<T>:
-    fn get(self, i Int) T:
-        if i >= self.len():
-            panic("Array index out of bounds")
-        end
-        self.data.get(i)
-    end
-end
-
-impl IndexedSet<Int, T> for Array<T>:
-    fn set(mut self, i Int, v T):
-        if i >= self.len():
-            panic("Array index out of bounds")
-        end
-        self.data.set(i, v)
-    end
-end
-
-struct ArrayIter<T>:
-    arr Array<T>
-    index Int
-end
-
-impl Iterator<T> for ArrayIter<T>:
-    fn next(mut self) Option<T>:
-        if self.index >= self.arr.len():
-            return None
-        end
-        let value = self.arr.get(self.index)
-        self.index = self.index + 1
-        Some(value)
     end
 end
 

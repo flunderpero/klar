@@ -68,6 +68,24 @@ fn main():
             )
         end)
 
+        test.it("formats multi-line comments", fn() throws:
+            assert(test_format(
+                """
+                ---    This should   
+                be formatted as
+                  a block
+                --- 
+                """.dedent()
+            )! == 
+                """
+                --- This should
+                    be formatted as
+                    a block
+                --- 
+                """.dedent().trim()
+            )
+        end)
+
         test.it("formats comments in and around f-string", fn() throws:
             assert(test_format(
                 """
@@ -1260,6 +1278,18 @@ fn main():
             )
         end)
 
+        test.it("formats error propagation", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int throws => some_fn( 1 , 2  )  !
+                """.dedent()
+            )! == 
+                """
+                fn test() Int throws => some_fn(1, 2)!
+                """.dedent().trim()
+            )
+        end)
+
         test.it("wraps long calls", fn() throws:
             assert(test_format(
                 """
@@ -1363,6 +1393,188 @@ fn main():
                         end
                         1
                     end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("enum", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                enum Test: A
+                    B( Int, Str)
+                    C(Int)
+                end
+                """.dedent()
+            )! == 
+                """
+                enum Test:
+                    A
+                    B(Int, Str)
+                    C(Int)
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wraps long type lists", fn() throws:
+            assert(test_format(
+                """
+                enum Test:
+
+                    A_very_long_variant_name(A_very_long_type_name, A_very_long_type_name_that_is_very_long, A_very_long_type_name)
+                end
+                """
+            )! ==
+                """
+                enum Test:
+                    A_very_long_variant_name(
+                        A_very_long_type_name, 
+                        A_very_long_type_name_that_is_very_long, 
+                        A_very_long_type_name
+                    )
+                end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("extern", fn():
+        test.it("formats extern fndecl", fn() throws:
+            assert(test_format(
+                """
+                extern:
+
+                    fn some_very_long_function_name_that_is_very_long(a_very_long_parameter_name_that_is_very_long Bool, another_very_long_parameter_name_that_is_very_long Str) Int
+
+                    fn another_function()
+
+                end
+                """
+            )! ==
+                """
+                extern:
+                    fn some_very_long_function_name_that_is_very_long(
+                        a_very_long_parameter_name_that_is_very_long Bool,
+                        another_very_long_parameter_name_that_is_very_long Str
+                    ) Int
+
+                    fn another_function()
+                end
+                """.dedent().trim()
+            )
+        end) 
+
+        test.it("formats extern impl", fn() throws:
+            assert(test_format(
+                """
+                extern:
+                    impl Test: 
+                    fn some_fn(a Int) Int 
+                    end
+                end
+                """
+            )! ==
+                """
+                extern:
+                    impl Test:
+                        fn some_fn(a Int) Int
+                    end
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats extern trait impl", fn() throws:
+            assert(test_format(
+                """
+                extern:
+                    impl a::b::Trait for Test
+                end
+                """
+            )! ==
+                """
+                extern:
+                    impl a::b::Trait for Test
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats extern struct", fn() throws:
+            assert(test_format(
+                """
+                extern:
+                    struct Test: a Int
+                        b Str
+                        end
+                end
+                """
+            )! ==
+                """
+                extern:
+                    struct Test:
+                        a Int
+                        b Str
+                    end
+                end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
+    test.group("use", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                use a ::b ::c
+                """.dedent()
+            )! == 
+                """
+                use a::b::c
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats relative use paths", fn() throws:
+            assert(test_format(
+                """
+                use . a :: b:: c
+                """.dedent()
+            )! == 
+                """
+                use .a::b::c
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats wildcard use paths", fn() throws:
+            assert(test_format(
+                """
+                use a ::b ::c ::*
+                """.dedent()
+            )! == 
+                """
+                use a::b::c::*
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("adds an empty line after the last use statement", fn() throws:
+            assert(test_format(
+                """
+                use a ::b ::c
+                use d::E
+
+                fn test() Int => 1
+                """.dedent()
+            )! == 
+                """
+                use a::b::c
+                use d::E
+
+                fn test() Int => 1
                 """.dedent().trim()
             )
         end)

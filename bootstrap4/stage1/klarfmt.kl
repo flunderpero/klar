@@ -12,8 +12,15 @@ use .ast::Break
 use .ast::Call
 use .ast::Closure
 use .ast::Continue
+use .ast::Enum
+use .ast::EnumVariant
+use .ast::EnumVariantKind
 use .ast::Expr
 use .ast::ExprKind
+use .ast::Extern
+use .ast::ExternItem
+use .ast::ExternImpl
+use .ast::ExternImplTrait
 use .ast::Field
 use .ast::FieldAccess
 use .ast::Fn
@@ -50,6 +57,7 @@ use .ast::TypeKind
 use .ast::Visitor
 use .ast::UnaryExpr
 use .ast::UnaryExprKind
+use .ast::Use
 use .parser::Parser
 use .parser::TokenIter
 use .ast::ParseError
@@ -375,6 +383,7 @@ impl Formatter:
             lines.iter().for_each(fn(s_ Str):
                 mut s = s_.trim()
                 if s.starts_with("---") and s.len() > 3 => s = f"--- {s.slice_copy(3, s.len()).trim()}"
+                else => if s != "---" => s = f"    {s}"
                 if s.ends_with("---") and s.len() > 3 => s = f"{s.slice_copy(0, s.len() - 3).trim()} ---"
                 self.w(s)
                 if lines.len() > 1 => self.w_raw_nl()
@@ -486,8 +495,23 @@ impl Visitor for Formatter:
     fn visit_module(mut self, mut node Module):
         self.with_meta(node.meta, fn():
             let iter = PeekableIterator::new(node.items.iter())
+            mut last_item ModuleItem? = None
             iter.for_each(fn(item ModuleItem):
+                let add_empty_line = match item.kind:
+                    ModuleItemKind::Use(_):
+                        match last_item:
+                            Some(item) => match item.kind:
+                                ModuleItemKind::Use(_) => false
+                                _ => true
+                            end
+                            None => true
+                        end
+                    end
+                    _ => true
+                end
+                if add_empty_line => self.w_empty_line()
                 self.visit_module_item(item)
+                last_item = Some(item)
                 return ()
             end)
         end)
@@ -496,13 +520,115 @@ impl Visitor for Formatter:
     fn visit_module_item(mut self, mut node ModuleItem):
         self.with_meta(node.meta, fn():
             match node.kind:
+                ModuleItemKind::Enum(enum_) => self.visit_enum(enum_)
                 ModuleItemKind::Fn(fn_) => self.visit_fn(fn_)
                 ModuleItemKind::Struct(struct_) => self.visit_struct(struct_)
                 ModuleItemKind::Trait(trait_) => self.visit_trait(trait_)
                 ModuleItemKind::Impl(impl_) => self.visit_impl(impl_)
-                _ => self.w("todo: visit_module_item")
+                ModuleItemKind::Use(use_) => self.visit_use(use_)
+                ModuleItemKind::Extern(extern_) => self.visit_extern(extern_)
             end
-            self.w_empty_line()
+            return ()
+        end)
+    end
+
+    fn visit_enum(mut self, mut node Enum):
+        self.with_meta(node.meta, fn():
+            self.w_token(TokenKind::Enum).w_space().w_name(node.name)
+            self.w_token(TokenKind::Colon)
+            self.w_nl_indent()
+            node.variants.iter().for_each(fn(variant EnumVariant):
+                self.visit_enum_variant(variant)
+                self.w_nl()
+                return ()
+            end)
+            self.w_nl_dedent()
+            self.w_token(TokenKind::End).w_nl();
+        end)
+    end
+
+    fn visit_enum_variant(mut self, variant EnumVariant):
+         self.with_meta(variant.meta, fn(): 
+            self.w_ident(variant.ident)
+            match variant.kind:
+                EnumVariantKind::Tuple(fields):
+                    self.maybe_wrap(fn(wrap Bool):
+                        self.w_token(TokenKind::LParen)
+                        if wrap => self.w_nl_indent()
+                        let fields_iter = PeekableIterator::new(fields.iter())
+                        fields_iter.for_each(fn(field Type):
+                            self.visit_type(field)
+                            if not fields_iter.at_end() => self.w_token(TokenKind::Comma).w_space()
+                            if wrap => self.w_nl()
+                            return ()
+                        end)
+                        if wrap => self.w_nl_dedent()
+                        self.w_token(TokenKind::RParen)
+                        return ()
+                    end)
+                end
+                EnumVariantKind::Unit => ()
+            end
+        end)
+    end
+
+    fn visit_extern(mut self, mut node Extern):
+        self.with_meta(node.meta, fn():
+            self.w_token(TokenKind::Extern).w_token(TokenKind::Colon).w_nl_indent()
+            node.items.iter().for_each(fn(item ExternItem):
+                match item:
+                    ExternItem::Enum(enum_) => self.visit_enum(enum_)
+                    ExternItem::FnDecl(decl) => self.visit_fndecl(decl)
+                    ExternItem::Struct(struct_) => self.visit_struct(struct_)
+                    ExternItem::ExternImpl(impl_) => self.visit_extern_impl(impl_)
+                    ExternItem::ExternImplTrait(impl_) => self.visit_extern_impl_trait(impl_)
+                end
+                self.w_empty_line()
+                return ()
+            end)
+            self.w_nl_dedent().d_empty_lines().w_token(TokenKind::End)
+            return ()
+        end)
+    end
+
+    fn visit_extern_impl_trait(mut self, mut node ExternImplTrait):
+        self.with_meta(node.meta, fn():
+            self.w_token(TokenKind::Impl).w_space()
+            self.w_fqn(node.trait_).w_space().w_token(TokenKind::For).w_space()
+            self.w_fqn(node.type_)
+            self.w_nl()
+            return ()
+        end)
+    end
+
+    fn visit_extern_impl(mut self, mut node ExternImpl):
+        self.with_meta(node.meta, fn():
+            self.w_token(TokenKind::Impl).w_space()
+            self.w_fqn(node.type_).w_token(TokenKind::Colon).w_nl_indent()
+            node.fn_decls.iter().for_each(fn(fn_decl FnDecl):
+                self.visit_fndecl(fn_decl)
+                self.w_empty_line()
+                return ()
+            end)
+            self.d_empty_lines()
+            self.w_nl_dedent()
+            self.w_token(TokenKind::End)
+            return ()
+        end)
+    end
+
+    fn visit_use(mut self, mut node Use):
+        self.with_meta(node.meta, fn():
+            self.w_token(TokenKind::Use).w_space()
+            if node.relative => self.w_token(TokenKind::Dot)
+            let iter = PeekableIterator::new(node.path.iter())
+            iter.for_each(fn(ident Ident):
+                self.w_ident(ident)
+                if not iter.at_end() => self.w_token(TokenKind::DoubleColon)
+                return ()
+            end)
+            if node.wildcard => self.w_token(TokenKind::DoubleColon).w_token(TokenKind::Star)
+            self.w_nl()
             return ()
         end)
     end
@@ -1059,6 +1185,7 @@ impl Visitor for Formatter:
                 end)
                 if wrap => self.w_nl_dedent()
                 self.w_token(TokenKind::RParen)
+                if call.propagate_error => self.w("!")
                 return ()
             end)
         end)

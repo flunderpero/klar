@@ -550,7 +550,7 @@ impl Str:
         mut min_indent = 10000000
         self.split('\n').for_each(fn(line Str):
             let indent = line.iter().take_while(fn(c Char) Bool => c == ' ').count()
-            if indent > 0 and indent != line.len() and indent < min_indent 
+            if indent != line.len() and indent < min_indent 
                 => min_indent = indent
             end
         )

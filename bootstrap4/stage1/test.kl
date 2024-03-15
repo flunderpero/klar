@@ -10,6 +10,8 @@ end
 
 struct TestCase:
     name Str
+    only Bool
+    skip Bool
     f (fn() throws)
 end
 
@@ -17,33 +19,42 @@ struct TestGroup:
     name Str
     tests Vector<TestCase>
     groups Vector<TestGroup>
+    only Bool
+    skip Bool
 end
 
 struct TestRunConfig:
     logger TestLogger
     verbose Bool
+    only Bool
 end
 
 struct TestRunResult:
     passed Int
     failed Int
+    skipped Int
 end
 
 impl TestRunResult:
     fn new() TestRunResult:
-        TestRunResult{passed: 0, failed: 0}
+        TestRunResult{passed: 0, failed: 0, skipped: 0}
     end
 
     fn update(mut self, other TestRunResult):
         self.passed = self.passed + other.passed
         self.failed = self.failed + other.failed
+        self.skipped = self.skipped + other.skipped
     end
 
     fn inc_passed(mut self) => self.passed = self.passed + 1
 
     fn inc_failed(mut self) => self.failed = self.failed + 1
 
-    fn total(self) Int => self.passed + self.failed
+    fn inc_skipped(mut self) => self.skipped = self.skipped + 1
+
+    fn total(self) Int => self.passed + self.failed + self.skipped
+
+    fn total_run(self) Int => self.passed + self.failed
 end
 
 struct TestLogger:
@@ -68,7 +79,7 @@ end
 
 impl Test:
     fn new(name Str, verbose Bool) Test:
-        let root_group = TestGroup::new(name)
+        let root_group = TestGroup::new(name, false, false)
         Test{verbose, root_group, collect_group: root_group, logger: TestLogger::new()}
     end
 
@@ -85,20 +96,48 @@ impl Test:
     fn it(self, name Str, f (fn() throws)):
         --- Add a test to the current group.
         ---
-        self.collect_group.tests.push(TestCase{name, f})
+        self.collect_group.tests.push(TestCase{name, f, only: false, skip: false})
+    end
+
+    fn only_it(self, name Str, f (fn() throws)):
+        --- Add a test to the current group and ignore all other tests that are not
+            also created with `it_only()` or `group_only()`.
+        ---
+        self.collect_group.tests.push(TestCase{name, f, only: true, skip: false})
     end
 
     fn skip_it(self, name Str, f (fn() throws)):
         --- Ignore a test.
         ---
+        self.collect_group.tests.push(TestCase{name, f, only: false, skip: true})
     end
 
     fn group(mut self, name Str, collect (fn())):
         --- Create a new group of tests. All tests and groups added within the 
             `collect` function will be added to the new group. 
         ---
+        self.group_(false, false, name, collect)
+    end
+
+    fn only_group(mut self, name Str, collect (fn())):
+        --- Create a new group and ignore all other groups that are not also
+            created with `group_only()`.
+        ---
+        self.group_(true, false, name, collect)
+    end
+
+    fn skip_group(mut self, name Str, collect (fn())):
+        --- Create a new group and ignore it.
+        ---
+        self.group_(false, true, name, collect)
+    end
+
+    fn group_(mut self, only Bool, skip Bool, name Str, collect (fn())):
+        --- Create a new group of tests. All tests and groups added within the 
+            `collect` function will be added to the new group. 
+        ---
         let collect_group = self.collect_group
-        mut group = TestGroup::new(name)
+        mut group = TestGroup::new(name, only, skip)
         self.collect_group = group
         collect()
         self.collect_group = collect_group
@@ -115,7 +154,7 @@ impl Test:
     fn run(self) TestRunResult:
         --- Run all collected tests.
         ---
-        let config = TestRunConfig{logger: self.logger, verbose: self.verbose}
+        let config = TestRunConfig{logger: self.logger, verbose: self.verbose, only: self.root_group.has_only()}
         self.root_group.run(config)
     end
 
@@ -130,8 +169,14 @@ impl Test:
 end
 
 impl TestGroup:
-    fn new(name Str) TestGroup:
-        TestGroup{ name, tests: Vector<TestCase>::new(), groups: Vector<TestGroup>::new() }
+    fn new(name Str, only Bool, skip Bool) TestGroup:
+        TestGroup{ name, tests: Vector<TestCase>::new(), groups: Vector<TestGroup>::new(), only, skip }
+    end
+
+    fn has_only(self) Bool:
+        self.only or self.groups.iter().any(
+            fn(group TestGroup) => group.has_only() 
+            or group.tests.iter().any(fn(test TestCase) => test.only))
     end
 
     fn run(self, mut config TestRunConfig) TestRunResult:
@@ -139,8 +184,15 @@ impl TestGroup:
         mut result = TestRunResult::new()
         mut logger = config.logger
         let group_name = color(f"[{self.name}]", "90")
+        let has_test_with_only = self.tests.iter().any(fn(test TestCase) => test.only)
+        let skip_only = config.only and (not self.only or has_test_with_only)
         self.tests.iter().for_each(fn(test TestCase):
             let name = f"it {test.name}"
+            if (skip_only and not test.only) or self.skip or test.skip:
+                -- logger.log(f"{group_name} {color("SKIP", "33")} {name}")
+                result.inc_skipped()
+                return ()
+            end
             if config.verbose:
                 logger.log(f"{group_name} {color("RUN", "33")}  {name}")
             end
@@ -180,12 +232,17 @@ impl TestGroup:
             result.update(group_result)
             logger.dedent()
         end)
+        let skipped = if result.skipped > 0 
+            => color(f"{result.skipped} tests skipped", "33")
+            else => ""
         if result.failed > 0:
-            let s = color(f"{result.failed} / {result.total()} tests failed", "31")
-            logger.log(f"{group_name} {s}")
+            let s = color(f"{result.failed} / {result.total_run()} tests failed", "31")
+            logger.log(f"{group_name} {s}{", ".when(skipped.len() > 0)}{skipped}")
         else:
-            let s = color(f"{result.total()} tests passed", "32")
-            logger.log(f"{group_name} {s}")
+            let passed = if result.passed > 0 
+                => color(f"{result.passed} / {result.total_run()} tests passed", "32")
+                else => ""
+            logger.log(f"{group_name} {passed}{", ".when(result.passed > 0 and skipped.len() > 0)}{skipped}")
         end
         result
     end

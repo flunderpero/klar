@@ -272,7 +272,7 @@ x
 
     fn lex_run(src Str, expected Array<TokenKind>):
         --- Test that `src` is lexed into `expected`. Whitespaces are ignored.
-            Test that `lex()` and `to_src()` are inverses of each other.
+        Test that `lex()` and `to_src()` are inverses of each other.
         ---
         test.log(f"testing: {src}")
         let tokens = lex_only(src)
@@ -293,7 +293,7 @@ x
                 if idx >= expected.len():
                     panic(f"more tokens than expected: {token}")
                 end
-            assert(idx  < expected.len())
+            assert(idx < expected.len())
             assert(token.kind == expected[idx])
             idx = idx + 1
             end

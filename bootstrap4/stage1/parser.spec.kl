@@ -351,8 +351,12 @@ fn main():
             assert(expr("test--- comment ---()") == "(@ident test)")
         end)
 
-        test.it("can chain calls", fn() throws:
+        test.it("parses calls to functions returned from functions", fn() throws:
             assert(expr("test()()") == "(@call (@call (@ident test)))")
+        end)
+
+        test.it("parses chained calls", fn() throws:
+            assert(expr("test().foo()") == "(@call (@fieldaccess (@call (@ident test)) (@name (@ident foo))))")
         end)
 
         test.it("parses generics (if target is a FQN)", fn() throws:
@@ -360,6 +364,15 @@ fn main():
                 expr("test<Int>()") 
                 == 
                 "(@call (@fqn (@name (@ident test) (@genericarg (@type (@fqn (@name (@ident Int))))))))"
+            )
+        end)
+
+        test.it("parses generics (if target is a call expression itself)", fn() throws:
+            assert(
+                expr("test().foo<Int>()") 
+                == 
+                "(@call (@fieldaccess (@call (@ident test)) " +
+                "(@name (@ident foo) (@genericarg (@type (@fqn (@name (@ident Int))))))))"
             )
         end)
 

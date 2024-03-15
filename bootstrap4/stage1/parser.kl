@@ -307,9 +307,10 @@ impl Parser:
                 match self.iter.peek():
                     Some(Token{kind: TokenKind::Semicolon, span: _}):
                         self.iter.force_next()!
-                        Expr::from_kind(
-                            ExprKind::TerminatorExpr(TerminatorExpr{expr, meta: self.meta(mark)})
-                        )
+                        Expr{
+                            kind: ExprKind::TerminatorExpr(TerminatorExpr{expr, meta: self.meta(mark)}),
+                            meta: self.meta(mark)
+                        }
                     end
                     _ => expr
                 end
@@ -339,7 +340,7 @@ impl Parser:
             if op_token.is_none() => break
             let kind_and_prec = match op_token.unwrap().kind:
                 None => break
-                TokenKind::Equal => return Expr::from_kind(self.parse_assignment(lhs, mark)!)
+                TokenKind::Equal => return Expr{kind: self.parse_assignment(lhs, mark)!, meta: self.meta(mark)}
                 TokenKind::Or => (BinaryExprKind::Or, 1)
                 TokenKind::And => (BinaryExprKind::And, 2)
                 TokenKind::DoubleEqual => (BinaryExprKind::Equal, 3)
@@ -362,9 +363,10 @@ impl Parser:
             let rhs_token = self.iter.force_next()!
             let rhs = self.parse_binary_expr(rhs_token, prec + 1)!
             if rhs.is_none() => return parse_error(ExprExpected(rhs_token), rhs_token)
-            lhs = Expr::from_kind(
-                ExprKind::BinaryExpr(BinaryExpr{kind, lhs, rhs: rhs.unwrap(), meta: self.meta(mark)})
-            )
+            lhs = Expr{
+                kind: ExprKind::BinaryExpr(BinaryExpr{kind, lhs, rhs: rhs.unwrap(), meta: self.meta(mark)}),
+                meta: self.meta(mark)
+            }
         end
         lhs
     end
@@ -412,7 +414,7 @@ impl Parser:
                 end
             end
         end
-        mut expr = Expr::from_kind(kind)
+        mut expr = Expr{kind, meta: self.meta(mark)}
         loop:
             kind = match self.iter.peek_immediate():
                 Some(Token{kind: TokenKind::LParen, span: _}) => 
@@ -425,7 +427,7 @@ impl Parser:
                     _ => break
                 end
             end
-            expr = Expr::from_kind(kind)
+            expr = Expr{kind, meta: self.meta(mark)}
         end
         expr
     end
@@ -865,22 +867,14 @@ impl Parser:
             None => return parse_error(ExprExpected(cond_token), cond_token)
         end
         let then_block = self.parse_block_advanced(true)!
-        let else_block Block? = 
-            if then_block.1:
+        let else_block = match self.iter.peek():
+            Some(Token{kind: TokenKind::Else, span: _}):
+                self.iter.force_next()!
                 Some(self.parse_block()!)
-            else:
-                -- todo: The assignment to `block` should not be needed here. The stage0 type-checker
-                --       cannot infer the type of the match expression.
-                let block = match self.iter.peek():
-                    Some(Token{kind: TokenKind::Else, span: _}):
-                        self.iter.force_next()!
-                        Some(self.parse_block()!)
-                    end
-                    _ => None
-                end
-                block
             end
-        If{cond, then_block: then_block.0, else_block, meta: self.meta(mark)}
+            _ => None
+        end
+        If{cond, then_block, else_block, meta: self.meta(mark)}
     end
 
     fn parse_int_literal(self, token Token) Literal throws ParseError:
@@ -940,14 +934,15 @@ impl Parser:
                     mut parser = Parser::new(TokenIter::new(tokens))
                     let expr = parser.parse_expr(parser.iter.force_next()!)!
                     match expr:
-                        Some<Expr>(value) => value
+                        Some<Expr>(value) => Expr{kind: value.kind, meta: self.meta_from_tokens(tokens)}
                         None => return parse_error(ExprExpected(tokens[0]), tokens[0])
                     end
                 end
                 FStrItem::FStrStrItem(s, span):
-                    Expr::from_kind(
-                        ExprKind::Literal(Literal{kind: LiteralKind::StrLiteral(s, span.raw_src()), meta: self.meta(mark)})
-                    )
+                    Expr{
+                        kind: ExprKind::Literal(Literal{kind: LiteralKind::StrLiteral(s, span.raw_src()), meta: self.meta(mark)}),
+                        meta: self.meta(mark)
+                    }
                 end
             end
             exprs.push(expr)
@@ -1204,7 +1199,7 @@ impl Parser:
     end
 
     fn parse_struct_inst_expr(mut self, fqn FQN) StructInst throws ParseError:
-        let mark = self.iter.mark()
+        let mark = self.iter.mark_prev()
         let fields = Vector<(Ident, Expr)>::new()
         mut got_comma = false
         loop:
@@ -1232,7 +1227,7 @@ impl Parser:
                             end
                         end
                         Some(Token{kind: TokenKind::Comma | TokenKind::RBrace, span: _}) =>
-                            fields.push((ident, Expr::from_kind(ExprKind::Ident(ident))))
+                            fields.push((ident, Expr{kind: ExprKind::Ident(ident), meta: self.meta_from_token(next_token)}))
                         Some(next) => return parse_error(UnexpectedToken(next), next)
                         None => return parse_error(UnexpectedEOF, None)
                     end
@@ -1463,23 +1458,21 @@ impl Parser:
     fn parse_block(mut self) Block throws ParseError:
         -- todo (lang-feat): We should be able to use named arguments here. And we should
         --                   be able to force the use of named arguments.
-        self.parse_block_advanced(false)!.0
+        self.parse_block_advanced(false)!
     end
 
-    fn parse_block_advanced(mut self, may_end_with_else Bool) (Block, Bool) throws ParseError:
+    fn parse_block_advanced(mut self, may_end_with_else Bool) Block throws ParseError:
         --- Parse a block starting with either `=>` or `:`. The `may_end_with_else` parameter
-            indicates whether the block may end with an `else` token.
-
-            @return A tuple containing the block and a boolean indicating whether the block
-                    ended with an `else` token.
+            indicates whether the block may end with an `else` token. If it ends with an `else`
+            the token will not be consumed.
         ---
-        let mark = self.iter.mark()
+        let mark_root = self.iter.mark()
         let items = Vector<BlockItem>::new() 
         let next_token = self.iter.force_next()!
-        mut ended_with_else = false
         match next_token.kind:
             TokenKind::FatArrow:
                 -- This is a single expression block, an expression has to follow.
+                let mark = self.iter.mark()
                 match self.parse_expr(self.iter.force_next()!)!:
                     Some<Expr>(expr) => items.push(BlockItem{kind: BlockItemKind::Expr(expr), meta: self.meta(mark)})
                     None => return parse_error(
@@ -1490,25 +1483,25 @@ impl Parser:
             TokenKind::Colon:
                 -- This is a multi-line block that may contain things other than expressions.
                 loop:
-                    let token = self.iter.force_next()!
-                    let item = match token.kind:
-                        TokenKind::End => break
-                        TokenKind::Else:
-                            if not may_end_with_else => 
-                                return parse_error(UnexpectedToken(token), token)
-                            ended_with_else = true
+                    let token = self.iter.peek()
+                    let item = match token:
+                        Some(Token{kind: TokenKind::End, span: _}):
+                            self.iter.force_next()!
                             break
                         end
-                        _ => self.parse_block_item(token)!
+                        Some(Token{kind: TokenKind::Else, span: _}):
+                            if not may_end_with_else => 
+                                return parse_error(UnexpectedToken(token.unwrap()), token.unwrap())
+                            break
+                        end
+                        _ => self.parse_block_item(self.iter.force_next()!)!
                     end
                     items.push(item)
                 end
             end
             _ => return parse_error(UnexpectedToken(next_token), next_token)
         end
-        -- todo: The `return` should not be needed here. The stage0 parser
-        --       cannot distinguish between a call and a tuple type here.
-        return (Block{meta: self.meta(mark), items}, ended_with_else)
+        Block{meta: self.meta(mark_root), items}
     end
 
     fn parse_block_item(mut self, token Token) BlockItem throws ParseError:
@@ -1531,16 +1524,19 @@ impl Parser:
         end
     end
 
-    fn meta(self, mark Int) Meta:
-        Meta::from_tokens(self.iter.tokens_since(mark))
-    end
-
     fn meta_from_tokens(self, tokens Vector<Token>) Meta:
         Meta::from_tokens(tokens)
     end
 
+    fn meta(self, mark Int) Meta:
+        --- Create a `Meta` from the tokens since the given mark.
+        ---
+        let tokens = self.iter.tokens_since(mark)
+        self.meta_from_tokens(tokens)
+    end
+
     fn meta_from_token(self, token Token) Meta:
-        Meta::from_tokens(Vector<Token>::from([token]))
+        self.meta_from_tokens(Vector<Token>::from([token]))
     end
 
     fn meta_from_span(self, span Span) Meta:

@@ -87,7 +87,7 @@ end
 
 Documentation comments are multi-line comments.
 Put these _inside_ of block elements like `fn`, `struct`, or `trait`
-or right above single line declarations like fields.
+or right below single line declarations like fields and function declarations.
 
 ```klar
 
@@ -96,13 +96,11 @@ struct Planet:
         Multi-line comments are indented by 4 spaces.
     ---
 
-    --- The mass in kg.
-    ---
     mass Int -- TODO: change to U64
+    --- The mass in kg. ---
 
-    --- The circumference in km.
-    ---
     circumference Int
+    --- The circumference in km. ---
 
     -- This is a regular comment and not a documentation comment.
     name Str
@@ -112,9 +110,8 @@ trait Orbit:
     --- An orbit describes the path around a bigger mass object.
     ---
 
-    --- This is just a declaration, so we document above it.
-    ---
     fn mean_distance(self) Int
+    --- This is just a declaration, so we document above it. ---
 end
 
 fn calculate_radius(planet Planet) Int:

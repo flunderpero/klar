@@ -724,7 +724,9 @@ function type_check_variable_declaration(
     env: TypeEnvironment,
     ctx: Context,
 ) {
+    let final_type: Type
     const value_type = type_check(node.value, env, {...ctx, used_in_expression: true})
+    final_type = value_type
     if (value_type.equals(Type.unit)) {
         throw new TypeCheckError("Cannot assign the unit value to a variable", node.span)
     }
@@ -737,12 +739,13 @@ function type_check_variable_declaration(
             )
         }
         expect_assignable_to(declared_type, value_type, node.span)
+        final_type = declared_type
     }
     if (node.value instanceof ast.FieldAccess || node.value instanceof ast.IdentifierReference) {
         // Prevent use cases like: `let a = Foo` where `Foo` is an enum or struct type.
-        expect_type_can_be_used_in_assignments(value_type, env, node.span)
+        expect_type_can_be_used_in_assignments(final_type, env, node.span)
     }
-    env.add(node.name, value_type, node.span)
+    env.add(node.name, final_type, node.span)
 }
 
 function type_check_binary_expression(

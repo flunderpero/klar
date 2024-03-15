@@ -161,6 +161,22 @@ trait Iterator<T>:
         Take<T> { iter: self, n }
     end
 
+    fn skip_while(self, f (fn(T) Bool)) Iterator<T>:
+        --- Skip elements until the predicate returns false.
+        ---
+        mut iter = PeekableIterator::new(self)
+        loop:
+            match iter.peek():
+                None => break
+                Some(value):
+                    if not f(value) => break
+                    iter.next()
+                end
+            end
+        end
+        iter
+    end
+
     fn skip(self, n Int) Iterator<T>:
         mut i = 0
         loop:
@@ -284,6 +300,13 @@ impl Result<T, E>:
         match self:
             Ok(value) => panic(f"called `Result.unwrap_err()` on an `Ok` value")
             Error(error) => error
+        end
+    end
+
+    fn as_option(self) Option<T>:
+        match self:
+            Ok(value) => Some(value)
+            Error(_) => None
         end
     end
 end
@@ -477,6 +500,19 @@ impl Str:
         true
     end
 
+    fn ends_with(self, suffix Str) Bool:
+        if self.len() < suffix.len() => return false
+        mut i = self.len() - suffix.len()
+        mut j = 0
+        loop:
+            if i == self.len() => break
+            if self[i] != suffix[j] => return false
+            i = i + 1
+            j = j + 1
+        end
+        true
+    end
+
     fn contains(self, s Str) Bool:
         mut i = 0
         mut match_ = ""
@@ -508,8 +544,8 @@ impl Str:
     end
 
     fn dedent(self) Str:
-        --- Remove leading spaces from each line so that the line with the least
-            number of leading spaces has none.
+        --- Remove leading spaces from each line so that the lines with the least
+            number of leading spaces have none.
         ---
         mut min_indent = 10000000
         self.split('\n').for_each(fn(line Str):
@@ -545,6 +581,10 @@ impl Str:
     fn trim(self) Str:
         if self.len() == 0 => return ""
         self.trim_start().trim_end()
+    end
+
+    fn copy(self) Str:
+        "" + self
     end
 end
 
@@ -634,6 +674,19 @@ impl Vector<T>:
     fn pop(mut self) Option<T>:
         if self.len() == 0 => return None
         let value = self.data.get(self.len() - 1)
+        self.data.pop()
+        Some(value)
+    end
+
+    fn shift(mut self) Option<T>:
+        if self.len() == 0 => return None
+        let value = self.data.get(0)
+        mut idx = 1
+        loop:
+            if idx == self.len() => break
+            self.data.set(idx - 1, self.data.get(idx))
+            idx = idx + 1
+        end
         self.data.pop()
         Some(value)
     end

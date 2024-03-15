@@ -31,6 +31,7 @@ use .ast::Literal
 use .ast::LiteralKind
 use .ast::Match
 use .ast::MatchArm
+use .ast::Meta
 use .ast::Module
 use .ast::ModuleItem
 use .ast::ModuleItemKind
@@ -53,39 +54,92 @@ use .parser::Parser
 use .parser::TokenIter
 use .ast::ParseError
 
+struct CommentOrNewline:
+    text Str
+    pos Int
+end
+
 struct Formatter:
     out Vector<Str>
     line Str
     indent_ Int
     indent_str Str
+    wrap_idx Int
     --- The number of wrap-able nodes on the current line.
     ---
-    wrap_idx Int
+    wrap_depth Int
     --- The remaining depth of wraps.
     ---
-    wrap_depth Int
+    comments_or_newlines Vector<CommentOrNewline>
+    comments_or_newlines_idx Int
+    last_visited_token Token?
+    meta Meta?
+end
+
+struct Mark:
+    pos Int
+    comments_or_newlines_idx Int
+    last_visited_token Token?
 end
 
 impl Formatter:
-    fn new() Formatter:
-        Formatter{out: Vector<Str>::new(), indent_: 0, line: "", wrap_idx: 0, wrap_depth: 0, indent_str: ""}
+    fn new(tokens Vector<Token>) Formatter:
+        mut comments_or_newlines = Vector<CommentOrNewline>::new()
+        mut consecutive_newlines = 0
+        tokens.iter().for_each(fn(token Token):
+            match token.kind:
+                TokenKind::Comment(comment):
+                    comments_or_newlines.push(CommentOrNewline{text: comment, pos: token.span.from})
+                    consecutive_newlines = 0
+                end
+                -- TokenKind::WhiteSpace(ws):
+                --     if ws == '\n' => consecutive_newlines = consecutive_newlines + 1
+                --     if consecutive_newlines > 1 
+                --         => comments_or_newlines.push(CommentOrNewline{text: "\n", pos: token.span.from})
+                -- end
+                _ => consecutive_newlines = 0
+            end
+            return ()
+        end)
+        Formatter{
+            out: Vector<Str>::new(), 
+            indent_: 0, 
+            line: "", 
+            wrap_idx: 0, 
+            wrap_depth: 0, 
+            indent_str: "", 
+            comments_or_newlines,
+            comments_or_newlines_idx: 0,
+            last_visited_token: None,
+            meta: None
+        }
+    end
+
+    fn based_on(tokens Vector<Token>, formatter Formatter) Formatter:
+        mut res = Formatter::new(tokens)
+        res.indent_ = formatter.indent_
+        res
     end
 
     fn w_nl_indent(mut self) Self:
         self.w_nl()
         self.indent_ = self.indent_ + 1
+        self.w_comments_in_meta()
         self
     end
 
     fn w_nl_indent_with_str(mut self, s Str) Self:
-        self.w_nl_indent()
+        self.w_nl()
+        self.indent_ = self.indent_ + 1
         self.indent_str = s
+        self.w_comments_in_meta()
         self
     end
 
     fn w_nl_dedent(mut self) Self:
         self.w_nl()
         self.indent_ = self.indent_ - 1
+        self.w_comments_in_meta()
         self
     end
 
@@ -100,10 +154,11 @@ impl Formatter:
         self.w_nl()
         if self.out.len() > 0 and self.out[self.out.len() - 1].len() > 0 
             => self.out.push("")
+        self.w_comments_in_meta()
         self
     end
 
-    fn w_nl(mut self) Self:
+    fn w_raw_nl(mut self) Self:
         if self.line.iter().any(fn(c Char) Bool => c != ' '):
             let line = (if self.indent_ > 0 => " ".repeat((self.indent_ - 1) * 4) + self.indent_str else => "") + self.line
             self.out.push(line)
@@ -115,6 +170,28 @@ impl Formatter:
         self
     end
 
+    fn w_nl(mut self) Self:
+        -- First, write trailing commonts.
+        mut iter = self.not_visited_tokens_in_meta()
+        loop:
+            let token = match iter.next():
+                Some(t) => t
+                None => break
+            end
+            match token.kind:
+                TokenKind::Comment(comment):
+                    if comment.starts_with("---") => break
+                    self.w_comment(comment)
+                    self.last_visited_token = Some(token)
+                    assert(self.next_comment_or_newline().unwrap().text == comment)
+                end
+                TokenKind::WhiteSpace(ws) => if ws == '\n' => break
+                _ => break
+            end
+        end
+        self.w_raw_nl()
+    end
+
     fn w_space(mut self) Self:
         --- Add a space to the current line if it is not emply and does not end with a space.
         ---
@@ -122,10 +199,17 @@ impl Formatter:
         self
     end
 
+    fn w_ident(mut self, ident Ident) Self:
+        self.with_meta(ident.meta, fn():
+            self.w(ident.name);
+        end)
+        self
+    end
+
     fn d_empty_lines(mut self) Self:
         --- Delete the last empty lines from the output.
         ---
-        self.w_nl()
+        self.w_raw_nl()
         mut i = self.out.len() - 1
         loop:
             if i < 0 => break
@@ -149,16 +233,18 @@ impl Formatter:
         self.line.len() > 100
     end
 
-    fn mark_line(self) Int:
+    fn mark(self) Mark:
         --- Return the length of the current line.
         ---
-        self.line.len()
+        Mark{pos: self.line.len(), last_visited_token: self.last_visited_token, comments_or_newlines_idx: self.comments_or_newlines_idx}
     end
 
-    fn reset_line(mut self, mark_line Int) Self:
+    fn reset(mut self, mark Mark) Self:
         --- Reset the current line to the given length.
         ---
-        self.line = self.line.slice_copy(0, mark_line)
+        self.line = self.line.slice_copy(0, mark.pos)
+        self.last_visited_token = mark.last_visited_token
+        self.comments_or_newlines_idx = mark.comments_or_newlines_idx
         self
     end
 
@@ -188,12 +274,12 @@ impl Formatter:
         if self.wrap_idx == 1:
             -- This is the first wrap-able node on the line.
             -- It controls the wrapping of the entire line.
-            let mark = self.mark_line()
+            let mark = self.mark()
             f(false)
             mut cur_line = ""
             loop:
                 if not self.line_too_long() or cur_line == self.line => break
-                self.reset_line(mark)
+                self.reset(mark)
                 self.inc_wrap_depth()
                 self.wrap_idx = 0
                 f(true)
@@ -216,67 +302,245 @@ impl Formatter:
             @return true if the the line-length is not exceeded.
         ---
         self.inc_wrap_depth()
-        let mark = self.mark_line()
+        let mark = self.mark()
         f()
         self.dec_wrap_depth()
         if self.line_too_long():
-            self.reset_line(mark)
+            self.reset(mark)
             return false
         end
         true
     end
 
+    fn with_meta(mut self, meta Meta, f (fn())):
+        -- First write all comments until the first token of the given meta.
+        match meta.first_token():
+            Some(token) => self.w_comments_before(token)
+            None => ()
+        end
+        let cur_meta = self.meta
+        self.meta = Some(meta)
+        -- self.w_comments_in_meta()
+        f()
+        -- Eat up all tokens that may be left in the meta.
+        self.not_visited_tokens_in_meta().for_each(fn(token Token):
+            self.w_comments_before(token)
+            return ()
+        end)
+        self.last_visited_token = meta.last_token()
+        self.meta = cur_meta
+    end
+
+    fn not_visited_tokens_in_meta(self) Iterator<Token>:
+        --- Return an iterator over tokens in `meta.tokens` that have not been visited yet.
+        ---
+        let meta = match self.meta:
+            Some(meta) => meta
+            None => return Vector<Token>::new().iter()
+        end
+        let iter Iterator<Token> = match meta.tokens:
+            Some(tokens) => tokens.iter()
+            None => return Vector<Token>::new().iter()
+        end
+        match self.last_visited_token:
+            Some(last_visited_token)
+                => iter.skip_while(fn(it Token) Bool => it.span.from <= last_visited_token.span.from)
+            None => iter
+        end
+    end
+
+    fn next_comment_or_newline(mut self) CommentOrNewline?:
+        if self.comments_or_newlines_idx >= self.comments_or_newlines.len() => None
+        else:
+            let res = self.comments_or_newlines[self.comments_or_newlines_idx]
+            self.comments_or_newlines_idx = self.comments_or_newlines_idx + 1
+            Some(res)
+        end
+    end
+
+    fn peek_comment_or_newline(mut self) CommentOrNewline?:
+        if self.comments_or_newlines_idx >= self.comments_or_newlines.len() => None
+        else => Some(self.comments_or_newlines[self.comments_or_newlines_idx])
+    end
+
+    fn w_comment(mut self, comment Str) Self:
+        --- Format a comment.
+        ---
+        self.w_space()
+        if comment.starts_with("---"):
+            -- Make sure there is a space after the prefix `---`.
+            -- If the suffix `---` is not on a new line (including whitespace),
+            -- add a space before the suffix.
+            let lines = comment.split('\n').collect()
+            lines.iter().for_each(fn(s_ Str):
+                mut s = s_.trim()
+                if s.starts_with("---") and s.len() > 3 => s = f"--- {s.slice_copy(3, s.len()).trim()}"
+                if s.ends_with("---") and s.len() > 3 => s = f"{s.slice_copy(0, s.len() - 3).trim()} ---"
+                self.w(s)
+                if lines.len() > 1 => self.w_raw_nl()
+                return ()
+            end)
+            if lines.len() == 1:
+                self.w_space()
+            end
+        else:
+            self.w(comment).w_raw_nl()
+        end
+        self
+    end
+
+    fn w_comments_in_meta(mut self) Token?:
+        --- Go through tokens in `meta.tokens` and write all comments
+            that come before the first token that is not a comment or whitespace.
+        ---
+        mut iter = self.not_visited_tokens_in_meta()
+        loop:
+            let token = match iter.next():
+                Some(t) => t
+                None => break
+            end
+            self.w_comments_before(token)
+            match token:
+                Token{kind: TokenKind::Comment(_) | TokenKind::WhiteSpace(_), span} => self.last_visited_token = Some(token)
+                _ => return Some(token)
+            end
+        end
+        None
+    end
+
+    fn w_comments_before(mut self, mut token Token) Self:
+        --- Write comments before the given token or at the given token if it is a comment.
+        ---
+        let token_is_comment = match token.kind:
+            TokenKind::Comment(_) => true
+            _ => false
+        end
+        loop:
+            match self.peek_comment_or_newline():
+                Some(comment_or_newline):
+                    if comment_or_newline.pos > token.span.from => break
+                    if comment_or_newline.pos == token.span.from and not token_is_comment => break
+                    self.w_comment(comment_or_newline.text)
+                    self.next_comment_or_newline()
+                end
+                None => break
+            end
+        end
+        self
+    end
+
+    fn w_token(mut self, kind TokenKind) Self:
+        --- Write comments until we find a token of the given kind.
+
+            If `kind` is `FatArrow` or `Colon`, then we are ok with expecting the other token
+        ---
+        loop:
+            match self.w_comments_in_meta():
+                Some(token):
+                    self.last_visited_token = Some(token)
+                    if token.kind != kind and not (kind == TokenKind::FatArrow and token.kind == TokenKind::Colon) and not (kind == TokenKind::Colon and token.kind == TokenKind::FatArrow):
+                        -- print(f"Expected token of kind `{kind}` but found `{token.kind}`.")
+                        continue
+                    end
+                    self.w(kind)
+                    break
+                end
+                None => panic(f"Expected token of kind `{kind}` but found none.")
+            end
+        end
+        self
+    end
+
+    fn w_token_as_nl_indent(mut self, kind TokenKind) Self:
+        --- Write comments until we find a token of the given kind. Then use it as
+            the indentation string for the next line.
+
+            If `kind` is `FatArrow` or `Colon`, then we are ok with expecting the other token
+        ---
+        loop:
+            match self.w_comments_in_meta():
+                Some(token):
+                    self.last_visited_token = Some(token)
+                    if token.kind != kind and not (kind == TokenKind::FatArrow and token.kind == TokenKind::Colon) and not (kind == TokenKind::Colon and token.kind == TokenKind::FatArrow):
+                        -- print(f"Expected token of kind `{kind}` but found `{token.kind}`.")
+                        continue
+                    end
+                    mut s = f" {kind.to_str()} "
+                    if s.len() < 4 => s = f" {s}"
+                    self.w_nl_indent_with_str(s)
+                    break
+                end
+                None => panic(f"Expected token of kind `{kind}` but found none.")
+            end
+        end
+        self
+    end
+
     fn finish(mut self) Str:
         self.d_empty_lines()
-        "\n".join(self.out.iter())
+        "\n".join(self.out.iter()).trim()
     end
 end
 
 impl Visitor for Formatter:
     fn visit_module(mut self, mut node Module):
-        self.walk_module(node)
+        self.with_meta(node.meta, fn():
+            let iter = PeekableIterator::new(node.items.iter())
+            iter.for_each(fn(item ModuleItem):
+                self.visit_module_item(item)
+                return ()
+            end)
+        end)
     end
 
     fn visit_module_item(mut self, mut node ModuleItem):
-        match node.kind:
-            ModuleItemKind::Fn(fn_) => self.visit_fn(fn_)
-            ModuleItemKind::Struct(struct_) => self.visit_struct(struct_)
-            ModuleItemKind::Trait(trait_) => self.visit_trait(trait_)
-            ModuleItemKind::Impl(impl_) => self.visit_impl(impl_)
-            _ => self.w("todo: visit_module_item")
-        end
-        self.w_empty_line()
-        return ()
+        self.with_meta(node.meta, fn():
+            match node.kind:
+                ModuleItemKind::Fn(fn_) => self.visit_fn(fn_)
+                ModuleItemKind::Struct(struct_) => self.visit_struct(struct_)
+                ModuleItemKind::Trait(trait_) => self.visit_trait(trait_)
+                ModuleItemKind::Impl(impl_) => self.visit_impl(impl_)
+                _ => self.w("todo: visit_module_item")
+            end
+            self.w_empty_line()
+            return ()
+        end)
     end
 
     fn visit_fn(mut self, mut node Fn):
-        self.visit_fndecl(node.decl)
-        self.visit_block(node.body)
-        self.w_nl()
-        return ()
+        self.with_meta(node.meta, fn():
+            self.visit_fndecl(node.decl)
+            self.visit_block(node.body)
+            self.w_nl();
+        end)
     end
 
     fn visit_closure(mut self, mut node Closure):
-        self.visit_fn_or_closure_decl(node.params, node.return_type, None)
-        self.visit_block(node.body)
+        self.with_meta(node.meta, fn():
+            self.visit_fn_or_closure_decl(node.params, node.return_type, None)
+            self.visit_block(node.body)
+        end)
     end
 
     fn visit_fndecl(mut self, mut node FnDecl):
-        self.visit_fn_or_closure_decl(node.params, node.return_type, Some(node.ident))
+        self.with_meta(node.meta, fn():
+            self.visit_fn_or_closure_decl(node.params, node.return_type, Some(node.ident))
+        end)
     end
 
     fn visit_fn_or_closure_decl(mut self, params Vector<Param>, return_type Type, ident Ident?):
         self.maybe_wrap(fn(wrap Bool):
-            self.w("fn")
+            -- let wrap = wrap_ and params.len() > 0
+            self.w_token(TokenKind::Fn)
             match ident:
-                Some(ident_) => self.w_space().w(ident_.name)
+                Some(ident_) => self.w_space().w_ident(ident_)
                 None => ()
             end
-            self.w("(")
+            self.w_token(TokenKind::LParen)
             if wrap => self.w_nl_indent()
             mut iter = PeekableIterator::new(params.iter())
             iter.for_each(fn(param Param):
-                self.w(param.ident)
+                self.w_ident(param.ident)
                 if param.ident.name != "self":  
                     self.w_space()
                     self.visit_type(param.type_)
@@ -288,169 +552,189 @@ impl Visitor for Formatter:
                 return ()
             end)
             if wrap => self.w_nl_dedent()
-            self.w(") ")
+            self.w_token(TokenKind::RParen).w_space()
             self.w_return_type(return_type);
         end)
     end
 
     fn visit_struct(mut self, mut node Struct):
-        self.w("struct ").w_name(node.name).w(":")
-        self.w_nl_indent()
-        node.fields.iter().for_each(fn(field Field):
-            self.w_nl().w(field.ident).w_space()
-            self.visit_type(field.type_);
+        self.with_meta(node.meta, fn():
+            self.w_token(TokenKind::Struct).w_space().w_name(node.name)
+            self.w_token(TokenKind::Colon)
+            self.w_nl_indent()
+            node.fields.iter().for_each(fn(field Field):
+                self.w_nl().w(field.ident).w_space()
+                self.visit_type(field.type_);
+            end)
+            self.w_nl_dedent()
+            self.w_token(TokenKind::End).w_nl();
         end)
-        self.w_nl_dedent()
-        self.w("end").w_nl()
-        return ()
     end
 
     fn visit_trait(mut self, mut node Trait):
-        self.w("trait ").w_name(node.name).w(":")
-        self.w_nl_indent()
-        -- Make sure we keep the declaration order.
-        mut fn_decls = PeekableIterator::new(node.fn_decls.iter())
-        mut fn_impls = PeekableIterator::new(node.fn_impls.iter())
-        loop:
-            let next_decl_pos = match fn_decls.peek():
-                Some(fn_decl) => fn_decl.meta.span.from
-                None => 10000000 -- todo (lang-feat) use max integer constant
+        self.with_meta(node.meta, fn():
+            self.w_token(TokenKind::Trait).w_space().w_name(node.name)
+            self.w_token(TokenKind::Colon)
+            self.w_nl_indent()
+            -- Make sure we keep the declaration order.
+            mut fn_decls = PeekableIterator::new(node.fn_decls.iter())
+            mut fn_impls = PeekableIterator::new(node.fn_impls.iter())
+            loop:
+                let next_decl_pos = match fn_decls.peek():
+                    Some(fn_decl) => fn_decl.meta.span.from
+                    None => 10000000 -- todo (lang-feat) use max integer constant
+                end
+                let next_impl_pos = match fn_impls.peek():
+                    Some(fn_impl) => fn_impl.meta.span.from
+                    None => 10000000 -- todo (lang-feat) use max integer constant
+                end
+                if next_decl_pos == 10000000 and next_impl_pos == 10000000 => break
+                if next_decl_pos < next_impl_pos:
+                    let fn_decl = fn_decls.next().unwrap()
+                    self.visit_fndecl(fn_decl)
+                else:
+                    let fn_impl = fn_impls.next().unwrap()
+                    self.visit_fn(fn_impl)
+                end
+                self.w_empty_line()
             end
-            let next_impl_pos = match fn_impls.peek():
-                Some(fn_impl) => fn_impl.meta.span.from
-                None => 10000000 -- todo (lang-feat) use max integer constant
-            end
-            if next_decl_pos == 10000000 and next_impl_pos == 10000000 => break
-            if next_decl_pos < next_impl_pos:
-                let fn_decl = fn_decls.next().unwrap()
-                self.visit_fndecl(fn_decl)
-            else:
-                let fn_impl = fn_impls.next().unwrap()
-                self.visit_fn(fn_impl)
-            end
-            self.w_empty_line()
-        end
-        self.d_empty_lines()
-        self.w_nl_dedent()
-        self.w("end").w_nl()
-        return ()
+            self.d_empty_lines()
+            self.w_nl_dedent()
+            self.w_token(TokenKind::End).w_nl();
+        end)
     end
 
     fn visit_block(mut self, node Block):
         self.w_block(node, true);
     end
 
+    fn visit_block_item(mut self, node BlockItem):
+        self.with_meta(node.meta, fn():
+            self.walk_block_item(node)
+        end)
+    end
+
     fn w_block(mut self, node Block, add_end_to_then_block Bool) Self:
-        if node.is_single_line():
-            self.maybe_wrap(fn (force_wrap Bool):
-                -- We always wrap if the block item is
-                -- - a loop with a multi-line body
-                -- - an if-expression with a multi-line body (then or else block)
-                -- - a match-expression
-                let wrap = force_wrap or match node.items[0].kind:
-                    BlockItemKind::Expr(Expr{ kind: ExprKind::Loop(loop_), meta: _}) => not loop_.body.is_single_line()
-                    BlockItemKind::Expr(Expr{ kind: ExprKind::Match(_), meta: _}) => true
-                    BlockItemKind::Expr(Expr{ kind: ExprKind::If(if_), meta: _}) => not if_.then_block.is_single_line() or 
-                        match if_.else_block:
-                            Some(else_block) => not else_block.is_single_line()
-                            _ => false
-                        end
-                    _ => false
-                end
-                self.dec_wrap_depth()
-                if wrap => self.w_nl_indent_with_str(" => ")
-                else => self.w(" => ")
-                self.walk_block_item(node.items[0])
-                if wrap => self.w_nl_dedent()
-                return ()
-            end)
-        else:
-            self.w(":").w_nl_indent()
-            node.items.iter().for_each(fn(item BlockItem):
-                self.walk_block_item(item)
-                self.w_nl();
-            end)
-            self.w_nl_dedent()
-            if add_end_to_then_block => self.w("end")
-        end
+        self.with_meta(node.meta, fn():
+            if is_single_line_block(node):
+                self.maybe_wrap(fn (force_wrap Bool):
+                    -- We always wrap if the block item is
+                    -- - a loop with a multi-line body
+                    -- - an if-expression with a multi-line body (then or else block)
+                    -- - a match-expression
+                    let wrap = force_wrap or match node.items[0].kind:
+                        BlockItemKind::Expr(Expr{ kind: ExprKind::Loop(loop_), meta: _}) => not is_single_line_block(loop_.body)
+                        BlockItemKind::Expr(Expr{ kind: ExprKind::Match(_), meta: _}) => true
+                        BlockItemKind::Expr(Expr{ kind: ExprKind::If(if_), meta: _}) 
+                            => not is_single_line_block(if_.then_block) or 
+                            match if_.else_block:
+                                Some(else_block) => not is_single_line_block(else_block)
+                                _ => false
+                            end
+                        _ => false
+                    end
+                    self.dec_wrap_depth()
+                    if wrap => self.w_token_as_nl_indent(TokenKind::FatArrow)
+                    else => self.w_space().w_token(TokenKind::FatArrow).w_space()
+                    self.visit_block_item(node.items[0])
+                    if wrap => self.w_nl_dedent();
+                end)
+            else:
+                self.w_token(TokenKind::Colon)
+                self.w_nl_indent()
+                node.items.iter().for_each(fn(item BlockItem):
+                    self.visit_block_item(item)
+                    self.w_nl();
+                end)
+                self.w_nl_dedent()
+                if add_end_to_then_block => self.w_token(TokenKind::End)
+            end
+        end)
         return self
     end
 
     fn visit_impl(mut self, node Impl):
-        self.w("impl ")
-        match node.trait_:
-            Some(trait_) => self.w_fqn(trait_).w(" for ")
-            None => ()
-        end
-        self.w_fqn(node.type_).w(":").w_nl_indent()
-        node.fn_impls.iter().for_each(fn(fn_impl Fn):
-            self.visit_fn(fn_impl)
-            self.w_empty_line()
-            return ()
+        self.with_meta(node.meta, fn():
+            self.w_token(TokenKind::Impl).w_space()
+            match node.trait_:
+                Some(trait_) 
+                    => self.w_fqn(trait_).w_space().w_token(TokenKind::For).w_space()
+                None => ()
+            end
+            self.w_fqn(node.type_).w_token(TokenKind::Colon).w_nl_indent()
+            node.fn_impls.iter().for_each(fn(fn_impl Fn):
+                self.visit_fn(fn_impl)
+                self.w_empty_line()
+                return ()
+            end)
+            self.d_empty_lines()
+            self.w_nl_dedent()
+            self.w_token(TokenKind::End).w_empty_line();
         end)
-        self.d_empty_lines()
-        self.w_nl_dedent()
-        self.w("end").w_empty_line();
     end
 
     fn visit_expr(mut self, mut node Expr):
-        match node.kind:
-            ExprKind::Assignment(assignment) => self.visit_assignment(assignment)
-            ExprKind::BinaryExpr(bin_expr) => self.visit_binary_expr(bin_expr)
-            ExprKind::Break(_) => self.w("break")
-            ExprKind::Call(call) => self.visit_call(call)
-            ExprKind::Closure(closure) => self.visit_closure(closure)
-            ExprKind::Continue(_) => self.w("continue")
-            ExprKind::FQN(fqn) => self.w_fqn(fqn)
-            ExprKind::FStr(fstr) => self.visit_fstr(fstr)
-            ExprKind::FieldAccess(field_access) => self.visit_field_access(field_access)
-            ExprKind::Ident(ident) => self.w(ident.name)
-            ExprKind::IndexAccess(index_access) => self.visit_index_access(index_access)
-            ExprKind::If(if_) => self.visit_if(if_)
-            ExprKind::Let(let_) => self.visit_let(let_)
-            ExprKind::Literal(lit) => self.visit_literal(lit)
-            ExprKind::Loop(loop_) => self.visit_loop(loop_)
-            ExprKind::Match(match_) => self.visit_match(match_)
-            ExprKind::Return(expr) => self.visit_return(expr)
-            ExprKind::StructInst(struct_) => self.visit_struct_inst(struct_)
-            ExprKind::TerminatorExpr(_) => self.w(";")
-            ExprKind::Tuple(exprs) => self.visit_tuple(exprs)
-            ExprKind::TupleAccess(tuple_access) => self.visit_tuple_access(tuple_access)
-            ExprKind::UnaryExpr(unary_expr) => self.visit_unary_expr(unary_expr)
-        end
-        return ()
+        self.with_meta(node.meta, fn():
+            match node.kind:
+                ExprKind::Assignment(assignment) => self.visit_assignment(assignment)
+                ExprKind::BinaryExpr(bin_expr) => self.visit_binary_expr(bin_expr)
+                ExprKind::Break(_) => self.w("break")
+                ExprKind::Call(call) => self.visit_call(call)
+                ExprKind::Closure(closure) => self.visit_closure(closure)
+                ExprKind::Continue(_) => self.w("continue")
+                ExprKind::FQN(fqn) => self.w_fqn(fqn)
+                ExprKind::FStr(fstr) => self.visit_fstr(fstr)
+                ExprKind::FieldAccess(field_access) => self.visit_field_access(field_access)
+                ExprKind::Ident(ident) => self.w_ident(ident)
+                ExprKind::IndexAccess(index_access) => self.visit_index_access(index_access)
+                ExprKind::If(if_) => self.visit_if(if_)
+                ExprKind::Let(let_) => self.visit_let(let_)
+                ExprKind::Literal(lit) => self.visit_literal(lit)
+                ExprKind::Loop(loop_) => self.visit_loop(loop_)
+                ExprKind::Match(match_) => self.visit_match(match_)
+                ExprKind::Return(expr) => self.visit_return(expr)
+                ExprKind::StructInst(struct_) => self.visit_struct_inst(struct_)
+                ExprKind::TerminatorExpr(_) => self.w(";")
+                ExprKind::Tuple(exprs) => self.visit_tuple(exprs)
+                ExprKind::TupleAccess(tuple_access) => self.visit_tuple_access(tuple_access)
+                ExprKind::UnaryExpr(unary_expr) => self.visit_unary_expr(unary_expr)
+            end;
+        end)
     end
 
     fn visit_unary_expr(mut self, mut unary_expr UnaryExpr):
-        match unary_expr.kind:
-            UnaryExprKind::Neg => self.w("-")
-            UnaryExprKind::Not => self.w("not ")
-        end
-        self.visit_expr(unary_expr.expr)
+        self.with_meta(unary_expr.meta, fn():
+            match unary_expr.kind:
+                UnaryExprKind::Neg => self.w("-")
+                UnaryExprKind::Not => self.w("not ")
+            end
+            self.visit_expr(unary_expr.expr);
+        end)
     end
 
     fn visit_tuple_access(mut self, tuple_access TupleAccess):
-        self.visit_expr(tuple_access.target)
-        self.w(".")
-        self.w(tuple_access.index)
-        return ()
+        self.with_meta(tuple_access.meta, fn():
+            self.visit_expr(tuple_access.target)
+            self.w_token(TokenKind::Dot)
+            self.w(tuple_access.index);
+        end)
     end
 
     fn visit_tuple(mut self, exprs Vector<Expr>):
         self.maybe_wrap(fn (wrap Bool):
-            self.w("(")
+            self.w_token(TokenKind::LParen)
             if wrap => self.w_nl_indent()
             mut iter = PeekableIterator::new(exprs.iter())
             iter.for_each(fn(expr Expr):
                 self.visit_expr(expr)
                 if not iter.at_end():
-                    if wrap => self.w(",").w_nl()
-                    else => self.w(", ")
+                    self.w_token(TokenKind::Comma)
+                    if wrap => self.w_nl() else => self.w_space()
                 end
                 return ()
             end)
             if wrap => self.w_nl_dedent()
-            self.w(")")
+            self.w_token(TokenKind::RParen)
             return ()
         end)
     end
@@ -458,90 +742,99 @@ impl Visitor for Formatter:
     fn visit_return(mut self, return_ Return):
         --- Note: We don't wrap the return expressions on purpose.
         ---
-        self.w("return ")
-        self.visit_expr(return_.expr)
+        self.with_meta(return_.meta, fn():
+            self.w_token(TokenKind::Return).w_space()
+            self.visit_expr(return_.expr)
+        end)
     end
 
     fn visit_match(mut self, match_ Match):
-        self.w("match ")
-        self.visit_expr(match_.expr)
-        self.w(":").w_nl_indent()
-        match_.arms.iter().for_each(fn(arm MatchArm):
-            self.visit_pattern(arm.pattern)
-            self.visit_block(arm.block)
-            self.w_nl()
-            return ()
+        self.with_meta(match_.meta, fn():
+            self.w_token(TokenKind::Match).w_space()
+            self.visit_expr(match_.expr)
+            self.w_token(TokenKind::Colon).w_nl_indent()
+            match_.arms.iter().for_each(fn(arm MatchArm):
+                self.with_meta(arm.meta, fn():
+                    self.visit_pattern(arm.pattern)
+                    self.visit_block(arm.block)
+                    self.w_nl();
+                end)
+            end)
+            self.w_nl_dedent()
+            self.w_token(TokenKind::End);
         end)
-        self.w_nl_dedent()
-        self.w("end")
-        return ()
     end
 
     fn visit_pattern(mut self, pattern Pattern):
-        match pattern.kind:
-            PatternKind::EnumVariant(fqn, fields) => self.visit_enum_variant_pattern(fqn, fields)
-            PatternKind::Ident(ident) => self.w(ident.name)
-            PatternKind::FQN(fqn) => self.w_fqn(fqn)
-            PatternKind::Literal(lit) => self.visit_literal(lit)
-            PatternKind::Or(patterns) => self.visit_or_pattern(patterns)
-            PatternKind::Range(range) => self.visit_range_pattern(range)
-            PatternKind::Struct(fqn, fields) => self.visit_struct_pattern(fqn, fields)
-            PatternKind::Tuple(patterns) => self.visit_tuple_pattern(patterns)
-            PatternKind::Wildcard => self.w("_")
-        end
-        return ()
+        self.with_meta(pattern.meta, fn(): 
+            match pattern.kind:
+                PatternKind::EnumVariant(fqn, fields) => self.visit_enum_variant_pattern(fqn, fields)
+                PatternKind::Ident(ident) => self.w_ident(ident)
+                PatternKind::FQN(fqn) => self.w_fqn(fqn)
+                PatternKind::Literal(lit) => self.visit_literal(lit)
+                PatternKind::Or(patterns) => self.visit_or_pattern(patterns)
+                PatternKind::Range(range) => self.visit_range_pattern(range)
+                PatternKind::Struct(fqn, fields) => self.visit_struct_pattern(fqn, fields)
+                PatternKind::Tuple(patterns) => self.visit_tuple_pattern(patterns)
+                PatternKind::Wildcard => self.w("_")
+            end;
+        end)
     end
 
     fn visit_tuple_pattern(mut self, patterns Vector<Pattern>):
         self.maybe_wrap(fn (wrap Bool):
-            self.w("(")
+            self.w_token(TokenKind::LParen)
             if wrap => self.w_nl_indent()
             mut iter = PeekableIterator::new(patterns.iter())
             iter.for_each(fn(pattern Pattern):
                 self.visit_pattern(pattern)
                 if not iter.at_end():
-                    if wrap => self.w(",").w_nl()
-                    else => self.w(", ")
+                    self.w_token(TokenKind::Comma)
+                    if wrap => self.w_nl() else => self.w_space()
                 end
                 return ()
             end)
             if wrap => self.w_nl_dedent()
-            self.w(")")
+            self.w_token(TokenKind::RParen)
             return ()
         end)
     end
 
     fn visit_range_pattern(mut self, range Range):
-        self.maybe_wrap(fn (wrap Bool):
-            self.visit_literal(range.start)
-            if wrap => self.w_nl_indent()
-            if range.end_is_exclusive => self.w("..<")
-            else => self.w("..")
-            self.visit_literal(range.end_)
+        self.with_meta(range.meta, fn():
+            self.maybe_wrap(fn (wrap Bool):
+                self.visit_literal(range.start)
+                if wrap => self.w_nl_indent()
+                if range.end_is_exclusive => self.w_token(TokenKind::DotDotLessThan)
+                else => self.w_token(TokenKind::DotDot)
+                self.visit_literal(range.end_)
+            end)
         end)
     end
 
     fn visit_struct_pattern(mut self, fqn FQN, fields Vector<(Ident, Pattern)>):
         self.maybe_wrap(fn (wrap Bool):
             self.w_fqn(fqn)
-            self.w("{")
+            self.w_token(TokenKind::LBrace)
             if fields.len() == 0 => return ()
             if wrap => self.w_nl_indent()
             else => self.w_space()
             mut iter = PeekableIterator::new(fields.iter())
             iter.for_each(fn(it (Ident, Pattern)):
                 self.w(it.0)
-                self.w(": ")
+                self.w_token(TokenKind::Colon).w_space()
                 self.visit_pattern(it.1)
                 if not iter.at_end():
-                    if wrap => self.w(",").w_nl()
-                    else => self.w(", ")
+                    self.w_token(TokenKind::Comma)
+                    if wrap => self.w_nl()
+                    else => self.w_space()
                 end
                 return ()
             end)
             if wrap => self.w_nl_dedent()
             else => self.w_space()
-            self.w("}");
+            self.w_token(TokenKind::RBrace)
+            return ()
         end)
     end
 
@@ -552,7 +845,7 @@ impl Visitor for Formatter:
             iter.for_each(fn(pattern Pattern):
                 if not iter.at_start():
                     if wrap => self.w_nl_indent_with_str("  | ")
-                    else => self.w(" | ")
+                    else => self.w_space().w_token(TokenKind::Pipe).w_space()
                 end
                 self.visit_pattern(pattern)
                 if not iter.at_start() and wrap => self.w_nl_dedent()
@@ -566,313 +859,366 @@ impl Visitor for Formatter:
         self.maybe_wrap(fn (wrap Bool):
             self.w_fqn(fqn)
             if fields.len() == 0 => return ()
-            self.w("(")
+            self.w_token(TokenKind::LParen)
             if wrap => self.w_nl_indent()
             mut iter = PeekableIterator::new(fields.iter())
             iter.for_each(fn(field Pattern):
                 self.visit_pattern(field)
                 if not iter.at_end():
-                    if wrap => self.w(",").w_nl()
-                    else => self.w(", ")
+                    self.w_token(TokenKind::Comma)
+                    if wrap => self.w_nl()
+                    else => self.w_space()
                 end
                 return ()
             end)
             if wrap => self.w_nl_dedent()
-            self.w(")")
+            self.w_token(TokenKind::RParen)
             return ()
         end)
     end
 
     fn visit_literal(mut self, lit Literal):
-        match lit.kind:
-            LiteralKind::ArrayLiteral(exprs) => self.visit_array_literal(exprs)
-            LiteralKind::IntLiteral(i) => self.w(i)
-            LiteralKind::StrLiteral(s, raw_str) => self.w(raw_str)
-            LiteralKind::BoolLiteral(b) => self.w(f"{b}")
-            LiteralKind::CharLiteral(c, raw_str) => self.w(raw_str)
-            LiteralKind::UnitLiteral => self.w("()")
-        end
-        return ()
+        self.with_meta(lit.meta, fn():
+            match lit.kind:
+                LiteralKind::ArrayLiteral(_) => ()
+                _ => self.last_visited_token = self.w_comments_in_meta()
+            end
+            match lit.kind:
+                LiteralKind::ArrayLiteral(exprs) => self.visit_array_literal(exprs)
+                LiteralKind::IntLiteral(i) => self.w(i)
+                LiteralKind::StrLiteral(s, raw_str) => self.w(raw_str)
+                LiteralKind::BoolLiteral(b) => self.w(f"{b}")
+                LiteralKind::CharLiteral(c, raw_str) => self.w(raw_str)
+                LiteralKind::UnitLiteral => self.w("()")
+            end
+            return ()
+        end)
     end
 
     fn visit_array_literal(mut self, exprs Vector<Expr>):
         self.maybe_wrap(fn (wrap Bool):
-            self.w("[")
+            self.w_token(TokenKind::LBracket)
             if wrap => self.w_nl_indent()
             mut iter = PeekableIterator::new(exprs.iter())
             iter.for_each(fn(expr Expr):
                 self.visit_expr(expr)
                 if not iter.at_end():
-                    if wrap => self.w(",").w_nl()
-                    else => self.w(", ")
+                    self.w_token(TokenKind::Comma)
+                    if wrap => self.w_nl()
+                    else => self.w_space()
                 end
                 return ()
             end)
             if wrap => self.w_nl_dedent()
-            self.w("]")
+            self.w_token(TokenKind::RBracket)
             return ()
         end)
     end
 
     fn visit_loop(mut self, loop_ Loop):
-        self.w("loop")
-        self.visit_block(loop_.body)
-        return ()
+        self.with_meta(loop_.meta, fn():
+            self.w_token(TokenKind::Loop)
+            self.visit_block(loop_.body)
+            return ()
+        end)
     end
 
     fn visit_let(mut self, let_ Let):
-        self.maybe_wrap(fn (wrap Bool):
-            if let_.is_mut => self.w("mut ")
-            else => self.w("let ")
-            self.w(let_.ident.name)
-            self.visit_type(let_.type_)
-            if wrap => self.w_nl_indent()
-            else => self.w_space()
-            self.w("= ")
-            self.visit_expr(let_.expr)
-            if wrap => self.w_nl_dedent()
-            return ()
+        self.with_meta(let_.meta, fn():
+            self.maybe_wrap(fn (wrap Bool):
+                if let_.is_mut => self.w_token(TokenKind::Mut)
+                else => self.w_token(TokenKind::Let)
+                self.w_space()
+                self.w_ident(let_.ident)
+                self.visit_type(let_.type_)
+                if wrap => self.w_nl_indent()
+                else => self.w_space()
+                self.w_token(TokenKind::Equal).w_space()
+                self.visit_expr(let_.expr)
+                if wrap => self.w_nl_dedent()
+                return ()
+            end)
         end)
     end
 
     fn visit_if(mut self, if_ If):
-        self.maybe_wrap(fn (wrap Bool):
-            self.w("if")
-            if wrap => self.w_nl_indent()
-            else => self.w_space()
-            self.visit_expr(if_.cond)
-            self.w_block(if_.then_block, not if_.else_block.is_some())
-            match if_.else_block:
-                Some(else_block):
-                    if wrap or not else_block.is_single_line() => self.w_nl()
-                    else => self.w_space()
-                    self.w("else")
-                    self.visit_block(else_block)
+        self.with_meta(if_.meta, fn():
+            self.maybe_wrap(fn (wrap Bool):
+                self.w_token(TokenKind::If).w_space()
+                if wrap => self.w_nl_indent()
+                else => self.w_space()
+                self.visit_expr(if_.cond)
+                self.w_block(if_.then_block, not if_.else_block.is_some())
+                match if_.else_block:
+                    Some(else_block):
+                        if wrap or not is_single_line_block(else_block) => self.w_nl()
+                        else => self.w_space()
+                        self.w_token(TokenKind::Else)
+                        self.visit_block(else_block)
+                    end
+                    None => ()
                 end
-                None => ()
-            end
-            if wrap => self.w_nl_dedent()
-            return ()
+                if wrap => self.w_nl_dedent()
+                return ()
+            end)
         end)
-        return ()
     end
 
     fn visit_index_access(mut self, index_access IndexAccess):
-        self.maybe_wrap(fn (wrap Bool):
-            self.visit_expr(index_access.target)
-            if wrap => self.w_nl_indent()
-            self.w("[")
-            self.visit_expr(index_access.index)
-            self.w("]")
-            if wrap => self.w_nl_dedent()
-            return ()
+        self.with_meta(index_access.meta, fn():
+            self.maybe_wrap(fn (wrap Bool):
+                self.visit_expr(index_access.target)
+                if wrap => self.w_nl_indent()
+                self.w_token(TokenKind::LBracket)
+                self.visit_expr(index_access.index)
+                self.w_token(TokenKind::RBracket)
+                if wrap => self.w_nl_dedent()
+                return ()
+            end)
         end)
     end
 
     fn visit_field_access(mut self, field_access FieldAccess):
-        self.maybe_wrap(fn (wrap Bool):
-            self.visit_expr(field_access.target)
-            if wrap => self.w_nl_indent()
-            self.w(".").w_name(field_access.field)
-            if wrap => self.w_nl_dedent()
-            return ()
+        self.with_meta(field_access.meta, fn():
+            self.maybe_wrap(fn (wrap Bool):
+                self.visit_expr(field_access.target)
+                if wrap => self.w_nl_indent()
+                self.w_token(TokenKind::Dot)
+                self.w_name(field_access.field)
+                if wrap => self.w_nl_dedent()
+                return ()
+            end)
         end)
     end
 
     fn visit_fstr(mut self, fstr FStr):
-        -- todo: the first line of a multi-line str should count towards the current line length.
-        --       Right now, a multi-line str with a long first line will never cause 
-        --       a line to be wrapped.
-        let is_multi_line = fstr.exprs.iter().any(fn(expr Expr) Bool =>
-            match expr.kind:
-                ExprKind::Literal(Literal{kind: LiteralKind::StrLiteral(_, raw_str), meta}) => raw_str.contains("\n")
-                _ => false
-            end
-        )
-        self.w("f")
-        if is_multi_line => self.w("\"\"\"")
-        else => self.w("\"")
-        fstr.exprs.iter().for_each(fn(expr Expr):
-            match expr.kind:
-                ExprKind::Literal(Literal{kind: LiteralKind::StrLiteral(_, raw_str), meta}):
-                    self.w(raw_str)
+        fn fstr_expr(expr Expr, wrap Bool) Str:
+            let formatter = Formatter::based_on(expr.meta.tokens.unwrap(), self)
+            formatter.with_meta(expr.meta, fn():
+                if wrap => formatter.w_nl_indent()
+                formatter.visit_expr(expr)
+            end)
+            formatter.finish()
+        end
+        self.with_meta(fstr.meta, fn():
+            -- todo: the first line of a multi-line str should count towards the current line length.
+            --       Right now, a multi-line str with a long first line will never cause 
+            --       a line to be wrapped.
+            let is_multi_line = fstr.exprs.iter().any(fn(expr Expr) Bool =>
+                match expr.kind:
+                    ExprKind::Literal(Literal{kind: LiteralKind::StrLiteral(_, raw_str), meta}) => raw_str.contains("\n")
+                    _ => false
                 end
-                _ =>
-                    self.maybe_wrap(fn (wrap Bool):
-                        self.w("{")
-                        if wrap => self.w_nl_indent()
-                        self.visit_expr(expr)
-                        if wrap => self.w_nl_dedent()
-                        self.w("}")
-                        return ()
-                    end)
-            end
-            return ()
-        end)
-        if is_multi_line => self.w("\"\"\"")
-        else => self.w("\"")
-        return ()
-    end
-
-    fn visit_call(mut self, mut call Call):
-        self.maybe_wrap(fn (wrap Bool):
-            self.visit_expr(call.target)
-            self.w("(")
-            if wrap => self.w_nl_indent()
-            mut iter = PeekableIterator::new(call.args.iter())
-            iter.for_each(fn(arg Expr):
-                self.visit_expr(arg)
-                if not iter.at_end():
-                    if wrap => self.w(",").w_nl()
-                    else => self.w(", ")
+            )
+            self.w_comments_in_meta()
+            self.w("f")
+            if is_multi_line => self.w("\"\"\"")
+            else => self.w("\"")
+            fstr.exprs.iter().for_each(fn(expr Expr):
+                match expr.kind:
+                    ExprKind::Literal(Literal{kind: LiteralKind::StrLiteral(_, raw_str), meta: _}):
+                        self.w(raw_str)
+                    end
+                    _:
+                        self.maybe_wrap(fn (wrap Bool):
+                            let s = fstr_expr(expr, wrap)
+                            if wrap:
+                                self.w("{")
+                                self.w_nl_indent()
+                                self.w(s)
+                                self.w_nl_dedent()
+                                self.w("}")
+                            else => self.w("{").w(s).w("}")
+                            return ()
+                        end)
+                    end
                 end
                 return ()
             end)
-            if wrap => self.w_nl_dedent()
-            self.w(")")
+            if is_multi_line => self.w("\"\"\"")
+            else => self.w("\"")
             return ()
         end)
     end
 
-    fn visit_assignment(mut self, mut assignment Assignment):
-        self.maybe_wrap(fn (wrap Bool):
-            self.visit_expr(assignment.lhs)
-            -- First try to wrap the rhs.
-            if self.force_wrap(fn():
-                self.w(" = ")
-                self.visit_expr(assignment.rhs)
-            end) => return ()
-            -- If the rhs can't be wrapped, resume with regular wrapping rules.
-            if wrap => self.w_nl_indent()
-            else => self.w_space()
-            self.w("= ")
-            self.visit_expr(assignment.rhs)
-            if wrap => self.w_nl_dedent()
-            return ()
-        end)
-        return ()
-    end
-
-    fn visit_binary_expr(mut self, mut bin_expr BinaryExpr):
-        self.maybe_wrap(fn (wrap Bool):
-            self.visit_expr(bin_expr.lhs)
-            if wrap => self.w_nl_indent()
-            else => self.w_space()
-            match bin_expr.kind:
-                BinaryExprKind::Add => self.w("+")
-                BinaryExprKind::And => self.w("and")
-                BinaryExprKind::Div => self.w("/")
-                BinaryExprKind::Equal => self.w("==")
-                BinaryExprKind::GreaterThan => self.w(">")
-                BinaryExprKind::GreaterThanOrEqual => self.w(">=")
-                BinaryExprKind::LessThan => self.w(" < ")
-                BinaryExprKind::LessThanOrEqual => self.w("<=")
-                BinaryExprKind::Mul => self.w("*")
-                BinaryExprKind::NotEqual => self.w("!=")
-                BinaryExprKind::Or => self.w("or")
-                BinaryExprKind::Sub => self.w("-")
-            end
-            self.w_space()
-            self.visit_expr(bin_expr.rhs)
-            if wrap => self.w_nl_dedent()
-            return ()
-        end)
-        return ()
-    end
-
-    fn visit_struct_inst(mut self, struct_ StructInst):
-        self.maybe_wrap(fn (wrap Bool):
-            self.w_fqn(struct_.fqn).w("{")
-            if struct_.fields.len() > 0:
+    fn visit_call(mut self, mut call Call):
+        self.with_meta(call.meta, fn():
+            self.maybe_wrap(fn (wrap Bool):
+                self.visit_expr(call.target)
+                self.w_token(TokenKind::LParen)
                 if wrap => self.w_nl_indent()
-                else => self.w_space()
-                mut iter = PeekableIterator::new(struct_.fields.iter())
-                iter.for_each(fn(it (Ident, Expr)):
-                    self.w(it.0)
-                    -- todo (lang-feat) this code is needlessly complex
-                    let write_expr = match it.1.kind:
-                        ExprKind::Ident(ident) => ident.name != it.0.name
-                        _ => true
-                    end
-                    if write_expr:
-                        self.w(": ")
-                        self.visit_expr(it.1)
-                    end
+                mut iter = PeekableIterator::new(call.args.iter())
+                iter.for_each(fn(arg Expr):
+                    self.visit_expr(arg)
                     if not iter.at_end():
-                        if wrap => self.w(",").w_nl()
-                        else => self.w(", ")
+                        self.w_token(TokenKind::Comma)
+                        if wrap => self.w_nl()
+                        else => self.w_space()
                     end
                     return ()
                 end)
                 if wrap => self.w_nl_dedent()
-                else => self.w_space()
-            end
-            self.w("}");
+                self.w_token(TokenKind::RParen)
+                return ()
+            end)
         end)
     end
 
-    fn visit_type(mut self, mut type_ Type):
-        match type_.is_option_type():
-            Some(inner_type_):
-                self.visit_type(inner_type_)
-                self.w("?")
+    fn visit_assignment(mut self, mut assignment Assignment):
+        self.with_meta(assignment.meta, fn():
+            self.maybe_wrap(fn (wrap Bool):
+                self.visit_expr(assignment.lhs)
+                -- First try to wrap the rhs.
+                if self.force_wrap(fn():
+                    self.w_space().w_token(TokenKind::Equal).w_space()
+                    self.visit_expr(assignment.rhs)
+                end) => return ()
+                -- If the rhs can't be wrapped, resume with regular wrapping rules.
+                if wrap => self.w_nl_indent()
+                else => self.w_space()
+                self.w_token(TokenKind::Equal).w_space()
+                self.visit_expr(assignment.rhs)
+                if wrap => self.w_nl_dedent()
+                return ()
+            end)
+        end)
+    end
+
+    fn visit_binary_expr(mut self, mut bin_expr BinaryExpr):
+        self.with_meta(bin_expr.meta, fn():
+            self.maybe_wrap(fn (wrap Bool):
+                self.visit_expr(bin_expr.lhs)
+                if wrap => self.w_nl_indent()
+                else => self.w_space()
+                match bin_expr.kind:
+                    BinaryExprKind::Add => self.w_token(TokenKind::Plus)
+                    BinaryExprKind::And => self.w_token(TokenKind::And)
+                    BinaryExprKind::Div => self.w_token(TokenKind::Slash)
+                    BinaryExprKind::Equal => self.w_token(TokenKind::DoubleEqual)
+                    BinaryExprKind::GreaterThan => self.w_token(TokenKind::GreaterThan)
+                    BinaryExprKind::GreaterThanOrEqual => self.w_token(TokenKind::GreaterThanOrEqual)
+                    BinaryExprKind::LessThan => self.w_token(TokenKind::LessThan)
+                    BinaryExprKind::LessThanOrEqual => self.w_token(TokenKind::LessThanOrEqual)
+                    BinaryExprKind::Mul => self.w_token(TokenKind::Star)
+                    BinaryExprKind::NotEqual => self.w_token(TokenKind::NotEqual)
+                    BinaryExprKind::Or => self.w_token(TokenKind::Or)
+                    BinaryExprKind::Sub => self.w_token(TokenKind::Minus)
+                end
+                self.w_space()
+                self.visit_expr(bin_expr.rhs)
+                if wrap => self.w_nl_dedent()
+                return ()
+            end)
+        end)
+    end
+
+    fn visit_struct_inst(mut self, struct_ StructInst):
+        self.with_meta(struct_.meta, fn():
+            self.maybe_wrap(fn (wrap Bool):
+                self.w_fqn(struct_.fqn).w_token(TokenKind::LBrace)
+                if struct_.fields.len() > 0:
+                    if wrap => self.w_nl_indent()
+                    else => self.w_space()
+                    mut iter = PeekableIterator::new(struct_.fields.iter())
+                    iter.for_each(fn(it (Ident, Expr)):
+                        self.w(it.0)
+                        -- todo (lang-feat) this code is needlessly complex
+                        let write_expr = match it.1.kind:
+                            ExprKind::Ident(ident) => ident.name != it.0.name
+                            _ => true
+                        end
+                        if write_expr:
+                            self.w_token(TokenKind::Colon).w_space()
+                            self.visit_expr(it.1)
+                        end
+                        if not iter.at_end():
+                            self.w_token(TokenKind::Comma)
+                            if wrap => self.w_nl()
+                            else => self.w_space()
+                        end
+                        return ()
+                    end)
+                    if wrap => self.w_nl_dedent()
+                    else => self.w_space()
+                end
+                self.w_token(TokenKind::RBrace)
+                return ()
+            end)
+        end)
+    end
+
+    fn visit_type(mut self, type_ Type):
+        match type_.kind:
+            TypeKind::Infer:
+                self.d_space()
                 return ()
             end
             _ => ()
         end
-        match type_.is_result_type():
-            Some(types):
-                self.w_return_type(types.0)
-                match types.1.kind:
-                    TypeKind::FQN(fqn):
-                        if fqn.names[0].ident.name == "Str":
-                            self.w(" throws")
-                        else:
-                            self.w(" throws ")
+        self.with_meta(type_.meta, fn():
+            match type_.is_option_type():
+                Some(inner_type_):
+                    self.visit_type(inner_type_)
+                    self.w("?")
+                    return ()
+                end
+                _ => ()
+            end
+            match type_.is_result_type():
+                Some(types):
+                    self.w_return_type(types.0)
+                    self.w(" throws")
+                    match types.1.kind:
+                        TypeKind::FQN(fqn):
+                            if fqn.names[0].ident.name != "Str":
+                                self.w_space()
+                                self.visit_type(types.1)
+                            end
+                        end
+                        _:
+                            self.w_space()
                             self.visit_type(types.1)
                         end
                     end
-                    _:
-                        self.w(" throws ")
-                        self.visit_type(types.1)
-                    end
-                end
-                return ()
-            end
-            _ => ()
-        end
-        match type_.kind:
-            TypeKind::Fn(fn_):
-                self.w("(fn(")
-                mut i = 0
-                loop:
-                    if i == fn_.param_types.len() => break
-                    self.visit_type(fn_.param_types[i])
-                    if i < fn_.param_types.len() - 1:
-                        self.w(", ")
-                    end
-                    i = i + 1
-                end
-                self.w(")").w_space()
-                self.w_return_type(fn_.return_type)
-                self.w(")")
-            end
-            TypeKind::FQN(fqn) => self.w_fqn(fqn)
-            TypeKind::Infer => self.d_space()
-            TypeKind::Self => self.w("Self")
-            TypeKind::Tuple(types):
-                self.w("(")
-                mut iter = PeekableIterator::new(types.iter())
-                iter.for_each(fn(type_ Type):
-                    self.visit_type(type_)
-                    if not iter.at_end() => self.w(", ")
                     return ()
-                end)
-                self.w(")")
+                end
+                _ => ()
             end
-            TypeKind::Unit => self.w("()")
-        end
-        return ()
+            match type_.kind:
+                TypeKind::Fn(fn_):
+                    self.w_token(TokenKind::LParen)
+                    self.w_token(TokenKind::Fn)
+                    self.w_token(TokenKind::LParen)
+                    mut i = 0
+                    loop:
+                        if i == fn_.param_types.len() => break
+                        self.visit_type(fn_.param_types[i])
+                        if i < fn_.param_types.len() - 1:
+                            self.w_token(TokenKind::Comma).w_space()
+                        end
+                        i = i + 1
+                    end
+                    self.w_token(TokenKind::RParen).w_space()
+                    self.w_return_type(fn_.return_type)
+                    self.w_token(TokenKind::RParen)
+                end
+                TypeKind::FQN(fqn) => self.w_fqn(fqn)
+                TypeKind::Infer => panic("Infer type should have been handled earlier.")
+                TypeKind::Self => self.w("Self")
+                TypeKind::Tuple(types):
+                    self.w_token(TokenKind::LParen)
+                    mut iter = PeekableIterator::new(types.iter())
+                    iter.for_each(fn(type_part Type):
+                        self.visit_type(type_part)
+                        if not iter.at_end() => self.w_token(TokenKind::Comma).w_space()
+                        return ()
+                    end)
+                    self.w_token(TokenKind::RParen)
+                end
+                TypeKind::Unit => self.w_token(TokenKind::LParen).w_token(TokenKind::RParen)
+            end
+            return ()
+        end)
     end
 
     fn w_return_type(mut self, return_type Type) Self:
@@ -890,57 +1236,83 @@ impl Visitor for Formatter:
         end
         if generics.len() == 0 => return self
         self.d_space()
-        self.w("<")
+        self.w_token(TokenKind::LessThan)
         mut generics_iter = PeekableIterator::new(generics.iter())
         generics_iter.for_each(fn(generic_arg GenericArg):
+            self.w_generic_arg(generic_arg)
+            if not generics_iter.at_end():
+                self.w_token(TokenKind::Comma).w_space()
+            end
+            return ()
+        end)
+        self.w_token(TokenKind::GreaterThan)
+        self
+    end
+
+    fn w_generic_arg(mut self, generic_arg GenericArg) Self:
+        self.with_meta(generic_arg.meta, fn():
             self.visit_type(generic_arg.type_)
             match generic_arg.trait_bounds:
                 Some(trait_bounds):
-                    self.w(" impl ")
+                    self.w_space().w_token(TokenKind::Impl).w_space()
                     mut trait_bounds_iter = PeekableIterator::new(trait_bounds.iter())
                     trait_bounds_iter.for_each(fn(fqn FQN):
                         self.w_fqn(fqn)
                         if not trait_bounds_iter.at_end():
-                            self.w(" and ")
+                            self.w_space().w_token(TokenKind::And).w_space()
                         end
                         return ()
                     end)
                 end
                 None => ()
             end
-            if not generics_iter.at_end():
-                self.w(", ")
-            end
             return ()
         end)
-        self.w(">")
         self
     end
 
     fn w_name(mut self, name Name) Self:
-        self.w(name.ident.name)
-        self.w_generics(name.generics)
+        self.with_meta(name.meta, fn():
+            self.w_ident(name.ident)
+            self.w_generics(name.generics)
+            return ()
+        end)
         self
     end
 
     fn w_fqn(mut self, fqn FQN) Self:
-        mut iter = PeekableIterator::new(fqn.names.iter())
-        iter.for_each(fn(name Name):
-            self.w_name(name)
-            if not iter.at_end():
-                self.w("::")
-            end
-            return ()
+        self.with_meta(fqn.meta, fn():
+            mut iter = PeekableIterator::new(fqn.names.iter())
+            iter.for_each(fn(name Name):
+                self.w_name(name)
+                if not iter.at_end():
+                    self.w_token(TokenKind::DoubleColon)
+                end
+                return ()
+            end)
         end)
         self
     end
 
 end
 
+fn is_single_line_block(block Block) Bool:
+    match block.meta.tokens:
+        None => ()
+        Some(tokens) => if tokens.iter().any(fn(token Token) Bool => 
+            match token.kind:
+                TokenKind::Comment(comment) => not comment.starts_with("---")
+                _ => false
+            end
+        ) => return false
+    end
+    block.items.len() == 1 
+end
+
 fn format(src Str, src_file Str) Str throws:
     let tokens = lex(src, src_file)!
     let module = parse(tokens)!
-    let formatter = Formatter::new()
+    let formatter = Formatter::new(tokens)
     formatter.visit_module(module)
     formatter.finish()
 end

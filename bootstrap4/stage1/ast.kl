@@ -447,56 +447,15 @@ end
 
 struct Meta:
     id Id
-    --- The tokens taken from the source code. These tokens never
-        change even if the item is desugared.
+    --- A unique ID for the node. 
     ---
     tokens Vector<Token>?
-    --- The span of the node in the source code.
+    --- The tokens taken from the source code. These tokens never
+        change even if the item is desugared. 
     ---
     span Span
-end
-
-impl Expr:
-    fn from_kind(kind ExprKind) Expr:
-        let tokens_and_span = match kind:
-            ExprKind::Assignment(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::BinaryExpr(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::Break(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::Call(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::Closure(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::Continue(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::FQN(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::FStr(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::FieldAccess(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::Ident(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::IndexAccess(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::If(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::Let(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::Literal(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::Loop(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::Match(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::Return(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::StructInst(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::TerminatorExpr(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::Tuple(x):
-                mut tokens = Vector<Token>::new()
-                x.iter().for_each(fn(it Expr):
-                    match it.meta.tokens:
-                        Some(t) => tokens.push_all(t.iter())
-                        None => ()
-                    end
-                end)
-                let span = x[0].meta.span.combine(x[x.len() - 1].meta.span)
-                let res = (Some(tokens), span)
-                res
-            end
-            ExprKind::TupleAccess(x) => (x.meta.tokens, x.meta.span)
-            ExprKind::UnaryExpr(x) => (x.meta.tokens, x.meta.span)
-        end
-        mut meta = Meta::from_span(tokens_and_span.1)
-        meta.tokens = tokens_and_span.0
-        Expr{kind, meta}
-    end
+    --- The span of the node in the source code. 
+    ---
 end
 
 impl Type:
@@ -649,14 +608,26 @@ impl Meta:
         let id = Id{id: int_next()} 
         Meta{id, tokens: None, span}
     end
-end
 
-impl Block:
-    fn is_single_line(self) Bool:
-        --- A block is considered single line if it has only one item.
-            Note: An empty block is not considered single line.
-        ---
-        self.items.len() == 1
+    fn last_token(self) Token?:
+        match self.tokens:
+            Some(x) => Some(x[x.len() - 1])
+            None => None
+        end
+    end
+
+    fn first_token(self) Token?:
+        match self.tokens:
+            Some(x) => Some(x[0])
+            None => None
+        end
+    end
+
+    fn tokens_to_str(self) Str:
+        match self.tokens:
+            Some(x) => " ".join(x.iter().map<Str>(fn(it Token) Str => it.to_str()))
+            None => ""
+        end
     end
 end
 
@@ -1168,9 +1139,9 @@ impl ToDebugStr for TerminatorExpr:
     fn to_debug_str(self) Str => f"(@terminatorexpr {self.expr.to_debug_str()})"
 end
 
-impl ToDebugStr for Expr:
+impl ToDebugStr for ExprKind:
     fn to_debug_str(self) Str:
-        match self.kind:
+        match self:
             ExprKind::Assignment(value) => value.to_debug_str()
             ExprKind::BinaryExpr(value) => value.to_debug_str()
             ExprKind::Break(value) => value.to_debug_str()
@@ -1200,6 +1171,10 @@ impl ToDebugStr for Expr:
             ExprKind::UnaryExpr(value) => value.to_debug_str()
         end
     end
+end
+
+impl ToDebugStr for Expr:
+    fn to_debug_str(self) Str => self.kind.to_debug_str()
 end
 
 impl ToDebugStr for ParseError:

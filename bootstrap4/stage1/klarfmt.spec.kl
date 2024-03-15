@@ -1,8 +1,21 @@
+use .lexer::Lexer
+use .parser::Parser
+use .parser::TokenIter
 use .klarfmt::format
 use .test::Test
 
 fn test_format(src Str) Str throws:
-    format(src, "spec")!
+    --- Format the given source code and make sure it parses to the same AST.
+    ---
+    let res = format(src, "spec")!
+    -- print("-------")
+    -- print(res)
+    -- let tokens = Lexer::lex(src, "klarfmt.spec.kl").collect()
+    -- let ast = Parser::new(TokenIter::new(tokens)).parse_module()!
+    -- let tokens2 = Lexer::lex(res, "klarfmt.spec.kl").collect()
+    -- let ast2 = Parser::new(TokenIter::new(tokens2)).parse_module()!
+    -- assert(ast2.to_debug_str() == ast.to_debug_str())
+    res
 end
 
 fn main():
@@ -25,6 +38,91 @@ fn main():
             end
             """.dedent().trim()
         )
+    end)
+
+    test.group("comments", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                ---prefix comment--- fn --- after fn --- test--- before ( ---()--- after )---Int ---after type---: -- a trailing comment
+                    ---  A documentation comment   
+                    ---     
+
+                    1  -- another trailing comment
+                            -- a line comment
+                        -- another line comment
+                    2
+                end
+                """.dedent()
+            )! == 
+                """
+                --- prefix comment --- fn --- after fn --- test --- before ( --- () --- after ) --- Int --- after type --- : -- a trailing comment
+                    --- A documentation comment
+                    ---
+                    1 -- another trailing comment
+                    -- a line comment
+                    -- another line comment
+                    2
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats comments in and around f-string", fn() throws:
+            assert(test_format(
+                """
+                fn test() Str: --- a comment---f"hello { -- a comment
+                --- another comment --- world -- a trailing expr comment
+                    } and {test}" -- a trailing comment
+                    2
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test() Str:
+                    --- a comment --- f"hello {
+                        -- a comment
+                        --- another comment --- world -- a trailing expr comment
+                    } and {test}" -- a trailing comment
+                    2
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("does not format as single-line if there are line comments", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int:
+                    -- a comment
+                    1
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test() Int:
+                    -- a comment
+                    1
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats as single-line if there are block comments", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int:
+                    --- before ---
+                    1
+                    --- after ---
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test() Int => --- before --- 1 --- after ---
+                """.dedent().trim()
+            )
+        end)
     end)
 
     test.group("literals", fn():
@@ -175,6 +273,18 @@ fn main():
             )
         end)
 
+        test.it("formats FQN types with generics", fn() throws:
+            assert(test_format(
+                """
+                fn test() a::B<  Str  , T>::C< V> => "hello"
+                """.dedent()
+            )! == 
+                """
+                fn test() a::B<Str, T>::C<V> => "hello"
+                """.dedent().trim()
+            )
+        end)
+
         test.it("formats function types", fn() throws:
             assert(test_format(
                 """
@@ -269,7 +379,7 @@ fn main():
         test.it("formats expressions inside f-strings", fn() throws:
             assert(test_format(
                 """
-                fn test() Str => f"hello {  world +  1} { a_very_long_variable_name_that_is_very_long > another_very_long_variable_name_that_is_very_long } and { a_very_long_variable_name_that_is_very_long + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long } so on"
+                fn test() Str => f"hello {  world +  1} { a_very_long_variable_name_that_is_very_long > another_very_long_variable_name_that_is_very_long } and { a_very_long_variable_name_that_is_very_long + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long + 1 } so on"
                 """.dedent()
             )! == 
                 """
@@ -279,6 +389,7 @@ fn main():
                     } and {
                         a_very_long_variable_name_that_is_very_long
                             + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                            + 1
                     } so on"
                 """.dedent().trim()
             )
@@ -438,15 +549,18 @@ fn main():
                 """
                 fn test() =>
                     match some_var:
-                        1 | 2 | 3 => a
-                        a_very_long_variable_name_that_is_very_long | another_pattern | MyStruct{a_very_long_field: "test", another_long_field_name_that_is_very_long: "a string that is very long", a_third_field: 3} | the_longest_name_you_have_ever_seen_that_is_surprisingly_short_for_a_very_long_name => 4
+                        1 | 2 | 3: a b end
+                        a_very_long_variable_name_that_is_very_long | another_pattern | MyStruct{a_very_long_field: "test", another_long_field_name_that_is_very_long: "a string that is very long", a_third_field: 3} | the_longest_name_you_have_ever_seen_that_is_surprisingly_short_for_a_very_long_name: a b end
                     end
                 """.dedent()
             )! == 
                 """
                 fn test()
                  => match some_var:
-                        1 | 2 | 3 => a
+                        1 | 2 | 3:
+                            a
+                            b
+                        end
                         a_very_long_variable_name_that_is_very_long
                           | another_pattern
                           | MyStruct{
@@ -455,7 +569,10 @@ fn main():
                                 a_third_field: 3
                             }
                           | the_longest_name_you_have_ever_seen_that_is_surprisingly_short_for_a_very_long_name
-                         => 4
+                        :
+                            a
+                            b
+                        end
                     end
                 """.dedent().trim()
             )
@@ -641,11 +758,11 @@ fn main():
         test.it("formats `negate` expressions", fn() throws:
             assert(test_format(
                 """
-                fn test() Int => - 1
+                fn test() Int => - a
                 """.dedent()
             )! == 
                 """
-                fn test() Int => -1
+                fn test() Int => -a
                 """.dedent().trim()
             )
         end)
@@ -832,7 +949,7 @@ fn main():
             )
         end)
 
-        test.it("breaks onto a new line if it is mult-line", fn() throws:
+        test.it("breaks onto a new line if it is multi-line", fn() throws:
             assert(test_format(
                 """
                 fn test(): loop:
@@ -939,13 +1056,13 @@ fn main():
         test.it("converts a:a to a", fn() throws:
             assert(test_format(
                 """
-                fn test() Test => Test{  a: a, 
+                fn test() Test => Test{  a: a --- comment ---, 
                         b: 
                         "hello"}
                 """.dedent()
             )! == 
                 """
-                fn test() Test => Test{ a, b: "hello" }
+                fn test() Test => Test{ a --- comment --- , b: "hello" }
                 """.dedent().trim()
             )
         end)
@@ -1049,7 +1166,7 @@ fn main():
                 """.dedent().trim()
             )
         end)
-        
+
         test.it("puts the `=>` on the next line if the line is too long", fn() throws:
             assert(test_format(
                 """
@@ -1131,6 +1248,18 @@ fn main():
             )
         end)
 
+        test.it("formats generics", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int => test().some_fn<  Int, Str  >( 1 , 2  )
+                """.dedent()
+            )! == 
+                """
+                fn test() Int => test().some_fn<Int, Str>(1, 2)
+                """.dedent().trim()
+            )
+        end)
+
         test.it("wraps long calls", fn() throws:
             assert(test_format(
                 """
@@ -1166,7 +1295,7 @@ fn main():
                 test_format(
                     """
                     fn test() Int:
-                        this_very_long_variable_name_that_is_very_long == this_other_very_long_variable_name_that_is_very_long
+                        this_very_long_variable_name_that_is_very_long == this_other_very_long_variable_name_that_is_very_long + another_very_long_variable_name_that_is_very_long - 2
                         1
                     end
                     """.dedent()
@@ -1175,6 +1304,8 @@ fn main():
                 fn test() Int:
                     this_very_long_variable_name_that_is_very_long
                         == this_other_very_long_variable_name_that_is_very_long
+                            + another_very_long_variable_name_that_is_very_long
+                            - 2
                     1
                 end
                 """.dedent().trim()

@@ -581,6 +581,18 @@ fn main():
             )
         end)
 
+        test.it("formats generic args", fn() throws:
+            assert(test_format(
+                """
+                fn test() => a.b< Int >
+                """.dedent()
+            )! == 
+                """
+                fn test() => a.b<Int>
+                """.dedent().trim()
+            )
+        end)
+
         test.it("wraps long field accesses", fn() throws:
             assert(test_format(
                 """

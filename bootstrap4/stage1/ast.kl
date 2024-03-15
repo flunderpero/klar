@@ -160,7 +160,7 @@ end
 
 struct FieldAccess:
     target Expr
-    field Ident
+    field Name
     meta Meta
 end
 

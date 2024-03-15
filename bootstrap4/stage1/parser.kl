@@ -1289,7 +1289,7 @@ impl Parser:
                 return ExprKind::FieldAccess(
                     FieldAccess{
                         target, 
-                        field: self.parse_ident(self.iter.force_next()!)!, meta: self.meta(mark)
+                        field: self.parse_name(self.iter.force_next()!)!, meta: self.meta(mark)
                     }
                 )
             Some(Token{kind: TokenKind::IntLiteral(_), span: _}):

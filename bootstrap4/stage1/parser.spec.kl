@@ -922,14 +922,14 @@ fn main():
 
     test.group("field access", fn():
         test.it("passes the happy path", fn() throws:
-            assert(expr("a.b") == "(@fieldaccess (@ident a) (@ident b))")
+            assert(expr("a.b") == "(@fieldaccess (@ident a) (@name (@ident b)))")
         end)
 
         test.it("parses chained field accesses", fn() throws:
             assert(
                 expr("a.b.c") 
                 == 
-                "(@fieldaccess (@fieldaccess (@ident a) (@ident b)) (@ident c))"
+                "(@fieldaccess (@fieldaccess (@ident a) (@name (@ident b))) (@name (@ident c)))"
             )
         end)
 
@@ -937,7 +937,7 @@ fn main():
             assert(
                 expr("a.b().c") 
                 == 
-                "(@fieldaccess (@call (@fieldaccess (@ident a) (@ident b))) (@ident c))"
+                "(@fieldaccess (@call (@fieldaccess (@ident a) (@name (@ident b)))) (@name (@ident c)))"
             )
             assert(
                 expr(
@@ -948,13 +948,21 @@ fn main():
                     """
                 )
                 ==
-                "(@fieldaccess (@call (@fieldaccess (@call (@ident a)) (@ident b))) (@ident c))"
+                "(@fieldaccess (@call (@fieldaccess (@call (@ident a)) (@name (@ident b)))) (@name (@ident c)))"
             )
         end)
 
-        test.it("parses tuple access", fn() throws:
-            assert(expr("a.0") == "(@tupleaccess (@ident a) 0)")
+        test.it("parses generic args", fn() throws:
+            assert(
+                expr("a.b<Int>") 
+                == 
+                "(@fieldaccess (@ident a) (@name (@ident b) (@genericarg (@type (@fqn (@name (@ident Int)))))))"
+            )
         end)
+    end)
+
+    test.it("parses tuple access", fn() throws:
+        assert(expr("a.0") == "(@tupleaccess (@ident a) 0)")
     end)
 
     test.group("index access", fn():

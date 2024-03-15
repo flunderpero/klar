@@ -673,7 +673,7 @@ impl Visitor for Formatter:
         self.maybe_wrap(fn (wrap Bool):
             self.visit_expr(field_access.target)
             if wrap => self.w_nl_indent()
-            self.w(".").w(field_access.field.name)
+            self.w(".").w_name(field_access.field)
             if wrap => self.w_nl_dedent()
             return ()
         end)

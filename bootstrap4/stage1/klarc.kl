@@ -69,7 +69,7 @@ fn parse(tokens Vector<Token>) Module throws ParseError:
     Parser::new(TokenIter::new(tokens)).parse_module()
 end
 
-fn main():
+fn main() throws:
     if env.args.len() < 4:
         print("Usage: klarc <src> <dst>")
         exit(1)
@@ -83,20 +83,8 @@ fn main():
     end)()
     let src_file = env.args[2]
     let dst_file = env.args[3]
-    let src = match File::at(src_file).read_str():
-        Ok<Str>(src) => src
-        Error(error):
-            print(f"Error reading file {src_file}: {error}")
-            exit(2)
-            return ()
-        end
-    end
+    let src = File::at(src_file).read_str()!
     let tokens = lex(src, src_file, debug_level)
-    match parse(tokens):
-        Ok(module) => print(module.to_debug_str_multiline())
-        Error(error):
-            print(error.to_debug_str())
-            exit(3)
-        end
-    end
+    let module = parse(tokens)!
+    print(module.to_debug_str_multiline())
 end

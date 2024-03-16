@@ -1499,7 +1499,7 @@ fn parse(tokens Vector<Token>) Module throws ParseError:
     Parser::new(TokenIter::new(tokens)).parse_module()
 end
 
-fn main():
+fn main() throws:
     if env.args.len() < 3:
         print("Usage: klarfmt <src> [-w]")
         exit(1)
@@ -1507,30 +1507,16 @@ fn main():
     end
     let src_file = env.args[2]
     let write = env.args.iter().any(fn(arg Str) Bool => arg == "-w")
-    let src = match File::at(src_file).read_str():
-        Ok(src) => src
-        Error(error):
-            print(f"Error reading file {src_file}: {error}")
-            exit(2)
-            return ()
+    let src = File::at(src_file).read_str()!
+    let formatted_src = format(src, src_file)!
+    if write:
+        match File::at(src_file).write_str(formatted_src):
+            Ok(_) => ()
+            Error(error):
+                print(f"Error writing file {src_file}: {error}")
+                exit(2)
+                return ()
+            end
         end
-    end
-    match format(src, src_file):
-        Ok(formatted_src):
-            if write:
-                match File::at(src_file).write_str(formatted_src):
-                    Ok(_) => ()
-                    Error(error):
-                        print(f"Error writing file {src_file}: {error}")
-                        exit(2)
-                        return ()
-                    end
-                end
-            else => print(formatted_src)
-        end
-        Error(error):
-            print(error)
-            exit(3)
-        end
-    end
+    else => print(formatted_src)
 end

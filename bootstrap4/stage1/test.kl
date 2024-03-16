@@ -200,9 +200,9 @@ impl TestGroup:
             let old_panic_handler = register_panic_handler(fn(message, location, src):
                 result.inc_failed()
                 let st_ = stack_trace()
-                let stack_trace_ = st_.iter().take_while(fn(s Str):
-                    not s.contains("test.kl:")
-                end).take(6)
+                let stack_trace_ = st_.frames.iter().take_while(fn(it Frame):
+                    not it.file.contains("test.kl")
+                end).take(6).map<Str>(fn(it Frame) => it.to_str())
                 logger.log(f"{group_name} {color("FAIL", "31")} {name}: panicked with")
                 logger.indent()
                 logger.log(f"\n{message}\n\nat {"\n   ".join(stack_trace_)}")

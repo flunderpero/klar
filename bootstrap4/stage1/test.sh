@@ -73,14 +73,16 @@ if [ "$the_book" -eq 1 ]; then
 fi
 
 if [ "$files" -eq 1 ]; then
-    echo "Testing all source files under ../tests/stage0 ..."
-    for test_file in ../tests/stage0/*.kl; do
-        if [[ "$test_file" == *"compile_error"* ]]; then
-            continue
-        fi
-        test=$(basename "$test_file")
-        compiled="build/${test%.kl}"
-        echo "$test"
-        bash compile.sh "$test_file" "$compiled"
+    for directory in . ../tests/stage0; do
+        echo "Testing all source files under ${directory} ..."
+        for test_file in ${directory}/*.kl; do
+            if [[ "$test_file" == *"compile_error"* ]]; then
+                continue
+            fi
+            test=$(basename "$test_file")
+            compiled="build/${test%.kl}"
+            echo "$test"
+            bash compile.sh "$test_file" "$compiled"
+        done
     done
 fi

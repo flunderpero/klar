@@ -293,9 +293,9 @@ x
                 if idx >= expected.len():
                     panic(f"more tokens than expected: {token}")
                 end
-            assert(idx < expected.len())
-            assert(token.kind == expected[idx])
-            idx = idx + 1
+                assert(idx < expected.len())
+                assert(token.kind == expected[idx])
+                idx = idx + 1
             end
         )
         if idx < expected.len():

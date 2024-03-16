@@ -296,7 +296,7 @@ fn main():
     -- Use a match expression to get the value.
     let value = match a:
         Option::Some(value) => value
-        Option::None => panic("Should not be reached")
+        Option::None => panic("should not be reached")
     end
 end
 ```
@@ -671,8 +671,7 @@ end
 
 In Klar, errors are values and may be returned from functions.
 
-Errors must implement the `Error` trait which only requires
-to implement the `ToStr` trait.
+Errors must implement the `ToStr` trait, that's all.
 
 The canonical way of error handling is as follows:
 
@@ -745,6 +744,51 @@ end
 fn main():
     assert(number_of_orbits(10, 2).unwrap() == 5)
     assert(number_of_orbits(10, 0).is_error())
+end
+```
+
+##### Error Return Traces
+
+In order to track an error being propageted, the `ErrorTrait` trait has a
+`return_trace` method that is implemented by the runtime.
+
+```klar
+fn divide(divisor Int, dividend Int) Int throws:
+    if dividend == 0 => return Error("division by zero")
+    divisor / dividend
+end
+
+fn number_of_orbits(total_time Int, orbit_time Int) Int throws:
+    let orbits = divide(total_time, orbit_time)!
+    orbits
+end
+
+fn main():
+    let result = number_of_orbits(10, 0)
+    match result:
+        Ok(value):
+            panic("should not be reached")
+        end
+        Error(error):
+            let trace = result.error_return_trace()
+            assert(trace.frames.len() == 2)
+            assert(trace.frames[0].line == 2)
+            assert(trace.frames[0].col == 25)
+            assert(
+                trace.frames[0].src.trim() 
+                == 
+                "if dividend == 0 => return Error(\"division by zero\")"
+            )
+            assert(trace.frames[1].line == 7)
+            assert(trace.frames[1].col == 18)
+            assert(
+                trace.frames[1].src.trim() 
+                == 
+                "let orbits = divide(total_time, orbit_time)!"
+            )
+            return ()
+        end
+    end
 end
 ```
 

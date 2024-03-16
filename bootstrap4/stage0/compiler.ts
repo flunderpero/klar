@@ -102,6 +102,7 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             const value = wrap_return_value(
                 transpile_expression(e.value, {...ctx, used_in_expression: true}),
                 ctx,
+                e.span,
             )
             return `;(function () { const error = new Error("return"); error.value = ${value}; throw error; })()`
         } else if (e instanceof AST.Number_) {
@@ -124,16 +125,13 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             )
             return `(function () { const _ = new klar_Str(""); ${parts.join("")}; return _; })()`
         } else if (e instanceof AST.FunctionCall) {
-            const location = escape_str_str(
-                e.span.toString() + "\n    " + e.span.src_lines.split("\n")[0].trim(),
-            )
             if (e.target instanceof AST.IdentifierReference && e.target.name === "assert") {
                 return `
-                    call_stack.push(\`${location}\`);
+                    call_frames.push(${span_to_frame(e.span)});
                     try {
                         ${transpile_assert(e)};
                     } finally {
-                        call_stack.pop();
+                        call_frames.pop();
                     }`
             }
             if (e.target instanceof AST.IdentifierReference && e.target.name === "panic") {
@@ -156,16 +154,17 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             }
             if (e.propagate_error) {
                 call = `(function() {
-                    call_stack.push(\`${location}\`);
+                    call_frames.push(${span_to_frame(e.span)});
                     let res;
                     try {
                         res = ${call};
                     } finally {
-                        call_stack.pop();
+                        call_frames.pop();
                     }
                     if (res.constructor.name == "klar_Result_Error") {
                         const error = new Error("return")
                         error.value = res;
+                        res.__error_return_trace_frames.push(${span_to_frame(e.span)});
                         throw error;
                     }
                     if (res.constructor.name == "klar_Result_Ok") return res[0];
@@ -176,11 +175,11 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
                 return `${call};`
             } else {
                 call = `(function () {
-                        call_stack.push(\`${location}\`);
+                        call_frames.push(${span_to_frame(e.span)});
                         try {
                             return ${call};
                         } finally {
-                            call_stack.pop();
+                            call_frames.pop();
                         }
                     })()`
                 if (ctx.used_in_expression) {
@@ -293,8 +292,12 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             let assign = ""
             for (const variant of e.variants) {
                 const variant_class_name = `${m(e.name)}_${variant.name}`
-                const constructor =
-                    "constructor(...values) {super();values.forEach((x, i) => {this[i] = x;});}"
+                let constructor =
+                    "constructor(...values) {super();values.forEach((x, i) => {this[i] = x;});"
+                if (e.name === "Result") {
+                    constructor += "this.__error_return_trace_frames = [];"
+                }
+                constructor += "}"
                 variants += `class ${variant_class_name} extends ${m(e.name)} {\n${constructor}};`
                 if (variant.fields.fields.length === 0) {
                     assign += `${m(e.name)}.${m(variant.name)} = new ${variant_class_name}();`
@@ -304,7 +307,24 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
                     )} = (...args) => new ${variant_class_name}(...args);`
                 }
             }
-            const base_class = `class ${m(e.name)} {}`
+            let base_class = `class ${m(e.name)} {}`
+            if (e.name === "Result") {
+                base_class += `
+                    ;klar_Result.prototype.klar_error_return_trace = function () {
+                        const frames = klar_Array.klar_new(new klar_Int(this.__error_return_trace_frames.length));
+                        for (let i = 0; i < this.__error_return_trace_frames.length; i++) {
+                            const f = new klar_Frame();
+                            for (const [k, v] of Object.entries(this.__error_return_trace_frames[i])) {
+                                f[k] = v;
+                            }
+                            frames.klar_data[i] = f;
+                        }
+                        const res = new klar_Trace({klar_frames: frames})
+                        res.klar_frames = frames;
+                        return res;
+                    };
+                    `
+            }
             return `${base_class}${variants}${assign};exported.${m(e.name)} = ${m(e.name)};`
         } else if (e instanceof AST.Loop) {
             const block = transpile_block(e.block, ctx)
@@ -384,6 +404,15 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             throw new CodeGenError(`Unexpected expression ${quote(e.kind)}`, e.span)
         }
     }
+    function span_to_frame(span: Span) {
+        const src_line = span.src_lines.split("\n")[0].trim()
+        return `{
+            klar_file: new klar_Str(\`${escape_str_str(span.file)}\`),
+            klar_line: new klar_Int(${span.pos.line}),
+            klar_col: new klar_Int(${span.pos.col}),
+            klar_src: new klar_Str(\`${escape_str_str(src_line)}\`)
+        }`
+    }
     /**
      * Convert calls `assert()` so that in the case of an error,
      * the lhs and rhs are printed as well as the source location.
@@ -458,7 +487,7 @@ if (!(${cond}.value)) {
             ),
         )
     }
-    function wrap_return_value(value: string, ctx: Context) {
+    function wrap_return_value(value: string, ctx: Context, span: Span) {
         const throws = ctx.func?.throws
         const is_option = ctx.func?.return_type.name === "Option"
         if (throws || is_option) {
@@ -471,6 +500,7 @@ if (!(${cond}.value)) {
                     if (${is_option}) {
                         if (${!!throws}) {
                             if (res.constructor.name === "klar_Result_Error") {
+                                res.__error_return_trace_frames.push(${span_to_frame(span)});
                                 return res;
                             }
                         }
@@ -482,6 +512,8 @@ if (!(${cond}.value)) {
                     if (${!!throws}) {
                         if (!res.constructor.name.startsWith("klar_Result_")) {
                             res = new klar_Result_Ok(res)
+                        } else if (res.constructor.name === "klar_Result_Error") {
+                            res.__error_return_trace_frames.push(${span_to_frame(span)});
                         }
                     }
                     return res})()`
@@ -530,7 +562,11 @@ if (!(${cond}.value)) {
                 block.body.at(-1) instanceof AST.Loop
             )
         ) {
-            body = `{${body};return ${wrap_return_value(last_expression_code, ctx)};}`
+            body = `{${body};return ${wrap_return_value(
+                last_expression_code,
+                ctx,
+                block.body.at(-1)?.span || block.span,
+            )};}`
         } else {
             body = `{${body};${last_expression_code}}`
         }

@@ -369,15 +369,37 @@ impl Iterator<T> for ArrayIter<T>:
     end
 end
 
+struct Frame:
+    file Str
+    line Int
+    col Int
+    src Str
+end
+
+impl ToStr for Frame:
+    fn to_str(self) Str:
+        f"{self.file}:{self.line}:{self.col}\n    {self.src}"
+    end
+end
+
+struct Trace:
+    frames Array<Frame>
+end
+
+impl ToStr for Trace:
+    fn to_str(self) Str:
+        let frames = self.frames.iter().map<Str>(fn(frame Frame) Str => frame.to_str())
+        "\n\n".join(frames)
+    end
+end
 
 extern:
-
     fn print(s ToStr)
     fn panic(s Str)
     fn exit(code Int)
     fn assert(cond Bool)
     fn register_panic_handler(handler (fn(Str, Str, Str))) (fn(Str, Str, Str))
-    fn stack_trace() Array<Str>
+    fn stack_trace() Trace
 
     -- todo: We should not need this function. We use it to work around
     --       the fact that Klar does not support global variables.
@@ -433,6 +455,14 @@ extern:
 
     fn ext_args() JSArray<Str>
     fn ext_env() JSArray<(Str, Str)>
+
+    impl Result<T, E>:
+        fn error_return_trace(self) Trace
+        --- Return a trace of all the code locations where the error was propagated.
+
+            Returns an empty array if the result is `Ok`.
+        ---
+    end
 end
 
 impl Str:

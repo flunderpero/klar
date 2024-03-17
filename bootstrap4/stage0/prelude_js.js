@@ -29,7 +29,7 @@ const klar_jsprint = console.log
 let klar_panic = (value, location, src) => {
     throw new Error(
         `Panic: ${to_debug_str(value)} at ${to_debug_str(location)}:\n  ${to_debug_str(src)}
-        \nStack trace:\n    ${klar_stack_trace.klar_to_str().value}`,
+        \nStack trace:\n    ${klar_stack_trace().klar_to_str().value}`,
     )
 }
 

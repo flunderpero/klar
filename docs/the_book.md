@@ -919,14 +919,14 @@ fn main():
     let a = Some(42)
     if let Some(value) = a:
         assert(value == 42)
-    else:
+    end else:
         panic("should not be reached")
     end
 
     -- `if let` is a regular expression.
     let b = if let Some(value) = a:
         value
-    else:
+    end else:
         panic("should not be reached")
     end
     assert(b == 42)
@@ -1025,31 +1025,6 @@ end
 ```
 
 ## Known Issues
-
-### `if / else` Can Be Ambiguous
-
-```
-if a:
-    if b => 42
-else:
-    23
-end
-```
-
-This is ambiguous. The `else` could belong to the inner `if` or the outer `if`. For
-now, you have to use the multi-line block syntax to disambiguate:
-
-```
-if a:
-    if b:
-        42
-    else:
-        23
-    end
-else:
-    23
-end
-```
 
 ## RFC
 

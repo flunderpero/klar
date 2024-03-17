@@ -238,7 +238,7 @@ impl TestGroup:
         if result.failed > 0:
             let s = color(f"{result.failed} / {result.total_run()} tests failed", "31")
             logger.log(f"{group_name} {s}{", ".when(skipped.len() > 0)}{skipped}")
-        else:
+        end else:
             let passed = if result.passed > 0 
                 => color(f"{result.passed} / {result.total_run()} tests passed", "32")
                 else => ""

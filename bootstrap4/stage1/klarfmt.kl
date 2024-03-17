@@ -236,7 +236,7 @@ impl Formatter:
             f()
             self.w_nl()
             self.line.indent_ = indent
-        else => f()
+        end else => f()
         self
     end
 
@@ -404,7 +404,7 @@ impl Formatter:
             if lines.len() == 1:
                 self.w_space()
             end
-        else:
+        end else:
             self.w(comment).w_raw_nl()
         end
         self
@@ -740,7 +740,7 @@ impl Visitor for Formatter:
                 if next_decl_pos < next_impl_pos:
                     let fn_decl = fn_decls.next().unwrap()
                     self.visit_fndecl(fn_decl)
-                else:
+                end else:
                     let fn_impl = fn_impls.next().unwrap()
                     self.visit_fn(fn_impl)
                 end
@@ -753,16 +753,6 @@ impl Visitor for Formatter:
     end
 
     fn visit_block(mut self, node Block):
-        self.w_block(node, true);
-    end
-
-    fn visit_block_item(mut self, node BlockItem):
-        self.with_meta(node.meta, fn():
-            self.walk_block_item(node)
-        end)
-    end
-
-    fn w_block(mut self, node Block, add_end Bool) Self:
         self.with_meta(node.meta, fn():
             if is_single_line_block(node):
                 self.maybe_wrap(fn (force_wrap Bool):
@@ -787,7 +777,7 @@ impl Visitor for Formatter:
                     self.visit_block_item(node.items[0])
                     if wrap => self.w_nl_dedent();
                 end)
-            else:
+            end else:
                 self.w_token(TokenKind::Colon)
                 self.w_nl_indent()
                 node.items.iter().for_each(fn(item BlockItem):
@@ -795,10 +785,16 @@ impl Visitor for Formatter:
                     self.w_nl();
                 end)
                 self.w_nl_dedent()
-                if add_end => self.w_token(TokenKind::End)
+                self.w_token(TokenKind::End)
             end
+            return ()
         end)
-        return self
+    end
+
+    fn visit_block_item(mut self, node BlockItem):
+        self.with_meta(node.meta, fn():
+            self.walk_block_item(node)
+        end)
     end
 
     fn visit_impl(mut self, node Impl):
@@ -1104,10 +1100,10 @@ impl Visitor for Formatter:
                 if wrap => self.w_nl_indent()
                 else => self.w_space()
                 self.visit_expr(if_.cond)
-                self.w_block(if_.then_block, not if_.else_block.is_some())
+                self.visit_block(if_.then_block)
                 match if_.else_block:
                     Some(else_block):
-                        if wrap or not is_single_line_block(else_block) => self.w_nl()
+                        if wrap or (not is_single_line_block(else_block) and is_single_line_block(if_.then_block)) => self.w_nl()
                         else => self.w_space()
                         self.w_token(TokenKind::Else)
                         self.visit_block(else_block)
@@ -1184,7 +1180,7 @@ impl Visitor for Formatter:
                                 self.w(s)
                                 self.w_nl_dedent()
                                 self.w("}")
-                            else => self.w("{").w(s).w("}")
+                            end else => self.w("{").w(s).w("}")
                             return ()
                         end)
                     end
@@ -1545,5 +1541,5 @@ fn main() throws:
                 return ()
             end
         end
-    else => print(formatted_src)
+    end else => print(formatted_src)
 end

@@ -1499,7 +1499,7 @@ export function parse(tokens: TokenStream): AST {
         return new StructDeclaration({name, fields: members, type_parameters}, span)
     }
 
-    function parse_block(mode: "normal" | "if_else") {
+    function parse_block() {
         const block_type = tokens.consume()
         if (!(block_type instanceof LexicalToken) || !["=>", ":"].includes(block_type.value)) {
             throw new ParseError(
@@ -1511,16 +1511,10 @@ export function parse(tokens: TokenStream): AST {
         if (block_type.value === "=>") {
             block.body.push(parse_expression())
         } else {
-            const end_tokens = ["end"]
-            if (mode === "if_else") {
-                end_tokens.push("else")
-            }
-            while (!tokens.at_end() && !end_tokens.includes(tokens.simple_peek() ?? "")) {
+            while (!tokens.at_end() && tokens.simple_peek() !== "end") {
                 block.body.push(parse_expression())
             }
-            if (mode === "normal") {
-                tokens.expect("end")
-            }
+            tokens.expect("end")
         }
         return block
     }
@@ -1577,7 +1571,7 @@ export function parse(tokens: TokenStream): AST {
         tokens.expect(":")
         while (!tokens.at_end() && tokens.simple_peek() !== "end") {
             const pattern = parse_match_pattern()
-            const block = parse_block("normal")
+            const block = parse_block()
             arms.push(new MatchArm({pattern, block}, Span.combine(pattern, block.span)))
         }
         const end_span = tokens.expect("end").span
@@ -1733,7 +1727,7 @@ export function parse(tokens: TokenStream): AST {
 
     function parse_loop(): Loop {
         const span = tokens.expect("loop").span
-        const block = parse_block("normal")
+        const block = parse_block()
         return new Loop({block}, Span.combine(span, block.span))
     }
 
@@ -1758,16 +1752,13 @@ export function parse(tokens: TokenStream): AST {
             )
         }
         function parse_blocks(): [Block, Block | undefined, Span] {
-            const single_block = tokens.simple_peek() === "=>"
-            const then_block = parse_block("if_else")
+            const then_block = parse_block()
             let span = then_block.span
             let else_block: Block | undefined
             if (tokens.simple_peek() === "else") {
                 tokens.consume()
-                else_block = parse_block("normal")
+                else_block = parse_block()
                 span = else_block.span
-            } else if (!single_block && tokens.simple_peek() === "end") {
-                span = tokens.consume().span
             }
             return [then_block, else_block, span]
         }
@@ -1859,7 +1850,7 @@ export function parse(tokens: TokenStream): AST {
             {declaration, block: new Block({body: []}, declaration.span)},
             declaration.span,
         )
-        fn_def.block = parse_block("normal")
+        fn_def.block = parse_block()
         fn_def.span = Span.combine(declaration.span, fn_def.block.span)
         return fn_def
     }
@@ -1897,7 +1888,7 @@ export function parse(tokens: TokenStream): AST {
                 throws = true
             }
         }
-        const block = parse_block("normal")
+        const block = parse_block()
         return new ClosureDefinition(
             {parameters, return_type, block, throws},
             Span.combine(span, block.span),

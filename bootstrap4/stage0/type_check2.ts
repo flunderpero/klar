@@ -3318,7 +3318,7 @@ const test = {
                         true
                     end
                     if bar() => 1 else => 2 
-                else:
+                end else:
                     bar()
                 end
             end
@@ -4285,7 +4285,7 @@ const test = {
         const {type} = test.type_check(`
             if true:
                 if true => 1 else => 2 
-            else => 2
+            end else => 2
         `)
         assert.equal(type.signature, "Int")
     },

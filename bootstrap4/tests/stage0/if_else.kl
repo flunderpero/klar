@@ -17,7 +17,7 @@ fn main():
     end
     if x == 6:
         print(6)
-    else:
+    end else:
         print(5)
     end
 end

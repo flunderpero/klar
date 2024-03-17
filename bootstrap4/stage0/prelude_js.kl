@@ -494,7 +494,7 @@ impl Str:
                     s.push(to)
                     cur_match = ""
                 end
-            else:
+            end else:
                 s.push(cur_match)
                 s.push_char(c)
                 cur_match = ""
@@ -515,7 +515,7 @@ impl Str:
                     if c == sep:
                         vec.push(s)
                         s = ""
-                    else => s.push_char(c)
+                    end else => s.push_char(c)
                 end
             end
         end
@@ -558,7 +558,7 @@ impl Str:
                 if match_ == s:
                     return true
                 end
-            else:
+            end else:
                 match_ = ""
             end
             i = i + 1

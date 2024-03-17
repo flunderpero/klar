@@ -867,12 +867,15 @@ impl Parser:
             Some(expr) => expr
             None => return parse_error(ExprExpected(cond_token), cond_token)
         end
-        let then_block = self.parse_block_advanced(true)!
-        let else_block = if then_block.1:
+        let then_block = self.parse_block()!
+        let else_block = match self.iter.peek():
+            Some(Token{kind: TokenKind::Else, span: _}):
                 self.iter.force_next()!
                 Some(self.parse_block()!)
-            else => None
-        If{cond, then_block: then_block.0, else_block, meta: self.meta(mark)}
+            end 
+            _ => None
+        end
+        If{cond, then_block, else_block, meta: self.meta(mark)}
     end
 
     fn parse_int_literal(self, token Token) Literal throws ParseError:
@@ -1454,20 +1457,9 @@ impl Parser:
     end
 
     fn parse_block(mut self) Block throws ParseError:
-        -- todo (lang-feat): We should be able to use named arguments here. And we should
-        --                   be able to force the use of named arguments.
-        self.parse_block_advanced(false)!.0
-    end
-
-    fn parse_block_advanced(mut self, may_end_with_else Bool) (Block, Bool) throws ParseError:
-        --- Parse a block starting with either `=>` or `:`. The `may_end_with_else` parameter
-            indicates whether the block may end with an `else` token. If it ends with an `else`
-            the token will not be consumed.
-        ---
         let mark_root = self.iter.mark()
         let items = Vector<BlockItem>::new() 
         let next_token = self.iter.force_next()!
-        mut got_else = false
         match next_token.kind:
             TokenKind::FatArrow:
                 -- This is a single expression block, an expression has to follow.
@@ -1477,14 +1469,6 @@ impl Parser:
                     None => return parse_error(
                         ExprExpected(self.iter.force_next()!), self.iter.force_next()!
                     )
-                end
-                got_else = match self.iter.peek():
-                    Some(Token{kind: TokenKind::Else, span: _}):
-                        if not may_end_with_else => 
-                            return parse_error(UnexpectedToken(self.iter.force_next()!), self.iter.force_next()!)
-                        true
-                    end
-                    _ => false
                 end
             end
             TokenKind::Colon:
@@ -1496,12 +1480,6 @@ impl Parser:
                             self.iter.force_next()!
                             break
                         end
-                        Some(Token{kind: TokenKind::Else, span: _}):
-                            if not may_end_with_else => 
-                                return parse_error(UnexpectedToken(token.unwrap()), token.unwrap())
-                            got_else = true
-                            break
-                        end
                         _ => self.parse_block_item(self.iter.force_next()!)!
                     end
                     items.push(item)
@@ -1509,7 +1487,7 @@ impl Parser:
             end
             _ => return parse_error(UnexpectedToken(next_token), next_token)
         end
-        return (Block{meta: self.meta(mark_root), items}, got_else)
+        Block{meta: self.meta(mark_root), items}
     end
 
     fn parse_block_item(mut self, token Token) BlockItem throws ParseError:

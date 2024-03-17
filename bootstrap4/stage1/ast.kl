@@ -469,7 +469,7 @@ impl Type:
                             else => None
                         None => None
                     end
-                else:
+                end else:
                     None
                 end
             _ => None

@@ -484,7 +484,7 @@ fn main():
         end)
 
         test.it("parses if / else", fn() throws:
-            assert(expr("if true: 42 else: 43 end") == "(@if (@bool true) (@block (@int 42)) (@block (@int 43)))")
+            assert(expr("if true: 42 end else: 43 end") == "(@if (@bool true) (@block (@int 42)) (@block (@int 43)))")
             assert(expr("if true => 42 else => 43") == "(@if (@bool true) (@block (@int 42)) (@block (@int 43)))")
         end)
 
@@ -493,7 +493,7 @@ fn main():
                 if a:
                     if b:
                     end
-                else:
+                end else:
                 end
                 """)
                 ==
@@ -502,7 +502,7 @@ fn main():
             )
             assert(expr("""
                 if a:
-                else:
+                end else:
                     if b => 42
                 end
                 """)

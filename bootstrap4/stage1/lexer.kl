@@ -276,7 +276,7 @@ impl Iterator<Token> for Lexer:
                 fstr_items.push(FStrStrItem(s, span))
             end
             FStr(fstr_items, multi_line)
-        else => StrLiteral(s, multi_line)
+        end else => StrLiteral(s, multi_line)
         Token{kind, span: start_span.combine(self.span())}
     end
 

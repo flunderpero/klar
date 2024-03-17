@@ -1450,7 +1450,6 @@ impl Visitor for Formatter:
         end)
         self
     end
-
 end
 
 fn is_single_line_block(block Block) Bool:

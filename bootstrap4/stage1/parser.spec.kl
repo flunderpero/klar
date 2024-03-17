@@ -487,6 +487,30 @@ fn main():
             assert(expr("if true: 42 else: 43 end") == "(@if (@bool true) (@block (@int 42)) (@block (@int 43)))")
             assert(expr("if true => 42 else => 43") == "(@if (@bool true) (@block (@int 42)) (@block (@int 43)))")
         end)
+
+        test.it("parses nested if / else", fn() throws:
+            assert(expr("""
+                if a:
+                    if b:
+                    end
+                else:
+                end
+                """)
+                ==
+                "(@if (@ident a) " +
+                "(@block (@if (@ident b) (@block))) (@block))"
+            )
+            assert(expr("""
+                if a:
+                else:
+                    if b => 42
+                end
+                """)
+                ==
+                "(@if (@ident a) " +
+                "(@block) (@block (@if (@ident b) (@block (@int 42)))))"
+            )
+        end)
     end)
 
     test.group("binary expressions", fn():

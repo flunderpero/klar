@@ -43,7 +43,7 @@ else
 fi
 
 mkdir -p build
-if [ "$compiler" -eq 1 ]; then
+if [[ "$compiler" -eq 1 || "$files" -eq 1 ]]; then
     echo "Building compiler ..."
     bash build_compiler.sh
 fi

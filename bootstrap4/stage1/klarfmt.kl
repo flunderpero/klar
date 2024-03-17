@@ -466,7 +466,10 @@ impl Formatter:
                     self.w(kind)
                     break
                 end
-                None => panic(f"Expected token of kind `{kind}` but found none.")
+                None:
+                    print(f"Expected token of kind `{kind}` but found none in {self.meta.unwrap().span}.")
+                    break
+                end
             end
         end
         self
@@ -966,8 +969,13 @@ impl Visitor for Formatter:
             mut iter = PeekableIterator::new(fields.iter())
             iter.for_each(fn(it (Ident, Pattern)):
                 self.w(it.0)
-                self.w_token(TokenKind::Colon).w_space()
-                self.visit_pattern(it.1)
+                if match it.1.kind:
+                    PatternKind::Ident(ident) => ident != it.0
+                    _ => true
+                end:
+                    self.w_token(TokenKind::Colon).w_space()
+                    self.visit_pattern(it.1)
+                end
                 if not iter.at_end():
                     self.w_token(TokenKind::Comma)
                     if wrap => self.w_nl()
@@ -1452,17 +1460,28 @@ impl Visitor for Formatter:
     end
 end
 
-fn is_single_line_block(block Block) Bool:
-    match block.meta.tokens:
-        None => ()
-        Some(tokens) => if tokens.iter().any(fn(token Token) Bool => 
-            match token.kind:
-                TokenKind::Comment(comment) => not comment.starts_with("---")
-                _ => false
-            end
-        ) => return false
+fn block_starts_or_ends_with_a_line_comment(block Block) Bool:
+    let tokens = match block.meta.tokens:
+        Some(tokens) => tokens
+        None => return false
     end
-    block.items.len() == 1 
+    fn check(iter Iterator<Token>) Bool:
+        loop:
+            match iter.next():
+                Some(Token{kind: TokenKind::Comment(comment), span: _}):
+                    if not comment.starts_with("---") => return true
+                end
+                Some(Token{kind: TokenKind::WhiteSpace(_) | TokenKind::Colon | TokenKind::FatArrow | TokenKind::End, span: _}) => ()
+                _ => break
+            end
+        end
+        false
+    end
+    check(tokens.iter()) or check(tokens.iter().reverse())
+end
+
+fn is_single_line_block(block Block) Bool:
+    block.items.len() == 1 and not block_starts_or_ends_with_a_line_comment(block)
 end
 
 fn format(src Str, src_file Str) Str throws:

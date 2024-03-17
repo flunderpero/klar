@@ -131,6 +131,10 @@ trait Iterator<T>:
         self.for_each(fn(value) => vec.push(value))
         vec
     end
+
+    fn reverse(self) Self:
+        self.collect().reverse_copy().iter()
+    end
     
     fn count(self) Int:
         mut count = 0
@@ -719,6 +723,17 @@ impl Vector<T>:
         end
         self.data.pop()
         Some(value)
+    end
+
+    fn reverse_copy(self) Vector<T>:
+        let vec = Vector<T>::new()
+        mut i = self.len() - 1
+        loop:
+            if i < 0 => break
+            vec.push(self[i])
+            i = i - 1
+        end
+        vec
     end
 
     fn iter(self) VectorIter<T> => VectorIter<T> { vec: self, index: 0 }

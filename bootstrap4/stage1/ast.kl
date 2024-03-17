@@ -955,6 +955,10 @@ impl ToDebugStr for Call:
     end
 end
 
+impl PartialEq for Ident:
+    fn eq(self, other Ident) Bool => self.name == other.name
+end
+
 impl ToDebugStr for Ident:
     fn to_debug_str(self) Str => f"(@ident {self.name})"
 end

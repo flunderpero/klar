@@ -1,4 +1,4 @@
 #!/bin/sh
 set -e
 
-build/klarc "$@"
+../stage0/compile.sh "$@"

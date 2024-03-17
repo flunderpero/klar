@@ -82,7 +82,7 @@ if [ "$files" -eq 1 ]; then
             test=$(basename "$test_file")
             compiled="build/${test%.kl}"
             echo "$test"
-            bash compile.sh "$test_file" "$compiled"
+            bash compile.sh "$test_file" "$compiled" > /dev/null
         done
     done
 fi

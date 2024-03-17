@@ -38,6 +38,19 @@ fn main():
         )
     end)
 
+    test.it("formats terminator expressions", fn() throws:
+        assert(test_format(
+            """
+            fn test() => 1
+            ;
+            """.dedent()
+        )! == 
+            """
+            fn test() => 1;
+            """.dedent().trim()
+        )
+    end)
+
     test.group("comments", fn():
         test.it("passes the happy path", fn() throws:
             assert(test_format(
@@ -293,6 +306,30 @@ fn main():
     end)
 
     test.group("fndecl", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test(a Int, b Str) Int => 1
+                """.dedent()
+            )! == 
+                """
+                fn test(a Int, b Str) Int => 1
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats mutable parameters", fn() throws:
+            assert(test_format(
+                """
+                fn test(mut a Int, mut b Str) Int => 1
+                """.dedent()
+            )! == 
+                """
+                fn test(mut a Int, mut b Str) Int => 1
+                """.dedent().trim()
+            )
+        end)
+
         test.it("wraps long function declarations", fn() throws:
             assert(test_format(
                 """
@@ -887,6 +924,38 @@ fn main():
             )
         end)
 
+        test.it("formats `mut`", fn() throws:
+            assert(test_format(
+                """
+                fn test():
+                    mut a = 1
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test() => mut a = 1
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats type annotations", fn() throws:
+            assert(test_format(
+                """
+                fn test():
+                    let a Int = 1
+                    mut b Str? = "hello"
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test():
+                    let a Int = 1
+                    mut b Str? = "hello"
+                end
+                """.dedent().trim()
+            )
+        end)
+
         test.it("wraps long let bindings", fn() throws:
             assert(test_format(
                 """
@@ -1297,11 +1366,17 @@ fn main():
         test.it("formats error propagation", fn() throws:
             assert(test_format(
                 """
-                fn test() Int throws => some_fn( 1 , 2  )  !
+                fn test() Int throws:
+                    some_fn( 1 , 2  )  !
+                    func_without_args()!
+                end
                 """.dedent()
             )! == 
                 """
-                fn test() Int throws => some_fn(1, 2)!
+                fn test() Int throws:
+                    some_fn(1, 2)!
+                    func_without_args()!
+                end
                 """.dedent().trim()
             )
         end)

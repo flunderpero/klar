@@ -8,13 +8,11 @@ fn test_format(src Str) Str throws:
     --- Format the given source code and make sure it parses to the same AST.
     ---
     let res = format(src, "spec")!
-    -- print("-------")
-    -- print(res)
-    -- let tokens = Lexer::lex(src, "klarfmt.spec.kl").collect()
-    -- let ast = Parser::new(TokenIter::new(tokens)).parse_module()!
-    -- let tokens2 = Lexer::lex(res, "klarfmt.spec.kl").collect()
-    -- let ast2 = Parser::new(TokenIter::new(tokens2)).parse_module()!
-    -- assert(ast2.to_debug_str() == ast.to_debug_str())
+    let tokens = Lexer::lex(src, "klarfmt.spec.kl").collect()
+    let ast = Parser::new(TokenIter::new(tokens)).parse_module()!
+    let tokens2 = Lexer::lex(res, "klarfmt.spec.kl").collect()
+    let ast2 = Parser::new(TokenIter::new(tokens2)).parse_module()!
+    assert(ast2.to_debug_str() == ast.to_debug_str())
     res
 end
 

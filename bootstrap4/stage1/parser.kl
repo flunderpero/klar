@@ -912,7 +912,7 @@ impl Parser:
                 let exprs = self.parse_comma_separated_exprs(TokenKind::RParen)!
                 match exprs.len():
                     0 => return parse_error(UnexpectedToken(immediate), immediate)
-                    1 => exprs[0].kind
+                    1 => ExprKind::Paren(exprs[0])
                     _ => ExprKind::Tuple(exprs)
                 end
             end

@@ -825,6 +825,37 @@ fn main():
         end)
     end)
 
+    test.group("parenthesis", fn():
+        test.it("passes the happy path", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int => ( 1 + 2 ) * 3
+                """.dedent()
+            )! == 
+                """
+                fn test() Int => (1 + 2) * 3
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wraps long expressions", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int => ( a_very_long_variable_name_that_is_very_long + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long ) * 3
+                """.dedent()
+            )! == 
+                """
+                fn test() Int
+                 => (
+                        a_very_long_variable_name_that_is_very_long
+                            + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                    )
+                        * 3
+                """.dedent().trim()
+            )
+        end)
+    end)
+
     test.group("if", fn():
         test.it("passes the happy path", fn() throws:
             assert(test_format(

@@ -836,6 +836,7 @@ impl Visitor for Formatter:
                 ExprKind::Literal(lit) => self.visit_literal(lit)
                 ExprKind::Loop(loop_) => self.visit_loop(loop_)
                 ExprKind::Match(match_) => self.visit_match(match_)
+                ExprKind::Paren(expr) => self.visit_paren(expr)
                 ExprKind::Return(expr) => self.visit_return(expr)
                 ExprKind::StructInst(struct_) => self.visit_struct_inst(struct_)
                 ExprKind::TerminatorExpr(t):
@@ -846,6 +847,17 @@ impl Visitor for Formatter:
                 ExprKind::TupleAccess(tuple_access) => self.visit_tuple_access(tuple_access)
                 ExprKind::UnaryExpr(unary_expr) => self.visit_unary_expr(unary_expr)
             end;
+        end)
+    end
+
+    fn visit_paren(mut self, expr Expr):
+        self.maybe_wrap(fn(wrap Bool):
+            self.w_token(TokenKind::LParen)
+            if wrap => self.w_nl_indent()
+            self.visit_expr(expr)
+            if wrap => self.w_nl_dedent()
+            self.w_token(TokenKind::RParen)
+            return ()
         end)
     end
 

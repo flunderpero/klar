@@ -247,6 +247,7 @@ enum ExprKind:
     Literal(Literal)
     Loop(Loop)
     Match(Match)
+    Paren(Expr)
     Return(Return)
     StructInst(StructInst)
     TerminatorExpr(TerminatorExpr)
@@ -1162,6 +1163,7 @@ impl ToDebugStr for ExprKind:
             ExprKind::Literal(value) => value.to_debug_str()
             ExprKind::Loop(value) => value.to_debug_str()
             ExprKind::Match(value) => value.to_debug_str()
+            ExprKind::Paren(value) => f"(@paren {value.to_debug_str()})"
             ExprKind::Return(value) => value.to_debug_str()
             ExprKind::StructInst(value) => value.to_debug_str()
             ExprKind::TerminatorExpr(value) => value.to_debug_str()

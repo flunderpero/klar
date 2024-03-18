@@ -22,6 +22,10 @@ fn main():
         assert(expr("a_42") == "(@ident a_42)")
     end)
 
+    test.it("parses parentheses", fn() throws:
+        assert(expr("(42)") == "(@paren (@int 42))")
+    end)
+
     test.group("fully qualified names", fn():
         test.it("passes the happy path", fn() throws:
             assert(
@@ -550,7 +554,7 @@ fn main():
         end)
 
         test.it("respects parentheses", fn() throws:
-            assert(expr("(1 + 2) * 3") == "(@binexpr * (@binexpr + (@int 1) (@int 2)) (@int 3))")
+            assert(expr("(1 + 2) * 3") == "(@binexpr * (@paren (@binexpr + (@int 1) (@int 2))) (@int 3))")
         end)
     end)
 

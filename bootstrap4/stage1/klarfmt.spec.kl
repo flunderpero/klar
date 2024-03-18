@@ -8,9 +8,9 @@ fn test_format(src Str) Str throws:
     --- Format the given source code and make sure it parses to the same AST.
     ---
     let res = format(src, "spec")!
-    let tokens = Lexer::lex(src, "klarfmt.spec.kl").collect()
+    let tokens = Lexer::lex(src, "sut.kl").collect()
     let ast = Parser::new(TokenIter::new(tokens)).parse_module()!
-    let tokens2 = Lexer::lex(res, "klarfmt.spec.kl").collect()
+    let tokens2 = Lexer::lex(res, "sut.kl").collect()
     let ast2 = Parser::new(TokenIter::new(tokens2)).parse_module()!
     assert(ast2.to_debug_str() == ast.to_debug_str())
     res
@@ -82,17 +82,31 @@ fn main():
         test.it("formats multi-line comments", fn() throws:
             assert(test_format(
                 """
-                ---    This should   
-                be formatted as
-                  a block
-                --- 
+                fn test():
+                --- This should   
+                 be formatted as
+                 a block
+                 - but
+                   indentations should be preserved
+                ---
+                1
+                2
+                end
+
+                
                 """.dedent()
             )! == 
                 """
-                --- This should
-                    be formatted as
-                    a block
-                --- 
+                fn test():
+                    --- This should
+                        be formatted as
+                        a block
+                        - but
+                          indentations should be preserved
+                    ---
+                    1
+                    2
+                end
                 """.dedent().trim()
             )
         end)
@@ -115,6 +129,47 @@ fn main():
                     } and {test}" -- a trailing comment
                     2
                 end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("keeps multi-line comment on a newline in single-line functions", fn() throws:
+            assert(test_format(
+                """
+                fn test() =>
+                    --- A function
+                        comment
+                    ---
+                    1
+                """.dedent()
+            )! == 
+                """
+                fn test()
+                 => --- A function
+                        comment
+                    ---
+                    1
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats multi-line function comment when converting function to singe-line syntax", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int:
+                    --- A function
+                    comment
+                    ---
+                    1
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test() Int
+                 => --- A function
+                        comment
+                    ---
+                    1
                 """.dedent().trim()
             )
         end)
@@ -1279,7 +1334,8 @@ fn main():
                 """.dedent()
             )! == 
                 """
-                fn test() Int => --- before --- 1 --- after ---
+                fn test() Int
+                 => --- before --- 1 --- after ---
                 """.dedent().trim()
             )
         end)

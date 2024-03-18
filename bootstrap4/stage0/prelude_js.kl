@@ -126,6 +126,17 @@ trait Iterator<T>:
         vec.iter()
     end
 
+    fn fold<U>(self, init U, f (fn(U, T) U)) U:
+        mut acc = init
+        loop:
+            match self.next():
+                None => break
+                Some(value) => acc = f(acc, value)
+            end
+        end
+        acc
+    end
+
     fn collect(self) Vector<T>:
         let vec = Vector<T>::new()
         self.for_each(fn(value) => vec.push(value))

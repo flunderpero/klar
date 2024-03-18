@@ -161,8 +161,7 @@ impl Formatter:
         --- Add an empty line if the last line is not empty.
         ---
         self.w_nl()
-        if self.out.len() > 0 and self.out[self.out.len() - 1].text.len() > 0 
-            => self.out.push(Line{indent_: 0, indent_str: "", text: ""})
+        self.w_raw_empty_line()
         self.w_comments_in_meta()
         self
     end
@@ -172,6 +171,13 @@ impl Formatter:
         self.line = Line{indent_: self.line.indent_, indent_str: "", text: ""}
         self.wrap_idx = 0
         self.wrap_depth = 0
+        self
+    end
+
+    fn w_raw_empty_line(mut self) Self:
+        self.w_raw_nl()
+        if self.out.len() > 0 and self.out[self.out.len() - 1].text.len() > 0 
+            => self.out.push(Line{indent_: 0, indent_str: "", text: ""})
         self
     end
 
@@ -388,21 +394,36 @@ impl Formatter:
         ---
         self.w_space()
         if comment.starts_with("---"):
-            -- Make sure there is a space after the prefix `---`.
-            -- If the suffix `---` is not on a new line (including whitespace),
-            -- add a space before the suffix.
-            let lines = comment.split('\n').collect()
-            lines.iter().for_each(fn(s_ Str):
-                mut s = s_.trim()
-                if s.starts_with("---") and s.len() > 3 => s = f"--- {s.slice_copy(3, s.len()).trim()}"
-                else => if s != "---" => s = f"    {s}"
-                if s.ends_with("---") and s.len() > 3 => s = f"{s.slice_copy(0, s.len() - 3).trim()} ---"
-                self.w(s)
-                if lines.len() > 1 => self.w_raw_nl()
-                return ()
-            end)
-            if lines.len() == 1:
-                self.w_space()
+            --- Formatting rules:
+                - If the comment is a single line, it will be written as a single line
+                  and the text will be trimmed.
+                - Otherwise, the comment will be written as a block with an indentation 
+                  of 4 spaces but keeping the original indentation. Each line will be
+                  right-trimmed and the closing `- - -` will be on a new line.
+            ---
+            let text = "   " + comment.slice_copy(3, comment.len() - 3)
+            let lines = text.split('\n').collect()
+            if lines.len() == 1 => self.w("--- ").w(lines[0].trim()).w(" ---").w_space()
+            else:
+                -- Find the common indentation of all lines. 
+                -- The first line is not considered.
+                let common_indent = lines.iter().skip(1).fold(1000000, fn(acc Int, line Str):
+                    let indent = line.iter().take_while(fn(c Char) Bool => c == ' ').count()
+                    if indent < acc and indent != line.len() => indent else => acc
+                end)
+                self.w("--- ").w(lines[0].trim()).w_raw_nl()
+                self.line.indent_ = self.line.indent_ + 1
+                mut i = 1
+                loop:
+                    if i == lines.len() => break
+                    let line = lines[i].trim_end().slice_copy(common_indent, lines[i].len())
+                    if i < lines.len() - 1 and line.len() == 0 => self.w_raw_empty_line()
+                    else => self.w(line).w_raw_nl()
+                    i = i + 1
+                end
+                self.line.indent_ = self.line.indent_ - 1
+                self.w("---")
+                self.w_raw_nl()
             end
         end else:
             self.w(comment).w_raw_nl()
@@ -677,7 +698,6 @@ impl Visitor for Formatter:
 
     fn visit_fn_or_closure_decl(mut self, params Vector<Param>, return_type Type, ident Ident?):
         self.maybe_wrap(fn(wrap Bool):
-            -- let wrap = wrap_ and params.len() > 0
             self.w_token(TokenKind::Fn)
             match ident:
                 Some(ident_) => self.w_space().w_ident(ident_)
@@ -753,31 +773,36 @@ impl Visitor for Formatter:
     end
 
     fn visit_block(mut self, node Block):
-        self.with_meta(node.meta, fn():
-            if is_single_line_block(node):
-                self.maybe_wrap(fn (force_wrap Bool):
-                    -- We always wrap if the block item is
-                    -- - a loop with a multi-line body
-                    -- - an if-expression with a multi-line body (then or else block)
-                    -- - a match-expression
-                    let wrap = force_wrap or match node.items[0].kind:
-                        BlockItemKind::Expr(Expr{ kind: ExprKind::Loop(loop_), meta: _}) => not is_single_line_block(loop_.body)
-                        BlockItemKind::Expr(Expr{ kind: ExprKind::Match(_), meta: _}) => true
-                        BlockItemKind::Expr(Expr{ kind: ExprKind::If(if_), meta: _}) 
-                            => not is_single_line_block(if_.then_block) or 
-                            match if_.else_block:
-                                Some(else_block) => not is_single_line_block(else_block)
-                                _ => false
-                            end
-                        _ => false
-                    end
+        if is_single_line_block(node):
+            self.maybe_wrap(fn (force_wrap Bool):
+                -- We always wrap if the block item is
+                -- - a loop with a multi-line body
+                -- - an if-expression with a multi-line body (then or else block)
+                -- - a match-expression
+                let wrap = force_wrap 
+                    or starts_with_comment(node.meta.tokens.unwrap_or(Vector<Token>::new()).iter())
+                    or match node.items[0].kind:
+                    BlockItemKind::Expr(Expr{ kind: ExprKind::Loop(loop_), meta: _}) => not is_single_line_block(loop_.body)
+                    BlockItemKind::Expr(Expr{ kind: ExprKind::Match(_), meta: _}) => true
+                    BlockItemKind::Expr(Expr{ kind: ExprKind::If(if_), meta: _}) 
+                        => not is_single_line_block(if_.then_block) or 
+                        match if_.else_block:
+                            Some(else_block) => not is_single_line_block(else_block)
+                            _ => false
+                        end
+                    _ => false
+                end
+                self.with_meta(node.meta, fn():
                     self.dec_wrap_depth()
                     if wrap => self.w_token_as_nl_indent(TokenKind::FatArrow)
-                    else => self.w_space().w_token(TokenKind::FatArrow).w_space()
+                    else => self.w_space().w_token(TokenKind::FatArrow)
+                    self.w_space()
                     self.visit_block_item(node.items[0])
-                    if wrap => self.w_nl_dedent();
                 end)
-            end else:
+                if wrap => self.w_nl_dedent();
+            end)
+        end else:
+            self.with_meta(node.meta, fn():
                 self.w_token(TokenKind::Colon)
                 self.w_nl_indent()
                 node.items.iter().for_each(fn(item BlockItem):
@@ -786,9 +811,9 @@ impl Visitor for Formatter:
                 end)
                 self.w_nl_dedent()
                 self.w_token(TokenKind::End)
-            end
-            return ()
-        end)
+                return ()
+            end)
+        end
     end
 
     fn visit_block_item(mut self, node BlockItem):
@@ -1473,24 +1498,36 @@ impl Visitor for Formatter:
     end
 end
 
+fn starts_with_comment(iter Iterator<Token>) Bool:
+    loop:
+        match iter.next():
+            Some(Token{kind: TokenKind::Comment(comment), span: _}) => return true
+            Some(Token{kind: TokenKind::WhiteSpace(_) | TokenKind::Colon | TokenKind::FatArrow | TokenKind::End, span: _}) => ()
+            _ => break
+        end
+    end
+    false
+end
+
+fn starts_with_line_comment(iter Iterator<Token>) Bool:
+    loop:
+        match iter.next():
+            Some(Token{kind: TokenKind::Comment(comment), span: _}):
+                if not comment.starts_with("---") => return true
+            end
+            Some(Token{kind: TokenKind::WhiteSpace(_) | TokenKind::Colon | TokenKind::FatArrow | TokenKind::End, span: _}) => ()
+            _ => break
+        end
+    end
+    false
+end
+
 fn block_starts_or_ends_with_a_line_comment(block Block) Bool:
     let tokens = match block.meta.tokens:
         Some(tokens) => tokens
         None => return false
     end
-    fn check(iter Iterator<Token>) Bool:
-        loop:
-            match iter.next():
-                Some(Token{kind: TokenKind::Comment(comment), span: _}):
-                    if not comment.starts_with("---") => return true
-                end
-                Some(Token{kind: TokenKind::WhiteSpace(_) | TokenKind::Colon | TokenKind::FatArrow | TokenKind::End, span: _}) => ()
-                _ => break
-            end
-        end
-        false
-    end
-    check(tokens.iter()) or check(tokens.iter().reverse())
+    starts_with_line_comment(tokens.iter()) or starts_with_line_comment(tokens.iter().reverse())
 end
 
 fn is_single_line_block(block Block) Bool:

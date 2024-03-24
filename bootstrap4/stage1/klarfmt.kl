@@ -821,7 +821,6 @@ impl Visitor for Formatter:
                 let wrap = force_wrap 
                     or starts_with_comment(node.meta.tokens.unwrap_or(Vector<Token>::new()).iter())
                     or match node.items[0].kind:
-                    BlockItemKind::Expr(Expr{ kind: ExprKind::Loop(loop_), meta: _}) => not is_single_line_block(loop_.body)
                     BlockItemKind::Expr(Expr{ kind: ExprKind::Match(_), meta: _}) => true
                     BlockItemKind::Expr(Expr{ kind: ExprKind::If(if_), meta: _}) 
                         => not is_single_line_block(if_.then_block) or 
@@ -839,19 +838,21 @@ impl Visitor for Formatter:
                     self.visit_block_item(node.items[0])
                 end)
                 if wrap => self.w_nl_dedent();
-            end else:
-                self.with_meta(node.meta, fn():
-                    self.w_token(TokenKind::Colon)
-                    self.w_nl_indent()
-                    node.items.iter().for_each(fn(item BlockItem):
-                        self.visit_block_item(item)
-                        self.w_nl();
-                    end)
-                    self.w_nl_dedent()
-                    self.w_token(TokenKind::End)
-                    return ()
-                end)
-            end
+            end else => self.visit_multi_line_block(node)
+        end)
+    end
+
+    fn visit_multi_line_block(mut self, node Block):
+        self.with_meta(node.meta, fn():
+            self.w_token(TokenKind::Colon)
+            self.w_nl_indent()
+            node.items.iter().for_each(fn(item BlockItem):
+                self.visit_block_item(item)
+                self.w_nl();
+            end)
+            self.w_nl_dedent()
+            self.w_token(TokenKind::End)
+            return ()
         end)
     end
 
@@ -1146,7 +1147,7 @@ impl Visitor for Formatter:
     fn visit_loop(mut self, loop_ Loop):
         self.with_meta(loop_.meta, fn():
             self.w_token(TokenKind::Loop)
-            self.visit_block(loop_.body)
+            self.visit_multi_line_block(loop_.body)
             return ()
         end)
     end
@@ -1583,7 +1584,12 @@ fn block_starts_or_ends_with_a_line_comment(block Block) Bool:
 end
 
 fn is_single_line_block(block Block) Bool:
-    block.items.len() == 1 and not block_starts_or_ends_with_a_line_comment(block)
+    if block.items.len() != 1 => return false
+    if block_starts_or_ends_with_a_line_comment(block) => return false
+    match block.items[0]:
+        BlockItem{ kind: BlockItemKind::Expr(Expr{ kind: ExprKind::Loop(_), meta: _}), meta: _} => false
+        _ => true
+    end
 end
 
 fn format(src Str, src_file Str, verify Bool) Str throws:

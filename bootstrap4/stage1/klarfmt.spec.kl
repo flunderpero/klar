@@ -1101,22 +1101,18 @@ fn main():
             )
         end)
 
-        test.it("breaks onto a new line if it is multi-line", fn() throws:
+        test.it("is always formatted as a multi-line block", fn() throws:
             assert(test_format(
                 """
-                fn test(): loop:
-                        1
-                        2
-                    end
-                end
+                fn test() => loop => break
                 """.dedent()
             )! == 
                 """
-                fn test()
-                 => loop:
-                        1
-                        2
+                fn test():
+                    loop:
+                        break
                     end
+                end
                 """.dedent().trim()
             )
         end)

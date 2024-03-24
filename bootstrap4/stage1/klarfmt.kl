@@ -72,6 +72,22 @@ struct Line:
     text Str
 end
 
+impl Line:
+    fn copy(self) Line:
+        Line{indent_: self.indent_, indent_str: self.indent_str.copy(), text: self.text.copy()}
+    end
+
+end
+
+impl ToStr for Line:
+    fn to_str(self) Str:
+        " ".repeat(
+            (if self.indent_str.len() > 0 => self.indent_ - 1 else => self.indent_) * 4) 
+        + self.indent_str 
+        + self.text
+    end
+end
+
 struct Formatter:
     out Vector<Line>
     line Line
@@ -88,7 +104,8 @@ struct Formatter:
 end
 
 struct Mark:
-    pos Int
+    line Line
+    out_idx Int
     comments_or_newlines_idx Int
     last_visited_token Token?
 end
@@ -169,8 +186,8 @@ impl Formatter:
     fn w_raw_nl(mut self) Self:
         if self.line.text.iter().any(fn(c Char) Bool => c != ' ') => self.out.push(self.line)
         self.line = Line{indent_: self.line.indent_, indent_str: "", text: ""}
-        self.wrap_idx = 0
-        self.wrap_depth = 0
+        -- self.wrap_idx = 0
+        -- self.wrap_depth = 0
         self
     end
 
@@ -204,7 +221,7 @@ impl Formatter:
     end
 
     fn w_space(mut self) Self:
-        --- Add a space to the current line if it is not emply and does not end with a space.
+        --- Add a space to the current line if it is not empty and does not end with a space.
         ---
         if self.line.text.len() > 0 and self.line.text[self.line.text.len() - 1] != ' ' => self.line.text.push(" ")
         self
@@ -255,23 +272,49 @@ impl Formatter:
         self
     end
 
-    fn line_too_long(self) Bool:
-        self.line.text.len() + 4 * self.line.indent_ > 100
-    end
-
     fn mark(self) Mark:
         --- Return the length of the current line.
         ---
-        Mark{pos: self.line.text.len(), last_visited_token: self.last_visited_token, comments_or_newlines_idx: self.comments_or_newlines_idx}
+        Mark{
+            line: self.line.copy(), 
+            out_idx: self.out.len(), 
+            last_visited_token: self.last_visited_token, 
+            comments_or_newlines_idx: self.comments_or_newlines_idx
+        }
     end
 
     fn reset(mut self, mark Mark) Self:
         --- Reset the current line to the given length.
         ---
-        self.line.text = self.line.text.slice_copy(0, mark.pos)
+        self.line = mark.line.copy()
+        self.out = self.out.slice_copy(0, mark.out_idx)
         self.last_visited_token = mark.last_visited_token
         self.comments_or_newlines_idx = mark.comments_or_newlines_idx
         self
+    end
+
+    fn any_line_too_long(self, mark Mark) Bool:
+        --- Return if any of the lines since the given mark are too long.
+        ---
+        fn line_too_long(line Line) Bool => line.text.len() + 4 * line.indent_ > 100
+        if self.out.len() != mark.out_idx:
+            if self.out.iter().skip(mark.out_idx).any(line_too_long) => return true
+        end
+        line_too_long(self.line)
+    end
+
+    fn mark_diff(self, mark Mark) Str:
+        --- Return the difference between the current state and the given mark.
+        ---
+        if self.out.len() != mark.out_idx:
+            return "\n".join(self.out.iter().skip(mark.out_idx).map<Str>(fn(line Line) => line.to_str()))
+                + "\n" + self.line.to_str()
+        end
+        let self_line = self.line.to_str()
+        let mark_line = mark.line.to_str()
+        if mark_line.len() < self_line.len() => return self_line.slice_copy(mark_line.len(), self_line.len())
+        else => panic("The line at the given mark must be shorter than the current line.")
+        ""
     end
 
     fn reset_wrap(mut self) Self:
@@ -302,14 +345,16 @@ impl Formatter:
             -- It controls the wrapping of the entire line.
             let mark = self.mark()
             f(false)
-            mut cur_line = ""
+            mut last_diff = ""
             loop:
-                if not self.line_too_long() or cur_line == self.line.text => break
+                if not self.any_line_too_long(mark) => break
+                let diff = self.mark_diff(mark)
+                if diff == last_diff => break
+                last_diff = diff
                 self.reset(mark)
                 self.inc_wrap_depth()
                 self.wrap_idx = 0
                 f(true)
-                cur_line = self.line.text
             end
             self.reset_wrap()
             return ()
@@ -331,7 +376,7 @@ impl Formatter:
         let mark = self.mark()
         f()
         self.dec_wrap_depth()
-        if self.line_too_long():
+        if self.any_line_too_long(mark):
             self.reset(mark)
             return false
         end
@@ -523,13 +568,7 @@ impl Formatter:
 
     fn finish(mut self) Str:
         self.w_nl()
-        "\n".join(self.out.iter().map<Str>(fn (line Line) =>
-            " ".repeat(
-                (if line.indent_str.len() > 0 => line.indent_ - 1 else => line.indent_) * 4) 
-                + line.indent_str 
-                + line.text
-            )
-        ).trim()
+        "\n".join(self.out.iter().map<Str>(fn (line Line) => line.to_str())).trim()
     end
 end
 
@@ -773,8 +812,8 @@ impl Visitor for Formatter:
     end
 
     fn visit_block(mut self, node Block):
-        if is_single_line_block(node):
-            self.maybe_wrap(fn (force_wrap Bool):
+        self.maybe_wrap(fn (force_wrap Bool):
+            if is_single_line_block(node):
                 -- We always wrap if the block item is
                 -- - a loop with a multi-line body
                 -- - an if-expression with a multi-line body (then or else block)
@@ -800,20 +839,20 @@ impl Visitor for Formatter:
                     self.visit_block_item(node.items[0])
                 end)
                 if wrap => self.w_nl_dedent();
-            end)
-        end else:
-            self.with_meta(node.meta, fn():
-                self.w_token(TokenKind::Colon)
-                self.w_nl_indent()
-                node.items.iter().for_each(fn(item BlockItem):
-                    self.visit_block_item(item)
-                    self.w_nl();
+            end else:
+                self.with_meta(node.meta, fn():
+                    self.w_token(TokenKind::Colon)
+                    self.w_nl_indent()
+                    node.items.iter().for_each(fn(item BlockItem):
+                        self.visit_block_item(item)
+                        self.w_nl();
+                    end)
+                    self.w_nl_dedent()
+                    self.w_token(TokenKind::End)
+                    return ()
                 end)
-                self.w_nl_dedent()
-                self.w_token(TokenKind::End)
-                return ()
-            end)
-        end
+            end
+        end)
     end
 
     fn visit_block_item(mut self, node BlockItem):
@@ -846,7 +885,7 @@ impl Visitor for Formatter:
         self.with_meta(node.meta, fn():
             match node.kind:
                 ExprKind::Assignment(assignment) => self.visit_assignment(assignment)
-                ExprKind::BinaryExpr(bin_expr) => self.visit_binary_expr(bin_expr)
+                ExprKind::BinaryExpr(bin_expr) => self.visit_binary_expr(bin_expr, false)
                 ExprKind::Break(_) => self.w("break")
                 ExprKind::Call(call) => self.visit_call(call)
                 ExprKind::Closure(closure) => self.visit_closure(closure)
@@ -1134,8 +1173,7 @@ impl Visitor for Formatter:
         self.with_meta(if_.meta, fn():
             self.maybe_wrap(fn (wrap Bool):
                 self.w_token(TokenKind::If).w_space()
-                if wrap => self.w_nl_indent()
-                else => self.w_space()
+                self.w_space()
                 self.visit_expr(if_.cond)
                 self.visit_block(if_.then_block)
                 match if_.else_block:
@@ -1147,7 +1185,6 @@ impl Visitor for Formatter:
                     end
                     None => ()
                 end
-                if wrap => self.w_nl_dedent()
                 return ()
             end)
         end)
@@ -1157,11 +1194,11 @@ impl Visitor for Formatter:
         self.with_meta(index_access.meta, fn():
             self.maybe_wrap(fn (wrap Bool):
                 self.visit_expr(index_access.target)
-                if wrap => self.w_nl_indent()
                 self.w_token(TokenKind::LBracket)
+                if wrap => self.w_nl_indent()
                 self.visit_expr(index_access.index)
-                self.w_token(TokenKind::RBracket)
                 if wrap => self.w_nl_dedent()
+                self.w_token(TokenKind::RBracket)
                 return ()
             end)
         end)
@@ -1287,31 +1324,46 @@ impl Visitor for Formatter:
         end)
     end
 
-    fn visit_binary_expr(mut self, mut bin_expr BinaryExpr):
-        self.with_meta(bin_expr.meta, fn():
-            self.maybe_wrap(fn (wrap Bool):
-                self.visit_expr(bin_expr.lhs)
-                if wrap => self.w_nl_indent()
-                else => self.w_space()
-                match bin_expr.kind:
-                    BinaryExprKind::Add => self.w_token(TokenKind::Plus)
-                    BinaryExprKind::And => self.w_token(TokenKind::And)
-                    BinaryExprKind::Div => self.w_token(TokenKind::Slash)
-                    BinaryExprKind::Equal => self.w_token(TokenKind::DoubleEqual)
-                    BinaryExprKind::GreaterThan => self.w_token(TokenKind::GreaterThan)
-                    BinaryExprKind::GreaterThanOrEqual => self.w_token(TokenKind::GreaterThanOrEqual)
-                    BinaryExprKind::LessThan => self.w_token(TokenKind::LessThan)
-                    BinaryExprKind::LessThanOrEqual => self.w_token(TokenKind::LessThanOrEqual)
-                    BinaryExprKind::Mul => self.w_token(TokenKind::Star)
-                    BinaryExprKind::NotEqual => self.w_token(TokenKind::NotEqual)
-                    BinaryExprKind::Or => self.w_token(TokenKind::Or)
-                    BinaryExprKind::Sub => self.w_token(TokenKind::Minus)
-                end
-                self.w_space()
-                self.visit_expr(bin_expr.rhs)
-                if wrap => self.w_nl_dedent()
-                return ()
-            end)
+    fn visit_binary_expr(mut self, mut bin_expr BinaryExpr, parent_is_binary_expr Bool):
+        self.maybe_wrap(fn (wrap Bool):
+            mut indented = false
+            fn w_bin_expr(bin_expr BinaryExpr):
+                self.with_meta(bin_expr.meta, fn():
+                    match bin_expr.lhs:
+                        Expr{ kind: ExprKind::BinaryExpr(lhs), meta: _ } => w_bin_expr(lhs)
+                        _ => self.visit_expr(bin_expr.lhs)
+                    end
+                    if wrap:
+                        if not indented:
+                            self.w_nl_indent()
+                            indented = true
+                        end else => self.w_nl();
+                    end else => self.w_space()
+                    match bin_expr.kind:
+                        BinaryExprKind::Add => self.w_token(TokenKind::Plus)
+                        BinaryExprKind::And => self.w_token(TokenKind::And)
+                        BinaryExprKind::Div => self.w_token(TokenKind::Slash)
+                        BinaryExprKind::Equal => self.w_token(TokenKind::DoubleEqual)
+                        BinaryExprKind::GreaterThan => self.w_token(TokenKind::GreaterThan)
+                        BinaryExprKind::GreaterThanOrEqual => self.w_token(TokenKind::GreaterThanOrEqual)
+                        BinaryExprKind::LessThan => self.w_token(TokenKind::LessThan)
+                        BinaryExprKind::LessThanOrEqual => self.w_token(TokenKind::LessThanOrEqual)
+                        BinaryExprKind::Mul => self.w_token(TokenKind::Star)
+                        BinaryExprKind::NotEqual => self.w_token(TokenKind::NotEqual)
+                        BinaryExprKind::Or => self.w_token(TokenKind::Or)
+                        BinaryExprKind::Sub => self.w_token(TokenKind::Minus)
+                    end
+                    self.w_space()
+                    match bin_expr.rhs:
+                        Expr{ kind: ExprKind::BinaryExpr(rhs), meta: _ } => w_bin_expr(rhs)
+                        _ => self.visit_expr(bin_expr.rhs)
+                    end
+                    return ()
+                end)
+            end
+            w_bin_expr(bin_expr)
+            if wrap and indented => self.w_nl_dedent()
+            return ()
         end)
     end
 
@@ -1534,15 +1586,17 @@ fn is_single_line_block(block Block) Bool:
     block.items.len() == 1 and not block_starts_or_ends_with_a_line_comment(block)
 end
 
-fn format(src Str, src_file Str) Str throws:
+fn format(src Str, src_file Str, verify Bool) Str throws:
     let tokens = lex(src, src_file)!
     let module = parse(tokens)!
     let formatter = Formatter::new(tokens)
     formatter.visit_module(module)
     let formatted_src = formatter.finish()
-    let formatted_tokens = lex(formatted_src, src_file)!
-    let formatted_module = parse(formatted_tokens)!
-    assert(module.to_debug_str() == formatted_module.to_debug_str())
+    if verify:
+        let formatted_tokens = lex(formatted_src, src_file)!
+        let formatted_module = parse(formatted_tokens)!
+        assert(module.to_debug_str() == formatted_module.to_debug_str())
+    end
     formatted_src
 end
 
@@ -1580,7 +1634,7 @@ fn main() throws:
     let src_file = env.args[2]
     let write = env.args.iter().any(fn(arg Str) Bool => arg == "-w")
     let src = File::at(src_file).read_str()!
-    let formatted_src = format(src, src_file)!
+    let formatted_src = format(src, src_file, true)!
     if write:
         match File::at(src_file).write_str(formatted_src):
             Ok(_) => ()

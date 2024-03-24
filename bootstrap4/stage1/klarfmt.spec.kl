@@ -7,13 +7,7 @@ use .test::Test
 fn test_format(src Str) Str throws:
     --- Format the given source code and make sure it parses to the same AST.
     ---
-    let res = format(src, "spec")!
-    let tokens = Lexer::lex(src, "sut.kl").collect()
-    let ast = Parser::new(TokenIter::new(tokens)).parse_module()!
-    let tokens2 = Lexer::lex(res, "sut.kl").collect()
-    let ast2 = Parser::new(TokenIter::new(tokens2)).parse_module()!
-    assert(ast2.to_debug_str() == ast.to_debug_str())
-    res
+    format(src, "spec", true)!
 end
 
 fn main():
@@ -797,7 +791,8 @@ fn main():
                 fn test() Int:
                     some_very_long_struct_name_that_is_very_very_long_so_long_in_fact_that_it_is_long
                         .some_very_long_field_name
-                        + 7 * 8
+                        + 7
+                        * 8
                     print("wot")
                 end
                 """.dedent().trim()
@@ -868,12 +863,13 @@ fn main():
             )! == 
                 """
                 fn test() Int:
-                    some_very_long_array_name_that_is_very_very_long_so_long_in_fact_that_it_is_long_it_itself_causes_the_line_to_wrap
-                        [1 + 2 * 3]
-                    some_very_long_array_name_that_is_very_very_long_so_long_in_fact_that_it_is_long
-                        [a_very_long_variable_name_that_is_very_long
+                    some_very_long_array_name_that_is_very_very_long_so_long_in_fact_that_it_is_long_it_itself_causes_the_line_to_wrap[
+                        1 + 2 * 3
+                    ]
+                    some_very_long_array_name_that_is_very_very_long_so_long_in_fact_that_it_is_long[
+                        a_very_long_variable_name_that_is_very_long
                             + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
-                        ]
+                    ]
                 end
                 """.dedent().trim()
             )
@@ -986,6 +982,24 @@ fn main():
                         3
                         4
                     end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wraps long conditions", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int =>
+                    if a_very_long_variable_name_that_is_very_long + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long > 2 => 1 else => 2
+                """.dedent()
+            )! == 
+                """
+                fn test() Int
+                 => if a_very_long_variable_name_that_is_very_long
+                        + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                        > 2
+                    => 1
+                    else => 2   
                 """.dedent().trim()
             )
         end)
@@ -1517,7 +1531,7 @@ fn main():
                 test_format(
                     """
                     fn test() Int:
-                        this_very_long_variable_name_that_is_very_long == this_other_very_long_variable_name_that_is_very_long + another_very_long_variable_name_that_is_very_long - 2
+                        this_very_long_variable_name_that_is_very_long == this_other_very_long_variable_name_that_is_very_long + another_very_long_variable_name_that_is_very_long - 2 * a_third_very_long_number_that_is_very_long
                         1
                     end
                     """.dedent()
@@ -1526,8 +1540,9 @@ fn main():
                 fn test() Int:
                     this_very_long_variable_name_that_is_very_long
                         == this_other_very_long_variable_name_that_is_very_long
-                            + another_very_long_variable_name_that_is_very_long
-                            - 2
+                        + another_very_long_variable_name_that_is_very_long
+                        - 2
+                        * a_third_very_long_number_that_is_very_long
                     1
                 end
                 """.dedent().trim()
@@ -1555,9 +1570,9 @@ fn main():
                         )
                     a_very_long_number
                         > another_very_long_number
-                            + a_third_very_long_number_that_is_very_long
-                                / a_fourth_very_long_number_that_is_very_long
-                            + a_very_long_function_name()
+                        + a_third_very_long_number_that_is_very_long
+                        / a_fourth_very_long_number_that_is_very_long
+                        + a_very_long_function_name()
                     1 + 2 - 3 * 4 / 5
                 end
                 """.dedent().trim()
@@ -1604,14 +1619,16 @@ end
             )! == 
                 """
                 fn main() Int:
-                    test.it(fn():
-                        lex_run(
-                            this_line_is_101_characters_long,
-                            i_swear_it_is_really_101_characters,
-                            so_do_wrap_it
-                        )
-                        1
-                    end)
+                    test.it(
+                        fn():
+                            lex_run(
+                                this_line_is_101_characters_long,
+                                i_swear_it_is_really_101_characters,
+                                so_do_wrap_it
+                            )
+                            1
+                        end
+                    )
                     2
                 end
                 """.dedent().trim()

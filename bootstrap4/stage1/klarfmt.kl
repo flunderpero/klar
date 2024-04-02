@@ -108,6 +108,8 @@ struct Mark:
     out_idx Int
     comments_or_newlines_idx Int
     last_visited_token Token?
+    wrap_idx Int
+    wrap_depth Int
 end
 
 impl Formatter:
@@ -279,7 +281,9 @@ impl Formatter:
             line: self.line.copy(), 
             out_idx: self.out.len(), 
             last_visited_token: self.last_visited_token, 
-            comments_or_newlines_idx: self.comments_or_newlines_idx
+            comments_or_newlines_idx: self.comments_or_newlines_idx,
+            wrap_idx: self.wrap_idx,
+            wrap_depth: self.wrap_depth
         }
     end
 
@@ -290,6 +294,8 @@ impl Formatter:
         self.out = self.out.slice_copy(0, mark.out_idx)
         self.last_visited_token = mark.last_visited_token
         self.comments_or_newlines_idx = mark.comments_or_newlines_idx
+        self.wrap_idx = mark.wrap_idx
+        self.wrap_depth = mark.wrap_depth
         self
     end
 
@@ -351,7 +357,11 @@ impl Formatter:
                 let diff = self.mark_diff(mark)
                 if diff == last_diff => break
                 last_diff = diff
+                let wrap_idx = self.wrap_idx
+                let wrap_depth = self.wrap_depth
                 self.reset(mark)
+                self.wrap_idx = wrap_idx
+                self.wrap_depth = wrap_depth
                 self.inc_wrap_depth()
                 self.wrap_idx = 0
                 f(true)
@@ -359,28 +369,8 @@ impl Formatter:
             self.reset_wrap()
             return ()
         end
-        -- This is a deeper wrap-able node on the line.
         let wrap = self.wrap_idx <= self.wrap_depth
         f(wrap)
-    end
-
-    fn force_wrap(mut self, f (fn())) Bool:
-        --- Force wrapping of the next wrap-able node inside the given function.
-
-            If the current line is too long after applying the function, 
-            the current line is reset.
-
-            @return true if the the line-length is not exceeded.
-        ---
-        self.inc_wrap_depth()
-        let mark = self.mark()
-        f()
-        self.dec_wrap_depth()
-        if self.any_line_too_long(mark):
-            self.reset(mark)
-            return false
-        end
-        true
     end
 
     fn with_meta(mut self, meta Meta, f (fn())):
@@ -844,7 +834,11 @@ impl Visitor for Formatter:
 
     fn visit_multi_line_block(mut self, node Block):
         self.with_meta(node.meta, fn():
-            self.w_token(TokenKind::Colon)
+            self.r_nl(fn():
+                if self.line.text.ends_with(":") => return ()
+                self.w_token(TokenKind::Colon)
+                return ()
+            end)
             self.w_nl_indent()
             node.items.iter().for_each(fn(item BlockItem):
                 self.visit_block_item(item)
@@ -1154,19 +1148,29 @@ impl Visitor for Formatter:
 
     fn visit_let(mut self, let_ Let):
         self.with_meta(let_.meta, fn():
-            self.maybe_wrap(fn (wrap Bool):
-                if let_.is_mut => self.w_token(TokenKind::Mut)
-                else => self.w_token(TokenKind::Let)
-                self.w_space()
-                self.w_ident(let_.ident).w_space()
+            if let_.is_mut => self.w_token(TokenKind::Mut)
+            else => self.w_token(TokenKind::Let)
+            self.w_space()
+            self.w_ident(let_.ident)
+            let mark = self.mark()
+            self.w_space()
+            self.visit_type(let_.type_)
+            self.w_space()
+            self.w_token(TokenKind::Equal)
+            self.w_space()
+            self.visit_expr(let_.expr)
+            if self.any_line_too_long(mark):
+                self.reset(mark)
+                self.w_nl_indent()
                 self.visit_type(let_.type_)
-                if wrap => self.w_nl_indent()
-                else => self.w_space()
-                self.w_token(TokenKind::Equal).w_space()
+                self.w_nl()
+                self.w_token(TokenKind::Equal)
+                self.w_space()
                 self.visit_expr(let_.expr)
-                if wrap => self.w_nl_dedent()
+                self.w_nl_dedent()
                 return ()
-            end)
+            end
+            return ()
         end)
     end
 
@@ -1307,21 +1311,19 @@ impl Visitor for Formatter:
 
     fn visit_assignment(mut self, mut assignment Assignment):
         self.with_meta(assignment.meta, fn():
-            self.maybe_wrap(fn (wrap Bool):
-                self.visit_expr(assignment.lhs)
-                -- First try to wrap the rhs.
-                if self.force_wrap(fn():
-                    self.w_space().w_token(TokenKind::Equal).w_space()
-                    self.visit_expr(assignment.rhs)
-                end) => return ()
-                -- If the rhs can't be wrapped, resume with regular wrapping rules.
-                if wrap => self.w_nl_indent()
-                else => self.w_space()
+            self.visit_expr(assignment.lhs)
+            let mark = self.mark()
+            self.w_space()
+            self.w_token(TokenKind::Equal).w_space()
+            self.visit_expr(assignment.rhs)
+            if self.any_line_too_long(mark):
+                self.reset(mark)
+                self.w_nl_indent()
                 self.w_token(TokenKind::Equal).w_space()
                 self.visit_expr(assignment.rhs)
-                if wrap => self.w_nl_dedent()
-                return ()
-            end)
+                self.w_nl_dedent()
+            end
+            return ()
         end)
     end
 
@@ -1370,13 +1372,18 @@ impl Visitor for Formatter:
 
     fn visit_struct_inst(mut self, struct_ StructInst):
         self.with_meta(struct_.meta, fn():
-            self.maybe_wrap(fn (wrap Bool):
-                self.w_fqn(struct_.fqn).w_token(TokenKind::LBrace)
-                if struct_.fields.len() > 0:
-                    if wrap => self.w_nl_indent()
-                    else => self.w_space()
-                    mut iter = PeekableIterator::new(struct_.fields.iter())
-                    iter.for_each(fn(it (Ident, Expr)):
+            self.w_fqn(struct_.fqn).w_token(TokenKind::LBrace)
+            if struct_.fields.len() == 0:
+                self.w_token(TokenKind::RBrace)
+                return ()
+            end
+            self.maybe_wrap(fn (wrap_all Bool):
+                if wrap_all => self.w_nl_indent()
+                else => self.w_space()
+                mut iter = PeekableIterator::new(struct_.fields.iter())
+                iter.for_each(fn(it (Ident, Expr)):
+                    self.maybe_wrap(fn (wrap_field Bool):
+                        let wrap = wrap_all and wrap_field
                         self.w(it.0)
                         -- todo (lang-feat) this code is needlessly complex
                         let write_expr = match it.1.kind:
@@ -1384,22 +1391,31 @@ impl Visitor for Formatter:
                             _ => true
                         end
                         if write_expr:
-                            self.w_token(TokenKind::Colon).w_space()
+                            self.w_token(TokenKind::Colon)
+                            if wrap => self.w_nl_indent()
+                            else => self.w_space()
                             self.visit_expr(it.1)
+                            if wrap:
+                                if not iter.at_end() => self.w_token(TokenKind::Comma)
+                                self.w_nl_dedent()
+                                return ()
+                            end
                         end
                         if not iter.at_end():
                             self.w_token(TokenKind::Comma)
-                            if wrap => self.w_nl()
+                            if wrap_all => self.w_nl()
                             else => self.w_space()
                         end
                         return ()
                     end)
-                    if wrap => self.w_nl_dedent()
-                    else => self.w_space()
-                end
+                    return ()
+                end)
+                if wrap_all => self.w_nl_dedent()
+                else => self.w_space()
                 self.w_token(TokenKind::RBrace)
                 return ()
             end)
+            return ()
         end)
     end
 
@@ -1586,8 +1602,9 @@ end
 fn is_single_line_block(block Block) Bool:
     if block.items.len() != 1 => return false
     if block_starts_or_ends_with_a_line_comment(block) => return false
-    match block.items[0]:
-        BlockItem{ kind: BlockItemKind::Expr(Expr{ kind: ExprKind::Loop(_), meta: _}), meta: _} => false
+    match block.items[0].kind:
+        BlockItemKind::Expr(Expr{ kind: ExprKind::Loop(_), meta: _}) => false
+        BlockItemKind::Fn(_) => false
         _ => true
     end
 end
@@ -1633,14 +1650,15 @@ end
 
 fn main() throws:
     if env.args.len() < 3:
-        print("Usage: klarfmt <src> [-w]")
+        print("Usage: klarfmt <src> [-w] [--no-verify]")
         exit(1)
         return ()
     end
     let src_file = env.args[2]
     let write = env.args.iter().any(fn(arg Str) Bool => arg == "-w")
+    let verify = not env.args.iter().any(fn(arg Str) Bool => arg == "--no-verify")
     let src = File::at(src_file).read_str()!
-    let formatted_src = format(src, src_file, true)!
+    let formatted_src = format(src, src_file, verify)!
     if write:
         match File::at(src_file).write_str(formatted_src):
             Ok(_) => ()

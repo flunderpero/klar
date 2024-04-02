@@ -637,8 +637,7 @@ fn main():
                                 another_long_field_name_that_is_very_long: "a string that is very long",
                                 a_third_field: 3
                             }
-                          | the_longest_name_you_have_ever_seen_that_is_surprisingly_short_for_a_very_long_name
-                        :
+                          | the_longest_name_you_have_ever_seen_that_is_surprisingly_short_for_a_very_long_name:
                             a
                             b
                         end
@@ -1062,6 +1061,9 @@ fn main():
                 fn test():
                     let a_very_long_variable_name_that_is_very_long_that_is_very_long = another_very_long_variable_name_that_is_very_long_that_is_very_long
                     mut a_very_long_variable_name_that_is_very_long_that_is_very_long = another_very_long_variable_name_that_is_very_long_that_is_very_long + 3
+                    let x = SomeVeryLongEnumVariantThatIsVeryLong{ a_very_long_field: "a very long string that is very long", another_long_field_name_that_is_very_long: "a string that is very long", a_third_field: 3 }
+                    let some_long_variable_name_that_is_very_long SomeVeryLongEnumVariantThatIsVeryLongAndForcesToWrapThisLine = 3
+                    let some_long_variable_name_that_is_very_long SomeVeryLongEnumVariantThatIsVeryLongAndForcesToWrapThisLine = SomeVeryLongEnumVariantThatIsVeryLong{ some_very_long_field_name_that_is_very_long: some_long_variable_name_that_is_very_long}
                 end
                 """.dedent()
             )! == 
@@ -1071,6 +1073,19 @@ fn main():
                         = another_very_long_variable_name_that_is_very_long_that_is_very_long
                     mut a_very_long_variable_name_that_is_very_long_that_is_very_long
                         = another_very_long_variable_name_that_is_very_long_that_is_very_long + 3
+                    let x = SomeVeryLongEnumVariantThatIsVeryLong{
+                        a_very_long_field: \"a very long string that is very long\",
+                        another_long_field_name_that_is_very_long: \"a string that is very long\",
+                        a_third_field: 3
+                    }
+                    let some_long_variable_name_that_is_very_long
+                        SomeVeryLongEnumVariantThatIsVeryLongAndForcesToWrapThisLine
+                        = 3
+                    let some_long_variable_name_that_is_very_long
+                        SomeVeryLongEnumVariantThatIsVeryLongAndForcesToWrapThisLine
+                        = SomeVeryLongEnumVariantThatIsVeryLong{
+                            some_very_long_field_name_that_is_very_long: some_long_variable_name_that_is_very_long
+                        }
                 end
                 """.dedent().trim()
             )
@@ -1225,8 +1240,31 @@ fn main():
                 fn test() Test
                  => Test{
                         a: 1,
-                        b: "a very long string that exceeds 100 characters and should cause the struct instantiation to be wrapped"
+                        b:
+                            "a very long string that exceeds 100 characters and should cause the struct instantiation to be wrapped"
                     }
+                """.dedent().trim()
+            )
+            assert(test_format(
+                """
+                fn test() =>
+                    Expr{
+                        kind: ExprKind::BinaryExpr(
+                            BinaryExpr{ kind, lhs, rhs: rhs.unwrap(), meta: self.meta(mark), test: 1 }
+                        ),
+                        meta: self.meta(mark)
+                    }
+                """.dedent().trim()
+            )! ==
+                """
+fn test()
+ => Expr{
+        kind:
+            ExprKind::BinaryExpr(
+                BinaryExpr{ kind, lhs, rhs: rhs.unwrap(), meta: self.meta(mark), test: 1 }
+            ),
+        meta: self.meta(mark)
+    }
                 """.dedent().trim()
             )
         end)
@@ -1395,6 +1433,60 @@ fn main():
                 """.dedent().trim()
             )
         end)
+
+        test.it("considers a block containing only a function definition a multi-line block", fn() throws:
+            assert(test_format(
+                """
+                fn test():
+                    fn inner() => 1
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test():
+                    fn inner() => 1
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("always puts the `:` at the end of the line", fn() throws:
+            -- We know that or-patterns always end with a newline if they are multi-line.
+            -- We force the pattern block to be multi-line as well so it tests that
+            -- multiple calls to `r_nl()` do not cause multiple `:` to be printed.
+            assert(test_format(
+                """
+                fn test():
+                    let peeked = self.peek()!
+                    match peeked:
+                        Some(Token{ kind: TokenKind::DotDot, span: _ })
+                          | Some(Token{ kind: TokenKind::DotDotLessThan, span: _ })
+                        :
+                            let end_is_exclusive = true
+                            PatternKind::Range(
+                                Range{ start: start_, end_, end_is_exclusive, meta: self.meta(mark) }
+                            )
+                        end
+                    end
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test():
+                    let peeked = self.peek()!
+                    match peeked:
+                        Some(Token{ kind: TokenKind::DotDot, span: _ })
+                          | Some(Token{ kind: TokenKind::DotDotLessThan, span: _ }):
+                            let end_is_exclusive = true
+                            PatternKind::Range(
+                                Range{ start: start_, end_, end_is_exclusive, meta: self.meta(mark) }
+                            )
+                        end
+                    end
+                end
+                """.dedent().trim()
+            )
+        end)
     end)
 
     test.group("assignment", fn():
@@ -1415,7 +1507,7 @@ fn main():
             )
         end)
 
-        test.it("wrap long assignments", fn() throws:
+        test.it("wraps long assignments", fn() throws:
             assert(test_format(
                 """
                 fn test(): a_very_long_variable_name_that_is_very_long = another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
@@ -1430,6 +1522,50 @@ fn main():
                     b = a_very_long_variable_name_that_is_very_long
                         + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
                 end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wraps long assignments embedded in other code", fn() throws:
+            assert(test_format(
+                """
+impl Foo:
+    fn test():
+        loop:
+            let rhs = self.parse_binary_expr(rhs_token, prec + 1)!
+            lhs = Expr{
+                kind: ExprKind::BinaryExpr(
+                    BinaryExpr{ kind, lhs, rhs: rhs
+                        .unwrap()
+                    , meta: self.meta(mark) }
+                ),
+                meta: self.meta(mark)
+            }
+        end
+        lhs
+    end
+end
+                """.dedent()
+            )! == 
+                """
+impl Foo:
+    fn test():
+        loop:
+            let rhs = self.parse_binary_expr(rhs_token, prec + 1)!
+            lhs = Expr{
+                kind:
+                    ExprKind::BinaryExpr(BinaryExpr{
+                        kind,
+                        lhs,
+                        rhs: rhs.unwrap(),
+                        meta: self.meta(mark)
+                    }),
+                meta: self.meta(mark)
+            }
+        end
+        lhs
+    end
+end
                 """.dedent().trim()
             )
         end)

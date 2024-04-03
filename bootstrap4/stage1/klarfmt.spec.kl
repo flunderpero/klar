@@ -45,6 +45,190 @@ fn main():
         )
     end)
 
+    test.group("empty lines", fn():
+        test.it("keeps a single empty line if there are multiple", fn() throws:
+            assert(test_format(
+                """
+                fn test():
+                    1
+
+                    2
+
+
+                    3
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test():
+                    1
+
+                    2
+
+                    3
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("deletes empty lines at start and end of multi-line blocks", fn() throws:
+            assert(test_format(
+                """
+                fn test():
+                    
+
+                        1
+                        2
+
+                    end
+                    """.dedent()
+            )! ==
+                """
+                fn test():
+                    1
+                    2
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("deletes empty lines at start and end of single-line blocks", fn() throws:
+            assert(test_format(
+                """
+                fn test() =>
+
+                    1
+
+                """.dedent()
+            )! ==
+                """
+                fn test() => 1
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("deletes empty lines at start and end of file", fn() throws:
+            assert(test_format(
+                """
+                
+                fn test():
+                    1
+                    2
+                end
+                
+                """.dedent()
+            )! ==
+                """
+                fn test():
+                    1
+                    2
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("deletes empty lines inside traits", fn() throws:
+            assert(test_format(
+                """
+                trait MyTrait:
+
+                    fn test()
+                    
+
+                    fn test2():
+                        1
+                        2
+                    end
+
+                end
+                """.dedent()
+            )! ==
+                """
+                trait MyTrait:
+                    fn test()
+
+                    fn test2():
+                        1
+                        2
+                    end
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("deletes empty lines inside structs", fn() throws:
+            assert(test_format(
+                """
+                struct MyStruct:
+
+                    a Int
+
+
+                    b Str
+
+                end
+                """.dedent()
+            )! ==
+                """
+                struct MyStruct:
+                    a Int
+                    b Str
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("deletes empty lines inside enums", fn() throws:
+            assert(test_format(
+                """
+                enum Foo:
+
+                    A
+
+                    B
+
+                end
+                """.dedent()
+            )! ==
+                """
+                enum Foo:
+                    A
+                    B
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("deletes empty lines inside impl blocks", fn() throws:
+            assert(test_format(
+                """
+                impl MyTrait for MyStruct:
+
+                    fn test() => 1
+                    
+
+                    fn test2():
+                        1
+                        2
+                    end
+
+                end
+                """.dedent()
+            )! ==
+                """
+                impl MyTrait for MyStruct:
+                    fn test() => 1
+
+                    fn test2():
+                        1
+                        2
+                    end
+                end
+                """.dedent().trim()
+            )
+        end)
+    end)
+
     test.group("comments", fn():
         test.it("passes the happy path", fn() throws:
             assert(test_format(
@@ -1719,8 +1903,6 @@ end
                         1 
                         2 
                     end
-
-
                     1
                 end
                 """.dedent()

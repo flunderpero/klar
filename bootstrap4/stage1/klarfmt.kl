@@ -122,11 +122,13 @@ impl Formatter:
                     comments_or_newlines.push(CommentOrNewline{text: comment, pos: token.span.from})
                     consecutive_newlines = 0
                 end
-                -- TokenKind::WhiteSpace(ws):
-                --     if ws == '\n' => consecutive_newlines = consecutive_newlines + 1
-                --     if consecutive_newlines > 1 
-                --         => comments_or_newlines.push(CommentOrNewline{text: "\n", pos: token.span.from})
-                -- end
+                TokenKind::WhiteSpace(ws):
+                    if ws == '\n':
+                        consecutive_newlines = consecutive_newlines + 1
+                        if consecutive_newlines == 2 
+                         => comments_or_newlines.push(CommentOrNewline{text: "\n", pos: token.span.from})
+                    end
+                end
                 _ => consecutive_newlines = 0
             end
             return ()
@@ -381,7 +383,6 @@ impl Formatter:
         end
         let cur_meta = self.meta
         self.meta = Some(meta)
-        -- self.w_comments_in_meta()
         f()
         -- Eat up all tokens that may be left in the meta.
         self.not_visited_tokens_in_meta().for_each(fn(token Token):
@@ -427,6 +428,7 @@ impl Formatter:
     fn w_comment(mut self, comment Str) Self:
         --- Format a comment.
         ---
+        assert(comment != "\n")
         self.w_space()
         if comment.starts_with("---"):
             --- Formatting rules:
@@ -497,11 +499,30 @@ impl Formatter:
                 Some(comment_or_newline):
                     if comment_or_newline.pos > token.span.from => break
                     if comment_or_newline.pos == token.span.from and not token_is_comment => break
+                    if comment_or_newline.text == "\n":
+                        self.next_comment_or_newline()
+                        continue
+                    end
                     self.w_comment(comment_or_newline.text)
                     self.next_comment_or_newline()
                 end
                 None => break
             end
+        end
+        self
+    end
+
+    fn w_empty_line_before(mut self, meta Meta) Self:
+        --- Write an empty line if there is one at the start of the given meta.
+        ---
+        match self.peek_comment_or_newline():
+            Some(comment_or_newline):
+                if comment_or_newline.pos <= meta.span.from and comment_or_newline.text == "\n":
+                    self.next_comment_or_newline()
+                    self.w_empty_line()
+                end
+            end
+            _ => ()
         end
         self
     end
@@ -840,9 +861,12 @@ impl Visitor for Formatter:
                 return ()
             end)
             self.w_nl_indent()
-            node.items.iter().for_each(fn(item BlockItem):
+            mut iter = PeekableIterator::new(node.items.iter())
+            iter.for_each(fn(item BlockItem):
+                if not iter.at_start() => self.w_empty_line_before(item.meta)
                 self.visit_block_item(item)
-                self.w_nl();
+                self.w_nl()
+                return ()
             end)
             self.w_nl_dedent()
             self.w_token(TokenKind::End)

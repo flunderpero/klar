@@ -139,6 +139,12 @@ x
             lex_run("\"string literal \nfoo", [LexError("unexpected end of line"), Ident("foo")])
             lex_run("\"\"\"string literal eof", [LexError("unexpected end of file")])
         end)
+
+        test.it("rejects the null character", fn() throws:
+            assert(lex_error("\"\0\"") == "null character is illegal")
+            -- But escaped null characters are fine.
+            lex_run("\"\\0\"", [StrLiteral("\0", false)]) 
+        end)
     end)
 
     test.group("f-strings", fn():
@@ -269,6 +275,21 @@ x
     end)
 
     fn lex_only(src Str) Vector<Token> => Lexer::lex(src, "test.kl").collect()
+
+    fn lex_error(src Str) Str:
+        let tokens = lex_only(src)
+        assert(tokens.len() >= 1)
+        let first_error = tokens.iter().find_map<Str>(
+            fn(token Token) => match token.kind:
+                LexError(msg) => Some(msg)
+                _ => None
+            end
+        )
+        match first_error:
+            Some(msg) => msg
+            None => panic("expected LexError")
+        end
+    end
 
     fn lex_run(src Str, expected Array<TokenKind>):
         --- Test that `src` is lexed into `expected`. Whitespaces are ignored.

@@ -217,6 +217,32 @@ trait Iterator<T>:
         None
     end
 
+    fn find(self, f (fn(T) Bool)) Option<T>:
+        loop:
+            match self.next():
+                None => return None
+                Some(value) => if f(value) => return Some(value)
+            end
+        end
+        -- todo (lang-feat): The flow analysis should be able to detect that this is unreachable.
+        return None
+    end
+
+    fn find_map<U>(self, f (fn(T) Option<U>)) Option<U>:
+        loop:
+            match self.next():
+                None => return None
+                Some(value) =>
+                    match f(value):
+                        None => continue
+                        Some(result) => return Some(result)
+                    end
+            end
+        end
+        -- todo (lang-feat): The flow analysis should be able to detect that this is unreachable.
+        return None
+    end
+
     fn any(self, predicate (fn(T) Bool)) Bool:
         match self.find_index(predicate):
             None => false

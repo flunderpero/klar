@@ -58,6 +58,38 @@ trait ToStr:
     fn to_str(self) Str
 end
 
+struct StrFormatter:
+    width Int?
+    radix Int?
+
+    -- todo (lang-feat): Make this private.
+    out Str
+end
+
+impl ToStr for StrFormatter:
+    fn to_str(self) Str => self.out
+end
+
+impl StrFormatter:
+    fn new() StrFormatter => StrFormatter { width: None, radix: None, out: "" }
+
+    fn write_str(mut self, s Str) Self:
+        self.out.push(s)
+        self
+    end
+
+    fn write_fmt(mut self, s Str) Self:
+        --- Write the given string respecting the width settings.
+        ---
+        self.out.push(s)
+        self
+    end
+end
+
+trait ToFormattedStr:
+    fn to_formatted_str(self, fmt StrFormatter) throws
+end
+
 trait Add:
     fn add(self, rhs Self) Self
 end
@@ -72,6 +104,7 @@ end
 
 trait Div:
     fn div(self, rhs Self) Self
+    fn modulo(self, rhs Self) Self
 end
 
 trait PartialEq:
@@ -541,6 +574,17 @@ impl Str:
         s
     end
 
+    fn reverse(self) Str:
+        mut s = ""
+        mut i = self.len() - 1
+        loop:
+            if i < 0 => break
+            s.push_char(self[i])
+            i = i - 1
+        end
+        s
+    end
+
     fn split(self, sep Char) Iterator<Str>:
         let vec = Vector<Str>::new()
         mut iter = self.iter()
@@ -654,6 +698,12 @@ impl Str:
         self.trim_start().trim_end()
     end
 
+    fn pad_left(self, width Int, fill Char) Str:
+        if self.len() >= width => return self
+        let fill_str = f"{fill}".repeat(width - self.len())
+        fill_str + self
+    end
+
     fn copy(self) Str:
         "" + self
     end
@@ -708,6 +758,30 @@ impl Int:
         end
         -- todo (lang-feat): We should be able to write `-value`.
         if s[0] == '-' => -1 * value else => value
+    end
+end
+
+impl ToFormattedStr for Int:
+    fn to_formatted_str(self, fmt StrFormatter) throws:
+        let radix = fmt.radix.unwrap_or(10)
+        if radix < 2 or radix > 16 => return Error("radix must be in between 2 and 16")
+        let width = fmt.width.unwrap_or(0)
+        mut i Int = self
+        mut s = ""
+        if i < 0:
+            s.push_char('-')
+            i = 0-i
+        end
+        let digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f']
+        loop:
+            if i == 0 => break
+            let digit = i % radix
+            s.push_char(digits[digit])
+            i = i / radix
+        end
+        s = s.reverse().pad_left(width, '0')
+        fmt.write_str(s)
+        return ()
     end
 end
 

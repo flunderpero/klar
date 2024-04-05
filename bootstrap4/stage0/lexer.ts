@@ -47,6 +47,7 @@ export class LexicalToken extends Token {
             | "-"
             | "*"
             | "/"
+            | "%"
             | ".."
             | "let"
             | "mut"
@@ -450,6 +451,7 @@ export function lexer({file, src}: {file: string; src: string}): Token[] {
                 "-",
                 "*",
                 "/",
+                "%",
                 ">",
                 "<",
                 "_",

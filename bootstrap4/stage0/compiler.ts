@@ -46,6 +46,7 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
         "-": "sub",
         "*": "mul",
         "/": "div",
+        "%": "modulo",
     }
     let res = ""
     if (opts?.encapsulate) {

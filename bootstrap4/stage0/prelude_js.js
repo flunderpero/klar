@@ -104,7 +104,11 @@ class klar_Int {
     }
 
     klar_div(other) {
-        return new klar_Int(Math.ceil(this.value / other.value))
+        return new klar_Int(Math.floor(this.value / other.value))
+    }
+
+    klar_modulo(other) {
+        return new klar_Int(this.value % other.value)
     }
 }
 
@@ -226,7 +230,7 @@ class klar_Char {
         if (value.value < 0 || value.value > 65535) {
             return new klar_Result_Error(new klar_Str(`cannot convert ${value.value} to Char`))
         }
-        return new klar_Char(String.fromCharCode(value.value))
+        return new klar_Result_Ok(new klar_Char(String.fromCharCode(value.value)))
     }
 
     klar_to_int() {

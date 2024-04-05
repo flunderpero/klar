@@ -141,10 +141,40 @@ x
         end)
 
         test.it("rejects the null character", fn() throws:
-            assert(lex_error("\"\0\"") == "null character is illegal")
+            assert(lex_error("\"\0\"") == "control character is illegal")
             -- But escaped null characters are fine.
             lex_run("\"\\0\"", [StrLiteral("\0", false)]) 
         end)
+
+        mut i = 1
+        loop:
+            -- todo (lang-feat): We should be able to specify formatting options in f-strings.
+            mut formatter = StrFormatter::new()
+            formatter.radix = Some(16)
+            formatter.width = Some(4)
+            i.to_formatted_str(formatter).unwrap()
+            let unicode_escape = f"\\u{formatter}"
+            let c = Char::from_int(i).unwrap()
+
+            if i == 9 or i == 10 or i == 13:
+                test.it(f"parses the control `{unicode_escape}` character", fn() throws:
+                    lex_run(f"\"\"\"{c}\"\"\"", [StrLiteral(f"""{c}""", true)])
+                end)
+            end else:
+
+                test.it(f"rejects the control `{unicode_escape}` character", fn() throws:
+                    assert(lex_error(f"\"\"\"{c}\"\"\"") == "control character is illegal")
+                    -- But escaped characters are fine.
+                    lex_run(f"\"{unicode_escape}\"", [StrLiteral(f"{c}", false)]) 
+                end)
+
+            end
+
+            i = i + 1
+            if i > 31:
+                break
+            end
+        end
     end)
 
     test.group("f-strings", fn():

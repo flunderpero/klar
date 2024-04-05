@@ -264,8 +264,13 @@ impl Iterator<Token> for Lexer:
                 Some<Char>('\n') => 
                     if multi_line => s.push_char('\n')
                     else => return Token{kind: LexError("unexpected end of line"), span: self.span()}
-                Some<Char>('\0') => return Token{kind: LexError("null character is illegal"), span: self.span()}
-                Some<Char>(c) => s.push_char(c)
+                Some<Char>(c):
+                    match c.to_int():
+                        0..8 | 11..12 | 14..31 
+                         => return Token{kind: LexError("control character is illegal"), span: self.span()}
+                        _ => s.push_char(c)
+                    end
+                end
                 None => return Token{kind: LexError("unexpected end of file"), span: self.span()}
             end
             quotes = ""

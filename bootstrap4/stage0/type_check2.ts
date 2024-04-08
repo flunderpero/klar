@@ -481,13 +481,27 @@ function type_check_match(node: ast.Match, env: TypeEnvironment, ctx: Context): 
     if (target_type instanceof EnumType) {
         const enum_type = target_type.variant_parent || target_type
         if (!node.arms.some((x) => x.pattern instanceof ast.WildcardMatchPattern)) {
+            const pattern_types = arm_types.map((x) => x.pattern_type)
+            for (const pattern of node.arms.map((x) => x.pattern)) {
+                if (pattern instanceof ast.AlternativeMatchPattern) {
+                    for (let i = 0; i < pattern.patterns.length; i++) {
+                        const type = type_check_match_pattern(
+                            pattern.patterns[i],
+                            target_type,
+                            env,
+                            ctx,
+                        )
+                        pattern_types.push(type)
+                    }
+                }
+            }
             for (const variant_type of enum_type.variants.values()) {
                 if (
-                    !arm_types.some(
+                    !pattern_types.some(
                         (x) =>
-                            x.pattern_type instanceof EnumType &&
-                            x.pattern_type.equals(variant_type) &&
-                            x.pattern_type.variant_name === variant_type.variant_name,
+                            x instanceof EnumType &&
+                            x.equals(variant_type) &&
+                            x.variant_name === variant_type.variant_name,
                     )
                 ) {
                     throw new TypeCheckError(
@@ -5049,6 +5063,21 @@ const test = {
                 `),
             /Match is not exhaustive/,
         )
+    },
+
+    test_match_enum_exhaustiveness_with_alternate_pattern_check() {
+        test.type_check(`
+            enum Foo:
+                Bar
+                Baz
+                Fizz
+            end
+
+            match Foo::Bar:
+                Foo::Bar | Foo::Baz => true
+                Foo::Fizz => false
+            end
+        `)
     },
 
     test_match_enum_exhaustiveness_check_with_wildcard_pattern() {

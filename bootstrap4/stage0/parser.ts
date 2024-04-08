@@ -860,7 +860,20 @@ export class ArrayLiteral extends Expression {
     }
 }
 
-type BinaryOperator = "+" | "-" | "*" | "/" | "%" | "==" | "!=" | "<" | "<=" | ">" | ">=" | "and" | "or"
+type BinaryOperator =
+    | "+"
+    | "-"
+    | "*"
+    | "/"
+    | "%"
+    | "=="
+    | "!="
+    | "<"
+    | "<="
+    | ">"
+    | ">="
+    | "and"
+    | "or"
 
 export class BinaryExpression extends Expression {
     static precedence: Record<BinaryOperator, number> = {

@@ -174,9 +174,8 @@ impl TestGroup:
     end
 
     fn has_only(self) Bool:
-        self.only or self.groups.iter().any(
-            fn(group TestGroup) => group.has_only() 
-            or group.tests.iter().any(fn(test TestCase) => test.only))
+        self.only or self.tests.iter().any(fn(test TestCase) => test.only) or 
+            self.groups.iter().any(fn(group TestGroup) => group.has_only())
     end
 
     fn run(self, mut config TestRunConfig) TestRunResult:

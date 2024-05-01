@@ -147,7 +147,7 @@ trait Iterator<T>:
         end
     end
 
-    fn filter(self, f (fn(T) Bool)) Self:
+    fn filter(self, f (fn(T) Bool)) Iterator<T>:
         let vec = Vector<T>::new()
         self.for_each(fn(value) => if f(value) => vec.push(value))
         vec.iter()
@@ -176,7 +176,7 @@ trait Iterator<T>:
         vec
     end
 
-    fn reverse(self) Self:
+    fn reverse(self) Iterator<T>:
         self.collect().reverse_copy().iter()
     end
     
@@ -302,11 +302,11 @@ end
 struct PeekableIterator<T>:
     iter Iterator<T>
     peeked T?
-    idx Int
+    pos Int
 end
 
 impl PeekableIterator<T>:
-    fn new(iter Iterator<T>) Self => PeekableIterator<T> { iter, peeked: None, idx: -1 }
+    fn new(iter Iterator<T>) Self => PeekableIterator<T> { iter, peeked: None, pos: -1 }
 
     fn peek(mut self) Option<T>:
         if self.peeked.is_some():
@@ -316,18 +316,18 @@ impl PeekableIterator<T>:
         self.peeked 
     end
 
-    fn at_end(self) Bool:
+    fn is_last(self) Bool:
         self.peek().is_none()
     end
 
-    fn at_start(self) Bool:
-        self.idx <= 0
+    fn is_first(self) Bool:
+        self.pos == 0
     end
 end
 
 impl Iterator<T> for PeekableIterator<T>:
     fn next(mut self) Option<T>:
-        self.idx = self.idx + 1
+        self.pos = self.pos + 1
         if self.peeked.is_some():
             let value = self.peeked.unwrap()
             self.peeked = None
@@ -647,6 +647,19 @@ impl Str:
         false
     end
 
+    fn contains_char(self, c Char) Bool:
+        -- todo (lang-feat): Using `self.iter().any(fn(ch) => ch == c)` 
+        --                   should produce the same code and be as fast 
+        --                   as the current implementation.
+        mut i = 0
+        loop:
+            if i == self.len() => break
+            if self[i] == c => return true
+            i = i + 1
+        end
+        return false
+    end
+
     fn when(self, condition Bool) Str:
         --- Returns `self` if the condition is met, otherwise an empty string.
             This is useful in f-strings to insert a space only if a condition is met.
@@ -655,7 +668,7 @@ impl Str:
     end
 
     fn iter(self) Iterator<Char>:
-        StrIterator { str: self, index: 0 }
+        StrIterator { str: self, pos: 0, end_pos: self.len(), inc: 1 }
     end
 
     fn dedent(self) Str:
@@ -671,6 +684,12 @@ impl Str:
         )
         let result = self.split('\n').map<Str>(fn(line Str) Str => line.slice_copy(min_indent, line.len()))
         "\n".join(result)
+    end
+
+    fn indent(self, width Int) Str:
+        --- Indent each line with the number of spaces given by `width`.
+        ---
+        "\n".join(self.split('\n').map<Str>(fn(line Str) Str => " ".repeat(width) + line))
     end
 
     fn trim_end(self) Str:
@@ -711,16 +730,28 @@ end
 
 struct StrIterator:
     str Str
-    index Int
+    pos Int
+    end_pos Int
+    inc Int
+end
+
+impl StrIterator:
+    fn reverse(mut self) StrIterator:
+        StrIterator { str: self.str, pos: self.pos, end_pos: -1, inc: -1 }
+    end
+
+    fn is_last(self) Bool:
+        self.pos == self.end_pos
+    end
 end
 
 impl Iterator<Char> for StrIterator:
     fn next(mut self) Option<Char>:
-        if self.index == self.str.len():
+        if self.pos == self.end_pos:
             return None
         end
-        let c = self.str[self.index]
-        self.index = self.index + 1
+        let c = self.str[self.pos]
+        self.pos = self.pos + self.inc
         Some(c)
     end
 end
@@ -859,6 +890,10 @@ impl Vector<T>:
         end
         vec
     end
+
+    fn contains(self, value T) Bool:
+        self.iter().any(fn(v) => v == value)
+    end
 end
 
 impl Len for Vector<T>:
@@ -949,6 +984,23 @@ impl Map<K, V>:
 
     -- todo (lang feat): The stage0 type-checker cannot resolve the types of the tuple.
     -- fn iter(self) Iterator<(K,V)> => self.data.iter()
+
+    -- todo (lang feat): This function is only there because the stage0 type-checker does
+    --                   type the `get` function correctly. 
+    fn get_or_panic(self, key K) V:
+        mut i = 0
+        loop:
+            if i >= self.data.len():
+                break
+            end
+            let v = self.data.get(i)
+            if v.0 == key:
+                return v.1
+            end
+            i = i + 1
+        end
+        panic(f"key not found: {key}")
+    end
 end
 
 impl IndexedGet<K, Option<V>> for Map<K, V>:

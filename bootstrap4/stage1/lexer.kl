@@ -11,7 +11,7 @@ impl Lexer:
     end
 
     fn span(self) Span:
-        Span{file: self.file, src: self.src, from: self.iter.idx, to: self.iter.idx}
+        Span{file: self.file, src: self.src, from: self.iter.pos, to: self.iter.pos}
     end
 end
 

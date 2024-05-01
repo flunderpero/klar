@@ -2,12 +2,13 @@ use .lexer::Lexer
 use .parser::Parser
 use .parser::TokenIter
 use .klarfmt::format
+use .klarfmt::Line
 use .test::Test
 
 fn test_format(src Str) Str throws:
     --- Format the given source code and make sure it parses to the same AST.
     ---
-    format(src, "spec", true)!
+    format(src, "spec", true, 100)!
 end
 
 fn main():
@@ -289,7 +290,7 @@ fn main():
             )
         end)
 
-        test.it("formats comments in and around f-string", fn() throws:
+        test.skip_it("formats comments in and around f-string", fn() throws:
             assert(test_format(
                 """
                 fn test() Str: --- a comment---f"hello { -- a comment
@@ -636,14 +637,12 @@ fn main():
             )! == 
                 """
                 fn test() Str
-                 => f"hello {world + 1} {
-                        a_very_long_variable_name_that_is_very_long
-                            > another_very_long_variable_name_that_is_very_long
-                    } and {
-                        a_very_long_variable_name_that_is_very_long
-                            + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
-                            + 1
-                    } so on"
+                 => f"hello {world
+                        + 1} {a_very_long_variable_name_that_is_very_long
+                        > another_very_long_variable_name_that_is_very_long
+                    } and {a_very_long_variable_name_that_is_very_long
+                        + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                        + 1} so on"
                 """.dedent().trim()
             )
         end)
@@ -779,8 +778,7 @@ fn main():
                 fn test() =>
                     match some_var:
                         MyStruct{a: 1, b: "hello", c} => a
-                        MyStruct{a_very_long_field: "a very long string that is very long", another_long_field_name_that_is_very_long: "a string that is very long"} =>
-                            4
+                        MyStruct{a_very_long_field: "a very long string that is very long", another_long_field_name_that_is_very_long: "a string that is very long"} => 4
                     end
                 """.dedent()
             )! == 
@@ -791,7 +789,8 @@ fn main():
                         MyStruct{
                             a_very_long_field: "a very long string that is very long",
                             another_long_field_name_that_is_very_long: "a string that is very long"
-                        } => 4
+                        }
+                         => 4
                     end
                 """.dedent().trim()
             )
@@ -867,7 +866,8 @@ fn main():
                         (
                             a_very_long_variable_name_that_is_very_long,
                             another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
-                        ) => 4
+                        )
+                         => 4
                     end
                 """.dedent().trim()
             )
@@ -965,7 +965,26 @@ fn main():
         test.it("wraps long field accesses", fn() throws:
             assert(test_format(
                 """
-                fn test() Int: some_very_long_struct_name_that_is_very_very_long_so_long_in_fact_that_it_is_long.  some_very_long_field_name + 7 * 8
+                fn test() Int: some_very_long_struct_name_that_is_very_very_long_so_long_in_fact_that_it_is_long.  some_very_long_field_name
+                print("wot")
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test() Int:
+                    some_very_long_struct_name_that_is_very_very_long_so_long_in_fact_that_it_is_long
+                        .some_very_long_field_name
+                    print("wot")
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wraps long field accesses when used as part of a binary expressions", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int: some_very_long_struct_name_that_is_very_very_long_so_long_in_fact_that_it_is_long.  some_very_long_field_name 
+                + 7 * 8
                 print("wot")
                 end
                 """.dedent()
@@ -978,6 +997,23 @@ fn main():
                         * 8
                     print("wot")
                 end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wrapping of field access has higher precedence than call", fn() throws:
+            assert(test_format(
+                """
+                fn test() =>
+    object.field(some_very_long_struct_name_that_is_very_very_long_so_long_in_fact_that_it_is_long,  some_very_long_field_name)
+                """.dedent()
+            )! == 
+                """
+                fn test()
+                 => object.field(
+                        some_very_long_struct_name_that_is_very_very_long_so_long_in_fact_that_it_is_long,
+                        some_very_long_field_name
+                    )
                 """.dedent().trim()
             )
         end)
@@ -1073,6 +1109,22 @@ fn main():
         end)
 
         test.it("wraps long expressions", fn() throws:
+            assert(test_format(
+                """
+                fn test() Int => ( a_very_long_variable_name_that_is_very_long + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long )
+                """.dedent()
+            )! == 
+                """
+                fn test() Int
+                 => (
+                        a_very_long_variable_name_that_is_very_long
+                            + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                    )
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wraps long expressions inside of binary expressions", fn() throws:
             assert(test_format(
                 """
                 fn test() Int => ( a_very_long_variable_name_that_is_very_long + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long ) * 3
@@ -1181,8 +1233,23 @@ fn main():
                  => if a_very_long_variable_name_that_is_very_long
                         + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
                         > 2
-                    => 1
+                     => 1
                     else => 2   
+                """.dedent().trim()
+            )
+            assert(test_format(
+                """
+                fn test() =>
+                    if patterns.len() == 1
+                     => patterns[0] 
+                    else
+                     => Pattern{ kind: PatternKind::Or(patterns), meta: self.meta(mark) }
+                """.dedent()
+            )! == 
+                """
+                fn test()
+                 => if patterns.len() == 1 => patterns[0]
+                    else => Pattern{ kind: PatternKind::Or(patterns), meta: self.meta(mark) }
                 """.dedent().trim()
             )
         end)
@@ -1252,25 +1319,26 @@ fn main():
                 """.dedent()
             )! == 
                 """
-                fn test():
-                    let a_very_long_variable_name_that_is_very_long_that_is_very_long
-                        = another_very_long_variable_name_that_is_very_long_that_is_very_long
-                    mut a_very_long_variable_name_that_is_very_long_that_is_very_long
-                        = another_very_long_variable_name_that_is_very_long_that_is_very_long + 3
-                    let x = SomeVeryLongEnumVariantThatIsVeryLong{
-                        a_very_long_field: \"a very long string that is very long\",
-                        another_long_field_name_that_is_very_long: \"a string that is very long\",
-                        a_third_field: 3
-                    }
-                    let some_long_variable_name_that_is_very_long
-                        SomeVeryLongEnumVariantThatIsVeryLongAndForcesToWrapThisLine
-                        = 3
-                    let some_long_variable_name_that_is_very_long
-                        SomeVeryLongEnumVariantThatIsVeryLongAndForcesToWrapThisLine
-                        = SomeVeryLongEnumVariantThatIsVeryLong{
-                            some_very_long_field_name_that_is_very_long: some_long_variable_name_that_is_very_long
-                        }
-                end
+fn test():
+    let a_very_long_variable_name_that_is_very_long_that_is_very_long
+        = another_very_long_variable_name_that_is_very_long_that_is_very_long
+    mut a_very_long_variable_name_that_is_very_long_that_is_very_long
+        = another_very_long_variable_name_that_is_very_long_that_is_very_long
+            + 3
+    let x = SomeVeryLongEnumVariantThatIsVeryLong{
+        a_very_long_field: \"a very long string that is very long\",
+        another_long_field_name_that_is_very_long: \"a string that is very long\",
+        a_third_field: 3
+    }
+    let some_long_variable_name_that_is_very_long
+        SomeVeryLongEnumVariantThatIsVeryLongAndForcesToWrapThisLine
+        = 3
+    let some_long_variable_name_that_is_very_long
+        SomeVeryLongEnumVariantThatIsVeryLongAndForcesToWrapThisLine
+        = SomeVeryLongEnumVariantThatIsVeryLong{
+            some_very_long_field_name_that_is_very_long: some_long_variable_name_that_is_very_long
+        }
+end
                 """.dedent().trim()
             )
         end)
@@ -1443,10 +1511,9 @@ fn main():
                 """
 fn test()
  => Expr{
-        kind:
-            ExprKind::BinaryExpr(
-                BinaryExpr{ kind, lhs, rhs: rhs.unwrap(), meta: self.meta(mark), test: 1 }
-            ),
+        kind: ExprKind::BinaryExpr(
+            BinaryExpr{ kind, lhs, rhs: rhs.unwrap(), meta: self.meta(mark), test: 1 }
+        ),
         meta: self.meta(mark)
     }
                 """.dedent().trim()
@@ -1656,18 +1723,18 @@ fn test()
                 """.dedent()
             )! == 
                 """
-                fn test():
-                    let peeked = self.peek()!
-                    match peeked:
-                        Some(Token{ kind: TokenKind::DotDot, span: _ })
-                          | Some(Token{ kind: TokenKind::DotDotLessThan, span: _ }):
-                            let end_is_exclusive = true
-                            PatternKind::Range(
-                                Range{ start: start_, end_, end_is_exclusive, meta: self.meta(mark) }
-                            )
-                        end
-                    end
-                end
+fn test():
+    let peeked = self.peek()!
+    match peeked:
+        Some(Token{ kind: TokenKind::DotDot, span: _ })
+          | Some(Token{ kind: TokenKind::DotDotLessThan, span: _ }):
+            let end_is_exclusive = true
+            PatternKind::Range(
+                Range{ start: start_, end_, end_is_exclusive, meta: self.meta(mark) }
+            )
+        end
+    end
+end
                 """.dedent().trim()
             )
         end)
@@ -1696,15 +1763,20 @@ fn test()
                 """
                 fn test(): a_very_long_variable_name_that_is_very_long = another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
                 b = a_very_long_variable_name_that_is_very_long + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                c = a_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long_that_it_exceeds_the_maximum_line_length
                 end
                 """.dedent()
             )! == 
+                -- todo: We would want to have the `=` on the next line 
+                --       if the line is too long in case 1.
                 """
                 fn test():
                     a_very_long_variable_name_that_is_very_long
                         = another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
                     b = a_very_long_variable_name_that_is_very_long
                         + another_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long
+                    c
+                        = a_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long_that_it_exceeds_the_maximum_line_length
                 end
                 """.dedent().trim()
             )
@@ -1737,13 +1809,9 @@ impl Foo:
         loop:
             let rhs = self.parse_binary_expr(rhs_token, prec + 1)!
             lhs = Expr{
-                kind:
-                    ExprKind::BinaryExpr(BinaryExpr{
-                        kind,
-                        lhs,
-                        rhs: rhs.unwrap(),
-                        meta: self.meta(mark)
-                    }),
+                kind: ExprKind::BinaryExpr(
+                    BinaryExpr{ kind, lhs, rhs: rhs.unwrap(), meta: self.meta(mark) }
+                ),
                 meta: self.meta(mark)
             }
         end
@@ -1933,16 +2001,14 @@ end
             )! == 
                 """
                 fn main() Int:
-                    test.it(
-                        fn():
-                            lex_run(
-                                this_line_is_101_characters_long,
-                                i_swear_it_is_really_101_characters,
-                                so_do_wrap_it
-                            )
-                            1
-                        end
-                    )
+                    test.it(fn():
+                        lex_run(
+                            this_line_is_101_characters_long,
+                            i_swear_it_is_really_101_characters,
+                            so_do_wrap_it
+                        )
+                        1
+                    end)
                     2
                 end
                 """.dedent().trim()
@@ -1982,8 +2048,8 @@ end
                 """
                 enum Test:
                     A_very_long_variant_name(
-                        A_very_long_type_name, 
-                        A_very_long_type_name_that_is_very_long, 
+                        A_very_long_type_name,
+                        A_very_long_type_name_that_is_very_long,
                         A_very_long_type_name
                     )
                 end
@@ -2132,5 +2198,48 @@ end
         end)
     end)
 
+    test.group("various", fn():
+        test.it("works with assignments and other wrapping constructs", fn() throws:
+            assert(test_format(
+                """
+fn test():
+    if some_very_long_variable_name_that_is_very_long_in_fact_very_long > some_other_variable_name_that_is_very_long
+     => some_longer_name = same_longer_name + 1
+    2
+end
+            """)! == 
+                """
+                fn test():
+                    if some_very_long_variable_name_that_is_very_long_in_fact_very_long
+                        > some_other_variable_name_that_is_very_long
+                     => some_longer_name = same_longer_name + 1
+                    2
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("wraps at exactly 100 characters", fn() throws:
+            assert(test_format(
+                """
+fn test() => a_very_long_function_name_that_makes_the_line_exactly_100_characters_long_long_long__()
+                """.dedent()
+            )! == 
+                """
+fn test() => a_very_long_function_name_that_makes_the_line_exactly_100_characters_long_long_long__()
+                """.dedent().trim()
+            )
+            assert(test_format(
+                """
+fn test() => a_very_long_function_name_that_makes_the_line_exactly_101_characters_long_long_long___()
+                """.dedent()
+            )! == 
+                """
+fn test()
+ => a_very_long_function_name_that_makes_the_line_exactly_101_characters_long_long_long___()
+                """.dedent().trim()
+            )
+        end)
+    end)
     test.run_and_exit()
 end

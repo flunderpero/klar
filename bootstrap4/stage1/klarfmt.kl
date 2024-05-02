@@ -77,86 +77,118 @@ impl Line:
     end
 
     fn format(self, column_width Int, initial_dynamic_indent Int, mut soft_break_indents Map<Int, Int>) (Str, Int):
-        mut priority = 0
-        mut max_priority = 0
-        mut sb_idx_threshold = 0
+        --- Format the line to fit into the given column width.
+            
+            :param initial_dynamic_indent: The indent to be added to `self.indent_`. This is used to carry
+                the indent from the previous line to the next line.
+            :param soft_break_indents: A map that contains the indent of each currently open soft break.
+        ---
+        -- We first try to break at the soft breaks with the lowest priority. This threshold is increased
+        -- if we can't find a soft break at the current threshold. 
+        mut priority_threshold = 0
+        -- Also, we only break at one soft break after the other. I.e., if it enough to break at the
+        -- first soft break, we don't break at the second one and so on.
+        mut sb_pos = 0
+        mut sb_pos_threshold = 0
+        -- By default, all soft breaks of a `SoftBreak` group are converted to hard breaks.
         mut open_break_all = Vector<Int>::new()
         mut indent = self.indent_ + initial_dynamic_indent
         mut out = "    ".repeat(indent)
         mut line = ""
         mut iter_start = 0
         mut iter = StrIterator{ str: self.text, pos: 0, end_pos: self.text.len(), inc: 1 }
-        mut sb_idx = 0
         mut line_indent = indent
+        -- todo (lang-feat): This could be a `Set<Int>`.
+        mut closed_soft_breaks = Map<Int, Int>::new()
         loop:
-            mut max_sb_idx = 0
+            -- We keep track of the minimum and maximum soft break positions and priorities.
+            mut min_sb_pos = 42424242
+            mut max_sb_pos = 0
+            mut min_priority = 42424242
+            mut max_priority = 0
             loop:
                 let c = match iter.next():
                     Some(c) => c
                     None => break
                 end
-                if c == '\u0002':
-                    let sb = SoftBreakEntry::parse(iter)
-                    match sb.command:
-                        SoftBreakCommand::Open:
-                            soft_break_indents[sb.idx] = indent
-                        end
-                        SoftBreakCommand::Close:
-                            let new_indent = soft_break_indents.get_or_panic(sb.idx)
-                            indent = new_indent
-                        end
-                        SoftBreakCommand::Newline => ()
-                    end
-                    sb_idx = sb_idx + 1
-                    if sb_idx > max_sb_idx and sb.priority == priority => max_sb_idx = sb_idx
-                    if sb.priority > max_priority => max_priority = sb.priority
-                    let break_it = 
-                        if sb.priority < priority or sb.priority == 0 => true
-                        else => 
-                            sb.priority == priority 
-                                and sb_idx <= sb_idx_threshold 
-                                and sb.break_all 
-                                or open_break_all.contains(sb.idx)
-                    if not break_it:
-                        if sb.space => line.push_char(' ');
-                    end else:
-                        open_break_all.push(sb.idx)
-                        match sb.command:
-                            SoftBreakCommand::Open | SoftBreakCommand::Newline => if sb.indent => indent = indent + 1
-                            SoftBreakCommand::Close => ()
-                        end
-                        if sb.nl:
-                            if line.len() + line_indent * 4 <= column_width or priority > max_priority:
-                                out.push(line)
-                                out.push_char('\n')
-                                if sb.indent_with_text():
-                                    out.push(" ".repeat(sb.indent_with_text_spaces))
-                                    out.push("    ".repeat((indent - 1)))
-                                end else => out.push("    ".repeat(indent))
-                                line = ""
-                                iter_start = iter.pos
-                                line_indent = indent
-                                priority = 0
-                                sb_idx_threshold = 0
-                            end else => break
-                        end
-                    end
-                end else:
+                if c != '\u0002':
+                    -- This is a regular character.
                     line.push_char(c)
+                    continue
+                end
+                let sb = SoftBreakEntry::parse(iter)
+                match sb.command:
+                    SoftBreakCommand::Open:
+                        soft_break_indents[sb.idx] = indent
+                    end
+                    SoftBreakCommand::Close:
+                        -- Reset the soft break to the indent it had before it was opened.
+                        indent = soft_break_indents.get_or_panic(sb.idx)
+                        closed_soft_breaks[sb.idx] = 1
+                    end
+                    SoftBreakCommand::Newline => ()
+                end
+                sb_pos = sb_pos + 1
+                if sb.priority == priority_threshold:
+                    if sb_pos > max_sb_pos => max_sb_pos = sb_pos
+                    if sb_pos < min_sb_pos => min_sb_pos = sb_pos
+                end
+                if sb.priority > max_priority => max_priority = sb.priority
+                if sb.priority < min_priority => min_priority = sb.priority
+                let break_it = 
+                    if sb.priority < priority_threshold or sb.priority == 0 => true
+                    else => 
+                        sb.priority == priority_threshold 
+                            and sb_pos <= sb_pos_threshold 
+                            and sb.break_all 
+                            or open_break_all.contains(sb.idx)
+                if not break_it:
+                    if sb.space => line.push_char(' ');
+                    continue
+                end
+                open_break_all.push(sb.idx)
+                if sb.indent => indent = indent + 1
+                if sb.nl:
+                    if line.len() + line_indent * 4 <= column_width or priority_threshold > max_priority:
+                        -- We completed a line and it fits into the column width.
+                        -- We collect it and start a new line.
+                        out.push(line)
+                        out.push_char('\n')
+                        if sb.indent_with_text():
+                            out.push(" ".repeat(sb.indent_with_text_spaces))
+                            out.push("    ".repeat((indent - 1)))
+                        end else => out.push("    ".repeat(indent))
+                        line = ""
+                        iter_start = iter.pos
+                        line_indent = indent
+                        priority_threshold = min_priority - 1
+                        sb_pos_threshold = min_sb_pos
+                    end else => break
                 end
             end
-            if iter.is_last() and (priority > max_priority or line.len() + line_indent * 4 <= column_width):
+            if iter.is_last() and (priority_threshold > max_priority or line.len() + line_indent * 4 <= column_width):
+                -- We are done.
                 out.push(line)
+                let iter = closed_soft_breaks.keys()
+                -- Remove all closed soft breaks from `soft_break_indents`.
+                loop:
+                    match iter.next():
+                        Some<Int>(sb_pos) => soft_break_indents.remove(sb_pos)
+                        None => break
+                    end
+                end
                 return (out, indent - self.indent_)
-                break
             end
-            sb_idx_threshold = sb_idx_threshold + 1
-            if sb_idx_threshold > max_sb_idx:
-                priority = priority + 1
-                sb_idx_threshold = 0
+            -- Try to break at the next soft break of the current priority-threshold.
+            -- If there is no such soft break, increase the priority-threshold.
+            sb_pos_threshold = sb_pos_threshold + 1
+            if sb_pos_threshold > max_sb_pos:
+                priority_threshold = priority_threshold + 1
+                sb_pos_threshold = 0
             end
+            -- Start the next line.
             line = ""
-            sb_idx = 0
+            sb_pos = 0
             indent = line_indent
             iter = StrIterator{ str: self.text, pos: iter_start, end_pos: self.text.len(), inc: 1 }
         end
@@ -356,14 +388,14 @@ impl SoftBreak:
         return ()
     end
 
-    fn close(mut self, space Bool, indent Bool, nl Bool):
+    fn close(mut self, space Bool, nl Bool):
         self.opened = false
         self.formatter.line.text.push(self.prefix)
         self.formatter.line.text.push(f"{self.priority}")
         -- perf: We don't use `SoftBreakCommand::Close.to_char()` because it is slower.
         self.formatter.line.text.push_char('c')
         self.formatter.line.text.push_char(if space => 't' else => 'f')
-        self.formatter.line.text.push_char(if indent => 't' else => 'f')
+        self.formatter.line.text.push_char('f')
         self.formatter.line.text.push_char('0')
         self.formatter.line.text.push_char(if nl => 't' else => 'f')
         self.formatter.line.text.push_char('t')
@@ -706,7 +738,6 @@ impl Formatter:
             let formatted_line_and_indent = line.format(self.column_width, dynamic_indent, soft_break_indents)
             let formatted_line = formatted_line_and_indent.0
             dynamic_indent = formatted_line_and_indent.1
-            -- print(f"--- finish(): line = `{line.text}`, formatted_line = `{formatted_line}`")
             res.push(formatted_line)
             res.push("\n")
         end
@@ -787,7 +818,7 @@ impl Visitor for Formatter:
                         end
                         return ()
                     end)
-                    sb.close(false, true, true)
+                    sb.close(false, true)
                     self.w_token(TokenKind::RParen)
                 end
                 EnumVariantKind::Unit => ()
@@ -911,7 +942,7 @@ impl Visitor for Formatter:
             end
             return ()
         end)
-        sb.close(false, true, true)
+        sb.close(false, true)
         self.w_token(TokenKind::RParen).w_space()
         self.w_return_type(return_type);
     end
@@ -988,7 +1019,7 @@ impl Visitor for Formatter:
                 self.w_space()
                 self.visit_block_item(node.items[0])
             end)
-            sb.close(false, true, false)
+            sb.close(false, false)
         end else => self.visit_multi_line_block(node)
     end
 
@@ -1074,7 +1105,7 @@ impl Visitor for Formatter:
         self.w_token(TokenKind::LParen)
         sb.open(false, true, true)
         self.visit_expr(expr)
-        sb.close(false, true, true)
+        sb.close(false, true)
         self.w_token(TokenKind::RParen)
         return ()
     end
@@ -1110,7 +1141,7 @@ impl Visitor for Formatter:
             end
             return ()
         end)
-        sb.close(false, true, true)
+        sb.close(false, true)
         self.w_token(TokenKind::RParen)
         return ()
     end
@@ -1170,7 +1201,7 @@ impl Visitor for Formatter:
             end
             return ()
         end)
-        sb.close(false, true, true)
+        sb.close(false, true)
         self.w_token(TokenKind::RParen)
         return ()
     end
@@ -1183,7 +1214,7 @@ impl Visitor for Formatter:
             if range.end_is_exclusive => self.w_token(TokenKind::DotDotLessThan)
             else => self.w_token(TokenKind::DotDot)
             self.visit_literal(range.end_)
-            sb.close(false, true, true)
+            sb.close(false, true)
         end)
     end
 
@@ -1209,7 +1240,7 @@ impl Visitor for Formatter:
             end
             return ()
         end)
-        sb.close(true, true, true)
+        sb.close(true, true)
         self.w_token(TokenKind::RBrace)
         return ()
     end
@@ -1226,7 +1257,7 @@ impl Visitor for Formatter:
             self.visit_pattern(pattern)
             return ()
         end)
-        sb.close(false, true, false)
+        sb.close(false, false)
     end
 
     fn visit_enum_variant_pattern(mut self, fqn FQN, fields Vector<Pattern>):
@@ -1244,7 +1275,7 @@ impl Visitor for Formatter:
             end
             return ()
         end)
-        sb.close(false, true, true)
+        sb.close(false, true)
         self.w_token(TokenKind::RParen)
         return ()
     end
@@ -1280,7 +1311,7 @@ impl Visitor for Formatter:
             end
             return ()
         end)
-        sb.close(false, true, true)
+        sb.close(false, true)
         self.w_token(TokenKind::RBracket)
         return ()
     end
@@ -1311,7 +1342,7 @@ impl Visitor for Formatter:
             end
             self.w_token(TokenKind::Equal).w_space()
             self.visit_expr(let_.expr)
-            sb.close(false, true, false)
+            sb.close(false, false)
             return ()
         end)
     end
@@ -1337,7 +1368,7 @@ impl Visitor for Formatter:
                 end
                 None => ()
             end
-            sb.close(false, false, false)
+            sb.close(false, false)
         end)
     end
 
@@ -1348,7 +1379,7 @@ impl Visitor for Formatter:
             self.w_token(TokenKind::LBracket)
             sb.open(false, true, true)
             self.visit_expr(index_access.index)
-            sb.close(false, true, true)
+            sb.close(false, true)
             self.w_token(TokenKind::RBracket)
             return ()
         end)
@@ -1361,7 +1392,7 @@ impl Visitor for Formatter:
             sb.open(false, true, true)
             self.w_token(TokenKind::Dot)
             self.w_name(field_access.field)
-            sb.close(false, true, false)
+            sb.close(false, false)
         end)
     end
 
@@ -1397,7 +1428,7 @@ impl Visitor for Formatter:
                         self.w("{")
                         sb.open(false, true, true)
                         self.visit_expr(expr)
-                        sb.close(false, true, true)
+                        sb.close(false, true)
                         self.w("}")
                     end
                 end
@@ -1431,7 +1462,7 @@ impl Visitor for Formatter:
                 end
                 return ()
             end)
-            sb.close(false, true, true)
+            sb.close(false, true)
             self.w_token(TokenKind::RParen)
             if call.propagate_error => self.w("!")
             return ()
@@ -1446,7 +1477,7 @@ impl Visitor for Formatter:
             sb.nl(true, true)
             self.w_token(TokenKind::Equal).w_space()
             self.visit_expr(assignment.rhs)
-            sb.close(false, true, false)
+            sb.close(false, false)
             return ()
         end)
     end
@@ -1486,7 +1517,7 @@ impl Visitor for Formatter:
             end)
         end
         w_bin_expr(bin_expr)
-        sb.close(false, true, false)
+        sb.close(false, false)
         return ()
     end
 
@@ -1514,16 +1545,16 @@ impl Visitor for Formatter:
                     self.visit_expr(it.1)
                     if not iter.is_last():
                         self.w_token(TokenKind::Comma)
-                        sb.close(false, true, false)
+                        sb.close(false, false)
                         sb_all.nl(true, false)
-                    end else => sb.close(false, true, false)
+                    end else => sb.close(false, false)
                 end else => if not iter.is_last():
                     self.w_token(TokenKind::Comma)
                     sb_all.nl(true, false)
                 end
                 return ()
             end)
-            sb_all.close(true, true, true)
+            sb_all.close(true, true)
             self.w_token(TokenKind::RBrace)
             return ()
         end)
@@ -1775,7 +1806,6 @@ fn main() throws:
             _ => 100
         end
     end)()!
-    print(f"Column width: {column_width}")
     let src = File::at(src_file).read_str()!
     let formatted_src = format(src, src_file, verify, column_width)!
     if write:

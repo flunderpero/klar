@@ -945,6 +945,16 @@ struct VectorIter<T>:
     index Int
 end
 
+impl VectorIter<T>:
+    fn new(vec Vector<T>) VectorIter<T>:
+        VectorIter<T> { vec, index: 0 }
+    end
+
+    fn reverse(self) Iterator<T>:
+        ReverseVectorIter<T>{ vec: self.vec, index: self.vec.len() - self.index }
+    end
+end
+
 impl Iterator<T> for VectorIter<T>:
     fn next(mut self) Option<T>:
         if self.index >= self.vec.len():
@@ -952,6 +962,32 @@ impl Iterator<T> for VectorIter<T>:
         end
         let value = self.vec.get(self.index)
         self.index = self.index + 1
+        Some(value)
+    end
+end
+
+struct ReverseVectorIter<T>:
+    vec Vector<T>
+    index Int
+end
+
+impl ReverseVectorIter<T>:
+    fn new(vec Vector<T>) ReverseVectorIter<T>:
+        ReverseVectorIter<T> { vec, index: vec.len() - 1 }
+    end
+
+    fn reverse(self) Iterator<T>:
+        VectorIter<T> { vec: self.vec, index: self.vec.len() - self.index }
+    end
+end
+
+impl Iterator<T> for ReverseVectorIter<T>:
+    fn next(mut self) Option<T>:
+        if self.index < 0:
+            return None
+        end
+        let value = self.vec.get(self.index)
+        self.index = self.index - 1
         Some(value)
     end
 end
@@ -1000,6 +1036,21 @@ impl Map<K, V>:
             i = i + 1
         end
         panic(f"key not found: {key}")
+    end
+
+    fn remove(mut self, key K):
+        mut i = 0
+        loop:
+            if i >= self.data.len():
+                break
+            end
+            let v = self.data.get(i)
+            if v.0 == key:
+                self.data = self.data.slice_copy(0, i).add(self.data.slice_copy(i + 1, self.data.len()))
+                return ()
+            end
+            i = i + 1
+        end
     end
 end
 

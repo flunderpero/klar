@@ -513,6 +513,8 @@ trait Visitor:
 
     fn visit_struct(mut self, mut node Struct)
 
+    fn visit_enum(mut self, mut node Enum)
+
     fn visit_trait(mut self, mut node Trait)
 
     fn visit_impl(mut self, mut node Impl)
@@ -545,7 +547,7 @@ trait Visitor:
 
     fn walk_block_item(mut self, node BlockItem):
         match node.kind:
-            BlockItemKind::Enum(child) => self.walk_enum(child)
+            BlockItemKind::Enum(child) => self.visit_enum(child)
             BlockItemKind::Expr(child) => self.visit_expr(child)
             BlockItemKind::Fn(child) => self.visit_fn(child)
             BlockItemKind::Impl(child) => self.visit_impl(child)

@@ -94,6 +94,8 @@ x
             lex_run("'\\r'", [CharLiteral('\r')])
             lex_run("'\\t'", [CharLiteral('\t')])
             lex_run("'\\\\'", [CharLiteral('\\')])
+            lex_run("'\\{'", [CharLiteral('{')])
+            lex_run("'\\}'", [CharLiteral('}')])
             lex_run("'\\''", [CharLiteral('\'')])
             lex_run("'\\x41'", [CharLiteral('A')])
             lex_run("'\\u0041'", [CharLiteral('A')])
@@ -291,6 +293,8 @@ x
             test_escape("f\"\\n\"", "\n", "\\n")!
             test_escape("f\"\\r\"", "\r", "\\r")!
             test_escape("f\"\\t\"", "\t", "\\t")!
+            test_escape("f\"\\{\"", "\{", "\\{")!
+            test_escape("f\"\\}\"", "\}", "\\}")!
             test_escape("f\"\\\\\"", "\\", "\\\\")!
             test_escape("f\"\\\"\"", "\"", "\\\"")!
             test_escape("f\"\\x41\"", "A", "\\x41")!

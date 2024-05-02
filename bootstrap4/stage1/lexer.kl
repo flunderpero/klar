@@ -346,7 +346,7 @@ impl Iterator<Token> for Lexer:
                         digit_c.unwrap()
                     end
                     None => return Error("unexpected end of file.")
-                    _ => return Error("invalid escape sequence")
+                    _ => return Error(f"invalid escape sequence")
                 end
                 hex.push_char(digit)
             end
@@ -362,9 +362,12 @@ impl Iterator<Token> for Lexer:
             Some('"') => '"'
             Some('\'') => '\''
             Some('\\') => '\\'
+            Some('{') => '{'
+            Some('}') => '}'
             Some('x') => parse_hex_literal(2)!
             Some('u') => parse_hex_literal(4)!
-            _ => return Error("invalid escape sequence")
+            Some(_) => return Error("invalid escape sequence")
+            None => return Error("unexpected end of file")
         end
     end
 end

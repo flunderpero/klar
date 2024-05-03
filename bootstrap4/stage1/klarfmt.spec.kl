@@ -290,6 +290,36 @@ fn main():
             )
         end)
 
+        test.it("formats field comments in structs", fn() throws:
+            assert(test_format(
+                """
+                struct MyStruct:
+                    -- a comment before
+                    --- a is a field
+                    ---
+                    a Int
+                    --- b is a field
+                    ---
+                    b Str
+                    -- a comment after
+                end
+                """.dedent()
+            )! == 
+                """
+                struct MyStruct:
+                    -- a comment before
+                    --- a is a field
+                    ---
+                    a Int
+                    --- b is a field
+                    ---
+                    b Str
+                    -- a comment after
+                end
+                """.dedent().trim()
+            )
+        end)
+
         test.skip_it("formats comments in and around f-string", fn() throws:
             assert(test_format(
                 """
@@ -2022,6 +2052,27 @@ end
                         )
                         1
                     end)
+                    2
+                end
+                """.dedent().trim()
+            )
+        end)
+
+        test.it("formats comments correctly when wrapping lines", fn() throws:
+            assert(test_format(
+                """
+                fn test():
+                    a_very_long_function_name(--- with an inline comment --- a_very_long_parameter_name_that_is_very_long , b --- another comment ---)
+                    2
+                end
+                """.dedent()
+            )! == 
+                """
+                fn test():
+                    a_very_long_function_name(
+                        --- with an inline comment --- a_very_long_parameter_name_that_is_very_long,
+                        b --- another comment ---
+                    )
                     2
                 end
                 """.dedent().trim()

@@ -143,7 +143,7 @@ impl Line:
                             and sb.break_all 
                             or open_break_all.contains(sb.idx)
                 if not break_it:
-                    if sb.space => line.push_char(' ');
+                    if sb.space => line.push_char(' ')
                     continue
                 end
                 open_break_all.push(sb.idx)
@@ -152,7 +152,7 @@ impl Line:
                     if line.len() + line_indent * 4 <= column_width or priority_threshold > max_priority:
                         -- We completed a line and it fits into the column width.
                         -- We collect it and start a new line.
-                        out.push(line)
+                        out.push(line.trim())
                         out.push_char('\n')
                         if sb.indent_with_text():
                             out.push(" ".repeat(sb.indent_with_text_spaces))
@@ -471,7 +471,10 @@ impl Formatter:
     end
 
     fn w_raw_nl(mut self) Self:
-        if self.line.text.iter().any(fn(c Char) Bool => c != ' ') => self.out.push(self.line)
+        if self.line.text.iter().any(fn(c Char) Bool => c != ' '):
+            self.line.text = self.line.text.trim_end()
+            self.out.push(self.line)
+        end
         self.line = Line{indent_: self.line.indent_, text: ""}
         self
     end
@@ -700,6 +703,11 @@ impl Formatter:
     end
 
     fn w_token(mut self, kind TokenKind) Self:
+        self.w_comments_before_token(kind)
+        self.w(kind)
+    end
+
+    fn w_comments_before_token(mut self, kind TokenKind) Self:
         --- Write comments until we find a token of the given kind.
 
             If `kind` is `FatArrow` or `Colon`, then we are ok with expecting the other token
@@ -712,13 +720,9 @@ impl Formatter:
                         -- print(f"Expected token of kind `{kind}` but found `{token.kind}`.")
                         continue
                     end
-                    self.w(kind)
                     break
                 end
-                None:
-                    self.w(kind)
-                    break
-                end
+                None => break
             end
         end
         self
@@ -796,8 +800,9 @@ impl Visitor for Formatter:
                 self.w_nl()
                 return ()
             end)
+            self.w_comments_before_token(TokenKind::End)
             self.w_nl_dedent()
-            self.w_token(TokenKind::End).w_nl();
+            self.w(TokenKind::End).w_nl();
         end)
     end
 
@@ -818,8 +823,9 @@ impl Visitor for Formatter:
                         end
                         return ()
                     end)
+                    self.w_comments_before_token(TokenKind::RParen)
                     sb.close(false, true)
-                    self.w_token(TokenKind::RParen)
+                    self.w(TokenKind::RParen)
                 end
                 EnumVariantKind::Unit => ()
             end
@@ -843,8 +849,9 @@ impl Visitor for Formatter:
                 return ()
             end)
             self.d_empty_lines()
+            self.w_comments_before_token(TokenKind::End)
             self.w_nl_dedent()
-            self.w_token(TokenKind::End)
+            self.w(TokenKind::End)
             return ()
         end)
     end
@@ -870,8 +877,9 @@ impl Visitor for Formatter:
                 return ()
             end)
             self.d_empty_lines()
+            self.w_comments_before_token(TokenKind::End)
             self.w_nl_dedent()
-            self.w_token(TokenKind::End)
+            self.w(TokenKind::End)
             return ()
         end)
     end
@@ -942,8 +950,9 @@ impl Visitor for Formatter:
             end
             return ()
         end)
+        self.w_comments_before_token(TokenKind::RParen)
         sb.close(false, true)
-        self.w_token(TokenKind::RParen).w_space()
+        self.w(TokenKind::RParen).w_space()
         self.w_return_type(return_type);
     end
 
@@ -953,11 +962,15 @@ impl Visitor for Formatter:
             self.w_token(TokenKind::Colon)
             self.w_nl_indent()
             node.fields.iter().for_each(fn(field Field):
-                self.w_nl().w(field.ident).w_space()
-                self.visit_type(field.type_);
+                self.with_meta(field.meta, fn():
+                    self.w(field.ident).w_space()
+                    self.visit_type(field.type_);
+                    self.w_nl();
+                end)
             end)
+            self.w_comments_before_token(TokenKind::End)
             self.w_nl_dedent()
-            self.w_token(TokenKind::End).w_nl();
+            self.w(TokenKind::End).w_nl();
         end)
     end
 
@@ -989,8 +1002,9 @@ impl Visitor for Formatter:
                 self.w_empty_line()
             end
             self.d_empty_lines()
+            self.w_comments_before_token(TokenKind::End)
             self.w_nl_dedent()
-            self.w_token(TokenKind::End).w_nl();
+            self.w(TokenKind::End).w_nl();
         end)
     end
 
@@ -1012,7 +1026,6 @@ impl Visitor for Formatter:
                 _ => false
             end
             let sb = self.soft_break(if force_wrap => 0 else => 1)
-            -- print(f"--- visit_block(): force_wrap = {force_wrap}")
             self.with_meta(node.meta, fn():
                 sb.open_with_indent_text(1)
                 self.w_token(TokenKind::FatArrow)
@@ -1034,8 +1047,9 @@ impl Visitor for Formatter:
                 self.w_nl()
                 return ()
             end)
+            self.w_comments_before_token(TokenKind::End)
             self.w_nl_dedent()
-            self.w_token(TokenKind::End)
+            self.w(TokenKind::End)
             return ()
         end)
     end
@@ -1062,8 +1076,9 @@ impl Visitor for Formatter:
                 return ()
             end)
             self.d_empty_lines()
+            self.w_comments_before_token(TokenKind::End)
             self.w_nl_dedent()
-            self.w_token(TokenKind::End).w_empty_line();
+            self.w(TokenKind::End).w_empty_line();
         end)
     end
 
@@ -1105,8 +1120,9 @@ impl Visitor for Formatter:
         self.w_token(TokenKind::LParen)
         sb.open(false, true, true)
         self.visit_expr(expr)
+        self.w_comments_before_token(TokenKind::RParen)
         sb.close(false, true)
-        self.w_token(TokenKind::RParen)
+        self.w(TokenKind::RParen)
         return ()
     end
 
@@ -1141,8 +1157,9 @@ impl Visitor for Formatter:
             end
             return ()
         end)
+        self.w_comments_before_token(TokenKind::RParen)
         sb.close(false, true)
-        self.w_token(TokenKind::RParen)
+        self.w(TokenKind::RParen)
         return ()
     end
 
@@ -1167,8 +1184,9 @@ impl Visitor for Formatter:
                     self.w_nl();
                 end)
             end)
+            self.w_comments_before_token(TokenKind::End)
             self.w_nl_dedent()
-            self.w_token(TokenKind::End);
+            self.w(TokenKind::End);
         end)
     end
 
@@ -1201,8 +1219,9 @@ impl Visitor for Formatter:
             end
             return ()
         end)
+        self.w_comments_before_token(TokenKind::RParen)
         sb.close(false, true)
-        self.w_token(TokenKind::RParen)
+        self.w(TokenKind::RParen)
         return ()
     end
 
@@ -1240,8 +1259,9 @@ impl Visitor for Formatter:
             end
             return ()
         end)
+        self.w_comments_before_token(TokenKind::RBrace)
         sb.close(true, true)
-        self.w_token(TokenKind::RBrace)
+        self.w(TokenKind::RBrace)
         return ()
     end
 
@@ -1275,8 +1295,9 @@ impl Visitor for Formatter:
             end
             return ()
         end)
+        self.w_comments_before_token(TokenKind::RParen)
         sb.close(false, true)
-        self.w_token(TokenKind::RParen)
+        self.w(TokenKind::RParen)
         return ()
     end
 
@@ -1311,8 +1332,9 @@ impl Visitor for Formatter:
             end
             return ()
         end)
+        self.w_comments_before_token(TokenKind::RBracket)
         sb.close(false, true)
-        self.w_token(TokenKind::RBracket)
+        self.w(TokenKind::RBracket)
         return ()
     end
 
@@ -1379,8 +1401,9 @@ impl Visitor for Formatter:
             self.w_token(TokenKind::LBracket)
             sb.open(false, true, true)
             self.visit_expr(index_access.index)
+            self.w_comments_before_token(TokenKind::RBracket)
             sb.close(false, true)
-            self.w_token(TokenKind::RBracket)
+            self.w(TokenKind::RBracket)
             return ()
         end)
     end
@@ -1462,8 +1485,9 @@ impl Visitor for Formatter:
                 end
                 return ()
             end)
+            self.w_comments_before_token(TokenKind::RParen)
             sb.close(false, true)
-            self.w_token(TokenKind::RParen)
+            self.w(TokenKind::RParen)
             if call.propagate_error => self.w("!")
             return ()
         end)
@@ -1554,8 +1578,9 @@ impl Visitor for Formatter:
                 end
                 return ()
             end)
+            self.w_comments_before_token(TokenKind::RBrace)
             sb_all.close(true, true)
-            self.w_token(TokenKind::RBrace)
+            self.w(TokenKind::RBrace)
             return ()
         end)
     end

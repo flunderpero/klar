@@ -436,12 +436,6 @@ impl Formatter:
         }
     end
 
-    fn based_on(tokens Vector<Token>, formatter Formatter) Formatter:
-        mut res = Formatter::new(tokens, formatter.column_width)
-        res.line.indent_ = formatter.line.indent_
-        res
-    end
-
     fn w_nl_indent(mut self) Self:
         self.w_nl()
         self.line.indent_ = self.line.indent_ + 1
@@ -1375,7 +1369,6 @@ impl Visitor for Formatter:
             let sb = self.soft_break(1)
             sb.open(false, false, false)
             self.visit_expr(if_.cond)
-            -- sb.nl(false, false)
             self.visit_block(if_.then_block)
             match if_.else_block:
                 Some(else_block):
@@ -1420,13 +1413,6 @@ impl Visitor for Formatter:
     end
 
     fn visit_fstr(mut self, fstr FStr):
-        fn fstr_expr(expr Expr) Str:
-            let formatter = Formatter::based_on(expr.meta.tokens.unwrap(), self)
-            formatter.with_meta(expr.meta, fn():
-                formatter.visit_expr(expr)
-            end)
-            formatter.finish()
-        end
         self.with_meta(fstr.meta, fn():
             -- todo: the first line of a multi-line str should count towards the current line length.
             --       Right now, a multi-line str with a long first line will never cause 
@@ -1447,7 +1433,7 @@ impl Visitor for Formatter:
                         self.w(raw_str)
                     end
                     _:
-                        let sb = self.soft_break(3)
+                        let sb = self.soft_break(2)
                         self.w("{")
                         sb.open(false, true, true)
                         self.visit_expr(expr)

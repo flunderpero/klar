@@ -1759,6 +1759,31 @@ fn format(src Str, src_file Str, verify Bool, column_width Int) Str throws:
     if verify:
         let formatted_tokens = lex(formatted_src, src_file)!
         let formatted_module = parse(formatted_tokens)!
+        -- We might need to adapt the original AST because formatting might have
+        -- changed the type from `TypeKind::Unit` to `TypeKind::Infer` in some cases.
+        struct AdaptAST:
+        end
+        impl Visitor for AdaptAST:
+            fn visit_expr(mut self, mut expr Expr):
+                match expr.kind:
+                    ExprKind::Closure(closure):
+                        -- If the the closure has been explicitly specified with a unit return
+                        -- type, we need to change the AST to reflect that.
+                        -- Because the type then changed from `TypeKind::Unit` to `TypeKind::Infer`.
+                        match closure.return_type.kind:
+                            TypeKind::Unit:
+                                closure.return_type.kind = TypeKind::Infer
+                            end
+                            _ => ()
+                        end
+                    end
+                    _ => ()
+                end
+                self.walk_expr(expr)
+            end
+        end
+        mut adapt_ast = AdaptAST{}
+        adapt_ast.visit_module(module)
         assert(module.to_debug_str() == formatted_module.to_debug_str())
     end
     formatted_src

@@ -614,6 +614,19 @@ fn main():
                 """.dedent().trim()
             )
         end)
+
+        test.it("removes the return type if it's the unit type", fn() throws:
+            assert(test_format(
+                """
+                fn test() => 
+                    some_func(fn(a,  b) ()  => foo())
+                """.dedent()
+            )! == 
+                """
+                fn test() => some_func(fn(a, b) => foo())
+                """.dedent().trim()
+            )
+        end)
     end)
 
     test.group("f-string", fn():

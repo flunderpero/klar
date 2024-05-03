@@ -500,37 +500,82 @@ trait Visitor:
         when the node is visited.
 
         The `walk_` method has to be called to visit the children of the node.
-
-        This is work in progress and not yet complete.
     ---
-    fn visit_module(mut self, mut node Module)
+    fn visit_module(mut self, mut node Module) => self.walk_module(node)
 
-    fn visit_module_item(mut self, mut node ModuleItem)
+    fn visit_use(mut self, mut node Use) => self.walk_use(node)
 
-    fn visit_fn(mut self, mut node Fn)
+    fn visit_module_item(mut self, mut node ModuleItem) => self.walk_module_item(node)
 
-    fn visit_fndecl(mut self, mut node FnDecl)
+    fn visit_extern(mut self, mut node Extern) => self.walk_extern(node)
 
-    fn visit_struct(mut self, mut node Struct)
+    fn visit_extern_item(mut self, mut node ExternItem) => self.walk_extern_item(node)
 
-    fn visit_enum(mut self, mut node Enum)
+    fn visit_extern_impl(mut self, mut node ExternImpl) => self.walk_extern_impl(node)
 
-    fn visit_trait(mut self, mut node Trait)
+    fn visit_extern_impl_trait(mut self, mut node ExternImplTrait) => self.walk_extern_impl_trait(node)
 
-    fn visit_impl(mut self, mut node Impl)
+    fn visit_fn(mut self, mut node Fn) => self.walk_fn(node)
 
-    fn visit_block(mut self, mut node Block)
+    fn visit_fndecl(mut self, mut node FnDecl) => self.walk_fndecl(node)
 
-    fn visit_expr(mut self, mut node Expr)
+    fn visit_struct(mut self, mut node Struct) => self.walk_struct(node)
+
+    fn visit_enum(mut self, mut node Enum) => self.walk_enum(node)
+
+    fn visit_trait(mut self, mut node Trait) => self.walk_trait(node)
+
+    fn visit_impl(mut self, mut node Impl) => self.walk_impl(node)
+
+    fn visit_block(mut self, mut node Block) => self.walk_block(node)
+
+    fn visit_expr(mut self, mut node Expr) => self.walk_expr(node)
+
+    fn visit_match_arm(mut self, mut node MatchArm) => self.walk_match_arm(node)
+
+    fn visit_pattern(mut self, mut node Pattern) => self.walk_pattern(node)
 
     fn walk_module(mut self, node Module):
         node.items.iter().for_each(fn(item ModuleItem) => self.visit_module_item(item))
+    end
+
+    fn walk_use(mut self, node Use):
+    end
+
+    fn walk_module_item(mut self, node ModuleItem):
+        match node.kind:
+            ModuleItemKind::Enum(child) => self.visit_enum(child)
+            ModuleItemKind::Extern(child) => self.visit_extern(child)
+            ModuleItemKind::Fn(child) => self.visit_fn(child)
+            ModuleItemKind::Impl(child) => self.visit_impl(child)
+            ModuleItemKind::Trait(child) => self.visit_trait(child)
+            ModuleItemKind::Struct(child) => self.visit_struct(child)
+            ModuleItemKind::Use(child) => self.visit_use(child)
+        end
     end
 
     fn walk_enum(mut self, node Enum):
     end
 
     fn walk_extern(mut self, node Extern):
+        node.items.iter().for_each(fn(item ExternItem) => self.visit_extern_item(item))
+    end
+
+    fn walk_extern_item(mut self, node ExternItem):
+        match node:
+            ExternItem::Enum(child) => self.visit_enum(child)
+            ExternItem::ExternImpl(child) => self.visit_extern_impl(child)
+            ExternItem::ExternImplTrait(child) => self.visit_extern_impl_trait(child)
+            ExternItem::FnDecl(child) => self.visit_fndecl(child)
+            ExternItem::Struct(child) => self.visit_struct(child)
+        end
+    end
+
+    fn walk_extern_impl(mut self, node ExternImpl):
+        node.fn_decls.iter().for_each(fn(it FnDecl) => self.visit_fndecl(it))
+    end
+
+    fn walk_extern_impl_trait(mut self, node ExternImplTrait):
     end
 
     fn walk_fn(mut self, node Fn):
@@ -557,42 +602,108 @@ trait Visitor:
     end
 
     fn walk_expr(mut self, node Expr):
-        -- match node:
-        --     ExprKind::Assignment(child) => self.visit_assignment(child)
-        --     ExprKind::BinaryExpr(child) => self.visit_binary_expr(child)
-        --     ExprKind::Break(child) => self.visit_break(child)
-        --     ExprKind::Call(child) => self.visit_call(child)
-        --     ExprKind::Closure(child) => self.visit_closure(child)
-        --     ExprKind::Continue(child) => self.visit_continue(child)
-        --     ExprKind::FQN(child) => self.visit_fqn(child)
-        --     ExprKind::FStr(child) => self.visit_fstr(child)
-        --     ExprKind::FieldAccess(child) => self.visit_field_access(child)
-        --     ExprKind::Ident(child) => self.visit_ident(child)
-        --     ExprKind::IndexAccess(child) => self.visit_index_access(child)
-        --     ExprKind::If(child) => self.visit_if(child)
-        --     ExprKind::Let(child) => self.visit_let(child)
-        --     ExprKind::Literal(child) => self.visit_literal(child)
-        --     ExprKind::Loop(child) => self.visit_loop(child)
-        --     ExprKind::Match(child) => self.visit_match(child)
-        --     ExprKind::Return(child) => self.visit_return(child)
-        --     ExprKind::StructInst(child) => self.visit_struct_inst(child)
-        --     ExprKind::TerminatorExpr(child) => self.visit_terminator_expr(child)
-        --     ExprKind::Tuple(child) => self.visit_tuple(child)
-        --     ExprKind::TupleAccess(child) => self.visit_tuple_access(child)
-        --     ExprKind::UnaryExpr(child) => self.visit_unary_expr(child)
-        -- end
+        match node.kind:
+            ExprKind::Assignment(child):
+                self.visit_expr(child.lhs)
+                self.visit_expr(child.rhs)
+            end
+            ExprKind::BinaryExpr(child):
+                self.visit_expr(child.lhs)
+                self.visit_expr(child.rhs)
+            end
+            ExprKind::Break(child) => ()
+            ExprKind::Call(child):
+                self.visit_expr(child.target)
+                child.args.iter().for_each(fn(it Expr) => self.visit_expr(it))
+            end
+            ExprKind::Closure(child):
+                self.visit_block(child.body)
+            end
+            ExprKind::Continue(child) => ()
+            ExprKind::FQN(child) => ()
+            ExprKind::FStr(child):
+                child.exprs.iter().for_each(fn(it Expr) => self.visit_expr(it))
+            end
+            ExprKind::FieldAccess(child):
+                self.visit_expr(child.target)
+            end
+            ExprKind::Ident(child) => ()
+            ExprKind::IndexAccess(child):
+                self.visit_expr(child.target)
+                self.visit_expr(child.index)
+            end
+            ExprKind::If(child):
+                self.visit_expr(child.cond)
+                self.visit_block(child.then_block)
+                match child.else_block:
+                    Some(x) => self.visit_block(x)
+                    None => ()
+                end
+            end
+            ExprKind::Let(child):
+                self.visit_expr(child.expr)
+            end
+            ExprKind::Literal(child) => ()
+            ExprKind::Loop(child):
+                self.visit_block(child.body)
+            end
+            ExprKind::Match(child):
+                self.visit_expr(child.expr)
+                child.arms.iter().for_each(fn(it MatchArm) => self.visit_match_arm(it))
+            end
+            ExprKind::Paren(child):
+                self.visit_expr(child)
+            end
+            ExprKind::Return(child) => self.visit_expr(child.expr)
+            ExprKind::StructInst(child):
+                child.fields.iter().for_each(fn(it (Ident, Expr)) => self.visit_expr(it.1))
+            end
+            ExprKind::TerminatorExpr(child) => self.visit_expr(child.expr)
+            ExprKind::Tuple(child):
+                child.iter().for_each(fn(it Expr) => self.visit_expr(it))
+            end
+            ExprKind::TupleAccess(child):
+                self.visit_expr(child.target)
+            end
+            ExprKind::UnaryExpr(child):
+                self.visit_expr(child.expr)
+            end
+        end
+    end
+
+    fn walk_match_arm(mut self, node MatchArm):
+        self.visit_pattern(node.pattern)
+        self.visit_block(node.block)
+    end
+
+    fn walk_pattern(mut self, node Pattern):
+        match node.kind:
+            PatternKind::EnumVariant(_, patterns) => 
+                patterns.iter().for_each(fn(it Pattern) => self.visit_pattern(it))
+            PatternKind::Struct(_, fields) => 
+                fields.iter().for_each(fn(it (Ident, Pattern)) => self.visit_pattern(it.1))
+            PatternKind::Or(patterns) => 
+                patterns.iter().for_each(fn(it Pattern) => self.visit_pattern(it))
+            PatternKind::Tuple(patterns) => 
+                patterns.iter().for_each(fn(it Pattern) => self.visit_pattern(it))
+            PatternKind::Range(_) => ()
+            PatternKind::Ident(_) => ()
+            PatternKind::FQN(_) => ()
+            PatternKind::Literal(_) => ()
+            PatternKind::Wildcard => ()
+        end
     end
 
     fn walk_impl(mut self, node Impl):
+        node.fn_impls.iter().for_each(fn(it Fn) => self.visit_fn(it))
     end
 
     fn walk_struct(mut self, node Struct):
     end
 
-    fn walk_use(mut self, node Use):
-    end
-
     fn walk_trait(mut self, node Trait):
+        node.fn_impls.iter().for_each(fn(it Fn) => self.visit_fn(it))
+        node.fn_decls.iter().for_each(fn(it FnDecl) => self.visit_fndecl(it))
     end
 end
 

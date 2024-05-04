@@ -922,21 +922,25 @@ impl Visitor for Formatter:
 
     fn visit_closure(mut self, mut node Closure):
         self.with_meta(node.meta, fn():
-            self.visit_fn_or_closure_decl(node.params, node.return_type, None)
+            self.visit_fn_or_closure_decl(node.params, node.return_type, None, None)
             self.visit_block(node.body)
         end)
     end
 
     fn visit_fndecl(mut self, mut node FnDecl):
         self.with_meta(node.meta, fn():
-            self.visit_fn_or_closure_decl(node.params, node.return_type, Some(node.ident))
+            self.visit_fn_or_closure_decl(node.params, node.return_type, Some(node.ident), node.generics)
         end)
     end
 
-    fn visit_fn_or_closure_decl(mut self, params Vector<Param>, return_type Type, ident Ident?):
+    fn visit_fn_or_closure_decl(mut self, params Vector<Param>, return_type Type, ident Ident?, generics Vector<GenericArg>?):
         self.w_token(TokenKind::Fn)
         match ident:
             Some(ident_) => self.w_space().w_ident(ident_)
+            None => ()
+        end
+        match generics:
+            Some(x) => self.w_generics(x)
             None => ()
         end
         self.w_token(TokenKind::LParen)

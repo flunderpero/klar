@@ -457,6 +457,13 @@ fn main():
                 fn test(mut a Int, mut b Str) Int => 1
                 """.dedent().trim()))
 
+        test.it("formats generic parameters", fn() throws
+         => assert(test_format("""
+                fn test< U >(a U) Int => 1
+                """.dedent())! == """
+                fn test<U>(a U) Int => 1
+                """.dedent().trim()))
+
         test.it("wraps long function declarations", fn() throws
          => assert(test_format("""
                 fn this_is_a_very_long_function_name(and_a_very_long_parameter_name with::a::very::long::TypeName, str Str) Int:

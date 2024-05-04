@@ -412,9 +412,9 @@ fn main():
 
         test.it("formats FQN types with generics", fn() throws
          => assert(test_format("""
-                fn test() a::B<  Str  , T>::C< V> => "hello"
+                fn test() a::B<  Str  , T = Default>::C< V = Default2> => "hello"
                 """.dedent())! == """
-                fn test() a::B<Str, T>::C<V> => "hello"
+                fn test() a::B<Str, T=Default>::C<V=Default2> => "hello"
                 """.dedent().trim()))
 
         test.it("formats function types", fn() throws

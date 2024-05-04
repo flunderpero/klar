@@ -505,8 +505,20 @@ impl Parser:
                 end
             end
             let trait_bounds = self.parse_trait_bounds()!
-            args.push(GenericArg{type_, trait_bounds, meta: self.meta(mark)})
-            let next_token = self.iter.next()
+            mut next_token = self.iter.next()
+            let default = match next_token:
+                Some(Token{kind: TokenKind::Equal, span: _}):
+                    let res = self.parse_type(self.iter.force_next()!)!
+                    match res.kind:
+                        TypeKind::Unit => return parse_error(UnitNotAllowedInGeneric, next_token)
+                        _ => ()
+                    end
+                    next_token = self.iter.next()
+                    Some(res)
+                end
+                _ => None
+            end
+            args.push(GenericArg{type_, trait_bounds, default, meta: self.meta(mark)})
             match next_token:
                 Some(Token{kind: TokenKind::Comma, span: _}) => ()
                 Some(Token{kind: TokenKind::GreaterThan, span: _}) => break
@@ -543,9 +555,7 @@ impl Parser:
                     end
                     match self.iter.peek():
                         Some(Token{kind: TokenKind::And, span: _}) => self.iter.force_next()!
-                        Some(Token{kind: TokenKind::Comma, span: _}) => break
-                        Some(Token{kind: TokenKind::GreaterThan, span: _}) => break
-                        Some(Token{kind: TokenKind::Colon, span: _}) => break
+                        Some(Token{kind: TokenKind::Comma | TokenKind::GreaterThan | TokenKind::Colon | TokenKind::Equal, span: _}) => break
                         None => return parse_error(UnexpectedEOF, None)
                         _:
                             let next_token = self.iter.force_next()!
@@ -627,7 +637,7 @@ impl Parser:
                 self.iter.force_next()!
                 let meta = self.meta(mark)
                 let generics = Vector<GenericArg>::from([
-                    GenericArg{type_: res, trait_bounds: None, meta: res.meta}
+                    GenericArg{type_: res, trait_bounds: None, default: None, meta: res.meta}
                 ])
                 let name = Name{
                     ident: Ident{name: "Option", meta: res.meta}, 
@@ -1003,8 +1013,8 @@ impl Parser:
                     ident: Ident{name: "Result", meta: self.meta(throws_mark)},
                     generics: Some(
                         Vector::from([
-                            GenericArg{type_: return_type, trait_bounds: None, meta: return_type.meta}, 
-                            GenericArg{ type_: error_type, trait_bounds: None, meta: error_type.meta}
+                            GenericArg{type_: return_type, trait_bounds: None, default: None, meta: return_type.meta}, 
+                            GenericArg{ type_: error_type, trait_bounds: None, default: None, meta: error_type.meta}
                         ])
                     ),
                     meta: self.meta(throws_mark)

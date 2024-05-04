@@ -84,6 +84,25 @@ fn main():
                 "(@traitbound (@fqn (@name (@ident D)))))))"
             )
         end)
+
+        test.it("parses generics with default trait bounds", fn() throws:
+            assert(
+                expr("A<B impl C=D>") 
+                == 
+                "(@fqn (@name (@ident A) " +
+                "(@genericarg (@type (@fqn (@name (@ident B)))) " +
+                "(@traitbound (@fqn (@name (@ident C)))) " +
+                "(@type (@fqn (@name (@ident D)))))))"
+            )
+        end)
+
+        test.it("fails if using the unit type as a generic default", fn() throws:
+            assert(
+                expr("A<B impl C=()>") 
+                == 
+                "(@error unit not allowed in generic)"
+            )
+        end)
     end)
 
     test.group("blocks", fn():

@@ -45,6 +45,7 @@ enum ParseErrorKind:
     PatternExpected(Token)
     ParamExpected(Token)
     TypeExpected(Token?)
+    UnitNotAllowedInGeneric
     UnexpectedEOF
     UnexpectedFnDecl(FnDecl)
     UnexpectedToken(Token)
@@ -265,6 +266,7 @@ end
 struct GenericArg:
     type_ Type
     trait_bounds Vector<FQN>?
+    default Type?
     meta Meta
 end
 
@@ -761,7 +763,11 @@ impl ToDebugStr for GenericArg:
                 )
             None => ""
         end
-        f"(@genericarg {self.type_.to_debug_str()}{" ".when(trait_bounds.len() > 0)}{trait_bounds})"
+        let default = match self.default:
+            Some(x) => x.to_debug_str()
+            None => ""
+        end
+        f"(@genericarg {self.type_.to_debug_str()}{" ".when(trait_bounds.len() > 0)}{trait_bounds}{" ".when(default.len() > 0)}{default})"
     end
 end
 
@@ -1035,6 +1041,7 @@ impl ToDebugStr for ParseErrorKind:
                 end
                 f"(@error type expected at {span_str})"
             end
+            ParseErrorKind::UnitNotAllowedInGeneric => "(@error unit not allowed in generic)"
             ParseErrorKind::UnexpectedEOF => "(@error eof)"
             ParseErrorKind::UnexpectedFnDecl(decl) => f"(@error unexpected fn decl `{decl.ident}` at {decl.meta.span})"
             ParseErrorKind::UnexpectedToken(token) => f"(@error unexpected token `{token}` at {token.span})"

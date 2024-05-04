@@ -100,6 +100,17 @@ impl Line:
         mut line_indent = indent
         -- todo (lang-feat): This could be a `Set<Int>`.
         mut closed_soft_breaks = Map<Int, Int>::new()
+        fn line_fits() Bool:
+            if line.len() + line_indent * 4 <= column_width => return true
+            -- The line might contain a multi-line string, so we check if the first and last line fit.
+            let last_len = line.iter().reverse().take_while(fn(c Char) Bool => c != '\n').count()
+            -- let first_len = line.iter().take_while(fn(c Char) Bool => c != '\n').count()
+            -- return first_len + line_indent * 4 <= column_width and last_len + line_indent * 4 <= column_width
+            return last_len + line_indent * 4 <= column_width
+        end
+        -- If the line contains a newline, we break at every soft break. A newline signifies that the line
+        -- contains a multi-line string or comment. 
+        let break_all_at_priority_1 = self.text.contains("\n")
         loop:
             -- We keep track of the minimum and maximum soft break positions and priorities.
             mut min_sb_pos = 42424242
@@ -136,7 +147,8 @@ impl Line:
                 if sb.priority > max_priority => max_priority = sb.priority
                 if sb.priority < min_priority => min_priority = sb.priority
                 let break_it = 
-                    if sb.priority < priority_threshold or sb.priority == 0 => true
+                    if (break_all_at_priority_1 and sb.priority == 1) 
+                        or sb.priority < priority_threshold or sb.priority == 0 => true
                     else => 
                         sb.priority == priority_threshold 
                             and sb_pos <= sb_pos_threshold 
@@ -149,7 +161,7 @@ impl Line:
                 open_break_all.push(sb.idx)
                 if sb.indent => indent = indent + 1
                 if sb.nl:
-                    if line.len() + line_indent * 4 <= column_width or priority_threshold > max_priority:
+                    if line_fits() or priority_threshold > max_priority:
                         -- We completed a line and it fits into the column width.
                         -- We collect it and start a new line.
                         out.push(line.trim())
@@ -166,7 +178,7 @@ impl Line:
                     end else => break
                 end
             end
-            if iter.is_last() and (priority_threshold > max_priority or line.len() + line_indent * 4 <= column_width):
+            if iter.is_last() and (priority_threshold > max_priority or line_fits()):
                 -- We are done.
                 out.push(line)
                 let iter = closed_soft_breaks.keys()
@@ -1413,10 +1425,9 @@ impl Visitor for Formatter:
     end
 
     fn visit_fstr(mut self, fstr FStr):
+        -- fixme: We should use a separate formatter for the f-string content. 
+        --        The current results are ugly.
         self.with_meta(fstr.meta, fn():
-            -- todo: the first line of a multi-line str should count towards the current line length.
-            --       Right now, a multi-line str with a long first line will never cause 
-            --       a line to be wrapped.
             let is_multi_line = fstr.exprs.iter().any(fn(expr Expr) Bool =>
                 match expr.kind:
                     ExprKind::Literal(Literal{kind: LiteralKind::StrLiteral(_, raw_str), meta}) => raw_str.contains("\n")
@@ -1460,7 +1471,8 @@ impl Visitor for Formatter:
             end
             self.visit_expr(call.target)
             self.w_token(TokenKind::LParen)
-            let sb = self.soft_break(2)
+            let force_wrap = call.args.iter().any(Formatter::expr_contains_multi_line_str_or_fstr)
+            let sb = self.soft_break(if force_wrap => 0 else => 2)
             sb.open(false, true, true)
             mut iter = PeekableIterator::new(call.args.iter())
             iter.for_each(fn(arg Expr):
@@ -1477,6 +1489,22 @@ impl Visitor for Formatter:
             if call.propagate_error => self.w("!")
             return ()
         end)
+    end
+
+    fn expr_contains_multi_line_str_or_fstr(expr Expr) Bool:
+        match expr.kind:
+            ExprKind::FStr(fstr) =>
+                fstr.exprs.iter().any(fn(expr Expr) Bool =>
+                    match expr.kind:
+                        ExprKind::Literal(Literal{kind: LiteralKind::StrLiteral(_, raw_str), meta}) => raw_str.contains("\n")
+                        _ => false
+                    end
+                )
+            ExprKind::Literal(Literal{kind: LiteralKind::StrLiteral(_, raw_str), meta}):
+                raw_str.contains("\n")
+            end
+            _ => false
+        end
     end
 
     fn visit_assignment(mut self, mut assignment Assignment):

@@ -61,7 +61,7 @@ use .parser::Parser
 use .parser::TokenIter
 use .ast::ParseError
 
-struct CommentOrNewline:
+struct CommentOrBlankLine:
     text Str
     pos Int
 end
@@ -218,8 +218,8 @@ struct Formatter:
     column_width Int
     out Vector<Line>
     line Line
-    comments_or_newlines Vector<CommentOrNewline>
-    comments_or_newlines_idx Int
+    comments_or_blank_lines Vector<CommentOrBlankLine>
+    comments_or_blank_lines_idx Int
     last_visited_token Token?
     meta Meta?
     soft_break_idx Int
@@ -417,19 +417,20 @@ end
 
 impl Formatter:
     fn new(tokens Vector<Token>, column_width Int) Formatter:
-        mut comments_or_newlines = Vector<CommentOrNewline>::new()
+        mut comments_or_blank_lines = Vector<CommentOrBlankLine>::new()
         mut consecutive_newlines = 0
         tokens.iter().for_each(fn(token Token):
             match token.kind:
                 TokenKind::Comment(comment):
-                    comments_or_newlines.push(CommentOrNewline{text: comment, pos: token.span.from})
+                    comments_or_blank_lines.push(CommentOrBlankLine{text: comment, pos: token.span.from})
                     consecutive_newlines = 0
                 end
                 TokenKind::WhiteSpace(ws):
                     if ws == '\n':
                         consecutive_newlines = consecutive_newlines + 1
-                        if consecutive_newlines == 2 
-                         => comments_or_newlines.push(CommentOrNewline{text: "\n", pos: token.span.from})
+                        if consecutive_newlines == 2:
+                            comments_or_blank_lines.push(CommentOrBlankLine{text: "\n", pos: token.span.from})
+                        end
                     end
                 end
                 _ => consecutive_newlines = 0
@@ -440,8 +441,8 @@ impl Formatter:
             column_width,
             out: Vector<Line>::new(), 
             line: Line{indent_: 0, text: ""},
-            comments_or_newlines,
-            comments_or_newlines_idx: 0,
+            comments_or_blank_lines,
+            comments_or_blank_lines_idx: 0,
             last_visited_token: None,
             meta: None,
             soft_break_idx: 0
@@ -467,11 +468,11 @@ impl Formatter:
         self
     end
 
-    fn w_empty_line(mut self) Self:
+    fn w_blank_line(mut self) Self:
         --- Add an empty line if the last line is not empty.
         ---
         self.w_nl()
-        self.w_raw_empty_line()
+        self.w_raw_blank_line()
         self.w_comments_in_meta()
         self
     end
@@ -485,7 +486,7 @@ impl Formatter:
         self
     end
 
-    fn w_raw_empty_line(mut self) Self:
+    fn w_raw_blank_line(mut self) Self:
         self.w_raw_nl()
         if self.out.len() > 0 and self.out[self.out.len() - 1].text.len() > 0 
             => self.out.push(Line{indent_: 0, text: ""})
@@ -493,7 +494,12 @@ impl Formatter:
     end
 
     fn w_nl(mut self) Self:
-        -- First, write trailing comments.
+        -- First, write trailing comments, but only if we are not at the start of
+        -- the current `meta`.
+        match self.last_visited_token:
+            Some(token) => ()
+            None => return self.w_raw_nl()
+        end
         mut iter = self.not_visited_tokens_in_meta()
         loop:
             let token = match iter.next():
@@ -505,7 +511,7 @@ impl Formatter:
                     if comment.starts_with("---") => break
                     self.w_comment(comment)
                     self.last_visited_token = Some(token)
-                    assert(self.next_comment_or_newline().unwrap().text == comment)
+                    assert(self.next_comment_or_blank_line().unwrap().text == comment)
                 end
                 TokenKind::WhiteSpace(ws) => if ws == '\n' => break
                 _ => break
@@ -533,7 +539,7 @@ impl Formatter:
         self
     end
 
-    fn d_empty_lines(mut self) Self:
+    fn d_blank_lines(mut self) Self:
         --- Delete the last empty lines from the output.
         ---
         self.w_raw_nl()
@@ -592,18 +598,18 @@ impl Formatter:
         end
     end
 
-    fn next_comment_or_newline(mut self) CommentOrNewline?:
-        if self.comments_or_newlines_idx >= self.comments_or_newlines.len() => None
+    fn next_comment_or_blank_line(mut self) CommentOrBlankLine?:
+        if self.comments_or_blank_lines_idx >= self.comments_or_blank_lines.len() => None
         else:
-            let res = self.comments_or_newlines[self.comments_or_newlines_idx]
-            self.comments_or_newlines_idx = self.comments_or_newlines_idx + 1
+            let res = self.comments_or_blank_lines[self.comments_or_blank_lines_idx]
+            self.comments_or_blank_lines_idx = self.comments_or_blank_lines_idx + 1
             Some(res)
         end
     end
 
-    fn peek_comment_or_newline(mut self) CommentOrNewline?:
-        if self.comments_or_newlines_idx >= self.comments_or_newlines.len() => None
-        else => Some(self.comments_or_newlines[self.comments_or_newlines_idx])
+    fn peek_comment_or_blank_line(mut self) CommentOrBlankLine?:
+        if self.comments_or_blank_lines_idx >= self.comments_or_blank_lines.len() => None
+        else => Some(self.comments_or_blank_lines[self.comments_or_blank_lines_idx])
     end
 
     fn w_comment(mut self, comment Str) Self:
@@ -635,7 +641,7 @@ impl Formatter:
                 loop:
                     if i == lines.len() => break
                     let line = lines[i].trim_end().slice_copy(common_indent, lines[i].len())
-                    if i < lines.len() - 1 and line.len() == 0 => self.w_raw_empty_line()
+                    if i < lines.len() - 1 and line.len() == 0 => self.w_raw_blank_line()
                     else => self.w(line).w_raw_nl()
                     i = i + 1
                 end
@@ -676,16 +682,16 @@ impl Formatter:
             _ => false
         end
         loop:
-            match self.peek_comment_or_newline():
-                Some(comment_or_newline):
-                    if comment_or_newline.pos > token.span.from => break
-                    if comment_or_newline.pos == token.span.from and not token_is_comment => break
-                    if comment_or_newline.text == "\n":
-                        self.next_comment_or_newline()
+            match self.peek_comment_or_blank_line():
+                Some(comment_or_blank_line):
+                    if comment_or_blank_line.pos > token.span.from => break
+                    if comment_or_blank_line.pos == token.span.from and not token_is_comment => break
+                    if comment_or_blank_line.text == "\n":
+                        self.next_comment_or_blank_line()
                         continue
                     end
-                    self.w_comment(comment_or_newline.text)
-                    self.next_comment_or_newline()
+                    self.w_comment(comment_or_blank_line.text)
+                    self.next_comment_or_blank_line()
                 end
                 None => break
             end
@@ -693,14 +699,14 @@ impl Formatter:
         self
     end
 
-    fn w_empty_line_before(mut self, meta Meta) Self:
+    fn w_blank_line_before(mut self, meta Meta) Self:
         --- Write an empty line if there is one at the start of the given meta.
         ---
-        match self.peek_comment_or_newline():
-            Some(comment_or_newline):
-                if comment_or_newline.pos <= meta.span.from and comment_or_newline.text == "\n":
-                    self.next_comment_or_newline()
-                    self.w_empty_line()
+        match self.peek_comment_or_blank_line():
+            Some(comment_or_blank_line):
+                if comment_or_blank_line.pos <= meta.span.from and comment_or_blank_line.text == "\n":
+                    self.next_comment_or_blank_line()
+                    self.w_blank_line()
                 end
             end
             _ => ()
@@ -761,7 +767,7 @@ impl Visitor for Formatter:
             let iter = PeekableIterator::new(node.items.iter())
             mut last_item ModuleItem? = None
             iter.for_each(fn(item ModuleItem):
-                let add_empty_line = match item.kind:
+                let add_blank_line = match item.kind:
                     ModuleItemKind::Use(_):
                         match last_item:
                             Some(item) => match item.kind:
@@ -773,7 +779,7 @@ impl Visitor for Formatter:
                     end
                     _ => true
                 end
-                if add_empty_line => self.w_empty_line()
+                if add_blank_line => self.w_blank_line()
                 self.visit_module_item(item)
                 last_item = Some(item)
                 return ()
@@ -851,10 +857,10 @@ impl Visitor for Formatter:
                     ExternItem::ExternImpl(impl_) => self.visit_extern_impl(impl_)
                     ExternItem::ExternImplTrait(impl_) => self.visit_extern_impl_trait(impl_)
                 end
-                self.w_empty_line()
+                self.w_blank_line()
                 return ()
             end)
-            self.d_empty_lines()
+            self.d_blank_lines()
             self.w_comments_before_token(TokenKind::End)
             self.w_nl_dedent()
             self.w(TokenKind::End)
@@ -879,10 +885,10 @@ impl Visitor for Formatter:
             self.w_nl_indent()
             node.fn_decls.iter().for_each(fn(fn_decl FnDecl):
                 self.visit_fndecl(fn_decl)
-                self.w_empty_line()
+                self.w_blank_line()
                 return ()
             end)
-            self.d_empty_lines()
+            self.d_blank_lines()
             self.w_comments_before_token(TokenKind::End)
             self.w_nl_dedent()
             self.w(TokenKind::End)
@@ -1005,9 +1011,9 @@ impl Visitor for Formatter:
                     let fn_impl = fn_impls.next().unwrap()
                     self.visit_fn(fn_impl)
                 end
-                self.w_empty_line()
+                self.w_blank_line()
             end
-            self.d_empty_lines()
+            self.d_blank_lines()
             self.w_comments_before_token(TokenKind::End)
             self.w_nl_dedent()
             self.w(TokenKind::End).w_nl();
@@ -1048,7 +1054,7 @@ impl Visitor for Formatter:
             self.w_nl_indent()
             mut iter = PeekableIterator::new(node.items.iter())
             iter.for_each(fn(item BlockItem):
-                if not iter.is_first() => self.w_empty_line_before(item.meta)
+                if not iter.is_first() => self.w_blank_line_before(item.meta)
                 self.visit_block_item(item)
                 self.w_nl()
                 return ()
@@ -1078,13 +1084,13 @@ impl Visitor for Formatter:
             self.w_nl_indent()
             node.fn_impls.iter().for_each(fn(fn_impl Fn):
                 self.visit_fn(fn_impl)
-                self.w_empty_line()
+                self.w_blank_line()
                 return ()
             end)
-            self.d_empty_lines()
+            self.d_blank_lines()
             self.w_comments_before_token(TokenKind::End)
             self.w_nl_dedent()
-            self.w(TokenKind::End).w_empty_line();
+            self.w(TokenKind::End).w_blank_line();
         end)
     end
 

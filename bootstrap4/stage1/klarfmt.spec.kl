@@ -11,7 +11,7 @@ fn test_format(src Str) Str throws
     format(src, "spec", true, 100)!
 
 fn main():
-    mut test = Test::new_from_args("klarfmt", env.args)
+    mut test = Test::new_from_args("klarfmt", Env::args())
 
     test.it("passes the happy path", fn() throws
      => assert(test_format("""

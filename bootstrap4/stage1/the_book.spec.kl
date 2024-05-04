@@ -111,7 +111,8 @@ fn parse_specs(the_book_src Str) Vector<Spec>:
 end
 
 fn main() throws:
-    let bail = env.args.iter().any(fn(arg Str) => arg == "--bail") 
+    let args = Env::args()
+    let bail = args.iter().any(fn(arg Str) => arg == "--bail") 
     let src = File::at("../../docs/the_book.md").read_str()!
     let specs = parse_specs(src)
     print(f"Found {specs.len()} specs")

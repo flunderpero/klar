@@ -10,7 +10,7 @@ use TokenKind::*
 use FStrItem::*
 
 fn main():
-    mut test = Test::new_from_args("lexer", env.args)
+    mut test = Test::new_from_args("lexer", Env::args())
 
     test.it("lexes identifiers", fn() throws:
         lex_run("x", [Ident("x")])

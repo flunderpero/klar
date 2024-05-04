@@ -1019,7 +1019,7 @@ end
 
 ```klar
 fn main():
-    let args = env.args
+    let args = Env::args()
     assert(args.len() > 0)
 end
 ```

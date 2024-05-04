@@ -783,8 +783,11 @@ impl Int:
                 j = j + 1
             end
             value = value + j
+            -- todo (lang-feat): We should be able to write `value > 2147483648`. This is not 
+            --                   possible in stage1 because it only knows about the `Int` type.
+            --                   We should also be able to write `value > Int::MAX`.
             if not is_negative and value > 2147483647 => return Error(f"literal out of range for Int: {s}")
-            if is_negative and value > 2147483648 => return Error(f"literal out of range for Int: {s}")
+            if is_negative and value > 2147483647 => return Error(f"literal out of range for Int: {s}")
             i = i + 1
         end
         -- todo (lang-feat): We should be able to write `-value`.
@@ -1094,11 +1097,10 @@ impl Len for Map<K, V>:
 end
 
 struct Env:
-    args Vector<Str>
 end
 
 impl Env:
-    fn new() Env:
+    fn args() Vector<Str>:
         mut i = 0
         let src = ext_args()
         mut args = Vector<Str>::new()
@@ -1110,8 +1112,6 @@ impl Env:
             args.push(arg)
             i = i + 1
         end
-        Env{args}
+        args
     end
 end
-
-let env = Env::new()

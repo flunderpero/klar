@@ -70,19 +70,20 @@ fn parse(tokens Vector<Token>) Module throws ParseError:
 end
 
 fn main() throws:
-    if env.args.len() < 4:
+    let args = Env::args()
+    if args.len() < 4:
         print("Usage: klarc <src> <dst>")
         exit(1)
         return ()
     end
     -- todo (lang-feat) We should be able to replace this with a simple block instead of an IIFE.
     let debug_level = (fn () DebugLevel:
-        if env.args.iter().any(fn(s Str) Bool => s == "--debug") => return DebugLevel::Debug
-        else => if env.args.iter().any(fn(s Str) Bool => s == "--warn") => return DebugLevel::Warn
+        if args.iter().any(fn(s Str) Bool => s == "--debug") => return DebugLevel::Debug
+        else => if args.iter().any(fn(s Str) Bool => s == "--warn") => return DebugLevel::Warn
         DebugLevel::Off
     end)()
-    let src_file = env.args[2]
-    let dst_file = env.args[3]
+    let src_file = args[2]
+    let dst_file = args[3]
     let src = File::at(src_file).read_str()!
     let tokens = lex(src, src_file, debug_level)
     let module = parse(tokens)!

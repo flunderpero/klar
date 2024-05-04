@@ -1862,17 +1862,18 @@ fn parse(tokens Vector<Token>) Module throws ParseError:
 end
 
 fn main() throws:
-    if env.args.len() < 3:
+    let args = Env::args()
+    if args.len() < 3:
         print("Usage: klarfmt <src> [-w] [--no-verify]")
         exit(1)
         return ()
     end
-    let src_file = env.args[2]
-    let write = env.args.iter().any(fn(arg Str) Bool => arg == "-w")
-    let verify = not env.args.iter().any(fn(arg Str) Bool => arg == "--no-verify")
+    let src_file = args[2]
+    let write = args.iter().any(fn(arg Str) Bool => arg == "-w")
+    let verify = not args.iter().any(fn(arg Str) Bool => arg == "--no-verify")
     -- todo (lang-feat): This should not be a IIFE but a simple block.
     let column_width Int = (fn() Int throws:
-        let iter = env.args.iter().take_while(fn(arg Str) Bool => arg != "--column-width")
+        let iter = args.iter().take_while(fn(arg Str) Bool => arg != "--column-width")
         match iter.next():
             Some("--column-width") => Int::from_str(iter.next().unwrap(), 10).unwrap()
             _ => 100

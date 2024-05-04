@@ -41,7 +41,7 @@ x
         lex_run("= == =>", [Equal, DoubleEqual, FatArrow])
         lex_run("< <=", [LessThan, LessThanOrEqual])
         lex_run("> >=", [GreaterThan, GreaterThanOrEqual])
-        lex_run("+ * /", [Plus, Star, Slash])
+        lex_run("+ * / %", [Plus, Star, Slash, Percent])
         lex_run("! !=", [Exclamation, NotEqual])
         lex_run("( ) { } [ ]", [LParen, RParen, LBrace, RBrace, LBracket, RBracket])
     end)

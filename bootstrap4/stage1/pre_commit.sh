@@ -4,7 +4,7 @@ shopt -s nullglob
 
 echo "Formatting code ..."
 bash compile.sh klarfmt.kl build/klarfmt.js
-for file in *.kl; do
+for file in ../stage0/prelude_js.kl *.kl; do
     echo "Formatting $file ..."
     bun build/klarfmt.js $file -w
 done

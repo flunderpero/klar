@@ -535,6 +535,7 @@ fn main():
             assert(expr("1 - 2") == "(@binexpr - (@int 1) (@int 2))")
             assert(expr("1 * 2") == "(@binexpr * (@int 1) (@int 2))")
             assert(expr("1 / 2") == "(@binexpr / (@int 1) (@int 2))")
+            assert(expr("1 % 2") == "(@binexpr % (@int 1) (@int 2))")
             assert(expr("1 == 2") == "(@binexpr == (@int 1) (@int 2))")
             assert(expr("1 != 2") == "(@binexpr != (@int 1) (@int 2))")
             assert(expr("1 < 2") == "(@binexpr < (@int 1) (@int 2))")

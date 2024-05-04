@@ -95,6 +95,7 @@ enum BinaryExprKind:
     GreaterThanOrEqual
     LessThan
     LessThanOrEqual
+    Mod
     Mul
     NotEqual
     Or
@@ -1101,6 +1102,7 @@ impl ToDebugStr for BinaryExpr:
             BinaryExprKind::GreaterThanOrEqual => ">="
             BinaryExprKind::LessThan => "<"
             BinaryExprKind::LessThanOrEqual => "<="
+            BinaryExprKind::Mod => "%"
             BinaryExprKind::Mul => "*"
             BinaryExprKind::NotEqual => "!="
             BinaryExprKind::Or => "or"

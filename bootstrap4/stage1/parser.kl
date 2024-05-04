@@ -354,6 +354,7 @@ impl Parser:
                 TokenKind::Minus => (BinaryExprKind::Sub, 5)
                 TokenKind::Star => (BinaryExprKind::Mul, 6)
                 TokenKind::Slash => (BinaryExprKind::Div, 6)
+                TokenKind::Percent => (BinaryExprKind::Mod, 6)
                 _ => break
             end
             -- todo (lang-feat): We should be able to destruct the tuple.

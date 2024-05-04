@@ -1541,6 +1541,7 @@ impl Visitor for Formatter:
                     BinaryExprKind::GreaterThanOrEqual => self.w_token(TokenKind::GreaterThanOrEqual)
                     BinaryExprKind::LessThan => self.w_token(TokenKind::LessThan)
                     BinaryExprKind::LessThanOrEqual => self.w_token(TokenKind::LessThanOrEqual)
+                    BinaryExprKind::Mod => self.w_token(TokenKind::Percent)
                     BinaryExprKind::Mul => self.w_token(TokenKind::Star)
                     BinaryExprKind::NotEqual => self.w_token(TokenKind::NotEqual)
                     BinaryExprKind::Or => self.w_token(TokenKind::Or)

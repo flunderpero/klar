@@ -42,6 +42,7 @@ impl Iterator<Token> for Lexer:
             '/' => Token{kind: Slash, span}
             '?' => Token{kind: QMark, span}
             '|' => Token{kind: Pipe, span}
+            '%' => Token{kind: Percent, span}
             ';' => Token{kind: Semicolon, span}
             '.' =>
                 match self.iter.peek():
@@ -525,6 +526,7 @@ enum TokenKind:
     NotEqual
     Or
     LexError(Str)
+    Percent
     Pipe
     Plus
     QMark
@@ -610,6 +612,7 @@ impl ToStr for TokenKind:
             Or => "or"
             LexError(message) => f"LexError: {message}"
             Pipe => "|"
+            Percent => "%"
             Plus => "+"
             QMark => "?"
             RBrace => "}"

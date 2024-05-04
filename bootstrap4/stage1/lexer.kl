@@ -7,12 +7,11 @@ end
 impl Lexer:
     fn lex(src Str, file Str) Iterator<Token>:
         let iter = PeekableIterator::new(src.iter())
-        Lexer{file, src, iter}
+        Lexer{ file, src, iter }
     end
 
-    fn span(self) Span:
-        Span{file: self.file, src: self.src, from: self.iter.pos, to: self.iter.pos}
-    end
+    fn span(self) Span
+     => Span{ file: self.file, src: self.src, from: self.iter.pos, to: self.iter.pos }
 end
 
 impl Iterator<Token> for Lexer:
@@ -23,91 +22,91 @@ impl Iterator<Token> for Lexer:
         end
         let span = self.span()
         match next:
-            ' ' | '\n' | '\t' | '\r' => Token{kind: WhiteSpace(next), span}
-            '-' =>
-                match self.iter.peek():
+            ' ' | '\n' | '\t' | '\r' => Token{ kind: WhiteSpace(next), span }
+            '-'
+             => match self.iter.peek():
                     Some<Char>('-') => self.match_comment()
                     Some<Char>('0'..'9') => self.match_int_literal(next, span)
-                    _ => Token{kind: Minus, span: span.combine(self.span())}
+                    _ => Token{ kind: Minus, span: span.combine(self.span()) }
                 end
-            '(' => Token{kind: LParen, span}
-            ')' => Token{kind: RParen, span}
-            '{' => Token{kind: LBrace, span}
-            '}' => Token{kind: RBrace, span}
-            '[' => Token{kind: LBracket, span}
-            ']' => Token{kind: RBracket, span}
-            ',' => Token{kind: Comma, span}
-            '+' => Token{kind: Plus, span}
-            '*' => Token{kind: Star, span}
-            '/' => Token{kind: Slash, span}
-            '?' => Token{kind: QMark, span}
-            '|' => Token{kind: Pipe, span}
-            '%' => Token{kind: Percent, span}
-            ';' => Token{kind: Semicolon, span}
-            '.' =>
-                match self.iter.peek():
+            '(' => Token{ kind: LParen, span }
+            ')' => Token{ kind: RParen, span }
+            '{' => Token{ kind: LBrace, span }
+            '}' => Token{ kind: RBrace, span }
+            '[' => Token{ kind: LBracket, span }
+            ']' => Token{ kind: RBracket, span }
+            ',' => Token{ kind: Comma, span }
+            '+' => Token{ kind: Plus, span }
+            '*' => Token{ kind: Star, span }
+            '/' => Token{ kind: Slash, span }
+            '?' => Token{ kind: QMark, span }
+            '|' => Token{ kind: Pipe, span }
+            '%' => Token{ kind: Percent, span }
+            ';' => Token{ kind: Semicolon, span }
+            '.'
+             => match self.iter.peek():
                     Some<Char>('.'):
                         self.iter.next()
                         match self.iter.peek():
                             Some<Char>('<'):
                                 self.iter.next()
-                                Token{kind: DotDotLessThan, span: span.combine(self.span())}
+                                Token{ kind: DotDotLessThan, span: span.combine(self.span()) }
                             end
-                            _ => Token{kind: DotDot, span: span.combine(self.span())}
+                            _ => Token{ kind: DotDot, span: span.combine(self.span()) }
                         end
                     end
-                    _ => Token{kind: Dot, span}
+                    _ => Token{ kind: Dot, span }
                 end
-            ':' => 
-                match self.iter.peek():
+            ':'
+             => match self.iter.peek():
                     Some<Char>(':'):
                         self.iter.next()
-                        Token{kind: DoubleColon, span: span.combine(self.span())}
+                        Token{ kind: DoubleColon, span: span.combine(self.span()) }
                     end
-                    _ => Token{kind: Colon, span}
+                    _ => Token{ kind: Colon, span }
                 end
-            '!' => 
-                match self.iter.peek():
+            '!'
+             => match self.iter.peek():
                     Some<Char>('='):
                         self.iter.next()
-                        Token{kind: NotEqual, span: span.combine(self.span())}
+                        Token{ kind: NotEqual, span: span.combine(self.span()) }
                     end
-                    _ => Token{kind: Exclamation, span}
+                    _ => Token{ kind: Exclamation, span }
                 end
-            '=' => 
-                match self.iter.peek():
+            '='
+             => match self.iter.peek():
                     Some<Char>('='):
                         self.iter.next()
-                        Token{kind: DoubleEqual, span: span.combine(self.span())}
+                        Token{ kind: DoubleEqual, span: span.combine(self.span()) }
                     end
                     Some<Char>('>'):
                         self.iter.next()
-                        Token{kind: FatArrow, span: span.combine(self.span())}
+                        Token{ kind: FatArrow, span: span.combine(self.span()) }
                     end
-                    _ => Token{kind: Equal, span}
+                    _ => Token{ kind: Equal, span }
                 end
-            '<' =>
-                match self.iter.peek():
+            '<'
+             => match self.iter.peek():
                     Some<Char>('='):
                         self.iter.next()
-                        Token{kind: LessThanOrEqual, span: span.combine(self.span())}
+                        Token{ kind: LessThanOrEqual, span: span.combine(self.span()) }
                     end
-                    _ => Token{kind: LessThan, span}
+                    _ => Token{ kind: LessThan, span }
                 end
-            '>' =>
-                match self.iter.peek():
+            '>'
+             => match self.iter.peek():
                     Some<Char>('='):
                         self.iter.next()
-                        Token{kind: GreaterThanOrEqual, span: span.combine(self.span())}
+                        Token{ kind: GreaterThanOrEqual, span: span.combine(self.span()) }
                     end
-                    _ => Token{kind: GreaterThan, span}
+                    _ => Token{ kind: GreaterThan, span }
                 end
             '0'..'9' => self.match_int_literal(next, span)
             '"' => self.match_string(false, self.span())
             '\'' => self.match_char()
             'a'..'z' | 'A'..'Z' | '_':
-                if next == 'f':
-                    match self.iter.peek():
+                if next == 'f'
+                 => match self.iter.peek():
                         Some<Char>('"'):
                             let span = self.span()
                             self.iter.next()
@@ -115,48 +114,46 @@ impl Iterator<Token> for Lexer:
                         end
                         _ => ()
                     end
-                end
                 mut ident = "".push_char(next)
                 loop:
                     match self.iter.peek():
-                        Some<Char>('a'..'z' | 'A'..'Z' | '0'..'9' | '_'):
-                            ident.push_char(self.iter.next().unwrap())
-                        end
+                        Some<Char>('a'..'z' | 'A'..'Z' | '0'..'9' | '_')
+                         => ident.push_char(self.iter.next().unwrap())
                         _ => break
                     end
                 end
                 let ident_span = span.combine(self.span())
                 match ident:
                     -- todo (lang-feat): We should be able to generate this code automatically.
-                    "and" => Token{kind: And, span: ident_span}
-                    "break" => Token{kind: Break, span: ident_span}
-                    "continue" => Token{kind: Continue, span: ident_span}
-                    "else" => Token{kind: Else, span: ident_span}
-                    "end" => Token{kind: End, span: ident_span}
-                    "enum" => Token{kind: Enum, span: ident_span}
-                    "extern" => Token{kind: Extern, span: ident_span}
-                    "false" => Token{kind: BoolLiteral(false), span: ident_span}
-                    "fn" => Token{kind: Fn, span: ident_span}
-                    "for" => Token{kind: For, span: ident_span}
-                    "if" => Token{kind: If, span: ident_span}
-                    "impl" => Token{kind: Impl, span: ident_span}
-                    "let" => Token{kind: Let, span: ident_span}
-                    "loop" => Token{kind: Loop, span: ident_span}
-                    "match" => Token{kind: Match, span: ident_span}
-                    "mut" => Token{kind: Mut, span: ident_span}
-                    "not" => Token{kind: Not, span: ident_span}
-                    "or" => Token{kind: Or, span: ident_span}
-                    "return" => Token{kind: Return, span: ident_span}
-                    "struct" => Token{kind: Struct, span: ident_span}
-                    "throws" => Token{kind: Throws, span: ident_span}
-                    "trait" => Token{kind: Trait, span: ident_span}
-                    "true" => Token{kind: BoolLiteral(true), span: ident_span}
-                    "use" => Token{kind: Use, span: ident_span}
-                    "_" => Token{kind: Underscore, span: ident_span}
-                    _ => Token{kind: Ident(ident), span: ident_span}
+                    "and" => Token{ kind: And, span: ident_span }
+                    "break" => Token{ kind: Break, span: ident_span }
+                    "continue" => Token{ kind: Continue, span: ident_span }
+                    "else" => Token{ kind: Else, span: ident_span }
+                    "end" => Token{ kind: End, span: ident_span }
+                    "enum" => Token{ kind: Enum, span: ident_span }
+                    "extern" => Token{ kind: Extern, span: ident_span }
+                    "false" => Token{ kind: BoolLiteral(false), span: ident_span }
+                    "fn" => Token{ kind: Fn, span: ident_span }
+                    "for" => Token{ kind: For, span: ident_span }
+                    "if" => Token{ kind: If, span: ident_span }
+                    "impl" => Token{ kind: Impl, span: ident_span }
+                    "let" => Token{ kind: Let, span: ident_span }
+                    "loop" => Token{ kind: Loop, span: ident_span }
+                    "match" => Token{ kind: Match, span: ident_span }
+                    "mut" => Token{ kind: Mut, span: ident_span }
+                    "not" => Token{ kind: Not, span: ident_span }
+                    "or" => Token{ kind: Or, span: ident_span }
+                    "return" => Token{ kind: Return, span: ident_span }
+                    "struct" => Token{ kind: Struct, span: ident_span }
+                    "throws" => Token{ kind: Throws, span: ident_span }
+                    "trait" => Token{ kind: Trait, span: ident_span }
+                    "true" => Token{ kind: BoolLiteral(true), span: ident_span }
+                    "use" => Token{ kind: Use, span: ident_span }
+                    "_" => Token{ kind: Underscore, span: ident_span }
+                    _ => Token{ kind: Ident(ident), span: ident_span }
                 end
             end
-            _ => Token{kind: LexError(f"unexpected character: {next}"), span}
+            _ => Token{ kind: LexError(f"unexpected character: {next}"), span }
         end
     end
 
@@ -168,14 +165,14 @@ impl Iterator<Token> for Lexer:
                 _ => break
             end
         end
-        Token{kind: IntLiteral(num), span}
+        Token{ kind: IntLiteral(num), span }
     end
 
     fn match_char(mut self) Token:
         let span = self.span()
         let c = match self.iter.next():
-            Some('\\') => 
-                match self.match_escape_sequence(self.iter.next()):
+            Some('\\')
+             => match self.match_escape_sequence(self.iter.next()):
                     Error(err):
                         -- Error recovery: consume until we find a closing single quote
                         -- or a new line.
@@ -185,19 +182,20 @@ impl Iterator<Token> for Lexer:
                                 _ => ()
                             end
                         end
-                        return Token{kind: LexError(err.to_str()), span}
+                        return Token{ kind: LexError(err.to_str()), span }
                     end
                     Ok<Char>(c) => c
                 end
-            Some('\'') => return Token{kind: LexError("empty character literal"), span: self.span()}
+            Some('\'')
+             => return Token{ kind: LexError("empty character literal"), span: self.span() }
             Some(c) => c
-            None => return Token{kind: LexError("unexpected end of file"), span: self.span()}
+            None => return Token{ kind: LexError("unexpected end of file"), span: self.span() }
         end
         match self.iter.next():
             Some<Char>('\'') => ()
-            _ => return Token{kind: LexError("expected closing '"), span: self.span()}
+            _ => return Token{ kind: LexError("expected closing '"), span: self.span() }
         end
-        Token{kind: CharLiteral(c), span: span.combine(self.span())}
+        Token{ kind: CharLiteral(c), span: span.combine(self.span()) }
     end
 
     fn match_string(mut self, is_fstr Bool, span Span) Token:
@@ -213,7 +211,8 @@ impl Iterator<Token> for Lexer:
                         self.iter.next()
                         3
                     end
-                    _ => 0 -- This is simply an empty string.
+                    _ => 0
+                    -- This is simply an empty string.
                 end
             end
             _ => 1
@@ -222,17 +221,15 @@ impl Iterator<Token> for Lexer:
         mut span = self.span()
         span.from = span.from + 1
         loop:
-            if quotes.len() == required_closing_quotes:
-                break
-            end
+            if quotes.len() == required_closing_quotes => break
             match self.iter.next():
                 Some<Char>('"'):
                     quotes.push_char('"')
                     continue
                 end
-                Some<Char>('\\') => 
-                    match self.match_escape_sequence(self.iter.next()):
-                        Error(err) => return Token{kind: LexError(err.to_str()), span}
+                Some<Char>('\\')
+                 => match self.match_escape_sequence(self.iter.next()):
+                        Error(err) => return Token{ kind: LexError(err.to_str()), span }
                         Ok<Char>(c) => s.push_char(c)
                     end
                 Some<Char>('{'):
@@ -250,11 +247,15 @@ impl Iterator<Token> for Lexer:
                     mut item_tokens = Vector<Token>::new()
                     loop:
                         match self.iter.peek():
-                            Some<Char>('}'): 
+                            Some<Char>('}'):
                                 self.iter.next()
                                 break
                             end
-                            None => return Token{kind: LexError("unexpected end of file"), span: self.span()}
+                            None
+                             => return Token{
+                                    kind: LexError("unexpected end of file"),
+                                    span: self.span()
+                                }
                             _ => item_tokens.push(self.next().unwrap())
                         end
                     end
@@ -262,17 +263,23 @@ impl Iterator<Token> for Lexer:
                     span = self.span()
                     span.from = span.from + 1
                 end
-                Some<Char>('\n') => 
-                    if multi_line => s.push_char('\n')
-                    else => return Token{kind: LexError("unexpected end of line"), span: self.span()}
-                Some<Char>(c):
-                    match c.to_int():
-                        0..8 | 11..12 | 14..31 
-                         => return Token{kind: LexError("control character is illegal"), span: self.span()}
+                Some<Char>('\n')
+                 => if multi_line => s.push_char('\n')
+                    else
+                     => return Token{
+                            kind: LexError("unexpected end of line"),
+                            span: self.span()
+                        }
+                Some<Char>(c)
+                 => match c.to_int():
+                        0..8 | 11..12 | 14..31
+                         => return Token{
+                                kind: LexError("control character is illegal"),
+                                span: self.span()
+                            }
                         _ => s.push_char(c)
                     end
-                end
-                None => return Token{kind: LexError("unexpected end of file"), span: self.span()}
+                None => return Token{ kind: LexError("unexpected end of file"), span: self.span() }
             end
             quotes = ""
         end
@@ -284,7 +291,7 @@ impl Iterator<Token> for Lexer:
             end
             FStr(fstr_items, multi_line)
         end else => StrLiteral(s, multi_line)
-        Token{kind, span: start_span.combine(self.span())}
+        Token{ kind, span: start_span.combine(self.span()) }
     end
 
     fn match_comment(mut self) Token:
@@ -302,9 +309,7 @@ impl Iterator<Token> for Lexer:
                         Some<Char>('-'):
                             comment.push_char('-')
                             num_of_dashes = num_of_dashes + 1
-                            if num_of_dashes == 3:
-                                break
-                            end
+                            if num_of_dashes == 3 => break
                         end
                         Some<Char>(c):
                             comment.push_char(c)
@@ -320,7 +325,7 @@ impl Iterator<Token> for Lexer:
                 loop:
                     match self.iter.peek():
                         Some<Char>('\n') => break
-                        Some<Char>(c): 
+                        Some<Char>(c):
                             comment.push_char(c)
                             self.iter.next()
                         end
@@ -328,9 +333,9 @@ impl Iterator<Token> for Lexer:
                     end
                 end
             end
-            _ => None 
+            _ => None
         end
-        Token{kind: Comment(comment), span}
+        Token{ kind: Comment(comment), span }
     end
 
     fn match_escape_sequence(mut self, c Char?) Char throws:
@@ -373,7 +378,6 @@ impl Iterator<Token> for Lexer:
     end
 end
 
-
 struct Span:
     --- A span is a range of characters in a source file.
         `to` and `from` are inclusive.
@@ -385,14 +389,9 @@ struct Span:
 end
 
 impl Span:
-    fn combine(self, other Span) Span:
-        Span{
-            file: self.file, 
-            src: self.src, 
-            from: if self.from < other.from => self.from else => other.from, 
-            to: if self.to > other.to => self.to else => other.to
-        }
-    end
+    fn combine(self, other Span) Span
+     => Span{ file: self.file, src: self.src, from: if self.from < other.from => self.from
+        else => other.from, to: if self.to > other.to => self.to else => other.to }
 
     fn position(self) (Int, Int):
         --- Get the line and column number of the start of the span.
@@ -435,11 +434,10 @@ impl Span:
         self.src.slice_copy(x, y).split('\n')
     end
 
-    fn raw_src(self) Str:
-        --- Return the raw source code covered by this span.
+    fn raw_src(self) Str
+     => --- Return the raw source code covered by this span.
         ---
         self.src.slice_copy(self.from, self.to + 1)
-    end
 end
 
 impl ToStr for Span:
@@ -549,8 +547,8 @@ end
 use TokenKind::*
 
 impl ToStr for TokenKind:
-    fn to_str(self) Str:
-        match self:
+    fn to_str(self) Str
+     => match self:
             -- todo (lang-feat): We should be able to generate most of this code automatically.
             And => "and"
             BoolLiteral(b) => f"BoolLiteral({b})"
@@ -575,19 +573,13 @@ impl ToStr for TokenKind:
             Fn => "fn"
             For => "for"
             FStr(items, is_multi_line):
-                let items_to_str = items<FStrItem>.iter().map<Str>(
-                    fn(token FStrItem) Str:
-                        match token:
-                            FStrTokensItem(tokens, _) => 
-                                " ".join(
-                                    tokens<Token>.iter().map<Str>(
-                                        fn(token Token) Str => token.to_str()
-                                    )
-                                )
-                            FStrStrItem(s, _) => s
-                        end
-                    end
-                )
+                let items_to_str = items<FStrItem>.iter().map<Str>(fn(token FStrItem) Str
+                 => match token:
+                        FStrTokensItem(tokens, _)
+                         => " ".join(tokens<Token>.iter().map<Str>(fn(token Token) Str
+                             => token.to_str()))
+                        FStrStrItem(s, _) => s
+                    end)
                 let items_str = ", ".join(items_to_str)
                 f"FStr([{items_str}], {is_multi_line})"
             end
@@ -631,7 +623,6 @@ impl ToStr for TokenKind:
             Use => "use"
             WhiteSpace(ws) => f"WhiteSpace()"
         end
-    end
 end
 
 impl PartialEq for TokenKind:
@@ -647,39 +638,33 @@ struct Token:
 end
 
 impl Token:
-    fn to_src(self) Str:
-        --- Convert a token back to source code. This is done using the span to 
+    fn to_src(self) Str
+     => --- Convert a token back to source code. This is done using the span to
             slice the source code.
         ---
         match self.kind:
             BoolLiteral(b) => f"{b}"
             Comment(comment) => comment
             FStr(items, is_multi_line):
-                let items = items<FStrItem>.iter().map<Str>(
-                    fn(token FStrItem) Str:
-                        match token:
-                            FStrTokensItem(tokens, _) => 
-                                "".join(
-                                    tokens<Token>.iter().map<Str>(
-                                        fn(token Token) Str => token.to_str()
-                                    )
-                                )
-                            FStrStrItem(s, _) => s
-                        end
-                    end
-                )
+                let items = items<FStrItem>.iter().map<Str>(fn(token FStrItem) Str
+                 => match token:
+                        FStrTokensItem(tokens, _)
+                         => "".join(tokens<Token>.iter().map<Str>(fn(token Token) Str
+                             => token.to_str()))
+                        FStrStrItem(s, _) => s
+                    end)
                 let items_str = "".join(items)
-                if is_multi_line => f"\"\"\"{items_str}\"\"\""
-                else => f"\"{items_str}\""
+                if is_multi_line => f"\"\"\"{items_str}\"\"\"" else => f"\"{items_str}\""
             end
             Ident(ident) => ident
             IntLiteral(num) => num
-            StrLiteral(s, multi_line) =>
+            StrLiteral(s, multi_line):
                 -- We use the actual source code to get the string literal
                 -- as it was written in the source code. We need to do this
-                -- because we can't distinguish escape sequences from actual 
+                -- because we can't distinguish escape sequences from actual
                 -- characters (like `\n` and `\\n` in multi-line strings).
                 self.span.src.slice_copy(self.span.from, self.span.to + 1)
+            end
             CharLiteral(c):
                 -- We use the actual source code to get the char literal
                 -- for the same reason as for string literals.
@@ -688,13 +673,10 @@ impl Token:
             WhiteSpace(ws) => f"{ws}"
             _ => self.kind.to_str()
         end
-    end
 end
 
 impl ToStr for Token:
-    fn to_str(self) Str:
-        f"{self.kind}"
-    end
+    fn to_str(self) Str => f"{self.kind}"
 end
 
 fn to_src(tokens Vector<Token>) Str:

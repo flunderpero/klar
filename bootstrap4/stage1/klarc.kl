@@ -13,33 +13,33 @@ enum DebugLevel:
 end
 
 impl PartialEq for DebugLevel:
-    fn eq(self, other DebugLevel) Bool:
-        match self:
-            DebugLevel::Off => match other:
-                DebugLevel::Off => true
-                _ => false
-            end
-            DebugLevel::Debug => match other:
-                DebugLevel::Debug => true
-                _ => false
-            end
-            DebugLevel::Warn => match other:
-                DebugLevel::Warn => true
-                _ => false
-            end
+    fn eq(self, other DebugLevel) Bool
+     => match self:
+            DebugLevel::Off
+             => match other:
+                    DebugLevel::Off => true
+                    _ => false
+                end
+            DebugLevel::Debug
+             => match other:
+                    DebugLevel::Debug => true
+                    _ => false
+                end
+            DebugLevel::Warn
+             => match other:
+                    DebugLevel::Warn => true
+                    _ => false
+                end
         end
-    end
 end
 
 fn lex(src Str, file Str, debug_level DebugLevel) Vector<Token>:
     let tokens = Lexer::lex(src, file).collect()
-    let lex_errors = tokens.iter().filter(
-        fn(token Token) =>
-            match token.kind:
-                TokenKind::LexError(_) => true
-                _ => false
-            end
-    ).collect()
+    let lex_errors = tokens.iter().filter(fn(token Token)
+     => match token.kind:
+            TokenKind::LexError(_) => true
+            _ => false
+        end).collect()
     if debug_level == DebugLevel::Debug:
         print("Tokens:")
         let iter = tokens.iter()
@@ -50,8 +50,8 @@ fn lex(src Str, file Str, debug_level DebugLevel) Vector<Token>:
             end
         end
     end
-    if debug_level == DebugLevel::Warn or debug_level == DebugLevel::Debug:
-        if lex_errors.len() > 0:
+    if debug_level == DebugLevel::Warn or debug_level == DebugLevel::Debug
+     => if lex_errors.len() > 0:
             print("Lex errors:")
             let iter = lex_errors.iter()
             loop:
@@ -61,13 +61,11 @@ fn lex(src Str, file Str, debug_level DebugLevel) Vector<Token>:
                 end
             end
         end
-    end
     tokens
 end
 
-fn parse(tokens Vector<Token>) Module throws ParseError:
-    Parser::new(TokenIter::new(tokens)).parse_module()
-end
+fn parse(tokens Vector<Token>) Module throws ParseError
+ => Parser::new(TokenIter::new(tokens)).parse_module()
 
 fn main() throws:
     let args = Env::args()
@@ -77,7 +75,7 @@ fn main() throws:
         return ()
     end
     -- todo (lang-feat) We should be able to replace this with a simple block instead of an IIFE.
-    let debug_level = (fn () DebugLevel:
+    let debug_level = (fn() DebugLevel:
         if args.iter().any(fn(s Str) Bool => s == "--debug") => return DebugLevel::Debug
         else => if args.iter().any(fn(s Str) Bool => s == "--warn") => return DebugLevel::Warn
         DebugLevel::Off

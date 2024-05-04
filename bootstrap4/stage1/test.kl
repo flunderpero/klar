@@ -1,5 +1,4 @@
---- A little test "framework".
----
+--- A little test "framework". ---
 
 struct Test:
     verbose Bool
@@ -36,9 +35,7 @@ struct TestRunResult:
 end
 
 impl TestRunResult:
-    fn new() TestRunResult:
-        TestRunResult{passed: 0, failed: 0, skipped: 0}
-    end
+    fn new() TestRunResult => TestRunResult{ passed: 0, failed: 0, skipped: 0 }
 
     fn update(mut self, other TestRunResult):
         self.passed = self.passed + other.passed
@@ -62,9 +59,7 @@ struct TestLogger:
 end
 
 impl TestLogger:
-    fn new() TestLogger:
-        TestLogger{indent_: 0}
-    end
+    fn new() TestLogger => TestLogger{ indent_: 0 }
 
     fn log(self, msg Str):
         let indent = " ".repeat(self.indent_ * 2)
@@ -80,7 +75,7 @@ end
 impl Test:
     fn new(name Str, verbose Bool) Test:
         let root_group = TestGroup::new(name, false, false)
-        Test{verbose, root_group, collect_group: root_group, logger: TestLogger::new()}
+        Test{ verbose, root_group, collect_group: root_group, logger: TestLogger::new() }
     end
 
     fn new_from_args(name Str, args Vector<Str>) Test:
@@ -89,52 +84,46 @@ impl Test:
             Command line arguments:
               * `--verbose`: print test logs to stdout.
         ---
-        let verbose = args.iter().any(fn(arg Str) => arg == "--verbose") 
+        let verbose = args.iter().any(fn(arg Str) => arg == "--verbose")
         Test::new(name, verbose)
     end
 
-    fn it(self, name Str, f (fn() throws)):
-        --- Add a test to the current group.
+    fn it(self, name Str, f (fn() throws))
+     => --- Add a test to the current group.
         ---
-        self.collect_group.tests.push(TestCase{name, f, only: false, skip: false})
-    end
+        self.collect_group.tests.push(TestCase{ name, f, only: false, skip: false })
 
-    fn only_it(self, name Str, f (fn() throws)):
-        --- Add a test to the current group and ignore all other tests that are not
+    fn only_it(self, name Str, f (fn() throws))
+     => --- Add a test to the current group and ignore all other tests that are not
             also created with `it_only()` or `group_only()`.
         ---
-        self.collect_group.tests.push(TestCase{name, f, only: true, skip: false})
-    end
+        self.collect_group.tests.push(TestCase{ name, f, only: true, skip: false })
 
-    fn skip_it(self, name Str, f (fn() throws)):
-        --- Ignore a test.
+    fn skip_it(self, name Str, f (fn() throws))
+     => --- Ignore a test.
         ---
-        self.collect_group.tests.push(TestCase{name, f, only: false, skip: true})
-    end
+        self.collect_group.tests.push(TestCase{ name, f, only: false, skip: true })
 
-    fn group(mut self, name Str, collect (fn())):
-        --- Create a new group of tests. All tests and groups added within the 
-            `collect` function will be added to the new group. 
+    fn group(mut self, name Str, collect (fn()))
+     => --- Create a new group of tests. All tests and groups added within the
+            `collect` function will be added to the new group.
         ---
         self.group_(false, false, name, collect)
-    end
 
-    fn only_group(mut self, name Str, collect (fn())):
-        --- Create a new group and ignore all other groups that are not also
+    fn only_group(mut self, name Str, collect (fn()))
+     => --- Create a new group and ignore all other groups that are not also
             created with `group_only()`.
         ---
         self.group_(true, false, name, collect)
-    end
 
-    fn skip_group(mut self, name Str, collect (fn())):
-        --- Create a new group and ignore it.
+    fn skip_group(mut self, name Str, collect (fn()))
+     => --- Create a new group and ignore it.
         ---
         self.group_(false, true, name, collect)
-    end
 
     fn group_(mut self, only Bool, skip Bool, name Str, collect (fn())):
-        --- Create a new group of tests. All tests and groups added within the 
-            `collect` function will be added to the new group. 
+        --- Create a new group of tests. All tests and groups added within the
+            `collect` function will be added to the new group.
         ---
         let collect_group = self.collect_group
         mut group = TestGroup::new(name, only, skip)
@@ -144,17 +133,20 @@ impl Test:
         collect_group.groups.push(group)
     end
 
-    fn log(self, msg Str):
-        --- Log a message to the currently tested group's logger so that it will be
+    fn log(self, msg Str)
+     => --- Log a message to the currently tested group's logger so that it will be
             indented properly.
         ---
         if self.verbose => self.logger.log(msg)
-    end
 
     fn run(self) TestRunResult:
         --- Run all collected tests.
         ---
-        let config = TestRunConfig{logger: self.logger, verbose: self.verbose, only: self.root_group.has_only()}
+        let config = TestRunConfig{
+            logger: self.logger,
+            verbose: self.verbose,
+            only: self.root_group.has_only()
+        }
         self.root_group.run(config)
     end
 
@@ -169,14 +161,18 @@ impl Test:
 end
 
 impl TestGroup:
-    fn new(name Str, only Bool, skip Bool) TestGroup:
-        TestGroup{ name, tests: Vector<TestCase>::new(), groups: Vector<TestGroup>::new(), only, skip }
-    end
+    fn new(name Str, only Bool, skip Bool) TestGroup
+     => TestGroup{
+            name,
+            tests: Vector<TestCase>::new(),
+            groups: Vector<TestGroup>::new(),
+            only,
+            skip
+        }
 
-    fn has_only(self) Bool:
-        self.only or self.tests.iter().any(fn(test TestCase) => test.only) or 
-            self.groups.iter().any(fn(group TestGroup) => group.has_only())
-    end
+    fn has_only(self) Bool
+     => self.only or self.tests.iter().any(fn(test TestCase)
+         => test.only) or self.groups.iter().any(fn(group TestGroup) => group.has_only())
 
     fn run(self, mut config TestRunConfig) TestRunResult:
         fn color(s Str, color Str) Str => f"\x1b[{color}m{s}\x1b[0m"
@@ -192,16 +188,14 @@ impl TestGroup:
                 result.inc_skipped()
                 return ()
             end
-            if config.verbose:
-                logger.log(f"{group_name} {color("RUN", "33")}  {name}")
-            end
+            if config.verbose => logger.log(f"{group_name} {color("RUN", "33")}  {name}")
             logger.indent()
             let old_panic_handler = register_panic_handler(fn(message, location, src):
                 result.inc_failed()
                 let st_ = stack_trace()
-                let stack_trace_ = st_.frames.iter().take_while(fn(it Frame):
-                    not it.file.contains("test.kl")
-                end).take(6).map<Str>(fn(it Frame) => it.to_str())
+                let stack_trace_ = st_.frames.iter().take_while(fn(it Frame)
+                 => not it.file.contains("test.kl")).take(6).map<Str>(fn(it Frame)
+                 => it.to_str())
                 logger.log(f"{group_name} {color("FAIL", "31")} {name}: panicked with")
                 logger.indent()
                 logger.log(f"\n{message}\n\nat {"\n   ".join(stack_trace_)}")
@@ -231,17 +225,20 @@ impl TestGroup:
             result.update(group_result)
             logger.dedent()
         end)
-        let skipped = if result.skipped > 0 
-            => color(f"{result.skipped} tests skipped", "33")
-            else => ""
+        let skipped = if result.skipped > 0 => color(f"{result.skipped} tests skipped", "33")
+        else => ""
         if result.failed > 0:
             let s = color(f"{result.failed} / {result.total_run()} tests failed", "31")
             logger.log(f"{group_name} {s}{", ".when(skipped.len() > 0)}{skipped}")
         end else:
-            let passed = if result.passed > 0 
-                => color(f"{result.passed} / {result.total_run()} tests passed", "32")
-                else => ""
-            logger.log(f"{group_name} {passed}{", ".when(result.passed > 0 and skipped.len() > 0)}{skipped}")
+            let passed = if result.passed > 0
+             => color(f"{result.passed} / {result.total_run()} tests passed", "32")
+            else => ""
+            logger.log(
+                f"{
+                    group_name
+                } {passed}{", ".when(result.passed > 0 and skipped.len() > 0)}{skipped}"
+            )
         end
         result
     end

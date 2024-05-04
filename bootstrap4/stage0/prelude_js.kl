@@ -8,50 +8,44 @@ end
 use Option::*
 
 impl Option<T>:
-    fn is_none(self) Bool:
-        match self:
+    fn is_none(self) Bool
+     => match self:
             None => true
             Some(_) => false
         end
-    end
 
-    fn is_some(self) Bool:
-        match self:
+    fn is_some(self) Bool
+     => match self:
             None => false
             Some(_) => true
         end
-    end
 
-    fn unwrap(self) T:
-        match self:
+    fn unwrap(self) T
+     => match self:
             None => panic("called `Option::unwrap()` on a `None` value")
             Some(value) => value
         end
-    end
 
-    fn unwrap_or(self, def T) T:
-        match self:
+    fn unwrap_or(self, def T) T
+     => match self:
             None => def
             Some(value) => value
         end
-    end
 
-    fn unwrap_or_error<E impl ToStr>(self, error E) T throws E:
-        match self:
+    fn unwrap_or_error<E impl ToStr>(self, error E) T throws E
+     => match self:
             None => Error(error)
             Some(value) => Ok(value)
         end
-    end
 end
 
 -- todo (lang-feat): We should be able to implemnt `ToStr` for `Option<T impl ToStr>`.
 impl ToStr for Option<T>:
-    fn to_str(self) Str:
-        match self:
+    fn to_str(self) Str
+     => match self:
             None => "None"
             Some(_) => f"Some(...)"
         end
-    end
 end
 
 trait ToStr:
@@ -61,7 +55,6 @@ end
 struct StrFormatter:
     width Int?
     radix Int?
-
     -- todo (lang-feat): Make this private.
     out Str
 end
@@ -71,7 +64,7 @@ impl ToStr for StrFormatter:
 end
 
 impl StrFormatter:
-    fn new() StrFormatter => StrFormatter { width: None, radix: None, out: "" }
+    fn new() StrFormatter => StrFormatter{ width: None, radix: None, out: "" }
 
     fn write_str(mut self, s Str) Self:
         self.out.push(s)
@@ -104,11 +97,13 @@ end
 
 trait Div:
     fn div(self, rhs Self) Self
+
     fn modulo(self, rhs Self) Self
 end
 
 trait PartialEq:
     fn eq(self, rhs Self) Bool
+
     fn ne(self, rhs Self) Bool => not self.eq(rhs)
 end
 
@@ -118,8 +113,11 @@ end
 
 trait PartialOrd:
     fn lt(self, rhs Self) Bool
+
     fn le(self, rhs Self) Bool
+
     fn gt(self, rhs Self) Bool
+
     fn ge(self, rhs Self) Bool
 end
 
@@ -136,7 +134,7 @@ trait IndexedSet<K, V>:
 end
 
 trait Iterator<T>:
-    fn next(self) Option<T>
+    fn next(self) T?
 
     fn for_each(self, f (fn(T))):
         loop:
@@ -176,10 +174,8 @@ trait Iterator<T>:
         vec
     end
 
-    fn reverse(self) Iterator<T>:
-        self.collect().reverse_copy().iter()
-    end
-    
+    fn reverse(self) Iterator<T> => self.collect().reverse_copy().iter()
+
     fn count(self) Int:
         mut count = 0
         loop:
@@ -196,18 +192,13 @@ trait Iterator<T>:
         loop:
             match self.next():
                 None => break
-                Some(value):
-                    if f(value) => vec.push(value)
-                    else => break
-                end
+                Some(value) => if f(value) => vec.push(value) else => break
             end
         end
         vec.iter()
     end
 
-    fn take(self, n Int) Iterator<T>:
-        Take<T> { iter: self, n }
-    end
+    fn take(self, n Int) Iterator<T> => Take<T>{ iter: self, n }
 
     fn skip_while(self, f (fn(T) Bool)) Iterator<T>:
         --- Skip elements until the predicate returns false.
@@ -250,7 +241,7 @@ trait Iterator<T>:
         None
     end
 
-    fn find(self, f (fn(T) Bool)) Option<T>:
+    fn find(self, f (fn(T) Bool)) T?:
         loop:
             match self.next():
                 None => return None
@@ -261,12 +252,12 @@ trait Iterator<T>:
         return None
     end
 
-    fn find_map<U>(self, f (fn(T) Option<U>)) Option<U>:
+    fn find_map<U>(self, f (fn(T) U?)) U?:
         loop:
             match self.next():
                 None => return None
-                Some(value) =>
-                    match f(value):
+                Some(value)
+                 => match f(value):
                         None => continue
                         Some(result) => return Some(result)
                     end
@@ -276,12 +267,11 @@ trait Iterator<T>:
         return None
     end
 
-    fn any(self, predicate (fn(T) Bool)) Bool:
-        match self.find_index(predicate):
+    fn any(self, predicate (fn(T) Bool)) Bool
+     => match self.find_index(predicate):
             None => false
             Some(_) => true
         end
-    end
 end
 
 struct Take<T>:
@@ -290,10 +280,8 @@ struct Take<T>:
 end
 
 impl Iterator<T> for Take<T>:
-    fn next(mut self) Option<T>:
-        if self.n <= 0:
-            return None
-        end
+    fn next(mut self) T?:
+        if self.n <= 0 => return None
         self.n = self.n - 1
         self.iter.next()
     end
@@ -306,27 +294,21 @@ struct PeekableIterator<T>:
 end
 
 impl PeekableIterator<T>:
-    fn new(iter Iterator<T>) Self => PeekableIterator<T> { iter, peeked: None, pos: -1 }
+    fn new(iter Iterator<T>) Self => PeekableIterator<T>{ iter, peeked: None, pos: -1 }
 
-    fn peek(mut self) Option<T>:
-        if self.peeked.is_some():
-            return self.peeked
-        end
+    fn peek(mut self) T?:
+        if self.peeked.is_some() => return self.peeked
         self.peeked = self.iter.next()
-        self.peeked 
+        self.peeked
     end
 
-    fn is_last(self) Bool:
-        self.peek().is_none()
-    end
+    fn is_last(self) Bool => self.peek().is_none()
 
-    fn is_first(self) Bool:
-        self.pos == 0
-    end
+    fn is_first(self) Bool => self.pos == 0
 end
 
 impl Iterator<T> for PeekableIterator<T>:
-    fn next(mut self) Option<T>:
+    fn next(mut self) T?:
         self.pos = self.pos + 1
         if self.peeked.is_some():
             let value = self.peeked.unwrap()
@@ -349,60 +331,54 @@ end
 use Result::*
 
 impl Result<T, E>:
-    fn is_ok(self) Bool:
-        match self:
+    fn is_ok(self) Bool
+     => match self:
             Ok(_) => true
             Error(_) => false
         end
-    end
 
-    fn is_error(self) Bool:
-        match self:
+    fn is_error(self) Bool
+     => match self:
             Ok(_) => false
             Error(_) => true
         end
-    end
 
-    fn unwrap(self) T:
-        match self:
+    fn unwrap(self) T
+     => match self:
             Ok(value) => value
             Error(error) => panic(f"called `Result.unwrap()` on an `Error` value: {error}")
         end
-    end
 
-    fn unwrap_error(self) E:
-        match self:
+    fn unwrap_error(self) E
+     => match self:
             Ok(value) => panic(f"called `Result.unwrap_err()` on an `Ok` value")
             Error(error) => error
         end
-    end
 
-    fn as_option(self) Option<T>:
-        match self:
+    fn as_option(self) T?
+     => match self:
             Ok(value) => Some(value)
             Error(_) => None
         end
-    end
 end
 
 impl ToStr for Result<T, E>:
-    fn to_str(self) Str:
-        match self:
+    fn to_str(self) Str
+     => match self:
             Ok(value) => f"ok: {value}"
             Error(error) => f"error: {error}"
         end
-    end
 end
 
 -- Fixed size array
-
 struct Array<T>:
     data JSArray<T>
 end
 
 impl Array<T>:
-    fn new(size Int) Array<T> => Array<T> { data: JSArray<T>::new(size) }
-    fn iter(self) ArrayIter<T> => ArrayIter<T> { arr: self, index: 0 }
+    fn new(size Int) Array<T> => Array<T>{ data: JSArray<T>::new(size) }
+
+    fn iter(self) ArrayIter<T> => ArrayIter<T>{ arr: self, index: 0 }
 end
 
 impl Len for Array<T>:
@@ -411,18 +387,14 @@ end
 
 impl IndexedGet<Int, T> for Array<T>:
     fn get(self, i Int) T:
-        if i >= self.len():
-            panic("Array index out of bounds")
-        end
+        if i >= self.len() => panic("Array index out of bounds")
         self.data.get(i)
     end
 end
 
 impl IndexedSet<Int, T> for Array<T>:
     fn set(mut self, i Int, v T):
-        if i >= self.len():
-            panic("Array index out of bounds")
-        end
+        if i >= self.len() => panic("Array index out of bounds")
         self.data.set(i, v)
     end
 end
@@ -433,10 +405,8 @@ struct ArrayIter<T>:
 end
 
 impl Iterator<T> for ArrayIter<T>:
-    fn next(mut self) Option<T>:
-        if self.index >= self.arr.len():
-            return None
-        end
+    fn next(mut self) T?:
+        if self.index >= self.arr.len() => return None
         let value = self.arr.get(self.index)
         self.index = self.index + 1
         Some(value)
@@ -451,9 +421,7 @@ struct Frame:
 end
 
 impl ToStr for Frame:
-    fn to_str(self) Str:
-        f"{self.file}:{self.line}:{self.col}\n    {self.src}"
-    end
+    fn to_str(self) Str => f"{self.file}:{self.line}:{self.col}\n    {self.src}"
 end
 
 struct Trace:
@@ -469,10 +437,15 @@ end
 
 extern:
     fn print(s ToStr)
+
     fn panic(s Str)
+
     fn exit(code Int)
+
     fn assert(cond Bool)
+
     fn register_panic_handler(handler (fn(Str, Str, Str))) (fn(Str, Str, Str))
+
     fn stack_trace() Trace
 
     -- todo: We should not need this function. We use it to work around
@@ -480,16 +453,22 @@ extern:
     fn int_next() Int
 
     impl Len for Str
+
     impl IndexedGet<Int, Char> for Str
+
     impl Str:
         fn push(mut self, s Str) Str
+
         fn push_char(mut self, c Char) Str
+
         fn slice_copy(self, from Int, to Int) Str
+
         fn join(self, iter Iterator<Str>) Str
     end
 
     impl Char:
         fn from_int(i Int) Char throws
+
         fn to_int(self) Int
     end
 
@@ -499,10 +478,15 @@ extern:
 
     impl JSArray<T>:
         fn new(size Int) Self
+
         fn len(self) Int
-        fn push(mut self, s T) 
+
+        fn push(mut self, s T)
+
         fn pop(mut self)
+
         fn get(self, i Int) T
+
         fn set(mut self, i Int, v T)
     end
 
@@ -519,19 +503,21 @@ extern:
         --- Open the file and read its contests as a string.
             Close the file in any case.
         ---
-        fn read_str(self) Str throws 
+        fn read_str(self) Str throws
 
         --- Open the file and write the given string to it.
             Close the file in any case.
         ---
-        fn write_str(mut self, data Str) throws 
+        fn write_str(mut self, data Str) throws
     end
 
     fn ext_args() JSArray<Str>
+
     fn ext_env() JSArray<(Str, Str)>
 
     impl Result<T, E>:
         fn error_return_trace(self) Trace
+
         --- Return a trace of all the code locations where the error was propagated.
 
             Returns an empty array if the result is `Ok`.
@@ -592,12 +578,11 @@ impl Str:
         loop:
             match iter.next():
                 None => break
-                Some(c):
-                    if c == sep:
+                Some(c)
+                 => if c == sep:
                         vec.push(s)
                         s = ""
                     end else => s.push_char(c)
-                end
             end
         end
         if s.len() > 0 => vec.push(s)
@@ -636,20 +621,16 @@ impl Str:
             let c = self[i]
             if c == s[match_.len()]:
                 match_.push_char(c)
-                if match_ == s:
-                    return true
-                end
-            end else:
-                match_ = ""
-            end
+                if match_ == s => return true
+            end else => match_ = ""
             i = i + 1
         end
         false
     end
 
     fn contains_char(self, c Char) Bool:
-        -- todo (lang-feat): Using `self.iter().any(fn(ch) => ch == c)` 
-        --                   should produce the same code and be as fast 
+        -- todo (lang-feat): Using `self.iter().any(fn(ch) => ch == c)`
+        --                   should produce the same code and be as fast
         --                   as the current implementation.
         mut i = 0
         loop:
@@ -660,16 +641,13 @@ impl Str:
         return false
     end
 
-    fn when(self, condition Bool) Str:
-        --- Returns `self` if the condition is met, otherwise an empty string.
+    fn when(self, condition Bool) Str
+     => --- Returns `self` if the condition is met, otherwise an empty string.
             This is useful in f-strings to insert a space only if a condition is met.
         ---
         if condition => self else => ""
-    end
 
-    fn iter(self) Iterator<Char>:
-        StrIterator { str: self, pos: 0, end_pos: self.len(), inc: 1 }
-    end
+    fn iter(self) Iterator<Char> => StrIterator{ str: self, pos: 0, end_pos: self.len(), inc: 1 }
 
     fn dedent(self) Str:
         --- Remove leading spaces from each line so that the lines with the least
@@ -678,19 +656,17 @@ impl Str:
         mut min_indent = 10000000
         self.split('\n').for_each(fn(line Str):
             let indent = line.iter().take_while(fn(c Char) Bool => c == ' ').count()
-            if indent != line.len() and indent < min_indent 
-                => min_indent = indent
-            end
-        )
-        let result = self.split('\n').map<Str>(fn(line Str) Str => line.slice_copy(min_indent, line.len()))
+            if indent != line.len() and indent < min_indent => min_indent = indent
+        end)
+        let result = self.split('\n').map<Str>(fn(line Str) Str
+         => line.slice_copy(min_indent, line.len()))
         "\n".join(result)
     end
 
-    fn indent(self, width Int) Str:
-        --- Indent each line with the number of spaces given by `width`.
+    fn indent(self, width Int) Str
+     => --- Indent each line with the number of spaces given by `width`.
         ---
         "\n".join(self.split('\n').map<Str>(fn(line Str) Str => " ".repeat(width) + line))
-    end
 
     fn trim_end(self) Str:
         mut i = self.len()
@@ -723,9 +699,7 @@ impl Str:
         fill_str + self
     end
 
-    fn copy(self) Str:
-        "" + self
-    end
+    fn copy(self) Str => "" + self
 end
 
 struct StrIterator:
@@ -736,20 +710,15 @@ struct StrIterator:
 end
 
 impl StrIterator:
-    fn reverse(mut self) StrIterator:
-        StrIterator { str: self.str, pos: self.pos, end_pos: -1, inc: -1 }
-    end
+    fn reverse(mut self) StrIterator
+     => StrIterator{ str: self.str, pos: self.pos, end_pos: -1, inc: -1 }
 
-    fn is_last(self) Bool:
-        self.pos == self.end_pos
-    end
+    fn is_last(self) Bool => self.pos == self.end_pos
 end
 
 impl Iterator<Char> for StrIterator:
-    fn next(mut self) Option<Char>:
-        if self.pos == self.end_pos:
-            return None
-        end
+    fn next(mut self) Char?:
+        if self.pos == self.end_pos => return None
         let c = self.str[self.pos]
         self.pos = self.pos + self.inc
         Some(c)
@@ -769,7 +738,24 @@ impl Int:
     fn from_str(s Str, radix Int) Int throws:
         if s.len() == 0 => return Error("empty string")
         if radix < 2 or radix > 16 => return Error("radix must be in between 2 and 16")
-        let digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f']
+        let digits = [
+            '0',
+            '1',
+            '2',
+            '3',
+            '4',
+            '5',
+            '6',
+            '7',
+            '8',
+            '9',
+            'a',
+            'b',
+            'c',
+            'd',
+            'e',
+            'f'
+        ]
         let is_negative = s[0] == '-'
         mut value = 0
         mut i = if is_negative => 1 else => 0
@@ -783,11 +769,13 @@ impl Int:
                 j = j + 1
             end
             value = value + j
-            -- todo (lang-feat): We should be able to write `value > 2147483648`. This is not 
+            -- todo (lang-feat): We should be able to write `value > 2147483648`. This is not
             --                   possible in stage1 because it only knows about the `Int` type.
             --                   We should also be able to write `value > Int::MAX`.
-            if not is_negative and value > 2147483647 => return Error(f"literal out of range for Int: {s}")
-            if is_negative and value > 2147483647 => return Error(f"literal out of range for Int: {s}")
+            if not is_negative and value > 2147483647
+             => return Error(f"literal out of range for Int: {s}")
+            if is_negative and value > 2147483647
+             => return Error(f"literal out of range for Int: {s}")
             i = i + 1
         end
         -- todo (lang-feat): We should be able to write `-value`.
@@ -804,9 +792,26 @@ impl ToFormattedStr for Int:
         mut s = ""
         if i < 0:
             s.push_char('-')
-            i = 0-i
+            i = 0 - i
         end
-        let digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f']
+        let digits = [
+            '0',
+            '1',
+            '2',
+            '3',
+            '4',
+            '5',
+            '6',
+            '7',
+            '8',
+            '9',
+            'a',
+            'b',
+            'c',
+            'd',
+            'e',
+            'f'
+        ]
         loop:
             if i == 0 => break
             let digit = i % radix
@@ -820,21 +825,18 @@ impl ToFormattedStr for Int:
 end
 
 -- Vector
-
 struct Vector<T>:
     data JSArray<T>
 end
 
 impl Vector<T>:
-    fn new() Vector<T> => Vector<T> { data: JSArray<T>::new(0) }
+    fn new() Vector<T> => Vector<T>{ data: JSArray<T>::new(0) }
 
     fn from(arr Array<T>) Vector<T>:
         let vec = Vector<T>::new()
         mut i = 0
         loop:
-            if i >= arr.len():
-                break
-            end
+            if i >= arr.len() => break
             let v = arr.get(i)
             vec.push(v)
             i = i + 1
@@ -842,22 +844,18 @@ impl Vector<T>:
         vec
     end
 
-    fn push(mut self, s T):
-        self.data.push(s)
-    end
+    fn push(mut self, s T) => self.data.push(s)
 
-    fn push_all(mut self, iter Iterator<T>):
-        iter.for_each(fn(value) => self.push(value))
-    end
+    fn push_all(mut self, iter Iterator<T>) => iter.for_each(fn(value) => self.push(value))
 
-    fn pop(mut self) Option<T>:
+    fn pop(mut self) T?:
         if self.len() == 0 => return None
         let value = self.data.get(self.len() - 1)
         self.data.pop()
         Some(value)
     end
 
-    fn shift(mut self) Option<T>:
+    fn shift(mut self) T?:
         if self.len() == 0 => return None
         let value = self.data.get(0)
         mut idx = 1
@@ -881,7 +879,7 @@ impl Vector<T>:
         vec
     end
 
-    fn iter(self) VectorIter<T> => VectorIter<T> { vec: self, index: 0 }
+    fn iter(self) VectorIter<T> => VectorIter<T>{ vec: self, index: 0 }
 
     fn slice_copy(self, from Int, to Int) Vector<T>:
         let vec = Vector<T>::new()
@@ -894,9 +892,7 @@ impl Vector<T>:
         vec
     end
 
-    fn contains(self, value T) Bool:
-        self.iter().any(fn(v) => v == value)
-    end
+    fn contains(self, value T) Bool => self.iter().any(fn(v) => v == value)
 end
 
 impl Len for Vector<T>:
@@ -918,18 +914,14 @@ end
 
 impl IndexedGet<Int, T> for Vector<T>:
     fn get(self, i Int) T:
-        if i >= self.len():
-            panic(f"Vector index out of bounds: {i} >= {self.len()}")
-        end
+        if i >= self.len() => panic(f"Vector index out of bounds: {i} >= {self.len()}")
         self.data.get(i)
     end
 end
 
 impl IndexedSet<Int, T> for Vector<T>:
     fn set(mut self, i Int, v T):
-        if i >= self.len():
-            panic(f"Vector index out of bounds: {i} >= {self.len()}")
-        end
+        if i >= self.len() => panic(f"Vector index out of bounds: {i} >= {self.len()}")
         self.data.set(i, v)
     end
 end
@@ -949,20 +941,15 @@ struct VectorIter<T>:
 end
 
 impl VectorIter<T>:
-    fn new(vec Vector<T>) VectorIter<T>:
-        VectorIter<T> { vec, index: 0 }
-    end
+    fn new(vec Vector<T>) VectorIter<T> => VectorIter<T>{ vec, index: 0 }
 
-    fn reverse(self) Iterator<T>:
-        ReverseVectorIter<T>{ vec: self.vec, index: self.vec.len() - self.index }
-    end
+    fn reverse(self) Iterator<T>
+     => ReverseVectorIter<T>{ vec: self.vec, index: self.vec.len() - self.index }
 end
 
 impl Iterator<T> for VectorIter<T>:
-    fn next(mut self) Option<T>:
-        if self.index >= self.vec.len():
-            return None
-        end
+    fn next(mut self) T?:
+        if self.index >= self.vec.len() => return None
         let value = self.vec.get(self.index)
         self.index = self.index + 1
         Some(value)
@@ -975,20 +962,15 @@ struct ReverseVectorIter<T>:
 end
 
 impl ReverseVectorIter<T>:
-    fn new(vec Vector<T>) ReverseVectorIter<T>:
-        ReverseVectorIter<T> { vec, index: vec.len() - 1 }
-    end
+    fn new(vec Vector<T>) ReverseVectorIter<T> => ReverseVectorIter<T>{ vec, index: vec.len() - 1 }
 
-    fn reverse(self) Iterator<T>:
-        VectorIter<T> { vec: self.vec, index: self.vec.len() - self.index }
-    end
+    fn reverse(self) Iterator<T>
+     => VectorIter<T>{ vec: self.vec, index: self.vec.len() - self.index }
 end
 
 impl Iterator<T> for ReverseVectorIter<T>:
-    fn next(mut self) Option<T>:
-        if self.index < 0:
-            return None
-        end
+    fn next(mut self) T?:
+        if self.index < 0 => return None
         let value = self.vec.get(self.index)
         self.index = self.index - 1
         Some(value)
@@ -996,24 +978,21 @@ impl Iterator<T> for ReverseVectorIter<T>:
 end
 
 -- Map
-
 struct Map<K, V>:
     data Vector<(K, V)>
 end
 
 impl Map<K, V>:
-    fn new() Map<K, V> => Map<K, V> { data: Vector<(K, V)>::new() }
+    fn new() Map<K, V> => Map<K, V>{ data: Vector<(K, V)>::new() }
 
     fn keys(self) Iterator<K>:
-        -- todo (lang feat): This should be just 
+        -- todo (lang feat): This should be just
         --                   `self.data.iter().map(fn(pair) => pair.0)`
         --                   but the stage0 type-checker cannot handle it.
         mut vec = Vector<K>::new()
         mut i = 0
         loop:
-            if i >= self.data.len():
-                break
-            end
+            if i >= self.data.len() => break
             let v = self.data.get(i)
             vec.push(v.0)
             i = i + 1
@@ -1023,19 +1002,14 @@ impl Map<K, V>:
 
     -- todo (lang feat): The stage0 type-checker cannot resolve the types of the tuple.
     -- fn iter(self) Iterator<(K,V)> => self.data.iter()
-
     -- todo (lang feat): This function is only there because the stage0 type-checker does
-    --                   type the `get` function correctly. 
+    --                   type the `get` function correctly.
     fn get_or_panic(self, key K) V:
         mut i = 0
         loop:
-            if i >= self.data.len():
-                break
-            end
+            if i >= self.data.len() => break
             let v = self.data.get(i)
-            if v.0 == key:
-                return v.1
-            end
+            if v.0 == key => return v.1
             i = i + 1
         end
         panic(f"key not found: {key}")
@@ -1044,12 +1018,13 @@ impl Map<K, V>:
     fn remove(mut self, key K):
         mut i = 0
         loop:
-            if i >= self.data.len():
-                break
-            end
+            if i >= self.data.len() => break
             let v = self.data.get(i)
             if v.0 == key:
-                self.data = self.data.slice_copy(0, i).add(self.data.slice_copy(i + 1, self.data.len()))
+                self.data = self.data.slice_copy(
+                    0,
+                    i
+                ).add(self.data.slice_copy(i + 1, self.data.len()))
                 return ()
             end
             i = i + 1
@@ -1057,17 +1032,13 @@ impl Map<K, V>:
     end
 end
 
-impl IndexedGet<K, Option<V>> for Map<K, V>:
-    fn get(self, key K) Option<V>:
+impl IndexedGet<K, V?> for Map<K, V>:
+    fn get(self, key K) V?:
         mut i = 0
         loop:
-            if i >= self.data.len():
-                break
-            end
+            if i >= self.data.len() => break
             let v = self.data.get(i)
-            if v.0 == key:
-                return Some<V>(v.1)
-            end
+            if v.0 == key => return Some<V>(v.1)
             i = i + 1
         end
         None
@@ -1078,9 +1049,7 @@ impl IndexedSet<K, V> for Map<K, V>:
     fn set(mut self, key K, value V):
         mut i = 0
         loop:
-            if i >= self.data.len():
-                break
-            end
+            if i >= self.data.len() => break
             let v = self.data.get(i)
             if v.0 == key:
                 self.data.set(i, (key, value))
@@ -1105,9 +1074,7 @@ impl Env:
         let src = ext_args()
         mut args = Vector<Str>::new()
         loop:
-            if i == src.len():
-                break
-            end
+            if i == src.len() => break
             let arg = src.get(i)
             args.push(arg)
             i = i + 1

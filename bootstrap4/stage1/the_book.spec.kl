@@ -1,5 +1,4 @@
---- Run all tests found in `the_book.md`.
----
+--- Run all tests found in `the_book.md`. ---
 
 use .ast::ParseErrorKind
 use .ast::Module
@@ -23,17 +22,14 @@ fn color(s Str, color Str) Str => f"\x1b[{color}m{s}\x1b[0m"
 fn run_spec(spec Spec) Bool:
     let prefix = f"{spec.path} #{spec.num} at {spec.span}"
     let tokens = Lexer::lex(spec.code, "the_book.kl").collect()
-    let lex_errors = tokens.iter().filter(
-        fn(token Token) Bool:
-            match token.kind:
-                TokenKind::LexError(_) => true
-                _ => false
-            end
-        end
-    ).collect()
+    let lex_errors = tokens.iter().filter(fn(token Token) Bool
+     => match token.kind:
+            TokenKind::LexError(_) => true
+            _ => false
+        end).collect()
     if lex_errors.len() > 0:
         print(f"{color("✗", "31")} {prefix} Lexing failed")
-        lex_errors.iter().for_each(fn(error Token) ():
+        lex_errors.iter().for_each(fn(error Token):
             print(f"  {error} at {error.span}")
             print("\n".join(error.span.src_lines().map<Str>(fn(it Str) => f"    {it}")))
         end)
@@ -50,12 +46,11 @@ fn run_spec(spec Spec) Bool:
             let l = spec.code.split('\n').find_index(fn(it Str) => it.contains("-- Compile error"))
             match l:
                 -- todo (lang-feat): The `<Int>` is necessary because of a bug in stage0.
-                Some<Int>(line_number):
-                    if line_number + 1 == span.position().0:
+                Some<Int>(line_number)
+                 => if line_number + 1 == span.position().0:
                         print(f"{color("✓", "32")} {prefix} (expected error)")
                         return true
                     end
-                end
                 None => ()
             end
             print(f"{color("✗", "31")} {prefix} Parsing failed")
@@ -81,17 +76,16 @@ fn parse_specs(the_book_src Str) Vector<Spec>:
         if line.starts_with("##"):
             let section_level = line.iter().take_while(fn(it Char) => it == '#').count()
             let section_name = line.slice_copy(section_level + 1, line.len())
-            section = section.iter().filter(fn(it (Str, Int)) Bool => it.1 < section_level).collect() 
+            section = section.iter().filter(fn(it (Str, Int)) Bool
+             => it.1 < section_level).collect()
             section.push((section_name, section_level))
             num = 0
-        end 
+        end
         if line.starts_with("```klar"):
             num = num + 1
-            let code = "\n".join(iter.take_while(fn(it Str) Bool: 
+            let code = "\n".join(iter.take_while(fn(it Str) Bool:
                 -- todo (lang-feat): `not` is broken in stage0.
-                if it.starts_with("```"):
-                    return false
-                end
+                if it.starts_with("```") => return false
                 true
             end))
             let span = Span{
@@ -103,7 +97,7 @@ fn parse_specs(the_book_src Str) Vector<Spec>:
             pos = pos + code.len() + 1
             let path = " > ".join(section.iter().map<Str>(fn(it (Str, Int)) => it.0))
             let name = f"{path} at {span}"
-            let spec = Spec{name, path, num, code, span}
+            let spec = Spec{ name, path, num, code, span }
             specs.push(spec)
         end
     end
@@ -112,7 +106,7 @@ end
 
 fn main() throws:
     let args = Env::args()
-    let bail = args.iter().any(fn(arg Str) => arg == "--bail") 
+    let bail = args.iter().any(fn(arg Str) => arg == "--bail")
     let src = File::at("../../docs/the_book.md").read_str()!
     let specs = parse_specs(src)
     print(f"Found {specs.len()} specs")

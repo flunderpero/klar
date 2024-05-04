@@ -11,9 +11,8 @@ use .test::Test
 fn main():
     mut test = Test::new_from_args("parser", Env::args())
 
-    test.it("ignores comments and whitespace", fn() throws:
-        assert(expr("\n 42 -- comment") == "(@int 42)")
-    end)
+    test.it("ignores comments and whitespace", fn() throws
+     => assert(expr("\n 42 -- comment") == "(@int 42)"))
 
     test.it("parses identifiers", fn() throws:
         -- todo: do we really need `Ident` when we have `FQN`?
@@ -22,87 +21,67 @@ fn main():
         assert(expr("a_42") == "(@ident a_42)")
     end)
 
-    test.it("parses parentheses", fn() throws:
-        assert(expr("(42)") == "(@paren (@int 42))")
-    end)
+    test.it("parses parentheses", fn() throws => assert(expr("(42)") == "(@paren (@int 42))"))
 
     test.group("fully qualified names", fn():
         test.it("passes the happy path", fn() throws:
             assert(
-                expr("A<T>") 
-                == 
-                "(@fqn (@name (@ident A) (@genericarg (@type (@fqn (@name (@ident T)))))))"
+                expr("A<T>")
+                    == "(@fqn (@name (@ident A) (@genericarg (@type (@fqn (@name (@ident T)))))))"
             )
             assert(expr("a::b") == "(@fqn (@name (@ident a)) (@name (@ident b)))")
             assert(
-                expr("A<B>::C<D>") 
-                == 
-                "(@fqn (@name (@ident A) (@genericarg (@type (@fqn (@name (@ident B)))))) " + 
-                "(@name (@ident C) (@genericarg (@type (@fqn (@name (@ident D)))))))"
+                expr("A<B>::C<D>")
+                    == "(@fqn (@name (@ident A) (@genericarg (@type (@fqn (@name (@ident B)))))) "
+                    + "(@name (@ident C) (@genericarg (@type (@fqn (@name (@ident D)))))))"
             )
         end)
 
-        test.it("distinguishes generics from the less-than operator", fn() throws:
-            assert(expr("a < b") == "(@binexpr < (@ident a) (@ident b))")
-        end)
+        test.it("distinguishes generics from the less-than operator", fn() throws
+         => assert(expr("a < b") == "(@binexpr < (@ident a) (@ident b))"))
 
-        test.it("parses generics", fn() throws:
-            assert(
-                expr("A<B>") 
-                == 
-                "(@fqn (@name (@ident A) (@genericarg (@type (@fqn (@name (@ident B)))))))"
-            )
-        end)
+        test.it("parses generics", fn() throws
+         => assert(
+                expr("A<B>")
+                    == "(@fqn (@name (@ident A) (@genericarg (@type (@fqn (@name (@ident B)))))))"
+            ))
 
-        test.it("parses generics with multiple arguments", fn() throws:
-            assert(
-                expr("A<B, C>") 
-                == 
-                "(@fqn (@name (@ident A) " +
-                "(@genericarg (@type (@fqn (@name (@ident B))))) " +
-                "(@genericarg (@type (@fqn (@name (@ident C)))))))"
-            )
-        end)
+        test.it("parses generics with multiple arguments", fn() throws
+         => assert(
+                expr("A<B, C>")
+                    == "(@fqn (@name (@ident A) "
+                    + "(@genericarg (@type (@fqn (@name (@ident B))))) "
+                    + "(@genericarg (@type (@fqn (@name (@ident C)))))))"
+            ))
 
-        test.it("parses generics with trait bounds", fn() throws:
-            assert(
-                expr("A<B impl C>") 
-                == 
-                "(@fqn (@name (@ident A) " +
-                "(@genericarg (@type (@fqn (@name (@ident B)))) " +
-                "(@traitbound (@fqn (@name (@ident C)))))))"
-            )
-        end)
+        test.it("parses generics with trait bounds", fn() throws
+         => assert(
+                expr("A<B impl C>")
+                    == "(@fqn (@name (@ident A) "
+                    + "(@genericarg (@type (@fqn (@name (@ident B)))) "
+                    + "(@traitbound (@fqn (@name (@ident C)))))))"
+            ))
 
-        test.it("parses generics with multiple trait bounds", fn() throws:
-            assert(
-                expr("A<B impl C and D>") 
-                == 
-                "(@fqn (@name (@ident A) " +
-                "(@genericarg (@type (@fqn (@name (@ident B)))) " +
-                "(@traitbound (@fqn (@name (@ident C)))) " +
-                "(@traitbound (@fqn (@name (@ident D)))))))"
-            )
-        end)
+        test.it("parses generics with multiple trait bounds", fn() throws
+         => assert(
+                expr("A<B impl C and D>")
+                    == "(@fqn (@name (@ident A) "
+                    + "(@genericarg (@type (@fqn (@name (@ident B)))) "
+                    + "(@traitbound (@fqn (@name (@ident C)))) "
+                    + "(@traitbound (@fqn (@name (@ident D)))))))"
+            ))
 
-        test.it("parses generics with default trait bounds", fn() throws:
-            assert(
-                expr("A<B impl C=D>") 
-                == 
-                "(@fqn (@name (@ident A) " +
-                "(@genericarg (@type (@fqn (@name (@ident B)))) " +
-                "(@traitbound (@fqn (@name (@ident C)))) " +
-                "(@type (@fqn (@name (@ident D)))))))"
-            )
-        end)
+        test.it("parses generics with default trait bounds", fn() throws
+         => assert(
+                expr("A<B impl C=D>")
+                    == "(@fqn (@name (@ident A) "
+                    + "(@genericarg (@type (@fqn (@name (@ident B)))) "
+                    + "(@traitbound (@fqn (@name (@ident C)))) "
+                    + "(@type (@fqn (@name (@ident D)))))))"
+            ))
 
-        test.it("fails if using the unit type as a generic default", fn() throws:
-            assert(
-                expr("A<B impl C=()>") 
-                == 
-                "(@error unit not allowed in generic)"
-            )
-        end)
+        test.it("fails if using the unit type as a generic default", fn() throws
+         => assert(expr("A<B impl C=()>") == "(@error unit not allowed in generic)"))
     end)
 
     test.group("blocks", fn():
@@ -112,13 +91,11 @@ fn main():
             assert(block(": foo() 42 end") == "(@block (@call (@ident foo)) (@int 42))")
         end)
 
-        test.it("parses items (like Fn) in multi-line blocks", fn() throws:
-            assert(
-                block(": fn test(): end end") 
-                == 
-                "(@block (@fn (@fndecl (@ident test) (@type (@unit))) (@block)))"
-            )
-        end)
+        test.it("parses items (like Fn) in multi-line blocks", fn() throws
+         => assert(
+                block(": fn test(): end end")
+                    == "(@block (@fn (@fndecl (@ident test) (@type (@unit))) (@block)))"
+            ))
 
         test.it("parses single-line blocks", fn() throws:
             assert(block("=> 42") == "(@block (@int 42))")
@@ -127,163 +104,130 @@ fn main():
     end)
 
     test.group("fndecl", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(fndecl("fn test()") == "(@fndecl (@ident test) (@type (@unit)))")
-        end)
+        test.it("passes the happy path", fn() throws
+         => assert(fndecl("fn test()") == "(@fndecl (@ident test) (@type (@unit)))"))
 
         test.it("parses parameters", fn() throws:
             assert(
-                fndecl("fn test(a Int)") 
-                == 
-                "(@fndecl (@ident test) " +
-                "(@param (@ident a) (@type (@fqn (@name (@ident Int))))) " +
-                "(@type (@unit)))"
+                fndecl("fn test(a Int)")
+                    == "(@fndecl (@ident test) "
+                    + "(@param (@ident a) (@type (@fqn (@name (@ident Int))))) "
+                    + "(@type (@unit)))"
             )
             assert(
-                fndecl("fn test(a Int, b Str)") 
-                == 
-                "(@fndecl (@ident test) " + 
-                "(@param (@ident a) (@type (@fqn (@name (@ident Int))))) " +
-                "(@param (@ident b) (@type (@fqn (@name (@ident Str))))) " +
-                "(@type (@unit)))"
+                fndecl("fn test(a Int, b Str)")
+                    == "(@fndecl (@ident test) "
+                    + "(@param (@ident a) (@type (@fqn (@name (@ident Int))))) "
+                    + "(@param (@ident b) (@type (@fqn (@name (@ident Str))))) "
+                    + "(@type (@unit)))"
             )
         end)
 
-        test.it("parses mutable parameters", fn() throws:
-            assert(
-                fndecl("fn test(mut a Int)") 
-                == 
-                "(@fndecl (@ident test) " +
-                "(@param mut (@ident a) (@type (@fqn (@name (@ident Int))))) " +
-                "(@type (@unit)))"
-            )
-        end)
+        test.it("parses mutable parameters", fn() throws
+         => assert(
+                fndecl("fn test(mut a Int)")
+                    == "(@fndecl (@ident test) "
+                    + "(@param mut (@ident a) (@type (@fqn (@name (@ident Int))))) "
+                    + "(@type (@unit)))"
+            ))
 
-        test.it("parses the `self` parameter", fn() throws:
-            assert(
-                item("fn test(self): end") 
-                == 
-                "(@fn (@fndecl (@ident test) " +
-                "(@param (@ident self) (@type (@self))) " +
-                "(@type (@unit))) (@block))"
-            )
-        end)
+        test.it("parses the `self` parameter", fn() throws
+         => assert(
+                item("fn test(self): end")
+                    == "(@fn (@fndecl (@ident test) "
+                    + "(@param (@ident self) (@type (@self))) "
+                    + "(@type (@unit))) (@block))"
+            ))
 
-        test.it("parses the mutable `self` parameter", fn() throws:
-            assert(
-                item("fn test(mut self): end") 
-                == 
-                "(@fn (@fndecl (@ident test) " +
-                "(@param mut (@ident self) (@type (@self))) " +
-                "(@type (@unit))) (@block))"
-            )
-        end)
+        test.it("parses the mutable `self` parameter", fn() throws
+         => assert(
+                item("fn test(mut self): end")
+                    == "(@fn (@fndecl (@ident test) "
+                    + "(@param mut (@ident self) (@type (@self))) "
+                    + "(@type (@unit))) (@block))"
+            ))
 
-        test.it("parses generics", fn() throws:
-            assert(
-                fndecl("fn test<T>()") 
-                == 
-                "(@fndecl (@ident test) " +
-                "(@genericarg (@type (@fqn (@name (@ident T))))) " +
-                "(@type (@unit)))"
-            )
-        end)
+        test.it("parses generics", fn() throws
+         => assert(
+                fndecl("fn test<T>()")
+                    == "(@fndecl (@ident test) "
+                    + "(@genericarg (@type (@fqn (@name (@ident T))))) "
+                    + "(@type (@unit)))"
+            ))
 
-        test.it("parses function type as parameter", fn() throws:
-            assert(
-                fndecl("fn test(a (fn(Int) Int))") 
-                == 
-                "(@fndecl (@ident test) " +
-                "(@param (@ident a) " +
-                "(@fntype " +
-                "(@type (@fqn (@name (@ident Int)))) " +
-                "(@type (@fqn (@name (@ident Int)))))) " +
-                "(@type (@unit)))"
-            )
-        end)
+        test.it("parses function type as parameter", fn() throws
+         => assert(
+                fndecl("fn test(a (fn(Int) Int))")
+                    == "(@fndecl (@ident test) "
+                    + "(@param (@ident a) "
+                    + "(@fntype "
+                    + "(@type (@fqn (@name (@ident Int)))) "
+                    + "(@type (@fqn (@name (@ident Int)))))) "
+                    + "(@type (@unit)))"
+            ))
 
         test.group("throws", fn():
-            test.it("passes the happy path", fn() throws:
-                assert(
-                    fndecl("fn test() throws") 
-                    == 
-                    "(@fndecl (@ident test) " +
-                    "(@type (@fqn (@name (@ident Result) " +
-                    "(@genericarg (@type (@unit))) " +
-                    "(@genericarg (@type (@fqn (@name (@ident Str)))))))))"
-                )
-            end)
+            test.it("passes the happy path", fn() throws
+             => assert(
+                    fndecl("fn test() throws")
+                        == "(@fndecl (@ident test) "
+                        + "(@type (@fqn (@name (@ident Result) "
+                        + "(@genericarg (@type (@unit))) "
+                        + "(@genericarg (@type (@fqn (@name (@ident Str)))))))))"
+                ))
 
-            test.it("parses the return type", fn() throws:
-                assert(
-                    fndecl("fn test() Int throws") 
-                    == 
-                    "(@fndecl (@ident test) " +
-                    "(@type (@fqn (@name (@ident Result) " +
-                    "(@genericarg (@type (@fqn (@name (@ident Int))))) " +
-                    "(@genericarg (@type (@fqn (@name (@ident Str)))))))))"
-                )
-            end)
+            test.it("parses the return type", fn() throws
+             => assert(
+                    fndecl("fn test() Int throws")
+                        == "(@fndecl (@ident test) "
+                        + "(@type (@fqn (@name (@ident Result) "
+                        + "(@genericarg (@type (@fqn (@name (@ident Int))))) "
+                        + "(@genericarg (@type (@fqn (@name (@ident Str)))))))))"
+                ))
 
-            test.it("parses error types", fn() throws:
-                assert(
-                    fndecl("fn test() Int throws MyError") 
-                    == 
-                    "(@fndecl (@ident test) " +
-                    "(@type (@fqn (@name (@ident Result) " +
-                    "(@genericarg (@type (@fqn (@name (@ident Int))))) " +
-                    "(@genericarg (@type (@fqn (@name (@ident MyError)))))))))"
-                )
-            end)
-
+            test.it("parses error types", fn() throws
+             => assert(
+                    fndecl("fn test() Int throws MyError")
+                        == "(@fndecl (@ident test) "
+                        + "(@type (@fqn (@name (@ident Result) "
+                        + "(@genericarg (@type (@fqn (@name (@ident Int))))) "
+                        + "(@genericarg (@type (@fqn (@name (@ident MyError)))))))))"
+                ))
         end)
     end)
 
-    test.group("fn", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(
-                item("fn test(): end") 
-                == 
-                "(@fn (@fndecl (@ident test) (@type (@unit))) (@block))"
-            )
-            assert(
-                item("fn test(): 42 end") 
-                == 
-                "(@fn (@fndecl (@ident test) (@type (@unit))) (@block (@int 42)))"
-            )
-        end)
-    end)
+    test.group("fn", fn() => test.it("passes the happy path", fn() throws:
+        assert(item("fn test(): end") == "(@fn (@fndecl (@ident test) (@type (@unit))) (@block))")
+        assert(
+            item("fn test(): 42 end")
+                == "(@fn (@fndecl (@ident test) (@type (@unit))) (@block (@int 42)))"
+        )
+    end))
 
     test.group("closures", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(
-                expr("fn(a Int) Int => 42") 
-                == 
-                "(@closure (@param (@ident a) (@type (@fqn (@name (@ident Int))))) " +
-                "(@type (@fqn (@name (@ident Int)))) (@block (@int 42)))"
-            )
-        end)
+        test.it("passes the happy path", fn() throws
+         => assert(
+                expr("fn(a Int) Int => 42")
+                    == "(@closure (@param (@ident a) (@type (@fqn (@name (@ident Int))))) "
+                    + "(@type (@fqn (@name (@ident Int)))) (@block (@int 42)))"
+            ))
 
-        test.it("treats types as optional", fn() throws:
-            assert(
-                expr("fn(a) => 42") 
-                == 
-                "(@closure (@param (@ident a) (@type (@infer))) " +
-                "(@type (@infer)) (@block (@int 42)))"
-            )
-        end)
+        test.it("treats types as optional", fn() throws
+         => assert(
+                expr("fn(a) => 42")
+                    == "(@closure (@param (@ident a) (@type (@infer))) "
+                    + "(@type (@infer)) (@block (@int 42)))"
+            ))
 
-        test.it("parses the `throws` keyword", fn() throws:
-            assert(
-                expr("fn() throws => 42") 
-                == 
-                "(@closure " +
-                "(@type (@fqn (@name (@ident Result) " +
-                "(@genericarg (@type (@unit))) " +
-                "(@genericarg (@type (@fqn (@name (@ident Str)))))))) " +
-                "(@block (@int 42)))"
-            )
-        end)
+        test.it("parses the `throws` keyword", fn() throws
+         => assert(
+                expr("fn() throws => 42")
+                    == "(@closure "
+                    + "(@type (@fqn (@name (@ident Result) "
+                    + "(@genericarg (@type (@unit))) "
+                    + "(@genericarg (@type (@fqn (@name (@ident Str)))))))) "
+                    + "(@block (@int 42)))"
+            ))
     end)
 
     test.group("literals", fn():
@@ -308,9 +252,7 @@ fn main():
             assert(expr("\"\"\"foo\nbar\"\"\"") == "(@str foo\\nbar)")
         end)
 
-        test.it("parses char literals", fn() throws:
-            assert(expr("'a'") == "(@char a)")
-        end)
+        test.it("parses char literals", fn() throws => assert(expr("'a'") == "(@char a)"))
 
         test.group("int", fn():
             test.it("passes the happy path", fn() throws:
@@ -319,29 +261,25 @@ fn main():
             end)
 
             test.it("detects integer overflow", fn() throws:
-                -- todo: for now `Int` is defined as 32-but, but it should be 
+                -- todo: for now `Int` is defined as 32-but, but it should be
                 --       the platform's native int size (64-bit in most cases).
                 assert(expr("2147483647") == "(@int 2147483647)")
                 assert(expr("2147483648") == "(@error invalid int literal at test.kl:1:1)")
-                -- todo (lang-feat): This should be `-2147483648`, but the 
+                -- todo (lang-feat): This should be `-2147483648`, but the
                 --                   stage1 parser does not allow it.
                 assert(expr("-2147483647") == "(@int -2147483647)")
                 assert(expr("-2147483648") == "(@error invalid int literal at test.kl:1:1)")
             end)
         end)
 
-        test.it("parses tuple literals", fn() throws:
-            assert(expr("(42, \"a\")") == "(@tuple (@int 42) (@str a))")
-        end)
+        test.it("parses tuple literals", fn() throws
+         => assert(expr("(42, \"a\")") == "(@tuple (@int 42) (@str a))"))
 
         test.group("array", fn():
-            test.it("passes the happy path", fn() throws:
-                assert(expr("[42, \"foo\"]") == "(@array (@int 42) (@str foo))")
-            end)
+            test.it("passes the happy path", fn() throws
+             => assert(expr("[42, \"foo\"]") == "(@array (@int 42) (@str foo))"))
 
-            test.it("parses empty arrays", fn() throws:
-                assert(expr("[]") == "(@array)")
-            end)
+            test.it("parses empty arrays", fn() throws => assert(expr("[]") == "(@array)"))
         end)
     end)
 
@@ -376,130 +314,114 @@ fn main():
             assert(expr("test--- comment ---()") == "(@ident test)")
         end)
 
-        test.it("parses calls to functions returned from functions", fn() throws:
-            assert(expr("test()()") == "(@call (@call (@ident test)))")
-        end)
+        test.it("parses calls to functions returned from functions", fn() throws
+         => assert(expr("test()()") == "(@call (@call (@ident test)))"))
 
-        test.it("parses chained calls", fn() throws:
-            assert(expr("test().foo()") == "(@call (@fieldaccess (@call (@ident test)) (@name (@ident foo))))")
-        end)
+        test.it("parses chained calls", fn() throws
+         => assert(
+                expr("test().foo()")
+                    == "(@call (@fieldaccess (@call (@ident test)) (@name (@ident foo))))"
+            ))
 
-        test.it("parses generics (if target is a FQN)", fn() throws:
-            assert(
-                expr("test<Int>()") 
-                == 
-                "(@call (@fqn (@name (@ident test) (@genericarg (@type (@fqn (@name (@ident Int))))))))"
-            )
-        end)
+        test.it("parses generics (if target is a FQN)", fn() throws
+         => assert(
+                expr("test<Int>()")
+                    == "(@call (@fqn (@name (@ident test) (@genericarg (@type (@fqn (@name (@ident Int))))))))"
+            ))
 
-        test.it("parses generics (if target is a call expression itself)", fn() throws:
-            assert(
-                expr("test().foo<Int>()") 
-                == 
-                "(@call (@fieldaccess (@call (@ident test)) " +
-                "(@name (@ident foo) (@genericarg (@type (@fqn (@name (@ident Int))))))))"
-            )
-        end)
+        test.it("parses generics (if target is a call expression itself)", fn() throws
+         => assert(
+                expr("test().foo<Int>()")
+                    == "(@call (@fieldaccess (@call (@ident test)) "
+                    + "(@name (@ident foo) (@genericarg (@type (@fqn (@name (@ident Int))))))))"
+            ))
 
-        test.it("parses error propagation with `!`", fn() throws:
-            assert(expr("test()!") == "(@call (@ident test) (@propagate))")
-        end)
+        test.it("parses error propagation with `!`", fn() throws
+         => assert(expr("test()!") == "(@call (@ident test) (@propagate))"))
     end)
 
-    test.group("module", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(
-                module("""
+    test.group("module", fn()
+     => test.it("passes the happy path", fn() throws
+         => assert(module(
+                """
                     fn test():
                     end
-                    """) 
-                == 
-                "(@mod (@fn (@fndecl (@ident test) (@type (@unit))) (@block)))"
-            )
-        end)
-    end)
+                    """
+            ) == "(@mod (@fn (@fndecl (@ident test) (@type (@unit))) (@block)))")))
 
     test.group("types", fn():
-        test.it("parses literal type names", fn() throws:
-            assert(type("Int") == "(@type (@fqn (@name (@ident Int))))")
-        end)
+        test.it("parses literal type names", fn() throws
+         => assert(type("Int") == "(@type (@fqn (@name (@ident Int))))"))
 
-        test.it("parses tuple types", fn() throws:
-            assert(type("(Int, Str)") == "(@type (@tuple " +
-                "(@type (@fqn (@name (@ident Int)))) " +
-                "(@type (@fqn (@name (@ident Str)))))"
-            )
-        end)
+        test.it("parses tuple types", fn() throws
+         => assert(
+                type("(Int, Str)")
+                    == "(@type (@tuple "
+                    + "(@type (@fqn (@name (@ident Int)))) "
+                    + "(@type (@fqn (@name (@ident Str)))))"
+            ))
 
         test.it("parses the unit type", fn() throws:
             assert(type("()") == "(@type (@unit))")
             assert(type("( )") == "(@error type expected at test.kl:1:3)")
         end)
 
-        test.it("parses generic types", fn() throws:
-            assert(
-                type("Foo<T>") 
-                == 
-                "(@type (@fqn (@name (@ident Foo) (@genericarg (@type (@fqn (@name (@ident T))))))))"
-            )
-        end)
+        test.it("parses generic types", fn() throws
+         => assert(
+                type("Foo<T>")
+                    == "(@type (@fqn (@name (@ident Foo) (@genericarg (@type (@fqn (@name (@ident T))))))))"
+            ))
 
-        test.it("parses optional types", fn() throws:
-            assert(
-                type("Int?") 
-                == 
-                "(@type (@fqn (@name (@ident Option) (@genericarg (@type (@fqn (@name (@ident Int))))))))"
-            )
-        end)
+        test.it("parses optional types", fn() throws
+         => assert(
+                type("Int?")
+                    == "(@type (@fqn (@name (@ident Option) (@genericarg (@type (@fqn (@name (@ident Int))))))))"
+            ))
 
         test.group("function types", fn():
-            test.it("passes the happy path", fn() throws:
-                assert(
-                    type("(fn(Int, Str) Int)") 
-                    == 
-                    "(@fntype " + 
-                    "(@type (@fqn (@name (@ident Int)))) " +
-                    "(@type (@fqn (@name (@ident Str)))) " +
-                    "(@type (@fqn (@name (@ident Int)))))"
-                )
-            end)
+            test.it("passes the happy path", fn() throws
+             => assert(
+                    type("(fn(Int, Str) Int)")
+                        == "(@fntype "
+                        + "(@type (@fqn (@name (@ident Int)))) "
+                        + "(@type (@fqn (@name (@ident Str)))) "
+                        + "(@type (@fqn (@name (@ident Int)))))"
+                ))
 
-            test.it("defaults to the unit type if no return type is specified", fn() throws:
-                assert(
-                    type("(fn(Int))") 
-                    == 
-                    "(@fntype (@type (@fqn (@name (@ident Int)))) (@type (@unit)))"
-                )
-            end)
+            test.it("defaults to the unit type if no return type is specified", fn() throws
+             => assert(
+                    type("(fn(Int))")
+                        == "(@fntype (@type (@fqn (@name (@ident Int)))) (@type (@unit)))"
+                ))
 
-            test.it("parses the `throws` keyword", fn() throws:
-                assert(
-                    type("(fn() throws)") 
-                    == 
-                    "(@fntype (@type (@fqn (@name (@ident Result) " +
-                    "(@genericarg (@type (@unit))) " +
-                    "(@genericarg (@type (@fqn (@name (@ident Str)))))))))"
-                )
-            end)
+            test.it("parses the `throws` keyword", fn() throws
+             => assert(
+                    type("(fn() throws)")
+                        == "(@fntype (@type (@fqn (@name (@ident Result) "
+                        + "(@genericarg (@type (@unit))) "
+                        + "(@genericarg (@type (@fqn (@name (@ident Str)))))))))"
+                ))
         end)
     end)
 
     test.group("variable declarations", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(expr("let a Int = 42") == "(@let (@ident a) (@type (@fqn (@name (@ident Int)))) (@int 42))")
-        end)
+        test.it("passes the happy path", fn() throws
+         => assert(
+                expr("let a Int = 42")
+                    == "(@let (@ident a) (@type (@fqn (@name (@ident Int)))) (@int 42))"
+            ))
 
-        test.it("does not require a type annotation", fn() throws:
-            assert(expr("let a = 42") == "(@let (@ident a) (@type (@infer)) (@int 42))")
-        end)
+        test.it("does not require a type annotation", fn() throws
+         => assert(expr("let a = 42") == "(@let (@ident a) (@type (@infer)) (@int 42))"))
 
-        test.it("respects associativity", fn() throws:
-            assert(expr("let a = b or c") == "(@let (@ident a) (@type (@infer)) (@binexpr or (@ident b) (@ident c)))")
-        end)
+        test.it("respects associativity", fn() throws
+         => assert(
+                expr("let a = b or c")
+                    == "(@let (@ident a) (@type (@infer)) (@binexpr or (@ident b) (@ident c)))"
+            ))
 
-        test.it("parses `mut`", fn() throws:
-            assert(expr("mut a = 42") == "(@mut (@ident a) (@type (@infer)) (@int 42))")
-        end)
+        test.it("parses `mut`", fn() throws
+         => assert(expr("mut a = 42") == "(@mut (@ident a) (@type (@infer)) (@int 42))"))
     end)
 
     test.group("if", fn():
@@ -509,47 +431,46 @@ fn main():
         end)
 
         test.it("parses if / else", fn() throws:
-            assert(expr("if true: 42 end else: 43 end") == "(@if (@bool true) (@block (@int 42)) (@block (@int 43)))")
-            assert(expr("if true => 42 else => 43") == "(@if (@bool true) (@block (@int 42)) (@block (@int 43)))")
+            assert(
+                expr("if true: 42 end else: 43 end")
+                    == "(@if (@bool true) (@block (@int 42)) (@block (@int 43)))"
+            )
+            assert(
+                expr("if true => 42 else => 43")
+                    == "(@if (@bool true) (@block (@int 42)) (@block (@int 43)))"
+            )
         end)
 
         test.it("parses nested if / else", fn() throws:
-            assert(expr("""
+            assert(expr(
+                """
                 if a:
                     if b:
                     end
                 end else:
                 end
-                """)
-                ==
-                "(@if (@ident a) " +
-                "(@block (@if (@ident b) (@block))) (@block))"
-            )
-            assert(expr("""
+                """
+            ) == "(@if (@ident a) " + "(@block (@if (@ident b) (@block))) (@block))")
+            assert(expr(
+                """
                 if a:
                 end else:
                     if b => 42
                 end
-                """)
-                ==
-                "(@if (@ident a) " +
-                "(@block) (@block (@if (@ident b) (@block (@int 42)))))"
-            )
+                """
+            ) == "(@if (@ident a) " + "(@block) (@block (@if (@ident b) (@block (@int 42)))))")
         end)
     end)
 
     test.group("binary expressions", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(expr("1 + 2") == "(@binexpr + (@int 1) (@int 2))")
-        end)
+        test.it("passes the happy path", fn() throws
+         => assert(expr("1 + 2") == "(@binexpr + (@int 1) (@int 2))"))
 
-        test.it("respects operator precedence", fn() throws:
-            assert(expr("1 + 2 * 3") == "(@binexpr + (@int 1) (@binexpr * (@int 2) (@int 3)))")
-        end)
+        test.it("respects operator precedence", fn() throws
+         => assert(expr("1 + 2 * 3") == "(@binexpr + (@int 1) (@binexpr * (@int 2) (@int 3)))"))
 
-        test.it("respects operator associativity (left)", fn() throws:
-            assert(expr("1 + 2 + 3") == "(@binexpr + (@binexpr + (@int 1) (@int 2)) (@int 3))")
-        end)
+        test.it("respects operator associativity (left)", fn() throws
+         => assert(expr("1 + 2 + 3") == "(@binexpr + (@binexpr + (@int 1) (@int 2)) (@int 3))"))
 
         test.it("parses all binary operators", fn() throws:
             assert(expr("1 + 2") == "(@binexpr + (@int 1) (@int 2))")
@@ -567,23 +488,22 @@ fn main():
             assert(expr("1 or 2") == "(@binexpr or (@int 1) (@int 2))")
         end)
 
-        test.it("respects logical associativity", fn() throws:
-            assert(
-                expr("1 and 2 or 3 and 4") 
-                == 
-                "(@binexpr or (@binexpr and (@int 1) (@int 2)) (@binexpr and (@int 3) (@int 4)))"
-            )
-        end)
+        test.it("respects logical associativity", fn() throws
+         => assert(
+                expr("1 and 2 or 3 and 4")
+                    == "(@binexpr or (@binexpr and (@int 1) (@int 2)) (@binexpr and (@int 3) (@int 4)))"
+            ))
 
-        test.it("respects parentheses", fn() throws:
-            assert(expr("(1 + 2) * 3") == "(@binexpr * (@paren (@binexpr + (@int 1) (@int 2))) (@int 3))")
-        end)
+        test.it("respects parentheses", fn() throws
+         => assert(
+                expr("(1 + 2) * 3")
+                    == "(@binexpr * (@paren (@binexpr + (@int 1) (@int 2))) (@int 3))"
+            ))
     end)
 
     test.group("unary expressions", fn():
-        test.it("parses `not` expressions", fn() throws:
-            assert(expr("not true") == "(@unexpr not (@bool true))")
-        end)
+        test.it("parses `not` expressions", fn() throws
+         => assert(expr("not true") == "(@unexpr not (@bool true))"))
 
         test.it("parses `-` (negation) expressions", fn() throws:
             assert(expr("- 42") == "(@unexpr - (@int 42))")
@@ -595,20 +515,26 @@ fn main():
         end)
 
         test.it("respects precedence and associativity", fn() throws:
-            assert(expr("not true or false") == "(@binexpr or (@unexpr not (@bool true)) (@bool false))")
-            assert(expr("not a or not b") == "(@binexpr or (@unexpr not (@ident a)) (@unexpr not (@ident b)))")
+            assert(
+                expr("not true or false")
+                    == "(@binexpr or (@unexpr not (@bool true)) (@bool false))"
+            )
+            assert(
+                expr("not a or not b")
+                    == "(@binexpr or (@unexpr not (@ident a)) (@unexpr not (@ident b)))"
+            )
             assert(expr("- 42 + 43") == "(@binexpr + (@unexpr - (@int 42)) (@int 43))")
         end)
     end)
 
     test.group("assignment", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(expr("a = 42") == "(@assign (@ident a) (@int 42))")
-        end)
+        test.it("passes the happy path", fn() throws
+         => assert(expr("a = 42") == "(@assign (@ident a) (@int 42))"))
 
-        test.it("respects associativity", fn() throws:
-            assert(expr("a = b or c") == "(@assign (@ident a) (@binexpr or (@ident b) (@ident c)))")
-        end)
+        test.it("respects associativity", fn() throws
+         => assert(
+                expr("a = b or c") == "(@assign (@ident a) (@binexpr or (@ident b) (@ident c)))"
+            ))
     end)
 
     test.group("loop", fn():
@@ -617,725 +543,601 @@ fn main():
             assert(expr("loop: 42 end") == "(@loop (@block (@int 42)))")
         end)
 
-        test.it("parses `break`", fn() throws:
-            assert(expr("loop: break end") == "(@loop (@block (@break)))")
-        end)
+        test.it("parses `break`", fn() throws
+         => assert(expr("loop: break end") == "(@loop (@block (@break)))"))
 
-        test.it("parses `continue`", fn() throws:
-            assert(expr("loop: continue end") == "(@loop (@block (@continue)))")
-        end)
+        test.it("parses `continue`", fn() throws
+         => assert(expr("loop: continue end") == "(@loop (@block (@continue)))"))
     end)
 
     test.group("trait", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(
-                item("""
+        test.it("passes the happy path", fn() throws
+         => assert(item(
+                """
                     trait Foo:
                         fn bar()
                     end
-                    """) 
-                == 
-                "(@trait (@name (@ident Foo)) (@fndecl (@ident bar) (@type (@unit))))"
-            )
-        end)
+                    """
+            ) == "(@trait (@name (@ident Foo)) (@fndecl (@ident bar) (@type (@unit))))"))
 
-        test.it("parses generics", fn() throws:
-            assert(
-                item("""
+        test.it("parses generics", fn() throws
+         => assert(item(
+                """
                     trait Foo<T>:
                         fn bar()
                     end
-                    """) 
-                == 
-                "(@trait (@name (@ident Foo) (@genericarg (@type (@fqn (@name (@ident T)))))) " +
-                "(@fndecl (@ident bar) (@type (@unit))))"
+                    """
             )
-        end)
+                == "(@trait (@name (@ident Foo) (@genericarg (@type (@fqn (@name (@ident T)))))) "
+                + "(@fndecl (@ident bar) (@type (@unit))))"))
 
-        test.it("parses default implementations", fn() throws:
-            assert(
-                item("""
+        test.it("parses default implementations", fn() throws
+         => assert(item(
+                """
                     trait Foo:
                         fn bar()
                         fn baz():
                         end
                     end
-                    """) 
-                == 
-                "(@trait (@name (@ident Foo)) " +
-                "(@fndecl (@ident bar) (@type (@unit))) " +
-                "(@fn (@fndecl (@ident baz) (@type (@unit))) (@block)))"
+                    """
             )
-        end)
+                == "(@trait (@name (@ident Foo)) "
+                + "(@fndecl (@ident bar) (@type (@unit))) "
+                + "(@fn (@fndecl (@ident baz) (@type (@unit))) (@block)))"))
 
-        test.it("is parsed inside blocks", fn() throws:
-            assert(
-                item("""
+        test.it("is parsed inside blocks", fn() throws
+         => assert(item(
+                """
                     fn test():
                         trait Foo:
                             fn bar()
                         end
                     end
-                    """) 
-                == 
-                "(@fn (@fndecl (@ident test) (@type (@unit))) " +
-                "(@block (@trait (@name (@ident Foo)) (@fndecl (@ident bar) (@type (@unit))))))"
+                    """
             )
-        end)
+                == "(@fn (@fndecl (@ident test) (@type (@unit))) "
+                + "(@block (@trait (@name (@ident Foo)) (@fndecl (@ident bar) (@type (@unit))))))"))
 
-        test.it("parses trait bounds", fn() throws:
-            assert(
-                item("""
+        test.it("parses trait bounds", fn() throws
+         => assert(item(
+                """
                     trait Foo impl Bar:
                     end
-                    """) 
-                == 
-                "(@trait (@name (@ident Foo)) (@traitbound (@fqn (@name (@ident Bar)))))"
-            )
-        end)
+                    """
+            ) == "(@trait (@name (@ident Foo)) (@traitbound (@fqn (@name (@ident Bar)))))"))
     end)
 
     test.group("enum", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(
-                item("""
+        test.it("passes the happy path", fn() throws
+         => assert(item(
+                """
                     enum Foo:
                         Bar
                         Baz(Int, Str, Bool)
                     end
-                    """) 
-                == 
-                "(@enum (@name (@ident Foo)) " +
-                "(@variant (@ident Bar) (@unit)) " +
-                "(@variant (@ident Baz) (@tuple " + 
-                "(@type (@fqn (@name (@ident Int)))) " +
-                "(@type (@fqn (@name (@ident Str)))) " +
-                "(@type (@fqn (@name (@ident Bool)))))))"
+                    """
             )
-        end)
+                == "(@enum (@name (@ident Foo)) "
+                + "(@variant (@ident Bar) (@unit)) "
+                + "(@variant (@ident Baz) (@tuple "
+                + "(@type (@fqn (@name (@ident Int)))) "
+                + "(@type (@fqn (@name (@ident Str)))) "
+                + "(@type (@fqn (@name (@ident Bool)))))))"))
 
-        test.it("parses generics", fn() throws:
-            assert(
-                item("""
+        test.it("parses generics", fn() throws
+         => assert(item(
+                """
                     enum Foo<T>:
                         Bar
                     end
-                    """) 
-                == 
-                "(@enum (@name (@ident Foo) (@genericarg (@type (@fqn (@name (@ident T)))))) " +
-                "(@variant (@ident Bar) (@unit)))"
+                    """
             )
-        end)
+                == "(@enum (@name (@ident Foo) (@genericarg (@type (@fqn (@name (@ident T)))))) "
+                + "(@variant (@ident Bar) (@unit)))"))
 
-        test.it("is parsed inside blocks", fn() throws:
-            assert(
-                item("""
+        test.it("is parsed inside blocks", fn() throws
+         => assert(item(
+                """
                     fn test():
                         enum Foo:
                             Bar
                         end
                     end
-                    """) 
-                == 
-                "(@fn (@fndecl (@ident test) (@type (@unit))) " +
-                "(@block (@enum (@name (@ident Foo)) " +
-                "(@variant (@ident Bar) (@unit)))))"
+                    """
             )
-        end)
+                == "(@fn (@fndecl (@ident test) (@type (@unit))) "
+                + "(@block (@enum (@name (@ident Foo)) "
+                + "(@variant (@ident Bar) (@unit)))))"))
     end)
 
     test.group("impl", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(
-                item("""
+        test.it("passes the happy path", fn() throws
+         => assert(item(
+                """
                     impl Foo:
                         fn bar():
                         end
                     end
-                    """) 
-                == 
-                "(@impl (@fqn (@name (@ident Foo))) " +
-                "(@fn (@fndecl (@ident bar) (@type (@unit))) (@block)))"
+                    """
             )
-        end)
+                == "(@impl (@fqn (@name (@ident Foo))) "
+                + "(@fn (@fndecl (@ident bar) (@type (@unit))) (@block)))"))
 
-        test.it("parses generics", fn() throws:
-            assert(
-                item("""
+        test.it("parses generics", fn() throws
+         => assert(item(
+                """
                     impl Foo<T> for Bar<U>:
                         fn bar():
                         end
                     end
-                    """) 
-                == 
-                "(@impl (@fqn (@name (@ident Foo) " +
-                "(@genericarg (@type (@fqn (@name (@ident T))))))) " +
-                "(@fqn (@name (@ident Bar) (@genericarg (@type (@fqn (@name (@ident U))))))) " +
-                "(@fn (@fndecl (@ident bar) (@type (@unit))) (@block)))"
+                    """
             )
-        end)
+                == "(@impl (@fqn (@name (@ident Foo) "
+                + "(@genericarg (@type (@fqn (@name (@ident T))))))) "
+                + "(@fqn (@name (@ident Bar) (@genericarg (@type (@fqn (@name (@ident U))))))) "
+                + "(@fn (@fndecl (@ident bar) (@type (@unit))) (@block)))"))
 
-        test.it("parses trait impls", fn() throws:
-            assert(
-                item("""
+        test.it("parses trait impls", fn() throws
+         => assert(item(
+                """
                     impl Foo for Bar:
                         fn foo():
                         end
                     end
-                    """) 
-                == 
-                "(@impl (@fqn (@name (@ident Foo))) " +
-                "(@fqn (@name (@ident Bar))) " +
-                "(@fn (@fndecl (@ident foo) (@type (@unit))) (@block)))"
+                    """
             )
-        end)
+                == "(@impl (@fqn (@name (@ident Foo))) "
+                + "(@fqn (@name (@ident Bar))) "
+                + "(@fn (@fndecl (@ident foo) (@type (@unit))) (@block)))"))
 
-        test.it("is parsed inside blocks", fn() throws:
-            assert(
-                item("""
+        test.it("is parsed inside blocks", fn() throws
+         => assert(item(
+                """
                     fn test():
                         impl Foo:
                             fn foo():
                             end
                         end
                     end
-                    """) 
-                == 
-                "(@fn (@fndecl (@ident test) (@type (@unit))) " +
-                "(@block (@impl (@fqn (@name (@ident Foo))) " +
-                "(@fn (@fndecl (@ident foo) (@type (@unit))) (@block)))))"
+                    """
             )
-        end)
+                == "(@fn (@fndecl (@ident test) (@type (@unit))) "
+                + "(@block (@impl (@fqn (@name (@ident Foo))) "
+                + "(@fn (@fndecl (@ident foo) (@type (@unit))) (@block)))))"))
     end)
 
     test.group("struct", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(
-                item("""
+        test.it("passes the happy path", fn() throws
+         => assert(item(
+                """
                     struct Foo:
                         a Int
                         b Str
                     end
-                    """) 
-                == 
-                "(@struct (@name (@ident Foo)) " +
-                "(@field (@ident a) (@type (@fqn (@name (@ident Int))))) " +
-                "(@field (@ident b) (@type (@fqn (@name (@ident Str))))))"
+                    """
             )
-        end)
+                == "(@struct (@name (@ident Foo)) "
+                + "(@field (@ident a) (@type (@fqn (@name (@ident Int))))) "
+                + "(@field (@ident b) (@type (@fqn (@name (@ident Str))))))"))
 
-        test.it("parses generics", fn() throws:
-            assert(
-                item("""
+        test.it("parses generics", fn() throws
+         => assert(item(
+                """
                     struct Foo<T>:
                         a T
                     end
-                    """) 
-                == 
-                "(@struct (@name (@ident Foo) (@genericarg (@type (@fqn (@name (@ident T)))))) " +
-                "(@field (@ident a) (@type (@fqn (@name (@ident T))))))"
+                    """
             )
-        end)
+                == "(@struct (@name (@ident Foo) (@genericarg (@type (@fqn (@name (@ident T)))))) "
+                + "(@field (@ident a) (@type (@fqn (@name (@ident T))))))"))
 
-        test.it("is parsed inside blocks", fn() throws:
-            assert(
-                item("""
+        test.it("is parsed inside blocks", fn() throws
+         => assert(item(
+                """
                     fn test():
                         struct Foo:
                             a Int
                             b Str
                         end
                     end
-                    """) 
-                == 
-                "(@fn (@fndecl (@ident test) (@type (@unit))) " +
-                "(@block (@struct (@name (@ident Foo)) " +
-                "(@field (@ident a) (@type (@fqn (@name (@ident Int))))) " +
-                "(@field (@ident b) (@type (@fqn (@name (@ident Str))))))))"
+                    """
             )
-        end)
+                == "(@fn (@fndecl (@ident test) (@type (@unit))) "
+                + "(@block (@struct (@name (@ident Foo)) "
+                + "(@field (@ident a) (@type (@fqn (@name (@ident Int))))) "
+                + "(@field (@ident b) (@type (@fqn (@name (@ident Str))))))))"))
     end)
 
     test.group("extern", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(
-                module("""
+        test.it("passes the happy path", fn() throws
+         => assert(module(
+                """
                     extern:
                         fn foo() Int
                     end
-                    """) 
-                == 
-                "(@mod (@extern (@fndecl (@ident foo) (@type (@fqn (@name (@ident Int)))))))" 
-            )
-        end)
+                    """
+            ) == "(@mod (@extern (@fndecl (@ident foo) (@type (@fqn (@name (@ident Int)))))))"))
 
-        test.it("parses extern structs", fn() throws:
-            assert(
-                module("""
+        test.it("parses extern structs", fn() throws
+         => assert(module(
+                """
                     extern:
                         struct Foo:
                             a Int
                         end
                     end
-                    """) 
-                == 
-                "(@mod (@extern (@struct (@name (@ident Foo)) " +
-                "(@field (@ident a) (@type (@fqn (@name (@ident Int))))))))"
+                    """
             )
-        end)
+                == "(@mod (@extern (@struct (@name (@ident Foo)) "
+                + "(@field (@ident a) (@type (@fqn (@name (@ident Int))))))))"))
 
-        test.it("parses extern enums", fn() throws:
-            assert(
-                module("""
+        test.it("parses extern enums", fn() throws
+         => assert(module(
+                """
                     extern:
                         enum Foo:
                             Bar
                         end
                     end
-                    """) 
-                == 
-                "(@mod (@extern (@enum (@name (@ident Foo)) " +
-                "(@variant (@ident Bar) (@unit)))))"
+                    """
             )
-        end)
+                == "(@mod (@extern (@enum (@name (@ident Foo)) "
+                + "(@variant (@ident Bar) (@unit)))))"))
 
-        test.it("parses trait implementations", fn() throws:
-            assert(
-                module("""
+        test.it("parses trait implementations", fn() throws
+         => assert(module(
+                """
                     extern:
                         impl Foo for Bar
                     end
-                    """) 
-                == 
-                "(@mod (@extern (@externimpltrait (@fqn (@name (@ident Foo))) " +
-                "(@fqn (@name (@ident Bar))))))"
+                    """
             )
-        end)
+                == "(@mod (@extern (@externimpltrait (@fqn (@name (@ident Foo))) "
+                + "(@fqn (@name (@ident Bar))))))"))
 
-        test.it("parses regular implementations", fn() throws:
-            assert(
-                module("""
+        test.it("parses regular implementations", fn() throws
+         => assert(module(
+                """
                     extern:
                         impl Foo:
                             fn bar()
                         end
                     end
-                    """) 
-                == 
-                "(@mod (@extern (@externimpl (@fqn (@name (@ident Foo))) " +
-                "(@fndecl (@ident bar) (@type (@unit))))))"
+                    """
             )
-        end)
-
+                == "(@mod (@extern (@externimpl (@fqn (@name (@ident Foo))) "
+                + "(@fndecl (@ident bar) (@type (@unit))))))"))
     end)
 
     test.group("struct instantiation", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(
-                expr("Foo{a: 42, b: \"foo\"}") 
-                == 
-                "(@structinst (@fqn (@name (@ident Foo))) " +
-                "(@field (@ident a) (@int 42)) " +
-                "(@field (@ident b) (@str foo)))"
-            )
-        end)
+        test.it("passes the happy path", fn() throws
+         => assert(
+                expr("Foo{a: 42, b: \"foo\"}")
+                    == "(@structinst (@fqn (@name (@ident Foo))) "
+                    + "(@field (@ident a) (@int 42)) "
+                    + "(@field (@ident b) (@str foo)))"
+            ))
 
-        test.it("parses fqn struct names", fn() throws:
-            assert(
-                expr("my::package::Bar{a: 42}") 
-                == 
-                "(@structinst (@fqn (@name (@ident my)) (@name (@ident package)) (@name (@ident Bar))) " +
-                "(@field (@ident a) (@int 42)))"
-            )
-        end)
+        test.it("parses fqn struct names", fn() throws
+         => assert(
+                expr("my::package::Bar{a: 42}")
+                    == "(@structinst (@fqn (@name (@ident my)) (@name (@ident package)) (@name (@ident Bar))) "
+                    + "(@field (@ident a) (@int 42)))"
+            ))
 
-        test.it("parses empty struct instantiations", fn() throws:
-            assert(expr("Foo{}") == "(@structinst (@fqn (@name (@ident Foo))))")
-        end)
+        test.it("parses empty struct instantiations", fn() throws
+         => assert(expr("Foo{}") == "(@structinst (@fqn (@name (@ident Foo))))"))
 
-        test.it("supports field capture", fn() throws:
-            assert(
-                expr("Foo{a, b: c}") 
-                == 
-                "(@structinst (@fqn (@name (@ident Foo))) " +
-                "(@field (@ident a) (@ident a)) " +
-                "(@field (@ident b) (@ident c)))"
-            )
-        end)
+        test.it("supports field capture", fn() throws
+         => assert(
+                expr("Foo{a, b: c}")
+                    == "(@structinst (@fqn (@name (@ident Foo))) "
+                    + "(@field (@ident a) (@ident a)) "
+                    + "(@field (@ident b) (@ident c)))"
+            ))
 
-        test.it("parses generics", fn() throws:
-            assert(
-                expr("Foo<Int>{a: 42}") 
-                == 
-                "(@structinst (@fqn (@name (@ident Foo) (@genericarg (@type (@fqn (@name (@ident Int))))))) " +
-                "(@field (@ident a) (@int 42)))"
-            )
-        end)
+        test.it("parses generics", fn() throws
+         => assert(
+                expr("Foo<Int>{a: 42}")
+                    == "(@structinst (@fqn (@name (@ident Foo) (@genericarg (@type (@fqn (@name (@ident Int))))))) "
+                    + "(@field (@ident a) (@int 42)))"
+            ))
     end)
 
     test.group("return", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(expr("return 42") == "(@return (@int 42))")
-        end)
+        test.it("passes the happy path", fn() throws
+         => assert(expr("return 42") == "(@return (@int 42))"))
 
-        test.it("requires an expression", fn() throws:
-            assert(expr("return") == "(@error eof)")
-        end)
+        test.it("requires an expression", fn() throws => assert(expr("return") == "(@error eof)"))
     end)
 
     test.group("field access", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(expr("a.b") == "(@fieldaccess (@ident a) (@name (@ident b)))")
-        end)
+        test.it("passes the happy path", fn() throws
+         => assert(expr("a.b") == "(@fieldaccess (@ident a) (@name (@ident b)))"))
 
-        test.it("parses chained field accesses", fn() throws:
-            assert(
-                expr("a.b.c") 
-                == 
-                "(@fieldaccess (@fieldaccess (@ident a) (@name (@ident b))) (@name (@ident c)))"
-            )
-        end)
+        test.it("parses chained field accesses", fn() throws
+         => assert(
+                expr("a.b.c")
+                    == "(@fieldaccess (@fieldaccess (@ident a) (@name (@ident b))) (@name (@ident c)))"
+            ))
 
         test.it("works with calls", fn() throws:
             assert(
-                expr("a.b().c") 
-                == 
-                "(@fieldaccess (@call (@fieldaccess (@ident a) (@name (@ident b)))) (@name (@ident c)))"
+                expr("a.b().c")
+                    == "(@fieldaccess (@call (@fieldaccess (@ident a) (@name (@ident b)))) (@name (@ident c)))"
             )
-            assert(
-                expr(
-                    """
+            assert(expr(
+                """
                     a()
                     .b().
                     c
                     """
-                )
-                ==
-                "(@fieldaccess (@call (@fieldaccess (@call (@ident a)) (@name (@ident b)))) (@name (@ident c)))"
+            )
+                == "(@fieldaccess (@call (@fieldaccess (@call (@ident a)) (@name (@ident b)))) (@name (@ident c)))"
             )
         end)
 
-        test.it("parses generic args", fn() throws:
-            assert(
-                expr("a.b<Int>") 
-                == 
-                "(@fieldaccess (@ident a) (@name (@ident b) (@genericarg (@type (@fqn (@name (@ident Int)))))))"
-            )
-        end)
+        test.it("parses generic args", fn() throws
+         => assert(
+                expr("a.b<Int>")
+                    == "(@fieldaccess (@ident a) (@name (@ident b) (@genericarg (@type (@fqn (@name (@ident Int)))))))"
+            ))
     end)
 
-    test.it("parses tuple access", fn() throws:
-        assert(expr("a.0") == "(@tupleaccess (@ident a) 0)")
-    end)
+    test.it("parses tuple access", fn() throws
+     => assert(expr("a.0") == "(@tupleaccess (@ident a) 0)"))
 
     test.group("index access", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(expr("a[42]") == "(@indexaccess (@ident a) (@int 42))")
-        end)
+        test.it("passes the happy path", fn() throws
+         => assert(expr("a[42]") == "(@indexaccess (@ident a) (@int 42))"))
 
-        test.it("parses chained index accesses", fn() throws:
-            assert(
-                expr("a[42][43]") 
-                == 
-                "(@indexaccess (@indexaccess (@ident a) (@int 42)) (@int 43))"
-            )
-        end)
+        test.it("parses chained index accesses", fn() throws
+         => assert(
+                expr("a[42][43]") == "(@indexaccess (@indexaccess (@ident a) (@int 42)) (@int 43))"
+            ))
 
-        test.it("takes any expression as index", fn() throws:
-            assert(
-                expr("a[42 + 43]") 
-                == 
-                "(@indexaccess (@ident a) (@binexpr + (@int 42) (@int 43)))"
-            )
-        end)
+        test.it("takes any expression as index", fn() throws
+         => assert(
+                expr("a[42 + 43]") == "(@indexaccess (@ident a) (@binexpr + (@int 42) (@int 43)))"
+            ))
 
         test.it("works with calls", fn() throws:
             assert(
-                expr("a()[42][43]") 
-                == 
-                "(@indexaccess (@indexaccess (@call (@ident a)) (@int 42)) (@int 43))"
+                expr("a()[42][43]")
+                    == "(@indexaccess (@indexaccess (@call (@ident a)) (@int 42)) (@int 43))"
             )
-            assert(
-                expr(
-                    """
+            assert(expr(
+                """
                     a()
                     [42]
                     [43]
                     """
-                )
-                ==
-                "(@indexaccess (@indexaccess (@call (@ident a)) (@int 42)) (@int 43))"
-            )
+            ) == "(@indexaccess (@indexaccess (@call (@ident a)) (@int 42)) (@int 43))")
         end)
     end)
 
     test.group("use statement", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(
-                module("use foo::bar") 
-                == 
-                "(@mod (@use (@ident foo) (@ident bar)))"
-            )
-        end)
+        test.it("passes the happy path", fn() throws
+         => assert(module("use foo::bar") == "(@mod (@use (@ident foo) (@ident bar)))"))
 
-        test.it("parses `*`", fn() throws:
-            assert(
-                module("use foo::bar::*") 
-                == 
-                "(@mod (@use wildcard (@ident foo) (@ident bar)))"
-            )
-        end)
+        test.it("parses `*`", fn() throws
+         => assert(
+                module("use foo::bar::*") == "(@mod (@use wildcard (@ident foo) (@ident bar)))"
+            ))
 
-        test.it("parses relative paths", fn() throws:
-            assert(
-                module("use .here::foo::bar") 
-                == 
-                "(@mod (@use relative (@ident here) (@ident foo) (@ident bar)))"
-            )
-        end)
+        test.it("parses relative paths", fn() throws
+         => assert(
+                module("use .here::foo::bar")
+                    == "(@mod (@use relative (@ident here) (@ident foo) (@ident bar)))"
+            ))
 
-        test.it("it cannot be used inside blocks", fn() throws:
-            assert(
-                module("""
+        test.it("it cannot be used inside blocks", fn() throws
+         => assert(module(
+                """
                     fn test():
                         use foo::bar
                     end
-                    """) 
-                == 
-                "(@error expr expected at test.kl:3:25-27)"
-            )
-        end)
+                    """
+            ) == "(@error expr expected at test.kl:3:25-27)"))
     end)
 
     test.group("terminator expression", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(expr("a;") == "(@terminatorexpr (@ident a))")
-        end)
+        test.it("passes the happy path", fn() throws
+         => assert(expr("a;") == "(@terminatorexpr (@ident a))"))
 
-        test.it("has the highest precedence", fn() throws:
-            assert(expr("a + b;") == "(@terminatorexpr (@binexpr + (@ident a) (@ident b)))")
-        end)
+        test.it("has the highest precedence", fn() throws
+         => assert(expr("a + b;") == "(@terminatorexpr (@binexpr + (@ident a) (@ident b)))"))
     end)
 
     test.group("match", fn():
-        test.it("passes the happy path", fn() throws:
-            assert(
-                expr("""
+        test.it("passes the happy path", fn() throws
+         => assert(expr(
+                """
                     match a:
                         42 => 1
                     end
-                    """)
-                == 
-                "(@match (@ident a) " +
-                "(@matcharm (@pattern (@literal (@int 42))) (@block (@int 1))))"
+                    """
             )
-        end)
+                == "(@match (@ident a) "
+                + "(@matcharm (@pattern (@literal (@int 42))) (@block (@int 1))))"))
 
-        test.it("parses multiple arms", fn() throws:
-            assert(
-                expr("""
+        test.it("parses multiple arms", fn() throws
+         => assert(expr(
+                """
                     match a:
                         42 => 1
                         43 => 2
                     end
-                    """)
-                == 
-                "(@match (@ident a) " +
-                "(@matcharm (@pattern (@literal (@int 42))) (@block (@int 1))) " +
-                "(@matcharm (@pattern (@literal (@int 43))) (@block (@int 2))))"
+                    """
             )
-        end)
+                == "(@match (@ident a) "
+                + "(@matcharm (@pattern (@literal (@int 42))) (@block (@int 1))) "
+                + "(@matcharm (@pattern (@literal (@int 43))) (@block (@int 2))))"))
 
         test.group("pattern", fn():
-            test.it("parses int literal patterns", fn() throws:
-                assert(
-                    expr("""
+            test.it("parses int literal patterns", fn() throws
+             => assert(expr(
+                    """
                         match a:
                             42 => 1
                         end
-                        """)
-                    == 
-                    "(@match (@ident a) " +
-                    "(@matcharm (@pattern (@literal (@int 42))) (@block (@int 1))))"
+                        """
                 )
-            end)
+                    == "(@match (@ident a) "
+                    + "(@matcharm (@pattern (@literal (@int 42))) (@block (@int 1))))"))
 
-            test.it("parses bool literal patterns", fn() throws:
-                assert(
-                    expr("""
+            test.it("parses bool literal patterns", fn() throws
+             => assert(expr(
+                    """
                         match a:
                             true => 1
                         end
-                        """)
-                    == 
-                    "(@match (@ident a) " +
-                    "(@matcharm (@pattern (@literal (@bool true))) (@block (@int 1))))"
+                        """
                 )
-            end)
+                    == "(@match (@ident a) "
+                    + "(@matcharm (@pattern (@literal (@bool true))) (@block (@int 1))))"))
 
-            test.it("parses string literal patterns", fn() throws:
-                assert(
-                    expr("""
+            test.it("parses string literal patterns", fn() throws
+             => assert(expr(
+                    """
                         match a:
                             "foo" => 1
                         end
-                        """)
-                    == 
-                    "(@match (@ident a) " +
-                    "(@matcharm (@pattern (@literal (@str foo))) (@block (@int 1))))"
+                        """
                 )
-            end)
+                    == "(@match (@ident a) "
+                    + "(@matcharm (@pattern (@literal (@str foo))) (@block (@int 1))))"))
 
-            test.it("parses ident patterns", fn() throws:
-                assert(
-                    expr("""
+            test.it("parses ident patterns", fn() throws
+             => assert(expr(
+                    """
                         match a:
                             b => 1
                         end
-                        """)
-                    == 
-                    "(@match (@ident a) " +
-                    "(@matcharm (@pattern (@ident b)) (@block (@int 1))))"
+                        """
                 )
-            end)
+                    == "(@match (@ident a) "
+                    + "(@matcharm (@pattern (@ident b)) (@block (@int 1))))"))
 
-            test.it("parses fqn patterns", fn() throws:
-                assert(
-                    expr("""
+            test.it("parses fqn patterns", fn() throws
+             => assert(expr(
+                    """
                         match a:
                             Option::None => 1
                         end
-                        """)
-                    == 
-                    "(@match (@ident a) " +
-                    "(@matcharm (@pattern (@fqn (@name (@ident Option)) (@name (@ident None)))) " +
-                    "(@block (@int 1))))"
+                        """
                 )
-            end)
+                    == "(@match (@ident a) "
+                    + "(@matcharm (@pattern (@fqn (@name (@ident Option)) (@name (@ident None)))) "
+                    + "(@block (@int 1))))"))
 
-            test.it("parses wildcard patterns", fn() throws:
-                assert(
-                    expr("""
+            test.it("parses wildcard patterns", fn() throws
+             => assert(expr(
+                    """
                         match a:
                             _ => 1
                         end
-                        """)
-                    == 
-                    "(@match (@ident a) " +
-                    "(@matcharm (@pattern (@wildcard)) (@block (@int 1))))"
+                        """
                 )
-            end)
+                    == "(@match (@ident a) "
+                    + "(@matcharm (@pattern (@wildcard)) (@block (@int 1))))"))
 
-            test.it("parses int range patterns", fn() throws:
-                assert(
-                    expr("""
+            test.it("parses int range patterns", fn() throws
+             => assert(expr(
+                    """
                         match a:
                             1..3 => 1
                             1..<3 => 2
                         end
-                        """)
-                    == 
-                    "(@match (@ident a) " +
-                    "(@matcharm (@pattern (@range (@int 1) .. (@int 3))) (@block (@int 1))) " +
-                    "(@matcharm (@pattern (@range (@int 1) ..< (@int 3))) (@block (@int 2))))"
+                        """
                 )
-            end)
+                    == "(@match (@ident a) "
+                    + "(@matcharm (@pattern (@range (@int 1) .. (@int 3))) (@block (@int 1))) "
+                    + "(@matcharm (@pattern (@range (@int 1) ..< (@int 3))) (@block (@int 2))))"))
 
-            test.it("parses char range patterns", fn() throws:
-                assert(
-                    expr("""
+            test.it("parses char range patterns", fn() throws
+             => assert(expr(
+                    """
                         match a:
                             'a'..'z' => 1
                             'a'..< 'z' => 2
                         end
-                        """)
-                    == 
-                    "(@match (@ident a) " +
-                    "(@matcharm (@pattern (@range (@char a) .. (@char z))) (@block (@int 1))) " +
-                    "(@matcharm (@pattern (@range (@char a) ..< (@char z))) (@block (@int 2))))"
+                        """
                 )
-            end)
+                    == "(@match (@ident a) "
+                    + "(@matcharm (@pattern (@range (@char a) .. (@char z))) (@block (@int 1))) "
+                    + "(@matcharm (@pattern (@range (@char a) ..< (@char z))) (@block (@int 2))))"))
 
-            test.it("parses tuple patterns", fn() throws:
-                assert(
-                    expr("""
+            test.it("parses tuple patterns", fn() throws
+             => assert(expr(
+                    """
                         match a:
                             (1, a) => 1
                         end
-                        """)
-                    == 
-                    "(@match (@ident a) " +
-                    "(@matcharm (@pattern (@tuple (@pattern (@literal (@int 1))) " +
-                    "(@pattern (@ident a)))) (@block (@int 1))))"
+                        """
                 )
-            end)
+                    == "(@match (@ident a) "
+                    + "(@matcharm (@pattern (@tuple (@pattern (@literal (@int 1))) "
+                    + "(@pattern (@ident a)))) (@block (@int 1))))"))
 
-            test.it("parses enum variant with fields patterns", fn() throws:
-                assert(
-                    expr("""
+            test.it("parses enum variant with fields patterns", fn() throws
+             => assert(expr(
+                    """
                         match a:
                             Foo::Bar(1, a) => 1
                             Bar(_) => 2
                         end
-                        """)
-                    == 
-                    "(@match (@ident a) " +
-                    "(@matcharm (@pattern (@enumvariant (@fqn (@name (@ident Foo)) (@name (@ident Bar))) " +
-                    "(@pattern (@literal (@int 1))) (@pattern (@ident a)))) (@block (@int 1))) " +
-                    "(@matcharm (@pattern (@enumvariant (@fqn (@name (@ident Bar))) (@pattern (@wildcard)))) " +
-                    "(@block (@int 2))))"
+                        """
                 )
-            end)
+                    == "(@match (@ident a) "
+                    + "(@matcharm (@pattern (@enumvariant (@fqn (@name (@ident Foo)) (@name (@ident Bar))) "
+                    + "(@pattern (@literal (@int 1))) (@pattern (@ident a)))) (@block (@int 1))) "
+                    + "(@matcharm (@pattern (@enumvariant (@fqn (@name (@ident Bar))) (@pattern (@wildcard)))) "
+                    + "(@block (@int 2))))"))
 
-            test.it("parses struct patterns", fn() throws:
-                assert(
-                    expr("""
+            test.it("parses struct patterns", fn() throws
+             => assert(expr(
+                    """
                         match a:
                             Foo{a: 1, b, c: _} => 1
                         end
-                        """)
-                    == 
-                    "(@match (@ident a) " +
-                    "(@matcharm (@pattern (@struct (@fqn (@name (@ident Foo))) " +
-                    "(@field (@ident a) (@pattern (@literal (@int 1)))) " +
-                    "(@field (@ident b) (@pattern (@ident b))) " +
-                    "(@field (@ident c) (@pattern (@wildcard))))) " +
-                    "(@block (@int 1))))"
+                        """
                 )
-            end)
+                    == "(@match (@ident a) "
+                    + "(@matcharm (@pattern (@struct (@fqn (@name (@ident Foo))) "
+                    + "(@field (@ident a) (@pattern (@literal (@int 1)))) "
+                    + "(@field (@ident b) (@pattern (@ident b))) "
+                    + "(@field (@ident c) (@pattern (@wildcard))))) "
+                    + "(@block (@int 1))))"))
 
-            test.it("parses or patterns", fn() throws:
-                assert(
-                    expr("""
+            test.it("parses or patterns", fn() throws
+             => assert(expr(
+                    """
                         match a:
                             1 | b | 't' => 1
                         end
-                        """)
-                    == 
-                    "(@match (@ident a) " +
-                    "(@matcharm (@pattern (@or (@pattern (@literal (@int 1))) " +
-                    "(@pattern (@ident b)) (@pattern (@literal (@char t))))) " +
-                    "(@block (@int 1))))"
+                        """
                 )
-            end)
+                    == "(@match (@ident a) "
+                    + "(@matcharm (@pattern (@or (@pattern (@literal (@int 1))) "
+                    + "(@pattern (@ident b)) (@pattern (@literal (@char t))))) "
+                    + "(@block (@int 1))))"))
 
-            test.it("parses or patterns in nested patterns", fn() throws:
-                assert(
-                    expr("""
+            test.it("parses or patterns in nested patterns", fn() throws
+             => assert(expr(
+                    """
                         match a:
                             Foo{a: 1 | 2, b: "foo" | "bar"} => 1
                         end
-                        """)
-                    == 
-                    "(@match (@ident a) " +
-                    "(@matcharm (@pattern (@struct (@fqn (@name (@ident Foo))) " +
-                    "(@field (@ident a) (@pattern (@or (@pattern (@literal (@int 1))) " +
-                    "(@pattern (@literal (@int 2)))))) (@field (@ident b) " +
-                    "(@pattern (@or (@pattern (@literal (@str foo))) " +
-                    "(@pattern (@literal (@str bar)))))))) " +
-                    "(@block (@int 1))))"
+                        """
                 )
-            end)
+                    == "(@match (@ident a) "
+                    + "(@matcharm (@pattern (@struct (@fqn (@name (@ident Foo))) "
+                    + "(@field (@ident a) (@pattern (@or (@pattern (@literal (@int 1))) "
+                    + "(@pattern (@literal (@int 2)))))) (@field (@ident b) "
+                    + "(@pattern (@or (@pattern (@literal (@str foo))) "
+                    + "(@pattern (@literal (@str bar)))))))) "
+                    + "(@block (@int 1))))"))
         end)
     end)
 
@@ -1357,40 +1159,28 @@ fn main():
             ParseFn::Expr => parser.parse_expr(parser.iter.force_next().unwrap())
             ParseFn::Module:
                 let res = parser.parse_module()
-                if res.is_error():
-                    return res.unwrap_error().to_debug_str()
-                end
+                if res.is_error() => return res.unwrap_error().to_debug_str()
                 return res.unwrap().to_debug_str()
             end
             ParseFn::Type:
                 let res = parser.parse_type(parser.iter.force_next().unwrap())
-                if res.is_error():
-                    return res.unwrap_error().to_debug_str()
-                end
+                if res.is_error() => return res.unwrap_error().to_debug_str()
                 return res.unwrap().to_debug_str()
             end
             ParseFn::FnDecl:
                 let res = parser.parse_fn_decl(parser.iter.force_next().unwrap())
-                if res.is_error():
-                    return res.unwrap_error().to_debug_str()
-                end
+                if res.is_error() => return res.unwrap_error().to_debug_str()
                 return res.unwrap().to_debug_str()
             end
-            ParseFn::Block: 
+            ParseFn::Block:
                 let res = parser.parse_block()
-                if res.is_error():
-                    return res.unwrap_error().to_debug_str()
-                end
+                if res.is_error() => return res.unwrap_error().to_debug_str()
                 return res.unwrap().to_debug_str()
             end
         end
-        if res.is_error():
-            return res.unwrap_error().to_debug_str()
-        end
+        if res.is_error() => return res.unwrap_error().to_debug_str()
         let opt = res.unwrap()
-        if (opt.is_none()):
-            return "no result"
-        end
+        if (opt.is_none()) => return "no result"
         opt.unwrap().to_debug_str()
     end
 

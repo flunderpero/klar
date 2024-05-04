@@ -5,7 +5,6 @@ use .lexer::FStrItem
 use .lexer::Span
 use .lexer::to_src
 use .test::Test
-
 use TokenKind::*
 use FStrItem::*
 
@@ -15,24 +14,39 @@ fn main():
     test.it("lexes identifiers", fn() throws:
         lex_run("x", [Ident("x")])
         lex_run("x y", [Ident("x"), Ident("y")])
-        lex_run("x Y a1 _a1 A1 _A1 a_1", [
-            Ident("x"), Ident("Y"), Ident("a1"), Ident("_a1"), 
-            Ident("A1"), Ident("_A1"), Ident("a_1")
-        ])
+        lex_run(
+            "x Y a1 _a1 A1 _A1 a_1",
+            [
+                Ident("x"),
+                Ident("Y"),
+                Ident("a1"),
+                Ident("_a1"),
+                Ident("A1"),
+                Ident("_A1"),
+                Ident("a_1")
+            ]
+        )
     end)
 
     test.it("lexes comments and minus (-)", fn() throws:
         lex_run("-- comment", [Comment("-- comment")])
-        lex_run("--- multi-line\ncomment --- x", [Comment("--- multi-line\ncomment ---"), Ident("x")])
+        lex_run(
+            "--- multi-line\ncomment --- x",
+            [Comment("--- multi-line\ncomment ---"), Ident("x")]
+        )
         -- todo (lang-feat): Multi-line strings should be dedented automatically and have to option to be raw.
-        lex_run("""
+        lex_run(
+            """
 --- Multi-line comment 
 - with a dash
 -- and a double dash
 ---
 x
             """,
-            [Comment("--- Multi-line comment \n- with a dash\n-- and a double dash\n---"), Ident("x")]
+            [
+                Comment("--- Multi-line comment \n- with a dash\n-- and a double dash\n---"),
+                Ident("x")
+            ]
         )
         lex_run("- -- comment", [Minus, Comment("-- comment")])
     end)
@@ -46,28 +60,50 @@ x
         lex_run("( ) { } [ ]", [LParen, RParen, LBrace, RBrace, LBracket, RBracket])
     end)
 
-    test.it("lexes int literals", fn() throws:
-        lex_run("123 12 -42", [IntLiteral("123"), IntLiteral("12"), IntLiteral("-42")])
-    end)
+    test.it("lexes int literals", fn() throws
+     => lex_run("123 12 -42", [IntLiteral("123"), IntLiteral("12"), IntLiteral("-42")]))
 
-    test.it("lexes punctuation", fn() throws:
-        lex_run(", . : ; :: ? !", [Comma, Dot, Colon, Semicolon, DoubleColon, QMark, Exclamation])
-    end)
+    test.it("lexes punctuation", fn() throws
+     => lex_run(
+            ", . : ; :: ? !",
+            [Comma, Dot, Colon, Semicolon, DoubleColon, QMark, Exclamation]
+        ))
 
-    test.it("lexes underscore", fn() throws:
-        lex_run("_", [Underscore])
-    end)
+    test.it("lexes underscore", fn() throws => lex_run("_", [Underscore]))
 
-    test.it("lexes all keywords", fn() throws:
-        lex_run(
-                """
+    test.it("lexes all keywords", fn() throws
+     => lex_run(
+            """
             and break continue else end enum extern false fn for if impl 
             let loop match mut not or return struct throws trait true use
-            """, [
-            And, Break, Continue, Else, End, Enum, Extern, BoolLiteral(false), Fn, For, If, Impl, 
-            Let, Loop, Match, Mut, Not, Or, Return, Struct, Throws, Trait, BoolLiteral(true), Use
-        ])
-    end)
+            """,
+            [
+                And,
+                Break,
+                Continue,
+                Else,
+                End,
+                Enum,
+                Extern,
+                BoolLiteral(false),
+                Fn,
+                For,
+                If,
+                Impl,
+                Let,
+                Loop,
+                Match,
+                Mut,
+                Not,
+                Or,
+                Return,
+                Struct,
+                Throws,
+                Trait,
+                BoolLiteral(true),
+                Use
+            ]
+        ))
 
     test.it("records correct spans", fn() throws:
         fn test_span(src Str, expected_from Int, expected_to Int, expected_str Str):
@@ -84,9 +120,7 @@ x
     end)
 
     test.group("char literals", fn():
-        test.it("passes the happy path", fn() throws:
-            lex_run("'a'", [CharLiteral('a')])
-        end)
+        test.it("passes the happy path", fn() throws => lex_run("'a'", [CharLiteral('a')]))
 
         test.it("lexes escape sequences", fn() throws:
             lex_run("'\\0'", [CharLiteral('\0')])
@@ -113,7 +147,6 @@ x
             lex_run("'a", [LexError("expected closing '")])
             lex_run("'a\n foo", [LexError("expected closing '"), Ident("foo")])
         end)
-
     end)
 
     test.group("string literals", fn():
@@ -145,7 +178,7 @@ x
         test.it("rejects the null character", fn() throws:
             assert(lex_error("\"\0\"") == "control character is illegal")
             -- But escaped null characters are fine.
-            lex_run("\"\\0\"", [StrLiteral("\0", false)]) 
+            lex_run("\"\\0\"", [StrLiteral("\0", false)])
         end)
 
         mut i = 1
@@ -158,24 +191,17 @@ x
             let unicode_escape = f"\\u{formatter}"
             let c = Char::from_int(i).unwrap()
 
-            if i == 9 or i == 10 or i == 13:
-                test.it(f"parses the control `{unicode_escape}` character", fn() throws:
-                    lex_run(f"\"\"\"{c}\"\"\"", [StrLiteral(f"""{c}""", true)])
-                end)
-            end else:
-
-                test.it(f"rejects the control `{unicode_escape}` character", fn() throws:
-                    assert(lex_error(f"\"\"\"{c}\"\"\"") == "control character is illegal")
-                    -- But escaped characters are fine.
-                    lex_run(f"\"{unicode_escape}\"", [StrLiteral(f"{c}", false)]) 
-                end)
-
-            end
+            if i == 9 or i == 10 or i == 13
+             => test.it(f"parses the control `{unicode_escape}` character", fn() throws
+                 => lex_run(f"\"\"\"{c}\"\"\"", [StrLiteral(f"{c}", true)]))
+            else => test.it(f"rejects the control `{unicode_escape}` character", fn() throws:
+                assert(lex_error(f"\"\"\"{c}\"\"\"") == "control character is illegal")
+                -- But escaped characters are fine.
+                lex_run(f"\"{unicode_escape}\"", [StrLiteral(f"{c}", false)])
+            end)
 
             i = i + 1
-            if i > 31:
-                break
-            end
+            if i > 31 => break
         end
     end)
 
@@ -196,10 +222,13 @@ x
                     end
                     match items[1]:
                         FStrTokensItem(tokens, span):
-                            let kinds = tokens.iter().map<TokenKind>(
-                                fn(token Token) => token.kind).collect()
-                            assert(kinds == Vector<TokenKind>::from(
-                                [Ident("question"), Dot, Ident("answer")])
+                            let kinds = tokens.iter().map<TokenKind>(fn(token Token)
+                             => token.kind).collect()
+                            assert(
+                                kinds
+                                    == Vector<TokenKind>::from(
+                                        [Ident("question"), Dot, Ident("answer")]
+                                    )
                             )
                             assert(span.raw_src() == "{question.answer}")
                         end
@@ -214,8 +243,8 @@ x
                     end
                     match items[3]:
                         FStrTokensItem(tokens, span):
-                            let kinds = tokens.iter().map<TokenKind>(
-                                fn(token Token) => token.kind).collect()
+                            let kinds = tokens.iter().map<TokenKind>(fn(token Token)
+                             => token.kind).collect()
                             assert(kinds == Vector<TokenKind>::from([IntLiteral("42")]))
                             assert(span.raw_src() == "{42}")
                         end
@@ -242,10 +271,13 @@ x
                     end
                     match items[1]:
                         FStrTokensItem(tokens, span):
-                            let kinds = tokens.iter().map<TokenKind>(
-                                fn(token Token) => token.kind).collect()
-                            assert(kinds == Vector<TokenKind>::from(
-                                [Ident("question"), Dot, WhiteSpace('\n'), Ident("answer")])
+                            let kinds = tokens.iter().map<TokenKind>(fn(token Token)
+                             => token.kind).collect()
+                            assert(
+                                kinds
+                                    == Vector<TokenKind>::from(
+                                        [Ident("question"), Dot, WhiteSpace('\n'), Ident("answer")]
+                                    )
                             )
                             assert(span.raw_src() == "{question.\nanswer}")
                         end
@@ -260,8 +292,8 @@ x
                     end
                     match items[3]:
                         FStrTokensItem(tokens, span):
-                            let kinds = tokens.iter().map<TokenKind>(
-                                fn(token Token) => token.kind).collect()
+                            let kinds = tokens.iter().map<TokenKind>(fn(token Token)
+                             => token.kind).collect()
                             assert(kinds == Vector<TokenKind>::from([IntLiteral("42")]))
                             assert(span.raw_src() == "{42}")
                         end
@@ -313,12 +345,11 @@ x
     fn lex_error(src Str) Str:
         let tokens = lex_only(src)
         assert(tokens.len() >= 1)
-        let first_error = tokens.iter().find_map<Str>(
-            fn(token Token) => match token.kind:
+        let first_error = tokens.iter().find_map<Str>(fn(token Token)
+         => match token.kind:
                 LexError(msg) => Some(msg)
                 _ => None
-            end
-        )
+            end)
         match first_error:
             Some(msg) => msg
             None => panic("expected LexError")
@@ -327,35 +358,27 @@ x
 
     fn lex_run(src Str, expected Array<TokenKind>):
         --- Test that `src` is lexed into `expected`. Whitespaces are ignored.
-        Test that `lex()` and `to_src()` are inverses of each other.
+            Test that `lex()` and `to_src()` are inverses of each other.
         ---
         test.log(f"testing: {src}")
         let tokens = lex_only(src)
         mut idx = 0
-        mut has_expected_parse_errors = expected.iter().any(
-            fn(kind TokenKind) Bool => match(kind):
+        mut has_expected_parse_errors = expected.iter().any(fn(kind TokenKind) Bool
+         => match (kind):
                 LexError(_) => true
                 _ => false
-            end
-        )
-        tokens.iter().filter(
-            fn(token Token) Bool => match token.kind:
+            end)
+        tokens.iter().filter(fn(token Token) Bool
+         => match token.kind:
                 WhiteSpace(_) => false
                 _ => true
-            end
-        ).for_each(
-            fn(token Token): 
-                if idx >= expected.len():
-                    panic(f"more tokens than expected: {token}")
-                end
-                assert(idx < expected.len())
-                assert(token.kind == expected[idx])
-                idx = idx + 1
-            end
-        )
-        if idx < expected.len():
-            panic(f"less tokens than expected: {expected[idx]}")
-        end
+            end).for_each(fn(token Token):
+            if idx >= expected.len() => panic(f"more tokens than expected: {token}")
+            assert(idx < expected.len())
+            assert(token.kind == expected[idx])
+            idx = idx + 1
+        end)
+        if idx < expected.len() => panic(f"less tokens than expected: {expected[idx]}")
         if not has_expected_parse_errors => assert(to_src(tokens) == src)
     end
 

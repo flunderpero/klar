@@ -17,9 +17,7 @@ trait ToDebugStr:
         loop:
             match iter.next():
                 Some('('):
-                    if res.len() > 0:
-                        res.push("\n")
-                    end
+                    if res.len() > 0 => res.push("\n")
                     res.push("  ".repeat(indent))
                     res.push("(")
                     indent = indent + 1
@@ -186,7 +184,8 @@ end
 
 struct MatchArm:
     pattern Pattern
-    block Block -- todo: Sometimes it's called `body` and sometimes `block`.
+    block Block
+    -- todo: Sometimes it's called `body` and sometimes `block`.
     meta Meta
 end
 
@@ -443,7 +442,7 @@ struct Module:
 end
 
 struct Id:
-    --- Each item in the AST is assigned a unique ID. 
+    --- Each item in the AST is assigned a unique ID.
     ---
     -- todo (lang-feat): This should be private.
     id Int
@@ -451,49 +450,37 @@ end
 
 struct Meta:
     id Id
-    --- A unique ID for the node. 
+    --- A unique ID for the node.
     ---
     tokens Vector<Token>?
     --- The tokens taken from the source code. These tokens never
-        change even if the item is desugared. 
+        change even if the item is desugared.
     ---
     span Span
-    --- The span of the node in the source code. 
+    --- The span of the node in the source code.
     ---
 end
 
 impl Type:
-    fn is_option_type(self) Type?:
-        match self.kind:
-            TypeKind::FQN(fqn) =>
-                if fqn.names.len() == 1 and fqn.names[0].ident.name == "Option":
-                    match fqn.names[0].generics:
-                        Some(x) =>
-                            if x.len() == 1 => Some(x[0].type_)
-                            else => None
-                        None => None
-                    end
-                end else:
-                    None
-                end
+    fn is_option_type(self) Type?
+     => match self.kind:
+            TypeKind::FQN(fqn) => if fqn.names.len() == 1 and fqn.names[0].ident.name == "Option"
+             => match fqn.names[0].generics:
+                    Some(x) => if x.len() == 1 => Some(x[0].type_) else => None
+                    None => None
+                end else => None
             _ => None
         end
-    end
 
-    fn is_result_type(self) (Type, Type)?:
-        match self.kind:
-            TypeKind::FQN(fqn) =>
-                if fqn.names.len() == 1 and fqn.names[0].ident.name == "Result" =>
-                    match fqn.names[0].generics:
-                        Some(x) =>
-                            if x.len() == 2 => Some((x[0].type_, x[1].type_))
-                            else => None
-                        None => None
-                    end
-                else => None
+    fn is_result_type(self) (Type, Type)?
+     => match self.kind:
+            TypeKind::FQN(fqn) => if fqn.names.len() == 1 and fqn.names[0].ident.name == "Result"
+             => match fqn.names[0].generics:
+                    Some(x) => if x.len() == 2 => Some((x[0].type_, x[1].type_)) else => None
+                    None => None
+                end else => None
             _ => None
         end
-    end
 end
 
 trait Visitor:
@@ -516,7 +503,8 @@ trait Visitor:
 
     fn visit_extern_impl(mut self, mut node ExternImpl) => self.walk_extern_impl(node)
 
-    fn visit_extern_impl_trait(mut self, mut node ExternImplTrait) => self.walk_extern_impl_trait(node)
+    fn visit_extern_impl_trait(mut self, mut node ExternImplTrait)
+     => self.walk_extern_impl_trait(node)
 
     fn visit_fn(mut self, mut node Fn) => self.walk_fn(node)
 
@@ -538,15 +526,14 @@ trait Visitor:
 
     fn visit_pattern(mut self, mut node Pattern) => self.walk_pattern(node)
 
-    fn walk_module(mut self, node Module):
-        node.items.iter().for_each(fn(item ModuleItem) => self.visit_module_item(item))
-    end
+    fn walk_module(mut self, node Module)
+     => node.items.iter().for_each(fn(item ModuleItem) => self.visit_module_item(item))
 
     fn walk_use(mut self, node Use):
     end
 
-    fn walk_module_item(mut self, node ModuleItem):
-        match node.kind:
+    fn walk_module_item(mut self, node ModuleItem)
+     => match node.kind:
             ModuleItemKind::Enum(child) => self.visit_enum(child)
             ModuleItemKind::Extern(child) => self.visit_extern(child)
             ModuleItemKind::Fn(child) => self.visit_fn(child)
@@ -555,28 +542,24 @@ trait Visitor:
             ModuleItemKind::Struct(child) => self.visit_struct(child)
             ModuleItemKind::Use(child) => self.visit_use(child)
         end
-    end
 
     fn walk_enum(mut self, node Enum):
     end
 
-    fn walk_extern(mut self, node Extern):
-        node.items.iter().for_each(fn(item ExternItem) => self.visit_extern_item(item))
-    end
+    fn walk_extern(mut self, node Extern)
+     => node.items.iter().for_each(fn(item ExternItem) => self.visit_extern_item(item))
 
-    fn walk_extern_item(mut self, node ExternItem):
-        match node:
+    fn walk_extern_item(mut self, node ExternItem)
+     => match node:
             ExternItem::Enum(child) => self.visit_enum(child)
             ExternItem::ExternImpl(child) => self.visit_extern_impl(child)
             ExternItem::ExternImplTrait(child) => self.visit_extern_impl_trait(child)
             ExternItem::FnDecl(child) => self.visit_fndecl(child)
             ExternItem::Struct(child) => self.visit_struct(child)
         end
-    end
 
-    fn walk_extern_impl(mut self, node ExternImpl):
-        node.fn_decls.iter().for_each(fn(it FnDecl) => self.visit_fndecl(it))
-    end
+    fn walk_extern_impl(mut self, node ExternImpl)
+     => node.fn_decls.iter().for_each(fn(it FnDecl) => self.visit_fndecl(it))
 
     fn walk_extern_impl_trait(mut self, node ExternImplTrait):
     end
@@ -589,12 +572,11 @@ trait Visitor:
     fn walk_fndecl(mut self, node FnDecl):
     end
 
-    fn walk_block(mut self, node Block):
-        node.items.iter().for_each(fn(item BlockItem) => self.walk_block_item(item))
-    end
+    fn walk_block(mut self, node Block)
+     => node.items.iter().for_each(fn(item BlockItem) => self.walk_block_item(item))
 
-    fn walk_block_item(mut self, node BlockItem):
-        match node.kind:
+    fn walk_block_item(mut self, node BlockItem)
+     => match node.kind:
             BlockItemKind::Enum(child) => self.visit_enum(child)
             BlockItemKind::Expr(child) => self.visit_expr(child)
             BlockItemKind::Fn(child) => self.visit_fn(child)
@@ -602,10 +584,9 @@ trait Visitor:
             BlockItemKind::Trait(child) => self.visit_trait(child)
             BlockItemKind::Struct(child) => self.visit_struct(child)
         end
-    end
 
-    fn walk_expr(mut self, node Expr):
-        match node.kind:
+    fn walk_expr(mut self, node Expr)
+     => match node.kind:
             ExprKind::Assignment(child):
                 self.visit_expr(child.lhs)
                 self.visit_expr(child.rhs)
@@ -619,17 +600,11 @@ trait Visitor:
                 self.visit_expr(child.target)
                 child.args.iter().for_each(fn(it Expr) => self.visit_expr(it))
             end
-            ExprKind::Closure(child):
-                self.visit_block(child.body)
-            end
+            ExprKind::Closure(child) => self.visit_block(child.body)
             ExprKind::Continue(child) => ()
             ExprKind::FQN(child) => ()
-            ExprKind::FStr(child):
-                child.exprs.iter().for_each(fn(it Expr) => self.visit_expr(it))
-            end
-            ExprKind::FieldAccess(child):
-                self.visit_expr(child.target)
-            end
+            ExprKind::FStr(child) => child.exprs.iter().for_each(fn(it Expr) => self.visit_expr(it))
+            ExprKind::FieldAccess(child) => self.visit_expr(child.target)
             ExprKind::Ident(child) => ()
             ExprKind::IndexAccess(child):
                 self.visit_expr(child.target)
@@ -643,63 +618,47 @@ trait Visitor:
                     None => ()
                 end
             end
-            ExprKind::Let(child):
-                self.visit_expr(child.expr)
-            end
+            ExprKind::Let(child) => self.visit_expr(child.expr)
             ExprKind::Literal(child) => ()
-            ExprKind::Loop(child):
-                self.visit_block(child.body)
-            end
+            ExprKind::Loop(child) => self.visit_block(child.body)
             ExprKind::Match(child):
                 self.visit_expr(child.expr)
                 child.arms.iter().for_each(fn(it MatchArm) => self.visit_match_arm(it))
             end
-            ExprKind::Paren(child):
-                self.visit_expr(child)
-            end
+            ExprKind::Paren(child) => self.visit_expr(child)
             ExprKind::Return(child) => self.visit_expr(child.expr)
-            ExprKind::StructInst(child):
-                child.fields.iter().for_each(fn(it (Ident, Expr)) => self.visit_expr(it.1))
-            end
+            ExprKind::StructInst(child)
+             => child.fields.iter().for_each(fn(it (Ident, Expr)) => self.visit_expr(it.1))
             ExprKind::TerminatorExpr(child) => self.visit_expr(child.expr)
-            ExprKind::Tuple(child):
-                child.iter().for_each(fn(it Expr) => self.visit_expr(it))
-            end
-            ExprKind::TupleAccess(child):
-                self.visit_expr(child.target)
-            end
-            ExprKind::UnaryExpr(child):
-                self.visit_expr(child.expr)
-            end
+            ExprKind::Tuple(child) => child.iter().for_each(fn(it Expr) => self.visit_expr(it))
+            ExprKind::TupleAccess(child) => self.visit_expr(child.target)
+            ExprKind::UnaryExpr(child) => self.visit_expr(child.expr)
         end
-    end
 
     fn walk_match_arm(mut self, node MatchArm):
         self.visit_pattern(node.pattern)
         self.visit_block(node.block)
     end
 
-    fn walk_pattern(mut self, node Pattern):
-        match node.kind:
-            PatternKind::EnumVariant(_, patterns) => 
-                patterns.iter().for_each(fn(it Pattern) => self.visit_pattern(it))
-            PatternKind::Struct(_, fields) => 
-                fields.iter().for_each(fn(it (Ident, Pattern)) => self.visit_pattern(it.1))
-            PatternKind::Or(patterns) => 
-                patterns.iter().for_each(fn(it Pattern) => self.visit_pattern(it))
-            PatternKind::Tuple(patterns) => 
-                patterns.iter().for_each(fn(it Pattern) => self.visit_pattern(it))
+    fn walk_pattern(mut self, node Pattern)
+     => match node.kind:
+            PatternKind::EnumVariant(_, patterns)
+             => patterns.iter().for_each(fn(it Pattern) => self.visit_pattern(it))
+            PatternKind::Struct(_, fields)
+             => fields.iter().for_each(fn(it (Ident, Pattern)) => self.visit_pattern(it.1))
+            PatternKind::Or(patterns)
+             => patterns.iter().for_each(fn(it Pattern) => self.visit_pattern(it))
+            PatternKind::Tuple(patterns)
+             => patterns.iter().for_each(fn(it Pattern) => self.visit_pattern(it))
             PatternKind::Range(_) => ()
             PatternKind::Ident(_) => ()
             PatternKind::FQN(_) => ()
             PatternKind::Literal(_) => ()
             PatternKind::Wildcard => ()
         end
-    end
 
-    fn walk_impl(mut self, node Impl):
-        node.fn_impls.iter().for_each(fn(it Fn) => self.visit_fn(it))
-    end
+    fn walk_impl(mut self, node Impl)
+     => node.fn_impls.iter().for_each(fn(it Fn) => self.visit_fn(it))
 
     fn walk_struct(mut self, node Struct):
     end
@@ -710,74 +669,66 @@ trait Visitor:
     end
 end
 
-
 impl Meta:
     fn from_tokens(tokens Vector<Token>) Meta:
         assert(tokens.len() > 0)
         let last = tokens.len() - 1
         -- todo (lang-feat): We should be able to just use `-1` as the end index.
         let span = tokens[0].span.combine(tokens[last].span)
-        let id = Id{id: int_next()} 
-        Meta{id: id, tokens: Some(tokens), span}
+        let id = Id{ id: int_next() }
+        Meta{ id, tokens: Some(tokens), span }
     end
 
     fn from_span(span Span) Meta:
-        let id = Id{id: int_next()} 
-        Meta{id, tokens: None, span}
+        let id = Id{ id: int_next() }
+        Meta{ id, tokens: None, span }
     end
 
-    fn last_token(self) Token?:
-        match self.tokens:
+    fn last_token(self) Token?
+     => match self.tokens:
             Some(x) => Some(x[x.len() - 1])
             None => None
         end
-    end
 
-    fn first_token(self) Token?:
-        match self.tokens:
+    fn first_token(self) Token?
+     => match self.tokens:
             Some(x) => Some(x[0])
             None => None
         end
-    end
 
-    fn tokens_to_str(self) Str:
-        match self.tokens:
+    fn tokens_to_str(self) Str
+     => match self.tokens:
             Some(x) => " ".join(x.iter().map<Str>(fn(it Token) Str => it.to_str()))
             None => ""
         end
-    end
 end
 
 impl ToDebugStr for Meta:
-    fn to_debug_str(self) Str:
-        f"(@meta {self.id.id} {self.span})"
-    end
+    fn to_debug_str(self) Str => f"(@meta {self.id.id} {self.span})"
 end
 
 impl ToDebugStr for GenericArg:
     fn to_debug_str(self) Str:
         let trait_bounds = match self.trait_bounds:
-            Some(x) => 
-                " ".join(
-                    x.iter().map<Str>(fn(it FQN) Str => f"(@traitbound {it.to_debug_str()})")
-                )
+            Some(x)
+             => " ".join(x.iter().map<Str>(fn(it FQN) Str
+                 => f"(@traitbound {it.to_debug_str()})"))
             None => ""
         end
         let default = match self.default:
             Some(x) => x.to_debug_str()
             None => ""
         end
-        f"(@genericarg {self.type_.to_debug_str()}{" ".when(trait_bounds.len() > 0)}{trait_bounds}{" ".when(default.len() > 0)}{default})"
+        f"(@genericarg {
+            self.type_.to_debug_str()
+        }{" ".when(trait_bounds.len() > 0)}{trait_bounds}{" ".when(default.len() > 0)}{default})"
     end
 end
 
 impl ToDebugStr for Name:
     fn to_debug_str(self) Str:
         let generics = match self.generics:
-            Some(x) => 
-                " ".join(
-                    x.iter().map<Str>(fn(it GenericArg) Str => it.to_debug_str())
-                )
+            Some(x) => " ".join(x.iter().map<Str>(fn(it GenericArg) Str => it.to_debug_str()))
             None => ""
         end
         f"(@name {self.ident.to_debug_str()}{" ".when(generics.len() > 0)}{generics})"
@@ -786,38 +737,32 @@ end
 
 impl ToDebugStr for FQN:
     fn to_debug_str(self) Str:
-        let names = " ".join(
-            self.names.iter().map<Str>(fn(it Name) Str => it.to_debug_str())
-        )
+        let names = " ".join(self.names.iter().map<Str>(fn(it Name) Str => it.to_debug_str()))
         f"(@fqn {names})"
     end
 end
 
 impl ToDebugStr for FnType:
     fn to_debug_str(self) Str:
-        let param_types = " ".join(
-            self.param_types.iter().map<Str>(fn(it Type) Str => it.to_debug_str())
-        )
+        let param_types = " ".join(self.param_types.iter().map<Str>(fn(it Type) Str
+         => it.to_debug_str()))
         f"(@fntype{" ".when(param_types.len() > 0)}{param_types} {self.return_type.to_debug_str()})"
     end
 end
 
 impl ToDebugStr for Type:
-    fn to_debug_str(self) Str:
-        match self.kind:
+    fn to_debug_str(self) Str
+     => match self.kind:
             TypeKind::Fn(x) => x.to_debug_str()
             TypeKind::FQN(x) => f"(@type {x.to_debug_str()})"
             TypeKind::Unit => "(@type (@unit))"
             TypeKind::Self => "(@type (@self))"
             TypeKind::Tuple(x):
-                let types = " ".join(
-                    x.iter().map<Str>(fn(it Type) Str => it.to_debug_str())
-                )
+                let types = " ".join(x.iter().map<Str>(fn(it Type) Str => it.to_debug_str()))
                 f"(@type (@tuple{" ".when(types.len() > 0)}{types})"
             end
             TypeKind::Infer => "(@type (@infer))"
         end
-    end
 end
 
 impl ToDebugStr for Param:
@@ -830,56 +775,44 @@ end
 impl ToDebugStr for FnDecl:
     fn to_debug_str(self) Str:
         let generics = match self.generics:
-            Some(x) => 
-                " ".join(
-                    x.iter().map<Str>(fn(it GenericArg) Str => it.to_debug_str())
-                )
+            Some(x) => " ".join(x.iter().map<Str>(fn(it GenericArg) Str => it.to_debug_str()))
             None => ""
         end
-        let params = " ".join(
-            self.params.iter().map<Str>(fn(it Param) Str => it.to_debug_str())
-        )
+        let params = " ".join(self.params.iter().map<Str>(fn(it Param) Str => it.to_debug_str()))
         let return_type = self.return_type.to_debug_str()
-        f"(@fndecl {self.ident.to_debug_str()}" +
-        f"{" ".when(generics.len() > 0)}{generics}" +
-        f"{" ".when(params.len() > 0)}{params} {return_type})"
+        f"(@fndecl {self.ident.to_debug_str()}"
+            + f"{" ".when(generics.len() > 0)}{generics}"
+            + f"{" ".when(params.len() > 0)}{params} {return_type})"
     end
 end
 
 impl ToDebugStr for Trait:
     fn to_debug_str(self) Str:
         let trait_bounds = match self.trait_bounds:
-            Some(x) => 
-                " ".join(
-                    x.iter().map<Str>(fn(it FQN) Str => f"(@traitbound {it.to_debug_str()})")
-                )
+            Some(x)
+             => " ".join(x.iter().map<Str>(fn(it FQN) Str
+                 => f"(@traitbound {it.to_debug_str()})"))
             None => ""
         end
-        let fn_decls = " ".join(
-            self.fn_decls.iter().map<Str>(fn(it FnDecl) Str => it.to_debug_str())
-        )
-        let fn_impls = " ".join(
-            self.fn_impls.iter().map<Str>(fn(it Fn) Str => it.to_debug_str())
-        )
-        f"(@trait {self.name.to_debug_str()}" +
-        f"{" ".when(trait_bounds.len() > 0)}{trait_bounds}" +
-        f"{" ".when(fn_decls.len() > 0)}" +
-        f"{fn_decls}{" ".when(fn_impls.len() > 0)}{fn_impls})"
+        let fn_decls = " ".join(self.fn_decls.iter().map<Str>(fn(it FnDecl) Str
+         => it.to_debug_str()))
+        let fn_impls = " ".join(self.fn_impls.iter().map<Str>(fn(it Fn) Str => it.to_debug_str()))
+        f"(@trait {self.name.to_debug_str()}"
+            + f"{" ".when(trait_bounds.len() > 0)}{trait_bounds}"
+            + f"{" ".when(fn_decls.len() > 0)}"
+            + f"{fn_decls}{" ".when(fn_impls.len() > 0)}{fn_impls})"
     end
 end
 
 impl ToDebugStr for EnumVariantKind:
-    fn to_debug_str(self) Str:
-        match self:
+    fn to_debug_str(self) Str
+     => match self:
             EnumVariantKind::Tuple(x):
-                let types = " ".join(
-                    x.iter().map<Str>(fn(it Type) Str => it.to_debug_str())
-                )
+                let types = " ".join(x.iter().map<Str>(fn(it Type) Str => it.to_debug_str()))
                 f"(@tuple {types})"
             end
             EnumVariantKind::Unit => "(@unit)"
         end
-    end
 end
 
 impl ToDebugStr for EnumVariant:
@@ -891,9 +824,8 @@ end
 
 impl ToDebugStr for Enum:
     fn to_debug_str(self) Str:
-        let variants = " ".join(
-            self.variants.iter().map<Str>(fn(it EnumVariant) Str => it.to_debug_str())
-        )
+        let variants = " ".join(self.variants.iter().map<Str>(fn(it EnumVariant) Str
+         => it.to_debug_str()))
         f"(@enum {self.name.to_debug_str()}{" ".when(variants.len() > 0)}{variants})"
     end
 end
@@ -904,9 +836,7 @@ end
 
 impl ToDebugStr for Struct:
     fn to_debug_str(self) Str:
-        let fields = " ".join(
-            self.fields.iter().map<Str>(fn(it Field) Str => it.to_debug_str())
-        )
+        let fields = " ".join(self.fields.iter().map<Str>(fn(it Field) Str => it.to_debug_str()))
         f"(@struct {self.name.to_debug_str()}{" ".when(fields.len() > 0)}{fields})"
     end
 end
@@ -917,61 +847,52 @@ impl ToDebugStr for Impl:
             Some(x) => f"{x.to_debug_str()} "
             None => ""
         end
-        let fn_impls = " ".join(
-            self.fn_impls.iter().map<Str>(fn(it Fn) Str => it.to_debug_str())
-        )
+        let fn_impls = " ".join(self.fn_impls.iter().map<Str>(fn(it Fn) Str => it.to_debug_str()))
         f"(@impl {trait_}{self.type_.to_debug_str()}{" ".when(fn_impls.len() > 0)}{fn_impls})"
     end
 end
 
 impl ToDebugStr for Extern:
     fn to_debug_str(self) Str:
-        let items = " ".join(
-            self.items.iter().map<Str>(fn(it ExternItem) Str => it.to_debug_str())
-        )
+        let items = " ".join(self.items.iter().map<Str>(fn(it ExternItem) Str => it.to_debug_str()))
         f"(@extern{" ".when(items.len() > 0)}{items})"
     end
 end
 
 impl ToDebugStr for Use:
     fn to_debug_str(self) Str:
-        let path = " ".join(
-            self.path.iter().map<Str>(fn(it Ident) Str => it.to_debug_str())
-        )
+        let path = " ".join(self.path.iter().map<Str>(fn(it Ident) Str => it.to_debug_str()))
         f"(@use {"relative ".when(self.relative)}{"wildcard ".when(self.wildcard)}{path})"
     end
 end
 
 impl ToDebugStr for ExternImpl:
     fn to_debug_str(self) Str:
-        let fn_decls = " ".join(
-            self.fn_decls.iter().map<Str>(fn(it FnDecl) Str => it.to_debug_str())
-        )
+        let fn_decls = " ".join(self.fn_decls.iter().map<Str>(fn(it FnDecl) Str
+         => it.to_debug_str()))
         f"(@externimpl {self.type_.to_debug_str()}{" ".when(fn_decls.len() > 0)}{fn_decls})"
     end
 end
 
 impl ToDebugStr for ExternImplTrait:
-    fn to_debug_str(self) Str:
-        f"(@externimpltrait {self.trait_.to_debug_str()} {self.type_.to_debug_str()})"
-    end
+    fn to_debug_str(self) Str
+     => f"(@externimpltrait {self.trait_.to_debug_str()} {self.type_.to_debug_str()})"
 end
 
 impl ToDebugStr for ExternItem:
-    fn to_debug_str(self) Str:
-        match self:
+    fn to_debug_str(self) Str
+     => match self:
             ExternItem::Enum(x) => x.to_debug_str()
             ExternItem::FnDecl(x) => x.to_debug_str()
             ExternItem::ExternImpl(x) => x.to_debug_str()
             ExternItem::ExternImplTrait(x) => x.to_debug_str()
             ExternItem::Struct(x) => x.to_debug_str()
         end
-    end
 end
 
 impl ToDebugStr for ModuleItem:
-    fn to_debug_str(self) Str:
-        match self.kind:
+    fn to_debug_str(self) Str
+     => match self.kind:
             ModuleItemKind::Enum(x) => x.to_debug_str()
             ModuleItemKind::Extern(x) => x.to_debug_str()
             ModuleItemKind::Fn(x) => x.to_debug_str()
@@ -980,21 +901,18 @@ impl ToDebugStr for ModuleItem:
             ModuleItemKind::Struct(x) => x.to_debug_str()
             ModuleItemKind::Use(x) => x.to_debug_str()
         end
-    end
 end
 
 impl ToDebugStr for Module:
     fn to_debug_str(self) Str:
-        let items = " ".join(
-            self.items.iter().map<Str>(fn(it ModuleItem) Str => it.to_debug_str())
-        )
+        let items = " ".join(self.items.iter().map<Str>(fn(it ModuleItem) Str => it.to_debug_str()))
         f"(@mod{" ".when(items.len() > 0)}{items})"
     end
 end
 
 impl ToDebugStr for BlockItem:
-    fn to_debug_str(self) Str:
-        match self.kind:
+    fn to_debug_str(self) Str
+     => match self.kind:
             BlockItemKind::Enum(x) => x.to_debug_str()
             BlockItemKind::Expr(x) => x.to_debug_str()
             BlockItemKind::Fn(x) => x.to_debug_str()
@@ -1002,7 +920,6 @@ impl ToDebugStr for BlockItem:
             BlockItemKind::Trait(x) => x.to_debug_str()
             BlockItemKind::Struct(x) => x.to_debug_str()
         end
-    end
 end
 
 impl ToDebugStr for Fn:
@@ -1016,21 +933,22 @@ end
 impl ToDebugStr for Block:
     fn to_debug_str(self) Str:
         if self.items.len() == 0 => return "(@block)"
-        let body = " ".join(
-            self.items.iter().map<Str>(fn(it BlockItem) Str => it.to_debug_str())
-        )
+        let body = " ".join(self.items.iter().map<Str>(fn(it BlockItem) Str => it.to_debug_str()))
         f"(@block {body})"
     end
 end
 
 impl ToDebugStr for ParseErrorKind:
-    fn to_debug_str(self) Str:
-        match self:
-            ParseErrorKind::CharLiteralExpected(token) => f"(@error char literal expected at {token.span})"
+    fn to_debug_str(self) Str
+     => match self:
+            ParseErrorKind::CharLiteralExpected(token)
+             => f"(@error char literal expected at {token.span})"
             ParseErrorKind::ExprExpected(token) => f"(@error expr expected at {token.span})"
             ParseErrorKind::IdentExpected(token) => f"(@error ident expected at {token.span})"
-            ParseErrorKind::IntLiteralExpected(token) => f"(@error int literal expected at {token.span})"
-            ParseErrorKind::InvalidIntLiteral(token) => f"(@error invalid int literal at {token.span})"
+            ParseErrorKind::IntLiteralExpected(token)
+             => f"(@error int literal expected at {token.span})"
+            ParseErrorKind::InvalidIntLiteral(token)
+             => f"(@error invalid int literal at {token.span})"
             ParseErrorKind::ParamExpected(token) => f"(@error param expected at {token.span})"
             ParseErrorKind::PatternExpected(token) => f"(@error pattern expected at {token.span})"
             ParseErrorKind::TypeExpected(token):
@@ -1043,26 +961,27 @@ impl ToDebugStr for ParseErrorKind:
             end
             ParseErrorKind::UnitNotAllowedInGeneric => "(@error unit not allowed in generic)"
             ParseErrorKind::UnexpectedEOF => "(@error eof)"
-            ParseErrorKind::UnexpectedFnDecl(decl) => f"(@error unexpected fn decl `{decl.ident}` at {decl.meta.span})"
-            ParseErrorKind::UnexpectedToken(token) => f"(@error unexpected token `{token}` at {token.span})"
+            ParseErrorKind::UnexpectedFnDecl(decl)
+             => f"(@error unexpected fn decl `{decl.ident}` at {decl.meta.span})"
+            ParseErrorKind::UnexpectedToken(token)
+             => f"(@error unexpected token `{token}` at {token.span})"
         end
-    end
 end
 
 impl ToDebugStr for Literal:
     fn to_debug_str(self) Str:
         let lit = match self.kind:
             LiteralKind::ArrayLiteral(exprs):
-                let exprs_str = " ".join(
-                    exprs.iter().map<Str>(fn(it Expr) Str => it.to_debug_str())
-                )
+                let exprs_str = " ".join(exprs.iter().map<Str>(fn(it Expr) Str
+                 => it.to_debug_str()))
                 f"(@array{" ".when(exprs_str.len() > 0)}{exprs_str})"
             end
             LiteralKind::BoolLiteral(value) => f"(@bool {value})"
             LiteralKind::CharLiteral(value, _) => f"(@char {value})"
             LiteralKind::IntLiteral(value) => f"(@int {value})"
-            LiteralKind::StrLiteral(value, _) => f"(@str{" ".when(value.len() > 0)}{value.replace("\n", "\\n")})"
-            LiteralKind::UnitLiteral=> "(@unit)"
+            LiteralKind::StrLiteral(value, _)
+             => f"(@str{" ".when(value.len() > 0)}{value.replace("\n", "\\n")})"
+            LiteralKind::UnitLiteral => "(@unit)"
         end
         f"{lit}"
     end
@@ -1070,10 +989,10 @@ end
 
 impl ToDebugStr for Call:
     fn to_debug_str(self) Str:
-        let args = " ".join(
-            self.args.iter().map<Str>(fn(it Expr) Str => it.to_debug_str())
-        )
-        f"(@call {self.target.to_debug_str()}{" ".when(args.len() > 0)}{args}{" (@propagate)".when(self.propagate_error)})"
+        let args = " ".join(self.args.iter().map<Str>(fn(it Expr) Str => it.to_debug_str()))
+        f"(@call {
+            self.target.to_debug_str()
+        }{" ".when(args.len() > 0)}{args}{" (@propagate)".when(self.propagate_error)})"
     end
 end
 
@@ -1091,9 +1010,7 @@ end
 
 impl ToDebugStr for FStr:
     fn to_debug_str(self) Str:
-        let exprs = " ".join(
-            self.exprs.iter().map<Str>(fn(it Expr) Str => it.to_debug_str())
-        )
+        let exprs = " ".join(self.exprs.iter().map<Str>(fn(it Expr) Str => it.to_debug_str()))
         f"(@fstr{" ".when(exprs.len() > 0)}{exprs})"
     end
 end
@@ -1126,7 +1043,9 @@ end
 impl ToDebugStr for Let:
     fn to_debug_str(self) Str:
         let name = if self.is_mut => "mut" else => "let"
-        f"(@{name} {self.ident.to_debug_str()} {self.type_.to_debug_str()} {self.expr.to_debug_str()})"
+        f"(@{
+            name
+        } {self.ident.to_debug_str()} {self.type_.to_debug_str()} {self.expr.to_debug_str()})"
     end
 end
 
@@ -1167,23 +1086,22 @@ impl ToDebugStr for Return:
 end
 
 impl ToDebugStr for FieldAccess:
-    fn to_debug_str(self) Str 
-        => f"(@fieldaccess {self.target.to_debug_str()} {self.field.to_debug_str()})"
+    fn to_debug_str(self) Str
+     => f"(@fieldaccess {self.target.to_debug_str()} {self.field.to_debug_str()})"
 end
 
 impl ToDebugStr for TupleAccess:
-    fn to_debug_str(self) Str 
-        => f"(@tupleaccess {self.target.to_debug_str()} {self.index})"
+    fn to_debug_str(self) Str => f"(@tupleaccess {self.target.to_debug_str()} {self.index})"
 end
 
 impl ToDebugStr for IndexAccess:
-    fn to_debug_str(self) Str 
-        => f"(@indexaccess {self.target.to_debug_str()} {self.index.to_debug_str()})"
+    fn to_debug_str(self) Str
+     => f"(@indexaccess {self.target.to_debug_str()} {self.index.to_debug_str()})"
 end
 
 impl ToDebugStr for MatchArm:
     fn to_debug_str(self) Str
-        => f"(@matcharm {self.pattern.to_debug_str()} {self.block.to_debug_str()})"
+     => f"(@matcharm {self.pattern.to_debug_str()} {self.block.to_debug_str()})"
 end
 
 impl ToDebugStr for Range:
@@ -1194,25 +1112,23 @@ impl ToDebugStr for Range:
 end
 
 impl ToDebugStr for PatternKind:
-    fn to_debug_str(self) Str:
-        match self:
+    fn to_debug_str(self) Str
+     => match self:
             PatternKind::EnumVariant(fqn, patterns):
-                let patterns_str = " ".join(
-                    patterns.iter().map<Str>(fn(it Pattern) Str => it.to_debug_str())
-                )
-                f"(@enumvariant {fqn.to_debug_str()}{" ".when(patterns_str.len() > 0)}{patterns_str})"
+                let patterns_str = " ".join(patterns.iter().map<Str>(fn(it Pattern) Str
+                 => it.to_debug_str()))
+                f"(@enumvariant {
+                    fqn.to_debug_str()
+                }{" ".when(patterns_str.len() > 0)}{patterns_str})"
             end
             PatternKind::Struct(fqn, fields):
-                let fields_str = " ".join(
-                    fields.iter().map<Str>(fn(it (Ident, Pattern)) Str 
-                        => f"(@field {it.0.to_debug_str()} {it.1.to_debug_str()})")
-                )
+                let fields_str = " ".join(fields.iter().map<Str>(fn(it (Ident, Pattern)) Str
+                 => f"(@field {it.0.to_debug_str()} {it.1.to_debug_str()})"))
                 f"(@struct {fqn.to_debug_str()}{" ".when(fields_str.len() > 0)}{fields_str})"
             end
             PatternKind::Or(patterns):
-                let patterns_str = " ".join(
-                    patterns.iter().map<Str>(fn(it Pattern) Str => it.to_debug_str())
-                )
+                let patterns_str = " ".join(patterns.iter().map<Str>(fn(it Pattern) Str
+                 => it.to_debug_str()))
                 f"(@or {patterns_str})"
             end
             PatternKind::Ident(x) => x.to_debug_str()
@@ -1220,14 +1136,11 @@ impl ToDebugStr for PatternKind:
             PatternKind::Literal(x) => f"(@literal {x.to_debug_str()})"
             PatternKind::Range(x) => x.to_debug_str()
             PatternKind::Tuple(x):
-                let patterns = " ".join(
-                    x.iter().map<Str>(fn(it Pattern) Str => it.to_debug_str())
-                )
+                let patterns = " ".join(x.iter().map<Str>(fn(it Pattern) Str => it.to_debug_str()))
                 f"(@tuple{" ".when(patterns.len() > 0)}{patterns})"
             end
             PatternKind::Wildcard => "(@wildcard)"
         end
-    end
 end
 
 impl ToDebugStr for Pattern:
@@ -1236,29 +1149,25 @@ end
 
 impl ToDebugStr for Match:
     fn to_debug_str(self) Str:
-        let arms = " ".join(
-            self.arms.iter().map<Str>(fn(it MatchArm) Str => it.to_debug_str())
-        )
+        let arms = " ".join(self.arms.iter().map<Str>(fn(it MatchArm) Str => it.to_debug_str()))
         f"(@match {self.expr.to_debug_str()}{" ".when(arms.len() > 0)}{arms})"
     end
 end
 
 impl ToDebugStr for StructInst:
     fn to_debug_str(self) Str:
-        let fields = " ".join(
-            self.fields.iter().map<Str>(fn(it (Ident, Expr)) Str 
-                => f"(@field {it.0.to_debug_str()} {it.1.to_debug_str()})")
-        )
+        let fields = " ".join(self.fields.iter().map<Str>(fn(it (Ident, Expr)) Str
+         => f"(@field {it.0.to_debug_str()} {it.1.to_debug_str()})"))
         f"(@structinst {self.fqn.to_debug_str()}{" ".when(fields.len() > 0)}{fields})"
     end
 end
 
 impl ToDebugStr for Closure:
     fn to_debug_str(self) Str:
-        let params = " ".join(
-            self.params.iter().map<Str>(fn(it Param) Str => it.to_debug_str())
-        )
-        f"(@closure{" ".when(params.len() > 0)}{params} {self.return_type.to_debug_str()} {self.body.to_debug_str()})"
+        let params = " ".join(self.params.iter().map<Str>(fn(it Param) Str => it.to_debug_str()))
+        f"(@closure{
+            " ".when(params.len() > 0)
+        }{params} {self.return_type.to_debug_str()} {self.body.to_debug_str()})"
     end
 end
 
@@ -1267,8 +1176,8 @@ impl ToDebugStr for TerminatorExpr:
 end
 
 impl ToDebugStr for ExprKind:
-    fn to_debug_str(self) Str:
-        match self:
+    fn to_debug_str(self) Str
+     => match self:
             ExprKind::Assignment(value) => value.to_debug_str()
             ExprKind::BinaryExpr(value) => value.to_debug_str()
             ExprKind::Break(value) => value.to_debug_str()
@@ -1290,15 +1199,12 @@ impl ToDebugStr for ExprKind:
             ExprKind::StructInst(value) => value.to_debug_str()
             ExprKind::TerminatorExpr(value) => value.to_debug_str()
             ExprKind::Tuple(value):
-                let exprs = " ".join(
-                    value.iter().map<Str>(fn(it Expr) Str => it.to_debug_str())
-                )
+                let exprs = " ".join(value.iter().map<Str>(fn(it Expr) Str => it.to_debug_str()))
                 f"(@tuple{" ".when(exprs.len() > 0)}{exprs})"
             end
             ExprKind::TupleAccess(value) => value.to_debug_str()
             ExprKind::UnaryExpr(value) => value.to_debug_str()
         end
-    end
 end
 
 impl ToDebugStr for Expr:

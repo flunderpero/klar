@@ -1,4 +1,4 @@
---- = Parser 
+--- = Parser
     The parse parses a stream of tokens into a high level AST.
 
     == Desugaring
@@ -101,9 +101,8 @@ impl Iterator<Token> for TokenIter:
         loop:
             let token = self.immediate()
             match token:
-                Some(
-                    Token{kind: TokenKind::WhiteSpace(_) | TokenKind::Comment(_), span: _}
-                ) => continue
+                Some(Token{ kind: TokenKind::WhiteSpace(_) | TokenKind::Comment(_), span: _ })
+                 => continue
                 _ => return token
             end
         end
@@ -136,8 +135,8 @@ impl Iterator<Token> for TokenIter:
             if idx >= self.tokens.len() => return None
             let token = self.tokens[idx]
             match token:
-                Token{kind: TokenKind::WhiteSpace(_) | TokenKind::Comment(_), span: _} 
-                    => idx = idx + 1
+                Token{ kind: TokenKind::WhiteSpace(_) | TokenKind::Comment(_), span: _ }
+                 => idx = idx + 1
                 _ => return token
             end
         end
@@ -152,42 +151,43 @@ impl Iterator<Token> for TokenIter:
         value
     end
 
-    fn force_next(mut self) Token throws ParseError:
-        --- Return the next token (excluding whitespace and comments) or 
+    fn force_next(mut self) Token throws ParseError
+     => --- Return the next token (excluding whitespace and comments) or
             an error if there are no more tokens.
         ---
         match self.next():
             Some<Token>(token) => Ok(token)
             None => return parse_error(UnexpectedEOF, None)
         end
-    end
 
-    fn force_immediate(mut self) Token throws ParseError:
-        --- Return the next token (including whitespace and comments) or 
+    fn force_immediate(mut self) Token throws ParseError
+     => --- Return the next token (including whitespace and comments) or
             an error if there are no more tokens.
         ---
         match self.immediate():
             Some<Token>(token) => Ok(token)
             None => return parse_error(UnexpectedEOF, None)
         end
-    end
 
-    fn mark(self) Int => self.idx 
+    fn mark(self) Int => self.idx
 
     fn mark_prev(self) Int => self.idx - 1
 
-    fn reset(mut self, mark Int):
-        self.idx = mark
-    end
+    fn reset(mut self, mark Int) => self.idx = mark
 
-    fn span_at_current_pos(self) Span throws ParseError:
-        --- Return the span of the current token.
+    fn span_at_current_pos(self) Span throws ParseError
+     => --- Return the span of the current token.
         ---
         match self.current():
-            Some(token) => Span{from: token.span.to, to: token.span.to, src: token.span.src, file: token.span.file}
+            Some(token)
+             => Span{
+                    from: token.span.to,
+                    to: token.span.to,
+                    src: token.span.src,
+                    file: token.span.file
+                }
             None => return parse_error(UnexpectedEOF, None)
         end
-    end
 
     fn tokens_since(mut self, mark Int) Vector<Token>:
         --- Returns all tokens since the given mark (inclusive).
@@ -196,14 +196,13 @@ impl Iterator<Token> for TokenIter:
         self.tokens.slice_copy(mark, self.idx)
     end
 
-    fn expect_ident(mut self) Str throws ParseError:
-        --- Expect the next token (without whitespace and comments) to be an identifier.
+    fn expect_ident(mut self) Str throws ParseError
+     => --- Expect the next token (without whitespace and comments) to be an identifier.
         ---
         match self.force_next()!:
-            Token{kind: TokenKind::Ident(name), span: _ } => Ok(name)
+            Token{ kind: TokenKind::Ident(name), span: _ } => Ok(name)
             token => return parse_error(UnexpectedToken(token), token)
         end
-    end
 
     fn expect_token(mut self, predicate (fn(Token) Bool)) Token throws ParseError:
         --- Expect the next token (without whitespace and comments) to match the given predicate.
@@ -213,11 +212,10 @@ impl Iterator<Token> for TokenIter:
         token
     end
 
-    fn expect_lexical_token(mut self, kind TokenKind) Token throws ParseError:
-        --- Expect the next token (without whitespace and comments) to match the given kind.
+    fn expect_lexical_token(mut self, kind TokenKind) Token throws ParseError
+     => --- Expect the next token (without whitespace and comments) to match the given kind.
         ---
         self.expect_token(fn(token Token) Bool => token.kind == kind)!
-    end
 
     fn expect_immediate_token(mut self, predicate (fn(Token) Bool)) Token throws ParseError:
         --- Expect the next token (including whitespace and comments) to match the given predicate.
@@ -227,17 +225,14 @@ impl Iterator<Token> for TokenIter:
         token
     end
 
-    fn expect_immediate_lexical_token(mut self, kind TokenKind) Token throws ParseError:
-        --- Expect the next token (including whitespace and comments) to match the given kind.
+    fn expect_immediate_lexical_token(mut self, kind TokenKind) Token throws ParseError
+     => --- Expect the next token (including whitespace and comments) to match the given kind.
         ---
         self.expect_immediate_token(fn(token Token) Bool => token.kind == kind)!
-    end
 end
 
 impl TokenIter:
-    fn new(tokens Vector<Token>) TokenIter:
-        TokenIter{tokens, idx: 0}
-    end
+    fn new(tokens Vector<Token>) TokenIter => TokenIter{ tokens, idx: 0 }
 end
 
 struct Parser:
@@ -245,10 +240,7 @@ struct Parser:
 end
 
 impl Parser:
-
-    fn new(iter TokenIter) Parser:
-        Parser{iter}
-    end
+    fn new(iter TokenIter) Parser => Parser{ iter }
 
     fn parse_module(mut self) Module throws ParseError:
         -- The main entry point to parse a Klar module.
@@ -260,35 +252,48 @@ impl Parser:
                 None => break
             end
             let item = match self.parse_item(token)!:
-                Some(item_):
-                    match item_.kind:
-                        ParseItemKind::Fn(f) => ModuleItem{kind: ModuleItemKind::Fn(f), meta: self.meta(mark)}
-                        ParseItemKind::Trait(t) => ModuleItem{kind: ModuleItemKind::Trait(t), meta: self.meta(mark)}
-                        ParseItemKind::Struct(t) => ModuleItem{kind: ModuleItemKind::Struct(t), meta: self.meta(mark)}
-                        ParseItemKind::Impl(i) => ModuleItem{kind: ModuleItemKind::Impl(i), meta: self.meta(mark)}
-                        ParseItemKind::Enum(e) => ModuleItem{kind: ModuleItemKind::Enum(e), meta: self.meta(mark)}
+                Some(item_)
+                 => match item_.kind:
+                        ParseItemKind::Fn(f)
+                         => ModuleItem{ kind: ModuleItemKind::Fn(f), meta: self.meta(mark) }
+                        ParseItemKind::Trait(t)
+                         => ModuleItem{ kind: ModuleItemKind::Trait(t), meta: self.meta(mark) }
+                        ParseItemKind::Struct(t)
+                         => ModuleItem{ kind: ModuleItemKind::Struct(t), meta: self.meta(mark) }
+                        ParseItemKind::Impl(i)
+                         => ModuleItem{ kind: ModuleItemKind::Impl(i), meta: self.meta(mark) }
+                        ParseItemKind::Enum(e)
+                         => ModuleItem{ kind: ModuleItemKind::Enum(e), meta: self.meta(mark) }
                         ParseItemKind::FnDecl(f) => return parse_error(UnexpectedFnDecl(f), token)
                     end
-                end
-                None => match token.kind:
-                    TokenKind::Extern => ModuleItem{kind: ModuleItemKind::Extern(self.parse_extern()!), meta: self.meta(mark)}
-                    TokenKind::Use => ModuleItem{kind: ModuleItemKind::Use(self.parse_use()!), meta: self.meta(mark)}
-                    _ => return parse_error(UnexpectedToken(token), token)
-                end
+                None
+                 => match token.kind:
+                        TokenKind::Extern
+                         => ModuleItem{
+                                kind: ModuleItemKind::Extern(self.parse_extern()!),
+                                meta: self.meta(mark)
+                            }
+                        TokenKind::Use
+                         => ModuleItem{
+                                kind: ModuleItemKind::Use(self.parse_use()!),
+                                meta: self.meta(mark)
+                            }
+                        _ => return parse_error(UnexpectedToken(token), token)
+                    end
             end
             items.push(item)
         end
-        Module{items, meta: self.meta(mark)}
+        Module{ items, meta: self.meta(mark) }
     end
 
     fn parse_item(mut self, token Token) ParseItem? throws ParseError:
         let mark = self.iter.mark_prev()
         let kind = match token.kind:
-            TokenKind::Fn: 
+            TokenKind::Fn:
                 let decl = self.parse_fn_decl(token)!
                 match self.iter.peek():
-                    Some(Token{kind: TokenKind::FatArrow | TokenKind::Colon, span: _}) =>
-                        ParseItemKind::Fn(self.parse_fn_def(decl)!)
+                    Some(Token{ kind: TokenKind::FatArrow | TokenKind::Colon, span: _ })
+                     => ParseItemKind::Fn(self.parse_fn_def(decl)!)
                     _ => ParseItemKind::FnDecl(decl)
                 end
             end
@@ -298,24 +303,25 @@ impl Parser:
             TokenKind::Impl => ParseItemKind::Impl(self.parse_impl()!)
             _ => return None
         end
-        ParseItem{kind, meta: self.meta(mark)}
+        ParseItem{ kind, meta: self.meta(mark) }
     end
 
     fn parse_expr(mut self, token Token) Expr? throws ParseError:
         let mark = self.iter.mark_prev()
         match self.parse_binary_expr(token, 1)!:
-            Some(expr):
-                match self.iter.peek():
-                    Some(Token{kind: TokenKind::Semicolon, span: _}):
+            Some(expr)
+             => match self.iter.peek():
+                    Some(Token{ kind: TokenKind::Semicolon, span: _ }):
                         self.iter.force_next()!
                         Expr{
-                            kind: ExprKind::TerminatorExpr(TerminatorExpr{expr, meta: self.meta(mark)}),
+                            kind: ExprKind::TerminatorExpr(
+                                TerminatorExpr{ expr, meta: self.meta(mark) }
+                            ),
                             meta: self.meta(mark)
                         }
                     end
                     _ => expr
                 end
-            end        
             -- todo (lang-feat): The `return` should not be needed here.
             None => return None
         end
@@ -341,7 +347,8 @@ impl Parser:
             if op_token.is_none() => break
             let kind_and_prec = match op_token.unwrap().kind:
                 None => break
-                TokenKind::Equal => return Expr{kind: self.parse_assignment(lhs, mark)!, meta: self.meta(mark)}
+                TokenKind::Equal
+                 => return Expr{ kind: self.parse_assignment(lhs, mark)!, meta: self.meta(mark) }
                 TokenKind::Or => (BinaryExprKind::Or, 1)
                 TokenKind::And => (BinaryExprKind::And, 2)
                 TokenKind::DoubleEqual => (BinaryExprKind::Equal, 3)
@@ -366,7 +373,9 @@ impl Parser:
             let rhs = self.parse_binary_expr(rhs_token, prec + 1)!
             if rhs.is_none() => return parse_error(ExprExpected(rhs_token), rhs_token)
             lhs = Expr{
-                kind: ExprKind::BinaryExpr(BinaryExpr{kind, lhs, rhs: rhs.unwrap(), meta: self.meta(mark)}),
+                kind: ExprKind::BinaryExpr(
+                    BinaryExpr{ kind, lhs, rhs: rhs.unwrap(), meta: self.meta(mark) }
+                ),
                 meta: self.meta(mark)
             }
         end
@@ -377,21 +386,33 @@ impl Parser:
         let mark = self.iter.mark_prev()
         mut kind = match token.kind:
             TokenKind::IntLiteral(_) => ExprKind::Literal(self.parse_int_literal(token)!)
-            TokenKind::BoolLiteral(b) => 
-                ExprKind::Literal(Literal{kind: LiteralKind::BoolLiteral(b), meta: self.meta(mark)})
-            TokenKind::CharLiteral(c) => 
-                ExprKind::Literal(Literal{kind: LiteralKind::CharLiteral(c, token.span.raw_src()), meta: self.meta(mark)})
-            TokenKind::StrLiteral(s, _) => 
-                ExprKind::Literal(Literal{kind: LiteralKind::StrLiteral(s, token.span.raw_src()), meta: self.meta(mark)})
+            TokenKind::BoolLiteral(b)
+             => ExprKind::Literal(
+                    Literal{ kind: LiteralKind::BoolLiteral(b), meta: self.meta(mark) }
+                )
+            TokenKind::CharLiteral(c)
+             => ExprKind::Literal(
+                    Literal{
+                        kind: LiteralKind::CharLiteral(c, token.span.raw_src()),
+                        meta: self.meta(mark)
+                    }
+                )
+            TokenKind::StrLiteral(s, _)
+             => ExprKind::Literal(
+                    Literal{
+                        kind: LiteralKind::StrLiteral(s, token.span.raw_src()),
+                        meta: self.meta(mark)
+                    }
+                )
             TokenKind::LParen => self.parse_unit_or_tuple_literal_or_parentheses(token)!
             TokenKind::LBracket => ExprKind::Literal(self.parse_array_literal()!)
             TokenKind::Ident(name):
                 let fqn = self.parse_fqn(token)!
                 let ident = if fqn.names.len() == 1 and fqn.names[0].generics.is_none()
-                    => ExprKind::Ident(fqn.names[0].ident)
+                 => ExprKind::Ident(fqn.names[0].ident)
                 else => ExprKind::FQN(fqn)
                 match self.iter.peek():
-                    Some(Token{kind: TokenKind::LBrace, span: _}):
+                    Some(Token{ kind: TokenKind::LBrace, span: _ }):
                         self.iter.force_next()!
                         ExprKind::StructInst(self.parse_struct_inst_expr(fqn)!)
                     end
@@ -404,8 +425,8 @@ impl Parser:
             TokenKind::Let => ExprKind::Let(self.parse_let_or_mut(token)!)
             TokenKind::Match => ExprKind::Match(self.parse_match()!)
             TokenKind::Mut => ExprKind::Let(self.parse_let_or_mut(token)!)
-            TokenKind::Break => ExprKind::Break(Break{meta: self.meta(mark)})
-            TokenKind::Continue => ExprKind::Continue(Continue{meta: self.meta(mark)})
+            TokenKind::Break => ExprKind::Break(Break{ meta: self.meta(mark) })
+            TokenKind::Continue => ExprKind::Continue(Continue{ meta: self.meta(mark) })
             TokenKind::Loop => ExprKind::Loop(self.parse_loop(token)!)
             TokenKind::Return => ExprKind::Return(self.parse_return()!)
             _:
@@ -416,20 +437,21 @@ impl Parser:
                 end
             end
         end
-        mut expr = Expr{kind, meta: self.meta(mark)}
+        mut expr = Expr{ kind, meta: self.meta(mark) }
         loop:
             kind = match self.iter.peek_immediate():
-                Some(Token{kind: TokenKind::LParen, span: _}) => 
-                    ExprKind::Call(self.parse_call(expr)!)
-                _ => match self.iter.peek():
-                    Some(Token{kind: TokenKind::Dot, span: _}) => 
-                        self.parse_field_or_tuple_access_expr(expr)!
-                    Some(Token{kind: TokenKind::LBracket, span: _}) => 
-                        ExprKind::IndexAccess(self.parse_index_access(expr)!)
-                    _ => break
-                end
+                Some(Token{ kind: TokenKind::LParen, span: _ })
+                 => ExprKind::Call(self.parse_call(expr)!)
+                _
+                 => match self.iter.peek():
+                        Some(Token{ kind: TokenKind::Dot, span: _ })
+                         => self.parse_field_or_tuple_access_expr(expr)!
+                        Some(Token{ kind: TokenKind::LBracket, span: _ })
+                         => ExprKind::IndexAccess(self.parse_index_access(expr)!)
+                        _ => break
+                    end
             end
-            expr = Expr{kind, meta: self.meta(mark)}
+            expr = Expr{ kind, meta: self.meta(mark) }
         end
         expr
     end
@@ -446,7 +468,7 @@ impl Parser:
         match expr:
             -- todo: We are not able to reuse the name `expr` here, the stage0 compiler
             --       throws a JS error.
-            Some(x) => UnaryExpr{kind, expr: x, meta: self.meta(mark)}
+            Some(x) => UnaryExpr{ kind, expr: x, meta: self.meta(mark) }
             None => return parse_error(ExprExpected(expr_token), expr_token)
         end
     end
@@ -454,14 +476,14 @@ impl Parser:
     fn parse_loop(mut self, token Token) Loop throws ParseError:
         let mark = self.iter.mark_prev()
         let body = self.parse_block()!
-        Loop{body, meta: self.meta(mark)}
+        Loop{ body, meta: self.meta(mark) }
     end
 
     fn parse_return(mut self) Return throws ParseError:
         let mark = self.iter.mark_prev()
         let expr_token = self.iter.force_next()!
         match self.parse_expr(expr_token)!:
-            Some<Expr>(expr) => Return{expr, meta: self.meta(mark)}
+            Some<Expr>(expr) => Return{ expr, meta: self.meta(mark) }
             None => return parse_error(ExprExpected(expr_token), expr_token)
         end
     end
@@ -469,7 +491,7 @@ impl Parser:
     fn parse_ident(mut self, token Token) Ident throws ParseError:
         let mark = self.iter.mark_prev()
         match token.kind:
-            TokenKind::Ident(name) => Ident{name, meta: self.meta(mark)}
+            TokenKind::Ident(name) => Ident{ name, meta: self.meta(mark) }
             _ => return parse_error(IdentExpected(token), token)
         end
     end
@@ -482,7 +504,7 @@ impl Parser:
         let root_mark = self.iter.mark()
         let args = Vector<GenericArg>::new()
         match self.iter.peek():
-            Some(Token{kind: TokenKind::LessThan, span: _}) => ()
+            Some(Token{ kind: TokenKind::LessThan, span: _ }) => ()
             _ => return None
         end
         self.iter.force_next()!
@@ -507,7 +529,7 @@ impl Parser:
             let trait_bounds = self.parse_trait_bounds()!
             mut next_token = self.iter.next()
             let default = match next_token:
-                Some(Token{kind: TokenKind::Equal, span: _}):
+                Some(Token{ kind: TokenKind::Equal, span: _ }):
                     let res = self.parse_type(self.iter.force_next()!)!
                     match res.kind:
                         TypeKind::Unit => return parse_error(UnitNotAllowedInGeneric, next_token)
@@ -518,10 +540,10 @@ impl Parser:
                 end
                 _ => None
             end
-            args.push(GenericArg{type_, trait_bounds, default, meta: self.meta(mark)})
+            args.push(GenericArg{ type_, trait_bounds, default, meta: self.meta(mark) })
             match next_token:
-                Some(Token{kind: TokenKind::Comma, span: _}) => ()
-                Some(Token{kind: TokenKind::GreaterThan, span: _}) => break
+                Some(Token{ kind: TokenKind::Comma, span: _ }) => ()
+                Some(Token{ kind: TokenKind::GreaterThan, span: _ }) => break
                 _:
                     -- If this is the first generic we don't return an error
                     -- because this might be a binary less-than operator.
@@ -539,12 +561,12 @@ impl Parser:
         args
     end
 
-    fn parse_trait_bounds(mut self) Vector<FQN>? throws ParseError:
-        --- Try to parse a list of trait bounds in the form of `impl T and U and V`.
+    fn parse_trait_bounds(mut self) Vector<FQN>? throws ParseError
+     => --- Try to parse a list of trait bounds in the form of `impl T and U and V`.
             Stops parsing when it encounters a `>`, `:`, or `,`.
         ---
         match self.iter.peek():
-            Some(Token{kind: TokenKind::Impl, span: _}):
+            Some(Token{ kind: TokenKind::Impl, span: _ }):
                 self.iter.force_next()!
                 let bounds = Vector<FQN>::new()
                 loop:
@@ -554,8 +576,17 @@ impl Parser:
                         _ => return parse_error(IdentExpected(token), token)
                     end
                     match self.iter.peek():
-                        Some(Token{kind: TokenKind::And, span: _}) => self.iter.force_next()!
-                        Some(Token{kind: TokenKind::Comma | TokenKind::GreaterThan | TokenKind::Colon | TokenKind::Equal, span: _}) => break
+                        Some(Token{ kind: TokenKind::And, span: _ }) => self.iter.force_next()!
+                        Some(
+                            Token{
+                                kind: TokenKind::Comma
+                                  | TokenKind::GreaterThan
+                                  | TokenKind::Colon
+                                  | TokenKind::Equal,
+                                span: _
+                            }
+                        )
+                         => break
                         None => return parse_error(UnexpectedEOF, None)
                         _:
                             let next_token = self.iter.force_next()!
@@ -567,13 +598,12 @@ impl Parser:
             end
             _ => None
         end
-    end
 
     fn parse_name(mut self, token Token) Name throws ParseError:
         let mark = self.iter.mark_prev()
         let ident = self.parse_ident(token)!
         let generics = self.parse_generics()!
-        Name{ident, generics, meta: self.meta(mark)}
+        Name{ ident, generics, meta: self.meta(mark) }
     end
 
     fn parse_fqn(mut self, token Token) FQN throws ParseError:
@@ -586,7 +616,7 @@ impl Parser:
         end
         loop:
             match self.iter.peek():
-                Some(Token{kind: TokenKind::DoubleColon, span: _}):
+                Some(Token{ kind: TokenKind::DoubleColon, span: _ }):
                     self.iter.force_next()!
                     let token = self.iter.force_next()!
                     match token.kind:
@@ -597,7 +627,7 @@ impl Parser:
                 _ => break
             end
         end
-        let res = FQN{names, meta: self.meta(root_mark)}
+        let res = FQN{ names, meta: self.meta(root_mark) }
         res
     end
 
@@ -605,9 +635,9 @@ impl Parser:
         let mark = self.iter.mark_prev()
         let kind = match token.kind:
             TokenKind::Ident(name) => TypeKind::FQN(self.parse_fqn(token)!)
-            TokenKind::LParen:
-                match self.iter.peek_immediate():
-                    Some(Token{kind: TokenKind::RParen, span: _}):
+            TokenKind::LParen
+             => match self.iter.peek_immediate():
+                    Some(Token{ kind: TokenKind::RParen, span: _ }):
                         self.iter.force_next()!
                         TypeKind::Unit
                     end
@@ -617,7 +647,7 @@ impl Parser:
                         --                  we could use a `match` statement with a `break`
                         --                  or `yield` expression.
                         match self.iter.peek():
-                            Some(Token{kind: TokenKind::Fn, span: _}):
+                            Some(Token{ kind: TokenKind::Fn, span: _ }):
                                 self.iter.force_next()!
                                 TypeKind::Fn(self.parse_fn_type()!)
                             end
@@ -628,25 +658,22 @@ impl Parser:
                         end
                     end
                 end
-            end
             _ => return parse_error(UnexpectedToken(token), token)
         end
-        let res = Type{kind, meta: self.meta(mark)}
+        let res = Type{ kind, meta: self.meta(mark) }
         match self.iter.peek():
-            Some(Token{kind: TokenKind::QMark, span: _}):
+            Some(Token{ kind: TokenKind::QMark, span: _ }):
                 self.iter.force_next()!
                 let meta = self.meta(mark)
-                let generics = Vector<GenericArg>::from([
-                    GenericArg{type_: res, trait_bounds: None, default: None, meta: res.meta}
-                ])
+                let generics = Vector<GenericArg>::from(
+                    [GenericArg{ type_: res, trait_bounds: None, default: None, meta: res.meta }]
+                )
                 let name = Name{
-                    ident: Ident{name: "Option", meta: res.meta}, 
-                    -- todo (lang-feat): We should not need to wrap in a `Some` here.
-                    generics: Some(generics), 
-                    meta
-                }
+                    ident: Ident{ name: "Option", meta: res.meta },
+                    generics -- todo (lang-feat): We should not need to wrap in a `Some` here.
+                    : Some(generics), meta }
                 Type{
-                    kind: TypeKind::FQN(FQN{names: Vector::from([name]), meta: res.meta}),
+                    kind: TypeKind::FQN(FQN{ names: Vector::from([name]), meta: res.meta }),
                     meta
                 }
             end
@@ -660,7 +687,7 @@ impl Parser:
         let param_types = self.parse_comma_separated_types()!
         let return_type = self.parse_return_type()!
         self.iter.expect_lexical_token(TokenKind::RParen)!
-        FnType{param_types, return_type, meta: self.meta(mark)}
+        FnType{ param_types, return_type, meta: self.meta(mark) }
     end
 
     fn try_parse_type(mut self) Type? throws ParseError:
@@ -691,34 +718,36 @@ impl Parser:
                 _ => arms.push(self.parse_match_arm(next_token)!)
             end
         end
-        Match{expr, arms, meta: self.meta(mark)}
+        Match{ expr, arms, meta: self.meta(mark) }
     end
 
     fn parse_match_arm(mut self, token Token) MatchArm throws ParseError:
         let mark = self.iter.mark_prev()
         let pattern = self.parse_pattern(token)!
         let block = self.parse_block()!
-        MatchArm{pattern, block, meta: self.meta(mark)}
+        MatchArm{ pattern, block, meta: self.meta(mark) }
     end
 
     fn parse_pattern(mut self, token Token) Pattern throws ParseError:
         fn parse_literal_or_range(
-            token Token, 
-            parse_literal (fn (Token) Literal throws ParseError)
+            token Token,
+            parse_literal (fn(Token) Literal throws ParseError)
         ) PatternKind throws ParseError:
             let mark = self.iter.mark_prev()
             let start = parse_literal(token)!
             let peeked = self.iter.peek()
             match peeked:
-                  Some(Token{kind: TokenKind::DotDot, span: _}) 
-                | Some(Token{kind: TokenKind::DotDotLessThan, span: _}):
+                Some(Token{ kind: TokenKind::DotDot, span: _ })
+                  | Some(Token{ kind: TokenKind::DotDotLessThan, span: _ }):
                     self.iter.force_next()!
                     let end_ = parse_literal(self.iter.force_next()!)!
                     -- todo (lang-feat): We should not need to unwrap the token here, we
-                    --                   should have been able to assign `kind` in 
+                    --                   should have been able to assign `kind` in
                     --                   the pattern above.
                     let end_is_exclusive = peeked.unwrap().kind == TokenKind::DotDotLessThan
-                    PatternKind::Range(Range{start, end_, end_is_exclusive, meta: self.meta(mark)})
+                    PatternKind::Range(
+                        Range{ start, end_, end_is_exclusive, meta: self.meta(mark) }
+                    )
                 end
                 _ => PatternKind::Literal(start)
             end
@@ -735,9 +764,9 @@ impl Parser:
                         got_comma = true
                         continue
                     end
-                    _: 
-                        if patterns.len() > 0 and not got_comma => 
-                            return parse_error(UnexpectedToken(next_token), next_token)
+                    _:
+                        if patterns.len() > 0 and not got_comma
+                         => return parse_error(UnexpectedToken(next_token), next_token)
                         got_comma = false
                         patterns.push(parse_it(next_token)!)
                     end
@@ -757,24 +786,29 @@ impl Parser:
                         got_comma = true
                         continue
                     end
-                    _: 
-                        if fields.len() > 0 and not got_comma => 
-                            return parse_error(UnexpectedToken(next_token), next_token)
+                    _:
+                        if fields.len() > 0 and not got_comma
+                         => return parse_error(UnexpectedToken(next_token), next_token)
                         got_comma = false
                         let mark = self.iter.mark()
                         let ident = self.parse_ident(next_token)!
                         match self.iter.peek():
-                            Some(Token{kind: TokenKind::Colon, span: _}):
+                            Some(Token{ kind: TokenKind::Colon, span: _ }):
                                 self.iter.force_next()!
                                 fields.push((ident, parse_it(self.iter.force_next()!)!))
                             end
-                            _ => fields.push(
-                                (ident, 
-                                Pattern{
-                                    kind: PatternKind::Ident(ident), 
-                                    meta: self.meta_from_span(self.iter.span_at_current_pos()!)
-                                })
-                            )
+                            _
+                             => fields.push(
+                                    (
+                                        ident,
+                                        Pattern{
+                                            kind: PatternKind::Ident(ident),
+                                            meta: self.meta_from_span(
+                                                self.iter.span_at_current_pos()!
+                                            )
+                                        }
+                                    )
+                                )
                         end
                     end
                 end
@@ -787,51 +821,52 @@ impl Parser:
                 TokenKind::Ident(name):
                     let fqn = self.parse_fqn(token)!
                     let pattern = if fqn.names.len() == 1 and fqn.names[0].generics.is_none()
-                        => PatternKind::Ident(fqn.names[0].ident)
+                     => PatternKind::Ident(fqn.names[0].ident)
                     else => PatternKind::FQN(fqn)
                     match self.iter.peek():
-                        Some(Token{kind: TokenKind::LParen, span: _}):
+                        Some(Token{ kind: TokenKind::LParen, span: _ }):
                             self.iter.force_next()!
                             PatternKind::EnumVariant(fqn, parse_comma_separated_patterns()!)
                         end
-                        Some(Token{kind: TokenKind::LBrace, span: _}):
+                        Some(Token{ kind: TokenKind::LBrace, span: _ }):
                             self.iter.force_next()!
                             PatternKind::Struct(fqn, parse_struct_pattern()!)
                         end
                         _ => pattern
                     end
                 end
-                TokenKind::IntLiteral(_) 
-                    => parse_literal_or_range(
-                            token, 
-                            -- todo (lang feat) We should not need to specify all the types here.
-                            fn (token Token) Literal throws ParseError 
-                                => self.parse_int_literal(token)!
-                       )!
-                TokenKind::BoolLiteral(b) 
-                    => PatternKind::Literal(
-                        Literal{kind: LiteralKind::BoolLiteral(b), meta: self.meta(mark)}
+                TokenKind::IntLiteral(_)
+                 => parse_literal_or_range(
+                        token,
+                         -- todo (lang feat) We should not need to specify all the types here.
+                        fn(token Token) Literal throws ParseError
+                         => self.parse_int_literal(token)!)!
+                TokenKind::BoolLiteral(b)
+                 => PatternKind::Literal(
+                        Literal{ kind: LiteralKind::BoolLiteral(b), meta: self.meta(mark) }
                     )
-                TokenKind::StrLiteral(s, _) 
-                    => PatternKind::Literal(
-                        Literal{kind: LiteralKind::StrLiteral(s, token.span.raw_src()), meta: self.meta(mark)}
+                TokenKind::StrLiteral(s, _)
+                 => PatternKind::Literal(
+                        Literal{
+                            kind: LiteralKind::StrLiteral(s, token.span.raw_src()),
+                            meta: self.meta(mark)
+                        }
                     )
-                TokenKind::CharLiteral(c) 
-                    => parse_literal_or_range(
-                            token, 
-                            fn (token Token) Literal throws ParseError:
-                                match token.kind:
-                                    TokenKind::CharLiteral(c) => 
-                                        Literal{kind: LiteralKind::CharLiteral(c, token.span.raw_src()), meta: self.meta(mark)}
-                                    _ => return parse_error(CharLiteralExpected(token), token)
-                                end
-                            end
-                      )!
+                TokenKind::CharLiteral(c)
+                 => parse_literal_or_range(token, fn(token Token) Literal throws ParseError
+                     => match token.kind:
+                            TokenKind::CharLiteral(c)
+                             => Literal{
+                                    kind: LiteralKind::CharLiteral(c, token.span.raw_src()),
+                                    meta: self.meta(mark)
+                                }
+                            _ => return parse_error(CharLiteralExpected(token), token)
+                        end)!
                 TokenKind::Underscore => PatternKind::Wildcard
                 TokenKind::LParen => PatternKind::Tuple(parse_comma_separated_patterns()!)
                 _ => return parse_error(UnexpectedToken(token), token)
             end
-            Pattern{kind, meta: self.meta(mark)}
+            Pattern{ kind, meta: self.meta(mark) }
         end
         fn parse_it(token Token) Pattern throws ParseError:
             let mark = self.iter.mark()
@@ -839,7 +874,7 @@ impl Parser:
             patterns.push(parse_single(token)!)
             loop:
                 match self.iter.peek():
-                    Some(Token{kind: TokenKind::Pipe, span: _}):
+                    Some(Token{ kind: TokenKind::Pipe, span: _ }):
                         self.iter.force_next()!
                         patterns.push(parse_single(self.iter.force_next()!)!)
                     end
@@ -847,7 +882,7 @@ impl Parser:
                 end
             end
             if patterns.len() == 1 => patterns[0]
-            else => Pattern{kind: PatternKind::Or(patterns), meta: self.meta(mark)}
+            else => Pattern{ kind: PatternKind::Or(patterns), meta: self.meta(mark) }
         end
         parse_it(token)!
     end
@@ -860,13 +895,16 @@ impl Parser:
         let ident = self.parse_ident(self.iter.force_next()!)!
         let type_ = match self.try_parse_type()!:
             Some(t) => t
-            None => Type{kind: TypeKind::Infer, meta: self.meta_from_span(self.iter.span_at_current_pos()!)}
+            None
+             => Type{
+                    kind: TypeKind::Infer,
+                    meta: self.meta_from_span(self.iter.span_at_current_pos()!)
+                }
         end
         self.iter.expect_lexical_token(TokenKind::Equal)!
         let expr_token = self.iter.force_next()!
         match self.parse_expr(expr_token)!:
-            Some<Expr>(expr) => 
-                Let{ident, is_mut, type_, expr, meta: self.meta(mark)}
+            Some<Expr>(expr) => Let{ ident, is_mut, type_, expr, meta: self.meta(mark) }
             None => return parse_error(ExprExpected(expr_token), expr_token)
         end
     end
@@ -880,25 +918,28 @@ impl Parser:
         end
         let then_block = self.parse_block()!
         let else_block = match self.iter.peek():
-            Some(Token{kind: TokenKind::Else, span: _}):
+            Some(Token{ kind: TokenKind::Else, span: _ }):
                 self.iter.force_next()!
                 Some(self.parse_block()!)
-            end 
+            end
             _ => None
         end
-        If{cond, then_block, else_block, meta: self.meta(mark)}
+        If{ cond, then_block, else_block, meta: self.meta(mark) }
     end
 
     fn parse_int_literal(self, token Token) Literal throws ParseError:
         let mark = self.iter.mark_prev()
-        Literal{kind: LiteralKind::IntLiteral(self.parse_int_token(token)!), meta: self.meta(mark)}
+        Literal{
+            kind: LiteralKind::IntLiteral(self.parse_int_token(token)!),
+            meta: self.meta(mark)
+        }
     end
 
     fn parse_int_token(self, token Token) Int throws ParseError:
         let value = match token.kind:
             TokenKind::IntLiteral(value) => value
             _ => return parse_error(IntLiteralExpected(token), token)
-        end 
+        end
         match Int::from_str(value, 10):
             Ok(i) => i
             Error(_) => return parse_error(InvalidIntLiteral(token), token)
@@ -908,16 +949,16 @@ impl Parser:
     fn parse_array_literal(mut self) Literal throws ParseError:
         let mark = self.iter.mark_prev()
         let exprs = self.parse_comma_separated_exprs(TokenKind::RBracket)!
-        Literal{kind: LiteralKind::ArrayLiteral(exprs), meta: self.meta(mark)}
+        Literal{ kind: LiteralKind::ArrayLiteral(exprs), meta: self.meta(mark) }
     end
 
     fn parse_unit_or_tuple_literal_or_parentheses(mut self, token Token) ExprKind throws ParseError:
         let mark = self.iter.mark_prev()
         -- todo (lang-feat): All these `return` statements should not be needed.
         match self.iter.peek_immediate():
-            Some(Token{kind: TokenKind::RParen, span: _}):
+            Some(Token{ kind: TokenKind::RParen, span: _ }):
                 self.iter.force_next()!
-                ExprKind::Literal(Literal{kind: LiteralKind::UnitLiteral, meta: self.meta(mark)})
+                ExprKind::Literal(Literal{ kind: LiteralKind::UnitLiteral, meta: self.meta(mark) })
             end
             Some(immediate):
                 let exprs = self.parse_comma_separated_exprs(TokenKind::RParen)!
@@ -946,20 +987,25 @@ impl Parser:
                     mut parser = Parser::new(TokenIter::new(tokens))
                     let expr = parser.parse_expr(parser.iter.force_next()!)!
                     match expr:
-                        Some<Expr>(value) => Expr{kind: value.kind, meta: self.meta_from_tokens(tokens)}
+                        Some<Expr>(value)
+                         => Expr{ kind: value.kind, meta: self.meta_from_tokens(tokens) }
                         None => return parse_error(ExprExpected(tokens[0]), tokens[0])
                     end
                 end
-                FStrItem::FStrStrItem(s, span):
-                    Expr{
-                        kind: ExprKind::Literal(Literal{kind: LiteralKind::StrLiteral(s, span.raw_src()), meta: self.meta(mark)}),
+                FStrItem::FStrStrItem(s, span)
+                 => Expr{
+                        kind: ExprKind::Literal(
+                            Literal{
+                                kind: LiteralKind::StrLiteral(s, span.raw_src()),
+                                meta: self.meta(mark)
+                            }
+                        ),
                         meta: self.meta(mark)
                     }
-                end
             end
             exprs.push(expr)
         end
-        FStr{exprs, meta: self.meta(mark)}
+        FStr{ exprs, meta: self.meta(mark) }
     end
 
     fn parse_assignment(mut self, lhs Expr, mark Int) ExprKind throws ParseError:
@@ -977,18 +1023,22 @@ impl Parser:
         self.iter.expect_lexical_token(TokenKind::LParen)!
         let params = self.parse_params(false)!
         let return_type = self.parse_return_type()!
-        FnDecl{ident, generics, params, return_type, meta: self.meta(mark)}
+        FnDecl{ ident, generics, params, return_type, meta: self.meta(mark) }
     end
 
     fn parse_return_type(mut self) Type throws ParseError:
         let mark = self.iter.mark()
         let return_type = match self.try_parse_type()!:
             Some(t) => t
-            None => Type{kind: TypeKind::Unit, meta: self.meta_from_span(self.iter.span_at_current_pos()!)}
+            None
+             => Type{
+                    kind: TypeKind::Unit,
+                    meta: self.meta_from_span(self.iter.span_at_current_pos()!)
+                }
         end
         let throws_mark = self.iter.mark()
         match self.iter.peek():
-            Some(Token{kind: TokenKind::Throws, span: _}):
+            Some(Token{ kind: TokenKind::Throws, span: _ }):
                 self.iter.force_next()!
                 let error_type = match self.try_parse_type()!:
                     Some(t) => t
@@ -997,32 +1047,44 @@ impl Parser:
                         --                   kind of marker interface or trait. But `Str` and everything
                         --                   that implements `ToStr` should automatically implement it.
                         let str_name = Name{
-                            ident: Ident{name: "Str", meta: self.meta(throws_mark)},
+                            ident: Ident{ name: "Str", meta: self.meta(throws_mark) },
                             generics: None,
                             meta: self.meta(throws_mark)
                         }
                         Type{
                             kind: TypeKind::FQN(
-                                FQN{names: Vector::from([str_name]), meta: self.meta(throws_mark)}
-                            ), 
+                                FQN{ names: Vector::from([str_name]), meta: self.meta(throws_mark) }
+                            ),
                             meta: self.meta(throws_mark)
                         }
                     end
                 end
                 let result_name = Name{
-                    ident: Ident{name: "Result", meta: self.meta(throws_mark)},
+                    ident: Ident{ name: "Result", meta: self.meta(throws_mark) },
                     generics: Some(
-                        Vector::from([
-                            GenericArg{type_: return_type, trait_bounds: None, default: None, meta: return_type.meta}, 
-                            GenericArg{ type_: error_type, trait_bounds: None, default: None, meta: error_type.meta}
-                        ])
+                        Vector::from(
+                            [
+                                GenericArg{
+                                    type_: return_type,
+                                    trait_bounds: None,
+                                    default: None,
+                                    meta: return_type.meta
+                                },
+                                GenericArg{
+                                    type_: error_type,
+                                    trait_bounds: None,
+                                    default: None,
+                                    meta: error_type.meta
+                                }
+                            ]
+                        )
                     ),
                     meta: self.meta(throws_mark)
                 }
                 Type{
                     kind: TypeKind::FQN(
-                        FQN{names: Vector::from([result_name]), meta: self.meta(throws_mark)}
-                    ), 
+                        FQN{ names: Vector::from([result_name]), meta: self.meta(throws_mark) }
+                    ),
                     meta: self.meta(mark)
                 }
             end
@@ -1035,12 +1097,15 @@ impl Parser:
         self.iter.expect_lexical_token(TokenKind::LParen)!
         let params = self.parse_params(true)!
         let return_type = match self.iter.peek():
-            Some(Token{kind: TokenKind::FatArrow | TokenKind::Colon, span: _}) =>
-                Type{kind: TypeKind::Infer, meta: self.meta_from_span(self.iter.span_at_current_pos()!)}
+            Some(Token{ kind: TokenKind::FatArrow | TokenKind::Colon, span: _ })
+             => Type{
+                    kind: TypeKind::Infer,
+                    meta: self.meta_from_span(self.iter.span_at_current_pos()!)
+                }
             _ => self.parse_return_type()!
         end
         let body = self.parse_block()!
-        Closure{params, return_type, body, meta: self.meta(mark)}
+        Closure{ params, return_type, body, meta: self.meta(mark) }
     end
 
     fn parse_params(mut self, type_is_optional Bool) Vector<Param> throws ParseError:
@@ -1055,9 +1120,9 @@ impl Parser:
                     got_comma = true
                     continue
                 end
-                _: 
-                    if params.len() > 0 and not got_comma => 
-                        return parse_error(UnexpectedToken(next_token), next_token)
+                _:
+                    if params.len() > 0 and not got_comma
+                     => return parse_error(UnexpectedToken(next_token), next_token)
                     got_comma = false
                     params.push(self.parse_param(next_token, type_is_optional)!)
                 end
@@ -1078,26 +1143,34 @@ impl Parser:
         end
         let ident = self.parse_ident(next_token)!
         let type_ = match ident.name:
-            "self" => Type{kind: TypeKind::Self, meta: self.meta(mark)}
-            _ =>
-            match self.try_parse_type()!:
-                Some(t) => t
-                None => 
-                    match type_is_optional:
-                        true => Type{kind: TypeKind::Infer, meta: self.meta_from_span(self.iter.span_at_current_pos()!)}
-                        -- todo (lang-feat): We should have to wrap the token in a `Some` here.
-                        false => return parse_error(TypeExpected(Some(next_token)), next_token)
-                    end
-            end
+            "self" => Type{ kind: TypeKind::Self, meta: self.meta(mark) }
+            _
+             => match self.try_parse_type()!:
+                    Some(t) => t
+                    None
+                     => match type_is_optional:
+                            true
+                             => Type{
+                                    kind: TypeKind::Infer,
+                                    meta: self.meta_from_span(self.iter.span_at_current_pos()!)
+                                }
+                            -- todo (lang-feat): We should have to wrap the token in a `Some` here.
+                            false => return parse_error(TypeExpected(Some(next_token)), next_token)
+                        end
+                end
         end
-        Param{ident, type_, is_mut, meta: self.meta(mark)}
+        Param{ ident, type_, is_mut, meta: self.meta(mark) }
     end
 
-    fn parse_fn_def(mut self, decl FnDecl) Fn throws ParseError: 
+    fn parse_fn_def(mut self, decl FnDecl) Fn throws ParseError:
         let body = self.parse_block()!
-        Fn{decl, body, meta: self.meta_from_tokens(
-            decl.meta.tokens.unwrap_or(Vector<Token>::new()) 
-            + body.meta.tokens.unwrap_or(Vector<Token>::new()))
+        Fn{
+            decl,
+            body,
+            meta: self.meta_from_tokens(
+                decl.meta.tokens.unwrap_or(Vector<Token>::new())
+                    + body.meta.tokens.unwrap_or(Vector<Token>::new())
+            )
         }
     end
 
@@ -1107,14 +1180,14 @@ impl Parser:
         mut type_ = self.parse_fqn(self.iter.force_next()!)!
         mut trait_ FQN? = None
         match self.iter.peek():
-            Some(Token{kind: TokenKind::For, span: _}):
+            Some(Token{ kind: TokenKind::For, span: _ }):
                 self.iter.force_next()!;
                 -- todo (lang feat): We should not need to use `Some(...)` here.
                 trait_ = Some(type_)
                 type_ = self.parse_fqn(self.iter.force_next()!)!
             end
             _ => ()
-        end 
+        end
         -- todo (lang feat): The `return` should not be needed here.
         return (type_, trait_)
     end
@@ -1138,7 +1211,7 @@ impl Parser:
                 _ => return parse_error(UnexpectedToken(next_token), next_token)
             end
         end
-        return Impl{type_, trait_, fn_impls, meta: self.meta(mark)}
+        return Impl{ type_, trait_, fn_impls, meta: self.meta(mark) }
     end
 
     fn parse_trait(mut self) Trait throws ParseError:
@@ -1154,8 +1227,8 @@ impl Parser:
                 TokenKind::Fn:
                     let decl = self.parse_fn_decl(next_token)!
                     match self.iter.peek():
-                        Some(Token{kind: TokenKind::FatArrow | TokenKind::Colon, span: _}) =>
-                            fn_impls.push(self.parse_fn_def(decl)!)
+                        Some(Token{ kind: TokenKind::FatArrow | TokenKind::Colon, span: _ })
+                         => fn_impls.push(self.parse_fn_def(decl)!)
                         _ => fn_decls.push(decl)
                     end
                 end
@@ -1163,7 +1236,7 @@ impl Parser:
                 _ => return parse_error(UnexpectedToken(next_token), next_token)
             end
         end
-        Trait{name, trait_bounds, fn_decls, fn_impls, meta: self.meta(mark)}
+        Trait{ name, trait_bounds, fn_decls, fn_impls, meta: self.meta(mark) }
     end
 
     fn parse_enum(mut self) Enum throws ParseError:
@@ -1178,21 +1251,21 @@ impl Parser:
                 _ => variants.push(self.parse_enum_variant(next_token)!)
             end
         end
-        Enum{name, variants, meta: self.meta(mark)}
+        Enum{ name, variants, meta: self.meta(mark) }
     end
 
     fn parse_enum_variant(mut self, token Token) EnumVariant throws ParseError:
         let mark = self.iter.mark_prev()
         let ident = self.parse_ident(token)!
         let kind = match self.iter.peek():
-            Some(Token{kind: TokenKind::LParen, span: _}):
+            Some(Token{ kind: TokenKind::LParen, span: _ }):
                 self.iter.force_next()!
                 let types = self.parse_tuple_type()!
                 EnumVariantKind::Tuple(types)
             end
             _ => EnumVariantKind::Unit
         end
-        EnumVariant{ident, kind, meta: self.meta(mark)}
+        EnumVariant{ ident, kind, meta: self.meta(mark) }
     end
 
     fn parse_struct(mut self) Struct throws ParseError:
@@ -1207,7 +1280,7 @@ impl Parser:
                 _ => fields.push(self.parse_field(next_token)!)
             end
         end
-        Struct{name, fields, meta: self.meta(mark)}
+        Struct{ name, fields, meta: self.meta(mark) }
     end
 
     fn parse_struct_inst_expr(mut self, fqn FQN) StructInst throws ParseError:
@@ -1223,14 +1296,14 @@ impl Parser:
                     got_comma = true
                     continue
                 end
-                _: 
-                    if fields.len() > 0 and not got_comma => 
-                        return parse_error(UnexpectedToken(next_token), next_token)
+                _:
+                    if fields.len() > 0 and not got_comma
+                     => return parse_error(UnexpectedToken(next_token), next_token)
                     got_comma = false
                     let mark = self.iter.mark()
                     let ident = self.parse_ident(next_token)!
                     match self.iter.peek():
-                        Some(Token{kind: TokenKind::Colon, span: _}):
+                        Some(Token{ kind: TokenKind::Colon, span: _ }):
                             self.iter.next()
                             let expr_token = self.iter.force_next()!
                             match self.parse_expr(expr_token)!:
@@ -1238,22 +1311,30 @@ impl Parser:
                                 None => return parse_error(ExprExpected(expr_token), expr_token)
                             end
                         end
-                        Some(Token{kind: TokenKind::Comma | TokenKind::RBrace, span: _}) =>
-                            fields.push((ident, Expr{kind: ExprKind::Ident(ident), meta: self.meta_from_token(next_token)}))
+                        Some(Token{ kind: TokenKind::Comma | TokenKind::RBrace, span: _ })
+                         => fields.push(
+                                (
+                                    ident,
+                                    Expr{
+                                        kind: ExprKind::Ident(ident),
+                                        meta: self.meta_from_token(next_token)
+                                    }
+                                )
+                            )
                         Some(next) => return parse_error(UnexpectedToken(next), next)
                         None => return parse_error(UnexpectedEOF, None)
                     end
                 end
             end
         end
-        StructInst{fqn, fields, meta: self.meta(mark)}
+        StructInst{ fqn, fields, meta: self.meta(mark) }
     end
 
     fn parse_field(mut self, token Token) Field throws ParseError:
         let mark = self.iter.mark_prev()
         let ident = self.parse_ident(token)!
         let type_ = self.parse_type(self.iter.force_next()!)!
-        Field{ident, type_, meta: self.meta(mark)}
+        Field{ ident, type_, meta: self.meta(mark) }
     end
 
     fn parse_tuple_type(mut self) Vector<Type> throws ParseError:
@@ -1269,9 +1350,9 @@ impl Parser:
                     got_comma = true
                     continue
                 end
-                _: 
-                    if types.len() > 0 and not got_comma => 
-                        return parse_error(UnexpectedToken(next_token), next_token)
+                _:
+                    if types.len() > 0 and not got_comma
+                     => return parse_error(UnexpectedToken(next_token), next_token)
                     got_comma = false
                     types.push(self.parse_type(next_token)!)
                 end
@@ -1292,16 +1373,17 @@ impl Parser:
         self.iter.expect_lexical_token(TokenKind::Dot)!
         -- todo(lang-feat): The `returns` should not be needed here.
         match self.iter.peek():
-            Some(Token{kind: TokenKind::Ident(_), span: _}) => 
-                return ExprKind::FieldAccess(
+            Some(Token{ kind: TokenKind::Ident(_), span: _ })
+             => return ExprKind::FieldAccess(
                     FieldAccess{
-                        target, 
-                        field: self.parse_name(self.iter.force_next()!)!, meta: self.meta(mark)
+                        target,
+                        field: self.parse_name(self.iter.force_next()!)!,
+                        meta: self.meta(mark)
                     }
                 )
-            Some(Token{kind: TokenKind::IntLiteral(_), span: _}):
+            Some(Token{ kind: TokenKind::IntLiteral(_), span: _ }):
                 let index = self.parse_int_token(self.iter.force_next()!)!
-                return ExprKind::TupleAccess(TupleAccess{target, index, meta: self.meta(mark)})
+                return ExprKind::TupleAccess(TupleAccess{ target, index, meta: self.meta(mark) })
             end
             Some(token) => parse_error(UnexpectedToken(token), token)
             None => parse_error(UnexpectedEOF, None)
@@ -1319,7 +1401,7 @@ impl Parser:
             end
         end
         self.iter.expect_lexical_token(TokenKind::RBracket)!
-        IndexAccess{target, index, meta: self.meta(mark)}
+        IndexAccess{ target, index, meta: self.meta(mark) }
     end
 
     fn parse_call(mut self, target Expr) Call throws ParseError:
@@ -1327,16 +1409,19 @@ impl Parser:
         self.iter.expect_immediate_lexical_token(TokenKind::LParen)!
         let args = self.parse_comma_separated_exprs(TokenKind::RParen)!
         let propagate_error = match self.iter.peek():
-            Some(Token{kind: TokenKind::Exclamation, span: _}):
+            Some(Token{ kind: TokenKind::Exclamation, span: _ }):
                 self.iter.force_next()!
                 true
             end
             _ => false
         end
-        Call{target, args, propagate_error, meta: self.meta(mark)}
+        Call{ target, args, propagate_error, meta: self.meta(mark) }
     end
 
-    fn parse_comma_separated_exprs(mut self, stop_token_kind TokenKind) Vector<Expr> throws ParseError:
+    fn parse_comma_separated_exprs(
+        mut self,
+        stop_token_kind TokenKind
+    ) Vector<Expr> throws ParseError:
         let exprs = Vector<Expr>::new()
         mut got_comma = false
         loop:
@@ -1347,10 +1432,10 @@ impl Parser:
                     got_comma = true
                     continue
                 end
-                kind: 
+                kind:
                     if kind == stop_token_kind => break
-                    if exprs.len() > 0 and not got_comma => 
-                        return parse_error(UnexpectedToken(next_token), next_token)
+                    if exprs.len() > 0 and not got_comma
+                     => return parse_error(UnexpectedToken(next_token), next_token)
                     got_comma = false
                     match self.parse_expr(next_token)!:
                         Some<Expr>(expr) => exprs.push(expr)
@@ -1378,9 +1463,9 @@ impl Parser:
                     continue
                 end
                 TokenKind::RParen => break
-                _: 
-                    if types.len() > 0 and not got_comma => 
-                        return parse_error(UnexpectedToken(next_token), next_token)
+                _:
+                    if types.len() > 0 and not got_comma
+                     => return parse_error(UnexpectedToken(next_token), next_token)
                     got_comma = false
                     types.push(self.parse_type(next_token)!)
                 end
@@ -1393,11 +1478,11 @@ impl Parser:
         let mark = self.iter.mark_prev()
         let path = Vector<Ident>::new()
         let relative = match self.iter.peek():
-            Some(Token{kind: TokenKind::Dot, span: _}):
+            Some(Token{ kind: TokenKind::Dot, span: _ }):
                 self.iter.force_next()!
                 true
             end
-            Some(Token{kind: TokenKind::Ident(_), span: _}) => false
+            Some(Token{ kind: TokenKind::Ident(_), span: _ }) => false
             Some(token) => return parse_error(UnexpectedToken(token), token)
             None => return parse_error(UnexpectedEOF, None)
         end
@@ -1405,19 +1490,20 @@ impl Parser:
         loop:
             let next_token = self.iter.force_next()!
             match next_token:
-                Token{kind: TokenKind::Ident(_), span: _} => path.push(self.parse_ident(next_token)!)
-                Token{kind: TokenKind::Star, span: _}:
+                Token{ kind: TokenKind::Ident(_), span: _ }
+                 => path.push(self.parse_ident(next_token)!)
+                Token{ kind: TokenKind::Star, span: _ }:
                     wildcard = true
                     break
                 end
                 _ => return parse_error(UnexpectedToken(next_token), next_token)
             end
             match self.iter.peek():
-                Some(Token{kind: TokenKind::DoubleColon, span: _}) => self.iter.force_next()!
+                Some(Token{ kind: TokenKind::DoubleColon, span: _ }) => self.iter.force_next()!
                 _ => break
             end
         end
-        Use{path, relative, wildcard, meta: self.meta(mark)}
+        Use{ path, relative, wildcard, meta: self.meta(mark) }
     end
 
     fn parse_extern(mut self) Extern throws ParseError:
@@ -1428,9 +1514,9 @@ impl Parser:
             let type_ = type_and_trait.0
             match type_and_trait.1:
                 -- todo (lang-feat): We couldn't use `if let` here, we had to use `match`.
-                Some(trait_) => 
-                    return ExternItem::ExternImplTrait(
-                        ExternImplTrait{type_, trait_, meta: self.meta(mark)}
+                Some(trait_)
+                 => return ExternItem::ExternImplTrait(
+                        ExternImplTrait{ type_, trait_, meta: self.meta(mark) }
                     )
                 None => ()
             end
@@ -1447,7 +1533,7 @@ impl Parser:
                     _ => return parse_error(UnexpectedToken(next_token), next_token)
                 end
             end
-            ExternItem::ExternImpl(ExternImpl{type_, fn_decls, meta: self.meta(mark)})
+            ExternItem::ExternImpl(ExternImpl{ type_, fn_decls, meta: self.meta(mark) })
         end
         let mark = self.iter.mark_prev()
         self.iter.expect_lexical_token(TokenKind::Colon)!
@@ -1464,22 +1550,27 @@ impl Parser:
             end
             items.push(item)
         end
-        Extern{items, meta: self.meta(mark)}
+        Extern{ items, meta: self.meta(mark) }
     end
 
     fn parse_block(mut self) Block throws ParseError:
         let mark_root = self.iter.mark()
-        let items = Vector<BlockItem>::new() 
+        let items = Vector<BlockItem>::new()
         let next_token = self.iter.force_next()!
         match next_token.kind:
             TokenKind::FatArrow:
                 -- This is a single expression block, an expression has to follow.
                 let mark = self.iter.mark()
                 match self.parse_expr(self.iter.force_next()!)!:
-                    Some<Expr>(expr) => items.push(BlockItem{kind: BlockItemKind::Expr(expr), meta: self.meta(mark)})
-                    None => return parse_error(
-                        ExprExpected(self.iter.force_next()!), self.iter.force_next()!
-                    )
+                    Some<Expr>(expr)
+                     => items.push(
+                            BlockItem{ kind: BlockItemKind::Expr(expr), meta: self.meta(mark) }
+                        )
+                    None
+                     => return parse_error(
+                            ExprExpected(self.iter.force_next()!),
+                            self.iter.force_next()!
+                        )
                 end
             end
             TokenKind::Colon:
@@ -1487,7 +1578,7 @@ impl Parser:
                 loop:
                     let token = self.iter.peek()
                     let item = match token:
-                        Some(Token{kind: TokenKind::End, span: _}):
+                        Some(Token{ kind: TokenKind::End, span: _ }):
                             self.iter.force_next()!
                             break
                         end
@@ -1498,32 +1589,36 @@ impl Parser:
             end
             _ => return parse_error(UnexpectedToken(next_token), next_token)
         end
-        Block{meta: self.meta(mark_root), items}
+        Block{ meta: self.meta(mark_root), items }
     end
 
     fn parse_block_item(mut self, token Token) BlockItem throws ParseError:
         -- todo (lang-bug): I would rather write this using `if let` but it is broken
         let mark = self.iter.mark_prev()
         match self.parse_item(token)!:
-            Some(item) => 
-                return match item.kind:
-                    ParseItemKind::Fn(f) => BlockItem{kind: BlockItemKind::Fn(f), meta: self.meta(mark)}
-                    ParseItemKind::Trait(t) => BlockItem{kind: BlockItemKind::Trait(t), meta: self.meta(mark)}
-                    ParseItemKind::Enum(e) => BlockItem{kind: BlockItemKind::Enum(e), meta: self.meta(mark)}
-                    ParseItemKind::Impl(i) => BlockItem{kind: BlockItemKind::Impl(i), meta: self.meta(mark)}
-                    ParseItemKind::Struct(i) => BlockItem{kind: BlockItemKind::Struct(i), meta: self.meta(mark)}
-                    ParseItemKind::FnDecl(f) => return parse_error(UnexpectedToken(token), token)
-                end
-            None => match self.parse_expr(token)!:
-                Some(expr) => BlockItem{kind: BlockItemKind::Expr(expr), meta: self.meta(mark)}
-                None => return parse_error(ExprExpected(token), token)
+            Some(item) => return match item.kind:
+                ParseItemKind::Fn(f)
+                 => BlockItem{ kind: BlockItemKind::Fn(f), meta: self.meta(mark) }
+                ParseItemKind::Trait(t)
+                 => BlockItem{ kind: BlockItemKind::Trait(t), meta: self.meta(mark) }
+                ParseItemKind::Enum(e)
+                 => BlockItem{ kind: BlockItemKind::Enum(e), meta: self.meta(mark) }
+                ParseItemKind::Impl(i)
+                 => BlockItem{ kind: BlockItemKind::Impl(i), meta: self.meta(mark) }
+                ParseItemKind::Struct(i)
+                 => BlockItem{ kind: BlockItemKind::Struct(i), meta: self.meta(mark) }
+                ParseItemKind::FnDecl(f) => return parse_error(UnexpectedToken(token), token)
             end
+            None
+             => match self.parse_expr(token)!:
+                    Some(expr)
+                     => BlockItem{ kind: BlockItemKind::Expr(expr), meta: self.meta(mark) }
+                    None => return parse_error(ExprExpected(token), token)
+                end
         end
     end
 
-    fn meta_from_tokens(self, tokens Vector<Token>) Meta:
-        Meta::from_tokens(tokens)
-    end
+    fn meta_from_tokens(self, tokens Vector<Token>) Meta => Meta::from_tokens(tokens)
 
     fn meta(self, mark Int) Meta:
         --- Create a `Meta` from the tokens since the given mark.
@@ -1532,21 +1627,18 @@ impl Parser:
         self.meta_from_tokens(tokens)
     end
 
-    fn meta_from_token(self, token Token) Meta:
-        self.meta_from_tokens(Vector<Token>::from([token]))
-    end
+    fn meta_from_token(self, token Token) Meta
+     => self.meta_from_tokens(Vector<Token>::from([token]))
 
-    fn meta_from_span(self, span Span) Meta:
-        Meta::from_span(span)
-    end
+    fn meta_from_span(self, span Span) Meta => Meta::from_span(span)
 end
 
 fn parse_error(kind ParseErrorKind, token Token?) Error<(), ParseError>:
     let meta = match token:
         Some(t) => Meta::from_tokens(Vector::from([t]))
-        None => Meta::from_span(Span{src: "<unknown>", file: "<unknown>", from: 0, to: 0})
+        None => Meta::from_span(Span{ src: "<unknown>", file: "<unknown>", from: 0, to: 0 })
     end
-    Error(ParseError{meta, kind})
+    Error(ParseError{ meta, kind })
 end
 
 enum ParseItemKind:
@@ -1567,8 +1659,8 @@ struct ParseItem:
 end
 
 impl ToDebugStr for ParseItem:
-    fn to_debug_str(self) Str:
-        match self.kind:
+    fn to_debug_str(self) Str
+     => match self.kind:
             ParseItemKind::Fn(f) => f.to_debug_str()
             ParseItemKind::FnDecl(f) => f.to_debug_str()
             ParseItemKind::Impl(i) => i.to_debug_str()
@@ -1576,6 +1668,4 @@ impl ToDebugStr for ParseItem:
             ParseItemKind::Enum(e) => e.to_debug_str()
             ParseItemKind::Struct(s) => s.to_debug_str()
         end
-    end
 end
-

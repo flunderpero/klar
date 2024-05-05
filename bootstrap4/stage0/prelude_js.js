@@ -173,6 +173,51 @@ class klar_Str {
         return this
     }
 
+    klar_replace(from, to) {
+        return new klar_Str(this.value.replaceAll(from.value, to.value))
+    }
+
+    klar_split(sep) {
+        const parts = this.value.split(sep.value)
+        const arr = klar_Vector.klar_new(new klar_Int(parts.length))
+        for (const s of parts) {
+            arr.klar_push(new klar_Str(s))
+        }
+        return arr.klar_iter()
+    }
+
+    klar_starts_with(prefix) {
+        return new klar_Bool(this.value.startsWith(prefix.value))
+    }
+
+    klar_ends_with(suffix) {
+        return new klar_Bool(this.value.endsWith(suffix.value))
+    }
+
+    klar_contains(sub) {
+        return new klar_Bool(this.value.includes(sub.value))
+    }
+
+    klar_contains_char(sub) {
+        return new klar_Bool(this.value.includes(sub.value))
+    }
+
+    klar_trim_start() {
+        return new klar_Str(this.value.trimStart())
+    }
+
+    klar_trim_end() {
+        return new klar_Str(this.value.trimEnd())
+    }
+
+    klar_trim() {
+        return new klar_Str(this.value.trim())
+    }
+
+    klar_reverse() {
+        return new klar_Str(this.value.split("").reverse().join(""))
+    }
+
     klar_slice_copy(start, end) {
         return new klar_Str(this.value.slice(start.value, end.value))
     }
@@ -235,6 +280,52 @@ class klar_Char {
 
     klar_to_int() {
         return new klar_Int(this.value.charCodeAt(0))
+    }
+}
+
+class klar_StrBuilder {
+    constructor(value) {
+        this.value = value ? "" + value : ""
+    }
+
+    static klar_new() {
+        return new klar_StrBuilder()
+    }
+
+    static klar_from_str(value) {
+        return new klar_StrBuilder(value.value)
+    }
+
+    static klar_from_char(value) {
+        return new klar_StrBuilder(value.value)
+    }
+
+    klar_push(value) {
+        this.value += value.value
+    }
+
+    klar_push_char(value) {
+        this.value += value.value
+    }
+
+    klar_len() {
+        return new klar_Int(this.value.length)
+    }
+
+    klar_to_str() {
+        return new klar_Str(this.value)
+    }
+
+    klar_clear() {
+        this.value = ""
+    }
+
+    klar_iter() {
+        return this.klar_to_str().klar_iter()
+    }
+
+    klar_get(index) {
+        return new klar_Char(this.value[index.value])
     }
 }
 

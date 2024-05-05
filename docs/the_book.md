@@ -204,7 +204,7 @@ fn main():
         multi-line string.
         """
     -- Concatenate string and characters.
-    mut s = "".push(a).push_char('\n').push("This is Klar.")
+    let s = a + "\n" + "This is Klar."
     assert(s == "Hello, World!\nThis is Klar.")
 
     -- Iterate over the characters of a string.

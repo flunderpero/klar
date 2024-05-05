@@ -56,24 +56,17 @@ struct StrFormatter:
     width Int?
     radix Int?
     -- todo (lang-feat): Make this private.
-    out Str
+    out StrBuilder
 end
 
 impl ToStr for StrFormatter:
-    fn to_str(self) Str => self.out
+    fn to_str(self) Str => self.out.to_str()
 end
 
 impl StrFormatter:
-    fn new() StrFormatter => StrFormatter{ width: None, radix: None, out: "" }
+    fn new() StrFormatter => StrFormatter{ width: None, radix: None, out: StrBuilder::new() }
 
     fn write_str(mut self, s Str) Self:
-        self.out.push(s)
-        self
-    end
-
-    fn write_fmt(mut self, s Str) Self:
-        --- Write the given string respecting the width settings.
-        ---
         self.out.push(s)
         self
     end
@@ -456,14 +449,55 @@ extern:
 
     impl IndexedGet<Int, Char> for Str
 
+    struct StrBuilder:
+    end
+
+    impl StrBuilder:
+        fn new() StrBuilder
+
+        fn from_str(s Str) StrBuilder
+
+        fn from_char(c Char) StrBuilder
+
+        fn push_char(mut self, c Char)
+
+        fn push(mut self, s Str)
+
+        fn clear(mut self)
+
+        fn iter(self) Iterator<Char>
+    end
+
+    impl ToStr for StrBuilder
+
+    impl IndexedGet<Int, Char> for StrBuilder
+
+    impl Len for StrBuilder
+
     impl Str:
-        fn push(mut self, s Str) Str
-
-        fn push_char(mut self, c Char) Str
-
         fn slice_copy(self, from Int, to Int) Str
 
         fn join(self, iter Iterator<Str>) Str
+
+        fn replace(self, from Str, to Str) Str
+
+        fn reverse(self) Str
+
+        fn starts_with(self, prefix Str) Bool
+
+        fn ends_with(self, suffix Str) Bool
+
+        fn split(self, sep Char) Iterator<Str>
+
+        fn contains(self, s Str) Bool
+
+        fn contains_char(self, c Char) Bool
+
+        fn trim_start(self) Str
+
+        fn trim_end(self) Str
+
+        fn trim(self) Str
     end
 
     impl Char:
@@ -527,118 +561,14 @@ end
 
 impl Str:
     fn repeat(self, n Int) Str:
-        mut s = ""
+        mut s = StrBuilder::new()
         mut i = 0
         loop:
             if i >= n => break
             s.push(self)
             i = i + 1
         end
-        s
-    end
-
-    fn replace(self, from Str, to Str) Str:
-        mut s = ""
-        mut i = 0
-        mut cur_match = ""
-        loop:
-            if i >= self.len() => break
-            let c = self[i]
-            if c == from[cur_match.len()]:
-                cur_match.push_char(c)
-                if cur_match == from:
-                    s.push(to)
-                    cur_match = ""
-                end
-            end else:
-                s.push(cur_match)
-                s.push_char(c)
-                cur_match = ""
-            end
-            i = i + 1
-        end
-        s
-    end
-
-    fn reverse(self) Str:
-        mut s = ""
-        mut i = self.len() - 1
-        loop:
-            if i < 0 => break
-            s.push_char(self[i])
-            i = i - 1
-        end
-        s
-    end
-
-    fn split(self, sep Char) Iterator<Str>:
-        let vec = Vector<Str>::new()
-        mut iter = self.iter()
-        mut s = ""
-        loop:
-            match iter.next():
-                None => break
-                Some(c)
-                 => if c == sep:
-                        vec.push(s)
-                        s = ""
-                    end else => s.push_char(c)
-            end
-        end
-        if s.len() > 0 => vec.push(s)
-        vec.iter()
-    end
-
-    fn starts_with(self, prefix Str) Bool:
-        if self.len() < prefix.len() => return false
-        mut i = 0
-        loop:
-            if i == prefix.len() => break
-            if self[i] != prefix[i] => return false
-            i = i + 1
-        end
-        true
-    end
-
-    fn ends_with(self, suffix Str) Bool:
-        if self.len() < suffix.len() => return false
-        mut i = self.len() - suffix.len()
-        mut j = 0
-        loop:
-            if i == self.len() => break
-            if self[i] != suffix[j] => return false
-            i = i + 1
-            j = j + 1
-        end
-        true
-    end
-
-    fn contains(self, s Str) Bool:
-        mut i = 0
-        mut match_ = ""
-        loop:
-            if i == self.len() => break
-            let c = self[i]
-            if c == s[match_.len()]:
-                match_.push_char(c)
-                if match_ == s => return true
-            end else => match_ = ""
-            i = i + 1
-        end
-        false
-    end
-
-    fn contains_char(self, c Char) Bool:
-        -- todo (lang-feat): Using `self.iter().any(fn(ch) => ch == c)`
-        --                   should produce the same code and be as fast
-        --                   as the current implementation.
-        mut i = 0
-        loop:
-            if i == self.len() => break
-            if self[i] == c => return true
-            i = i + 1
-        end
-        return false
+        s.to_str()
     end
 
     fn when(self, condition Bool) Str
@@ -667,31 +597,6 @@ impl Str:
      => --- Indent each line with the number of spaces given by `width`.
         ---
         "\n".join(self.split('\n').map<Str>(fn(line Str) Str => " ".repeat(width) + line))
-
-    fn trim_end(self) Str:
-        mut i = self.len()
-        loop:
-            if i == 0 => break
-            if self[i - 1] != ' ' and self[i - 1] != '\n' => break
-            i = i - 1
-        end
-        self.slice_copy(0, i)
-    end
-
-    fn trim_start(self) Str:
-        mut i = 0
-        loop:
-            if i == self.len() => break
-            if self[i] != ' ' and self[i] != '\n' => break
-            i = i + 1
-        end
-        self.slice_copy(i, self.len())
-    end
-
-    fn trim(self) Str:
-        if self.len() == 0 => return ""
-        self.trim_start().trim_end()
-    end
 
     fn pad_left(self, width Int, fill Char) Str:
         if self.len() >= width => return self
@@ -727,10 +632,9 @@ end
 
 impl Add for Str:
     fn add(self, rhs Str) Str:
-        mut res = ""
-        res.push(self)
+        mut res = StrBuilder::from_str(self)
         res.push(rhs)
-        res
+        res.to_str()
     end
 end
 
@@ -789,9 +693,9 @@ impl ToFormattedStr for Int:
         if radix < 2 or radix > 16 => return Error("radix must be in between 2 and 16")
         let width = fmt.width.unwrap_or(0)
         mut i Int = self
-        mut s = ""
+        mut str_builder = StrBuilder::new()
         if i < 0:
-            s.push_char('-')
+            str_builder.push_char('-')
             i = 0 - i
         end
         let digits = [
@@ -815,10 +719,10 @@ impl ToFormattedStr for Int:
         loop:
             if i == 0 => break
             let digit = i % radix
-            s.push_char(digits[digit])
+            str_builder.push_char(digits[digit])
             i = i / radix
         end
-        s = s.reverse().pad_left(width, '0')
+        let s = str_builder.to_str().reverse().pad_left(width, '0')
         fmt.write_str(s)
         return ()
     end

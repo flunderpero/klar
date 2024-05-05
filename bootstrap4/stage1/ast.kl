@@ -11,7 +11,7 @@ trait ToDebugStr:
         --- Same as `to_debug_str`, but with newlines and indentation.
         ---
         let str = self.to_debug_str()
-        mut res = ""
+        mut res = StrBuilder::new()
         mut indent = 0
         mut iter = str.iter()
         loop:
@@ -30,7 +30,7 @@ trait ToDebugStr:
                 None => break
             end
         end
-        res
+        res.to_str()
     end
 end
 

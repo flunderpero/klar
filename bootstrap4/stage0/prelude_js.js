@@ -68,27 +68,27 @@ class klar_Int {
     }
 
     klar_eq(other) {
-        return new klar_Bool(this.value === other.value)
+        return this.value === other.value
     }
 
     klar_ne(other) {
-        return new klar_Bool(this.value !== other.value)
+        return this.value !== other.value
     }
 
     klar_lt(other) {
-        return new klar_Bool(this.value < other.value)
+        return this.value < other.value
     }
 
     klar_le(other) {
-        return new klar_Bool(this.value <= other.value)
+        return this.value <= other.value
     }
 
     klar_gt(other) {
-        return new klar_Bool(this.value > other.value)
+        return this.value > other.value
     }
 
     klar_ge(other) {
-        return new klar_Bool(this.value >= other.value)
+        return this.value >= other.value
     }
 
     klar_add(other) {
@@ -112,38 +112,32 @@ class klar_Int {
     }
 }
 
-class klar_Bool {
-    constructor(value) {
-        this.value = value
-    }
+Boolean.prototype.klar_to_str = function () {
+    return new klar_Str(this.toString())
+}
 
-    klar_to_str() {
-        return new klar_Str(this.value.toString())
-    }
+Boolean.prototype.klar_eq = function (other) {
+    return this.valueOf() === other
+}
 
-    klar_eq(other) {
-        return new klar_Bool(this.value === other.value)
-    }
+Boolean.prototype.klar_ne = function (other) {
+    return this.valueOf() !== other
+}
 
-    klar_ne(other) {
-        return new klar_Bool(this.value !== other.value)
-    }
+Boolean.prototype.klar_lt = function (other) {
+    return this.valueOf() < other
+}
 
-    klar_lt(other) {
-        return new klar_Bool(this.value < other.value)
-    }
+Boolean.prototype.klar_le = function (other) {
+    return this.valueOf() <= other
+}
 
-    klar_le(other) {
-        return new klar_Bool(this.value <= other.value)
-    }
+Boolean.prototype.klar_gt = function (other) {
+    return this.valueOf() > other
+}
 
-    klar_gt(other) {
-        return new klar_Bool(this.value > other.value)
-    }
-
-    klar_ge(other) {
-        return new klar_Bool(this.value >= other.value)
-    }
+Boolean.prototype.klar_ge = function (other) {
+    return this.valueOf() >= other
 }
 
 class klar_Str {
@@ -156,11 +150,11 @@ class klar_Str {
     }
 
     klar_eq(other) {
-        return new klar_Bool(this.value === other.value)
+        return this.value === other.value
     }
 
     klar_ne(other) {
-        return new klar_Bool(this.value !== other.value)
+        return this.value !== other.value
     }
 
     klar_push(other) {
@@ -187,19 +181,19 @@ class klar_Str {
     }
 
     klar_starts_with(prefix) {
-        return new klar_Bool(this.value.startsWith(prefix.value))
+        return this.value.startsWith(prefix.value)
     }
 
     klar_ends_with(suffix) {
-        return new klar_Bool(this.value.endsWith(suffix.value))
+        return this.value.endsWith(suffix.value)
     }
 
     klar_contains(sub) {
-        return new klar_Bool(this.value.includes(sub.value))
+        return this.value.includes(sub.value)
     }
 
     klar_contains_char(sub) {
-        return new klar_Bool(this.value.includes(sub.value))
+        return this.value.includes(sub.value)
     }
 
     klar_trim_start() {
@@ -230,7 +224,7 @@ class klar_Str {
         let result = ""
         let first = true
         let item = iter.klar_next()
-        while (item.klar_is_some().value) {
+        while (item.klar_is_some()) {
             if (first) {
                 first = false
             } else {
@@ -264,11 +258,11 @@ class klar_Char {
     }
 
     klar_eq(other) {
-        return new klar_Bool(this.value === other.value)
+        return this.value === other.value
     }
 
     klar_ne(other) {
-        return new klar_Bool(this.value !== other.value)
+        return this.value !== other.value
     }
 
     static klar_from_int(value) {

@@ -108,8 +108,8 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             return `;(function () { const error = new Error("return"); error.value = ${value}; throw error; })()`
         } else if (e instanceof AST.Number_) {
             return `new klar_Int(${e.value})`
-        } else if (e instanceof AST.Bool || e instanceof AST.Number_) {
-            return `new klar_Bool(${e.value})`
+        } else if (e instanceof AST.Bool) {
+            return `${e.value}`
         } else if (e instanceof AST.Str) {
             const value = escape_str(e)
             return `new klar_Str(${value})`
@@ -243,7 +243,7 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
                 {...ctx, used_in_expression: true},
                 {assign_last_expression_to: "__if_result"},
             )
-            let s = `(${condition}.value) ? (function() {let __if_result;${then} return __if_result})()`
+            let s = `(${condition}) ? (function() {let __if_result;${then} return __if_result})()`
             if (e.else_block) {
                 const else_ = transpile_block(
                     e.else_block,
@@ -344,9 +344,9 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             const lhs = transpile_expression(e.lhs, {...ctx, used_in_expression: true})
             const rhs = transpile_expression(e.rhs, {...ctx, used_in_expression: true})
             if (e.operator === "and") {
-                return `new klar_Bool(${lhs}.value && ${rhs}.value)`
+                return `(${lhs} && ${rhs})`
             } else if (e.operator === "or") {
-                return `new klar_Bool(${lhs}.value || ${rhs}.value)`
+                return `(${lhs} || ${rhs})`
             }
             const function_name = binary_op_functions[e.operator]
             if (!function_name) {
@@ -369,7 +369,7 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             return `${target}.klar_get(${index})`
         } else if (e instanceof AST.Not) {
             const value = transpile_expression(e.expression, {...ctx, used_in_expression: true})
-            return `new klar_Bool(!${value}.value)`
+            return `(!${value})`
         } else if (e instanceof AST.ParenthesizedExpression) {
             const value = transpile_expression(e.expression, ctx)
             return `(${value})`
@@ -426,16 +426,17 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             const rhs = transpile_expression(e.rhs, {used_in_expression: true})
             let cond
             if (e.operator === "and") {
-                cond = `(lhs.value && rhs.value)`
+                cond = `(lhs && rhs)`
             } else if (e.operator === "or") {
-                cond = `(lhs.value || rhs.value)`
+                cond = `(lhs || rhs)`
             } else {
                 const function_name = binary_op_functions[e.operator]
-                cond = `(lhs.${m(function_name)}(rhs).value)`
+                cond = `(lhs.${m(function_name)}(rhs))`
             }
             return `(function() {
 const lhs = ${lhs};
 const rhs = ${rhs};
+if (!${cond}) {
 let lhs_str = to_debug_str(lhs);
 let rhs_str = to_debug_str(rhs);
 for (let i = 0; i < lhs_str.length && i < rhs_str.length; i++) {
@@ -445,7 +446,6 @@ for (let i = 0; i < lhs_str.length && i < rhs_str.length; i++) {
         break;
     }
 }
-if (!${cond}) {
 klar_panic(
 new klar_Str(\`Assertion failed:
 
@@ -459,18 +459,18 @@ got:      \${lhs_str} ${e.operator} \${rhs_str}
             const inner = transpile_expression(e.expression, {used_in_expression: true})
             return `(function() {
 let cond = ${inner};
-if (!!(cond.value)) {
+if (!!(cond)) {
 const inner = to_debug_str(cond);
 klar_panic(
 new klar_Str(\`Assertion failed:
 
 expected: not ${escape_str_str(e.expression.span.src_text)}
-got:      \${cond.value}
+got:      \${cond}
 \`), new klar_Str("${location}"), new klar_Str(""));}})();`
         }
         const cond = transpile_expression(e, {used_in_expression: true})
         return `(function() {
-if (!(${cond}.value)) {
+if (!(${cond})) {
     klar_panic(new klar_Str(\`Assertion failed:\\n\`), 
     new klar_Str("${location}"), new klar_Str(""));
 }})();`
@@ -700,6 +700,9 @@ if (!(${cond}.value)) {
             if (pattern.value instanceof AST.Str || pattern.value instanceof AST.Char) {
                 value = escape_str(pattern.value)
             }
+            if (pattern.value instanceof AST.Bool) {
+                return `(${match_expression} === ${value})`
+            }
             return `(${match_expression}.value === ${value})`
         } else if (pattern instanceof AST.WildcardMatchPattern) {
             return "true"
@@ -723,7 +726,7 @@ if (!(${cond}.value)) {
                 }`
                 return `(${match_expression}.constructor.name == "${constructor_name}")`
             }
-            return `(${m(pattern.name)} = ${match_expression})`
+            return `((${m(pattern.name)} = ${match_expression}) || true)`
         } else if (
             pattern instanceof AST.StructuredMatchPattern ||
             pattern instanceof AST.TupleMatchPattern

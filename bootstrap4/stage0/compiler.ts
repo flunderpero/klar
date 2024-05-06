@@ -15,6 +15,7 @@ const debug_tokens = Bun.argv.includes("--debug-tokens") || debug
 const debug_ast = Bun.argv.includes("--debug-ast") || debug
 const debug_transpiled = Bun.argv.includes("--debug-transpiled") || debug
 const debug_errors = Bun.argv.includes("--debug-errors") || debug
+const profile = Bun.argv.includes("--profile")
 
 class CodeGenError extends Error {
     constructor(
@@ -837,7 +838,11 @@ export async function compile({
         console.log(`\n${log_prefix} TOKENS`)
         console.log(to_json(tokens, 2))
     }
+    const t0 = Date.now()
     let ast = AST.parse(new AST.TokenStream(tokens))
+    if (profile) {
+        console.log(`[${file}] Parsing took ${Date.now() - t0}ms`)
+    }
     let transpiled = ""
     for (const use of ast.body.filter(
         (x) => x instanceof AST.Use && x.path[0] === ".",
@@ -875,8 +880,16 @@ export async function compile({
         console.log(`\n${log_prefix} AST:`)
         console.log(to_json(ast, 2))
     }
+    const t1 = Date.now()
     type_check_ast(ast, env)
+    if (profile) {
+        console.log(`[${file}] Type checking took ${Date.now() - t1}ms`)
+    }
+    const t2 = Date.now()
     transpiled += code_gen(ast, {encapsulate})
+    if (profile) {
+        console.log(`[${file}] Codegen took ${Date.now() - t2}ms`)
+    }
     if (prettify) {
         const proc = Bun.spawn(["prettier", "--stdin-filepath", "transpiled.js"], {
             stdin: "pipe",

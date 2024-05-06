@@ -33,6 +33,7 @@ else
             klarfmt=1
             ;;
         files)
+            compiler=1
             files=1
             ;;
         *)

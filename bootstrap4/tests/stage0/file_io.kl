@@ -27,7 +27,7 @@ fn main():
         Ok<Str>(contents) => contents
     end
     if contents == "Hello, World!" => print("File IO works!")
-    else => print("File IO failed!")
+    else => print(f"File IO failed! Read unexpected contents: `{contents}`")
     let invalid_file = File::at("/tmp/\n")
     match invalid_file.read_str():
         Error(error) => print(f"File IO failed as expected: {error}")

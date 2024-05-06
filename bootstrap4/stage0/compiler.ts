@@ -110,15 +110,20 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             return `${e.value}`
         } else if (e instanceof AST.Str) {
             const value = escape_str(e)
-            return `new klar_Str(${value})`
+            return `${value}`
         } else if (e instanceof AST.Char) {
             const value = escape_str(e)
-            return `new klar_Char(${value})`
+            return `${value}`
         } else if (e instanceof AST.InterpolatedStr) {
             const parts = e.expressions.map((x) => {
                 const target = transpile_expression(x, {...ctx, used_in_expression: true})
-                if (x.attributes.type?.name === "Int") {
-                    return `_.klar_push(new klar_Str("" + ${target}));`
+                if (
+                    x.attributes.type?.name === "Int" ||
+                    x.attributes.type?.name === "Char" ||
+                    x.attributes.type?.name === "Bool" ||
+                    x.attributes.type?.name === "String"
+                ) {
+                    return `_.klar_push("" + ${target});`
                 }
                 return `_.klar_push(${target}.klar_to_str());`
             })
@@ -269,7 +274,7 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
                 {...ctx, used_in_expression: true},
                 {assign_last_expression_to: "__if_result"},
             )
-            let s = `(${condition}.value) ? (function() {let __if_result;${then} return __if_result})()`
+            let s = `(${condition}) ? (function() {let __if_result;${then} return __if_result})()`
             if (e.else_block) {
                 const else_ = transpile_block(
                     e.else_block,
@@ -351,6 +356,10 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             if (
                 e.lhs.attributes.type?.name === "Int" ||
                 e.rhs.attributes.type?.name === "Int" ||
+                e.lhs.attributes.type?.name === "Str" ||
+                e.rhs.attributes.type?.name === "Str" ||
+                e.lhs.attributes.type?.name === "Char" ||
+                e.rhs.attributes.type?.name === "Char" ||
                 e.lhs.attributes.type?.name === "Bool" ||
                 e.rhs.attributes.type?.name === "Bool"
             ) {
@@ -419,10 +428,10 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
     function span_to_frame(span: Span) {
         const src_line = span.src_lines.split("\n")[0].trim()
         return `{
-            klar_file: new klar_Str(\`${escape_str_str(span.file)}\`),
+            klar_file: \`${escape_str_str(span.file)}\`,
             klar_line: ${span.pos.line},
             klar_col: ${span.pos.col},
-            klar_src: new klar_Str(\`${escape_str_str(src_line)}\`)
+            klar_src: \`${escape_str_str(src_line)}\`
         }`
     }
     /**
@@ -441,7 +450,16 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             } else if (e.operator === "or") {
                 cond = `(lhs || rhs)`
             } else {
-                if (e.lhs.attributes.type?.name === "Int") {
+                if (
+                    e.lhs.attributes.type?.name === "Int" ||
+                    e.rhs.attributes.type?.name === "Int" ||
+                    e.lhs.attributes.type?.name === "Char" ||
+                    e.rhs.attributes.type?.name === "Char" ||
+                    e.lhs.attributes.type?.name === "Str" ||
+                    e.rhs.attributes.type?.name === "Str" ||
+                    e.lhs.attributes.type?.name === "Bool" ||
+                    e.rhs.attributes.type?.name === "Bool"
+                ) {
                     cond = `(lhs ${e.operator} rhs)`
                 } else {
                     const function_name = binary_op_functions[e.operator]
@@ -462,14 +480,14 @@ for (let i = 0; i < lhs_str.length && i < rhs_str.length; i++) {
     }
 }
 klar_panic(
-new klar_Str(\`Assertion failed:
+\`Assertion failed:
 
 expected: ${escape_str_str(e.lhs.span.src_text)} ${e.operator} ${escape_str_str(
                 e.rhs.span.src_text,
             )}
 got:      \${lhs_str} ${e.operator} \${rhs_str}
 
-\`), new klar_Str("${location}"), new klar_Str(""));}})();`
+\`, "${location}", "");}})();`
         } else if (e instanceof AST.Not) {
             const inner = transpile_expression(e.expression, {used_in_expression: true})
             return `(function() {
@@ -477,17 +495,17 @@ let cond = ${inner};
 if (!!(cond)) {
 const inner = to_debug_str(cond);
 klar_panic(
-new klar_Str(\`Assertion failed:
+\`Assertion failed:
 
 expected: not ${escape_str_str(e.expression.span.src_text)}
 got:      \${cond}
-\`), new klar_Str("${location}"), new klar_Str(""));}})();`
+\`, "${location}", "");}})();`
         }
         const cond = transpile_expression(e, {used_in_expression: true})
         return `(function() {
 if (!(${cond})) {
-    klar_panic(new klar_Str(\`Assertion failed:\\n\`), 
-    new klar_Str("${location}"), new klar_Str(""));
+    klar_panic(\`Assertion failed:\\n\`, 
+    "${location}", "");
 }})();`
     }
     /**
@@ -715,10 +733,7 @@ if (!(${cond})) {
             if (pattern.value instanceof AST.Str || pattern.value instanceof AST.Char) {
                 value = escape_str(pattern.value)
             }
-            if (pattern.value instanceof AST.Bool || pattern.value instanceof AST.Number_) {
-                return `(${match_expression} === ${value})`
-            }
-            return `(${match_expression}.value === ${value})`
+            return `(${match_expression} === ${value})`
         } else if (pattern instanceof AST.WildcardMatchPattern) {
             return "true"
         } else if (pattern instanceof AST.AlternativeMatchPattern) {
@@ -731,12 +746,8 @@ if (!(${cond})) {
             const start_value = transpile_expression(start, {used_in_expression: true})
             const end_value = transpile_expression(end, {used_in_expression: true})
             const end_op = pattern.is_closed ? "<=" : "<"
-            if (parseInt(start_value).toString() === start_value) {
-                return `(${match_expression} >= ${start_value}
-                    && ${match_expression} ${end_op} ${end_value})`
-            }
-            return `(${match_expression}.value >= ${start_value}.value 
-                && ${match_expression}.value ${end_op} ${end_value}.value)`
+            return `(${match_expression} >= ${start_value}
+                && ${match_expression} ${end_op} ${end_value})`
         } else if (pattern instanceof AST.CaptureMatchPatternOrType) {
             if (pattern.attributes.type?.constructor.name === "EnumType") {
                 const enum_type = pattern.attributes.type as any

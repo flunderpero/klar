@@ -20,11 +20,11 @@ function klar_stack_trace() {
 }
 
 function klar_print(value) {
-    if (typeof value === "number") {
+    if (typeof value === "number" || typeof value === "boolean" || typeof value === "string") {
         console.log(value)
         return
     }
-    console.log(value.klar_to_str().value)
+    console.log(value.klar_to_str())
 }
 
 // For compiler debugging purposes only.
@@ -33,7 +33,7 @@ const klar_jsprint = console.log
 let klar_panic = (value, location, src) => {
     throw new Error(
         `Panic: ${to_debug_str(value)} at ${to_debug_str(location)}:\n  ${to_debug_str(src)}
-        \nStack trace:\n    ${klar_stack_trace().klar_to_str().value}`,
+        \nStack trace:\n    ${klar_stack_trace().klar_to_str()}`,
     )
 }
 
@@ -50,7 +50,7 @@ function klar_exit(code) {
 class klar_unit {}
 
 Number.prototype.klar_to_str = function () {
-    return new klar_Str(this.toString())
+    return this.toString()
 }
 
 Number.prototype.klar_eq = function (other) {
@@ -80,7 +80,7 @@ Number.prototype.klar_ge = function (other) {
 const klar_Int = Number
 
 Boolean.prototype.klar_to_str = function () {
-    return new klar_Str(this.toString())
+    return this.toString()
 }
 
 Boolean.prototype.klar_eq = function (other) {
@@ -107,139 +107,123 @@ Boolean.prototype.klar_ge = function (other) {
     return this.valueOf() >= other
 }
 
-class klar_Str {
-    constructor(value) {
-        this.value = value
-    }
-
-    klar_to_str() {
-        return this
-    }
-
-    klar_eq(other) {
-        return this.value === other.value
-    }
-
-    klar_ne(other) {
-        return this.value !== other.value
-    }
-
-    klar_push(other) {
-        this.value += other.value
-        return this
-    }
-
-    klar_push_char(other) {
-        this.value += other.value
-        return this
-    }
-
-    klar_replace(from, to) {
-        return new klar_Str(this.value.replaceAll(from.value, to.value))
-    }
-
-    klar_split(sep) {
-        const parts = this.value.split(sep.value)
-        const arr = klar_Vector.klar_new(parts.length)
-        for (const s of parts) {
-            arr.klar_push(new klar_Str(s))
-        }
-        return arr.klar_iter()
-    }
-
-    klar_starts_with(prefix) {
-        return this.value.startsWith(prefix.value)
-    }
-
-    klar_ends_with(suffix) {
-        return this.value.endsWith(suffix.value)
-    }
-
-    klar_contains(sub) {
-        return this.value.includes(sub.value)
-    }
-
-    klar_contains_char(sub) {
-        return this.value.includes(sub.value)
-    }
-
-    klar_trim_start() {
-        return new klar_Str(this.value.trimStart())
-    }
-
-    klar_trim_end() {
-        return new klar_Str(this.value.trimEnd())
-    }
-
-    klar_trim() {
-        return new klar_Str(this.value.trim())
-    }
-
-    klar_reverse() {
-        return new klar_Str(this.value.split("").reverse().join(""))
-    }
-
-    klar_slice_copy(start, end) {
-        return new klar_Str(this.value.slice(start, end))
-    }
-
-    klar_len() {
-        return this.value.length
-    }
-
-    klar_join(iter) {
-        let result = ""
-        let first = true
-        let item = iter.klar_next()
-        while (item.klar_is_some()) {
-            if (first) {
-                first = false
-            } else {
-                result += this.value
-            }
-            result += item.klar_unwrap().value
-            item = iter.klar_next()
-        }
-        return new klar_Str(result)
-    }
-
-    klar_get(index) {
-        if (index > this.klar_len() || index < 0) {
-            klar_panic(
-                `index out of bound in \`Str[${index}]\`, Str has length \`${this.klar_len()}`,
-            )
-        }
-        return new klar_Char(this.value[index])
-    }
+String.prototype.klar_to_str = function () {
+    return this.valueOf()
 }
 
-class klar_Char {
-    constructor(value) {
-        this.value = value
-    }
+String.prototype.klar_eq = function (other) {
+    return this.valueOf() === other
+}
 
-    klar_to_str() {
-        return new klar_Str(this.value)
-    }
+String.prototype.klar_ne = function (other) {
+    return this.valueOf() !== other
+}
 
-    klar_eq(other) {
-        return this.value === other.value
-    }
+String.prototype.klar_lt = function (other) {
+    return this.valueOf() < other
+}
 
-    klar_ne(other) {
-        return this.value !== other.value
-    }
+String.prototype.klar_le = function (other) {
+    return this.valueOf() <= other
+}
 
-    static klar_from_int(value) {
-        if (value < 0 || value > 65535) {
-            return new klar_Result_Error(new klar_Str(`cannot convert ${value} to Char`))
+String.prototype.klar_gt = function (other) {
+    return this.valueOf() > other
+}
+
+String.prototype.klar_ge = function (other) {
+    return this.valueOf() >= other
+}
+
+String.prototype.klar_replace = function (from, to) {
+    return this.replaceAll(from, to)
+}
+
+String.prototype.klar_split = function (sep) {
+    const parts = this.split(sep)
+    const arr = klar_Vector.klar_new(parts.length)
+    for (const s of parts) {
+        arr.klar_push(s)
+    }
+    return arr.klar_iter()
+}
+
+String.prototype.klar_starts_with = function (prefix) {
+    return this.startsWith(prefix)
+}
+
+String.prototype.klar_ends_with = function (suffix) {
+    return this.endsWith(suffix)
+}
+
+String.prototype.klar_contains = function (sub) {
+    return this.includes(sub)
+}
+
+String.prototype.klar_contains_char = function (sub) {
+    return this.includes(sub)
+}
+
+String.prototype.klar_trim_start = function () {
+    return this.trimStart()
+}
+
+String.prototype.klar_trim_end = function () {
+    return this.trimEnd()
+}
+
+String.prototype.klar_trim = function () {
+    return this.trim()
+}
+
+String.prototype.klar_reverse = function () {
+    return this.split("").reverse().join("")
+}
+
+String.prototype.klar_slice_copy = function (start, end) {
+    return this.slice(start, end)
+}
+
+String.prototype.klar_len = function () {
+    return this.length
+}
+
+String.prototype.klar_join = function (iter) {
+    let result = ""
+    let first = true
+    let item = iter.klar_next()
+    while (item.klar_is_some()) {
+        if (first) {
+            first = false
+        } else {
+            result += this
         }
-        return new klar_Result_Ok(new klar_Char(String.fromCharCode(value)))
+        result += item.klar_unwrap()
+        item = iter.klar_next()
     }
+    return result
+}
 
-    klar_to_int() {
-        return this.value.charCodeAt(0)
+String.prototype.klar_get = function (index) {
+    if (index > this.klar_len() || index < 0) {
+        klar_panic(`index out of bound in \`Str[${index}]\`, Str has length \`${this.klar_len()}`)
     }
+    return this[index]
+}
+
+const klar_Str = String
+
+const klar_Char = String
+
+String.klar_from_int = function (value) {
+    if (value < 0 || value > 65535) {
+        return new klar_Result_Error(`cannot convert ${value} to Char`)
+    }
+    return new klar_Result_Ok(String.fromCharCode(value))
+}
+
+String.prototype.klar_to_int = function () {
+    return this.charCodeAt(0)
 }
 
 class klar_StrBuilder {
@@ -252,19 +236,19 @@ class klar_StrBuilder {
     }
 
     static klar_from_str(value) {
-        return new klar_StrBuilder(value.value)
+        return new klar_StrBuilder(value)
     }
 
     static klar_from_char(value) {
-        return new klar_StrBuilder(value.value)
+        return new klar_StrBuilder(value)
     }
 
     klar_push(value) {
-        this.value += value.value
+        this.value += value
     }
 
     klar_push_char(value) {
-        this.value += value.value
+        this.value += value
     }
 
     klar_len() {
@@ -272,7 +256,7 @@ class klar_StrBuilder {
     }
 
     klar_to_str() {
-        return new klar_Str(this.value)
+        return this.value
     }
 
     klar_clear() {
@@ -284,7 +268,7 @@ class klar_StrBuilder {
     }
 
     klar_get(index) {
-        return new klar_Char(this.value[index])
+        return this.value[index]
     }
 }
 
@@ -324,26 +308,26 @@ class klar_File {
     }
 
     klar_to_str() {
-        return new klar_Str(this.path)
+        return this.path
     }
 
     klar_read_str() {
         const fs = require("fs")
         try {
-            const res = new klar_Str(fs.readFileSync(this.path.value, "utf8"))
+            const res = fs.readFileSync(this.path, "utf8")
             return new klar_Result_Ok(res)
         } catch (e) {
-            return new klar_Result_Error(new klar_Str(e.message))
+            return new klar_Result_Error(e.message)
         }
     }
 
     klar_write_str(value) {
         const fs = require("fs")
         try {
-            fs.writeFileSync(this.path.value, value.value)
+            fs.writeFileSync(this.path, value)
             return new klar_Result_Ok()
         } catch (e) {
-            return new klar_Result_Error(new klar_Str(e.message))
+            return new klar_Result_Error(e.message)
         }
     }
 }
@@ -351,7 +335,7 @@ class klar_File {
 function klar_ext_args() {
     const result = new klar_JSArray(0)
     for (let i = 0; i < Bun.argv.length; i++) {
-        result.klar_push(new klar_Str(Bun.argv[i]))
+        result.klar_push(Bun.argv[i])
     }
     return result
 }
@@ -363,10 +347,7 @@ function klar_int_next() {
 
 // Used in `compiler.ts` only.
 function to_debug_str(s) {
-    if (s?.value !== undefined) {
-        s = s.value
-    }
-    if (typeof s === "number" || typeof s === "boolean") {
+    if (typeof s === "number" || typeof s === "boolean" || typeof s === "string") {
         return s
     }
     if (typeof s !== "string") {

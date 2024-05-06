@@ -1987,34 +1987,31 @@ abstract class ComplexType<
     }
 
     get fields(): Map<string, Type> {
-        // if (this._fields) {
-        //     return this._fields
-        // }
         this._fields = new Map()
-        for (let [name, type_] of this.data.fields) {
-            let type = type_.type
-            if (type instanceof TypeVariable) {
-                // Respect `this.type_variable_map` here.
-                type = this.type_variable_map.get(type) ?? type
-            }
-            type = type.resolve_type_variables(this.type_arguments)
-            if (type instanceof ComplexType) {
-                type = type.with_scope_type_variables(this.type_variable_map)
-            }
-            this._fields.set(name, type)
+        for (let name of this.data.fields.keys()) {
+            this._fields.set(name, this.field(name, builtin_span))
         }
         return this._fields
     }
 
     field(name: string, span: Span): Type {
-        const field = this.fields.get(name)
-        if (!field) {
+        const type_ = this.data.fields.get(name)
+        if (!type_) {
             throw new TypeCheckError(
                 `Unknown field ${quote(name)} in ${quote(this.signature)}`,
                 span,
             )
         }
-        return field
+        let type = type_.type
+        if (type instanceof TypeVariable) {
+            // Respect `this.type_variable_map` here.
+            type = this.type_variable_map.get(type) ?? type
+        }
+        type = type.resolve_type_variables(this.type_arguments)
+        if (type instanceof ComplexType) {
+            type = type.with_scope_type_variables(this.type_variable_map)
+        }
+        return type
     }
 
     get data_fields(): Map<string, Type> {

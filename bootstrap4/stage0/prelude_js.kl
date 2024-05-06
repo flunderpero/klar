@@ -91,7 +91,7 @@ end
 trait Div:
     fn div(self, rhs Self) Self
 
-    fn modulo(self, rhs Self) Self
+    fn mod(self, rhs Self) Self
 end
 
 trait PartialEq:

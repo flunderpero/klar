@@ -46,7 +46,7 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
         "-": "sub",
         "*": "mul",
         "/": "div",
-        "%": "modulo",
+        "%": "mod",
     }
     let res = ""
     if (opts?.encapsulate) {
@@ -106,9 +106,7 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
                 e.span,
             )
             return `;(function () { const error = new Error("return"); error.value = ${value}; throw error; })()`
-        } else if (e instanceof AST.Number_) {
-            return `new klar_Int(${e.value})`
-        } else if (e instanceof AST.Bool) {
+        } else if (e instanceof AST.Number_ || e instanceof AST.Bool) {
             return `${e.value}`
         } else if (e instanceof AST.Str) {
             const value = escape_str(e)
@@ -117,14 +115,16 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             const value = escape_str(e)
             return `new klar_Char(${value})`
         } else if (e instanceof AST.InterpolatedStr) {
-            const parts = e.expressions.map(
-                (x) =>
-                    `_.klar_push(${transpile_expression(x, {
-                        ...ctx,
-                        used_in_expression: true,
-                    })}.klar_to_str());`,
-            )
-            return `(function () { const _ = new klar_Str(""); ${parts.join("")}; return _; })()`
+            const parts = e.expressions.map((x) => {
+                const target = transpile_expression(x, {...ctx, used_in_expression: true})
+                if (x.attributes.type?.name === "Int") {
+                    return `_.klar_push(new klar_Str("" + ${target}));`
+                }
+                return `_.klar_push(${target}.klar_to_str());`
+            })
+            return `(function () { const _ = klar_StrBuilder.klar_new(); ${parts.join(
+                "",
+            )}; return _.klar_to_str(); })()`
         } else if (e instanceof AST.FunctionCall) {
             if (e.target instanceof AST.IdentifierReference && e.target.name === "assert") {
                 return `
@@ -312,7 +312,7 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             if (e.name === "Result") {
                 base_class += `
                     ;klar_Result.prototype.klar_error_return_trace = function () {
-                        const frames = klar_Array.klar_new(new klar_Int(this.__error_return_trace_frames.length));
+                        const frames = klar_Array.klar_new(this.__error_return_trace_frames.length);
                         for (let i = 0; i < this.__error_return_trace_frames.length; i++) {
                             const f = new klar_Frame();
                             for (const [k, v] of Object.entries(this.__error_return_trace_frames[i])) {
@@ -347,6 +347,17 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
                 return `(${lhs} && ${rhs})`
             } else if (e.operator === "or") {
                 return `(${lhs} || ${rhs})`
+            }
+            if (
+                e.lhs.attributes.type?.name === "Int" ||
+                e.rhs.attributes.type?.name === "Int" ||
+                e.lhs.attributes.type?.name === "Bool" ||
+                e.rhs.attributes.type?.name === "Bool"
+            ) {
+                if (e.operator === "/") {
+                    return `Math.floor(${lhs} / ${rhs})`
+                }
+                return `(${lhs} ${e.operator} ${rhs})`
             }
             const function_name = binary_op_functions[e.operator]
             if (!function_name) {
@@ -409,8 +420,8 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
         const src_line = span.src_lines.split("\n")[0].trim()
         return `{
             klar_file: new klar_Str(\`${escape_str_str(span.file)}\`),
-            klar_line: new klar_Int(${span.pos.line}),
-            klar_col: new klar_Int(${span.pos.col}),
+            klar_line: ${span.pos.line},
+            klar_col: ${span.pos.col},
             klar_src: new klar_Str(\`${escape_str_str(src_line)}\`)
         }`
     }
@@ -430,8 +441,12 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
             } else if (e.operator === "or") {
                 cond = `(lhs || rhs)`
             } else {
-                const function_name = binary_op_functions[e.operator]
-                cond = `(lhs.${m(function_name)}(rhs))`
+                if (e.lhs.attributes.type?.name === "Int") {
+                    cond = `(lhs ${e.operator} rhs)`
+                } else {
+                    const function_name = binary_op_functions[e.operator]
+                    cond = `(lhs.${m(function_name)}(rhs))`
+                }
             }
             return `(function() {
 const lhs = ${lhs};
@@ -585,19 +600,19 @@ if (!(${cond})) {
                 fn.block,
                 {func: fn.declaration, used_in_expression: false},
                 {return_last_expression: true},
-            ).replace("{", "{const klar_self = this;")
+            )
             const prefix = is_static
                 ? `${m(impl.target_name)}.`
                 : `${m(impl.target_name)}.prototype.`
             s += `\n${prefix}${m(fn.declaration.name)} = function(${parameters}){
-                try {
-                    ${block}
-                } catch (e) {
-                    if (e.message === "return") {
-                        return e.value
-                    }
-                    throw e
-                }}`
+                    try {
+                        ${block.replace("{", "{const klar_self = this;")}
+                    } catch (e) {
+                        if (e.message === "return") {
+                            return e.value
+                        }
+                        throw e
+                    }}`
         }
         for (const fn of impl.functions) {
             if (fn instanceof AST.FunctionDefinition) {
@@ -700,7 +715,7 @@ if (!(${cond})) {
             if (pattern.value instanceof AST.Str || pattern.value instanceof AST.Char) {
                 value = escape_str(pattern.value)
             }
-            if (pattern.value instanceof AST.Bool) {
+            if (pattern.value instanceof AST.Bool || pattern.value instanceof AST.Number_) {
                 return `(${match_expression} === ${value})`
             }
             return `(${match_expression}.value === ${value})`
@@ -716,6 +731,10 @@ if (!(${cond})) {
             const start_value = transpile_expression(start, {used_in_expression: true})
             const end_value = transpile_expression(end, {used_in_expression: true})
             const end_op = pattern.is_closed ? "<=" : "<"
+            if (parseInt(start_value).toString() === start_value) {
+                return `(${match_expression} >= ${start_value}
+                    && ${match_expression} ${end_op} ${end_value})`
+            }
             return `(${match_expression}.value >= ${start_value}.value 
                 && ${match_expression}.value ${end_op} ${end_value}.value)`
         } else if (pattern instanceof AST.CaptureMatchPatternOrType) {

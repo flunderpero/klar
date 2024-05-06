@@ -6,7 +6,7 @@ function klar_stack_trace() {
     let st = call_frames.slice()
     st.pop()
     st.reverse()
-    let frames = klar_Array.klar_new(new klar_Int(st.length))
+    let frames = klar_Array.klar_new(st.length)
     for (let i = 0; i < st.length; i++) {
         const f = new klar_Frame()
         for (const [k, v] of Object.entries(st[i])) {
@@ -20,6 +20,10 @@ function klar_stack_trace() {
 }
 
 function klar_print(value) {
+    if (typeof value === "number") {
+        console.log(value)
+        return
+    }
     console.log(value.klar_to_str().value)
 }
 
@@ -40,77 +44,40 @@ function klar_register_panic_handler(f) {
 }
 
 function klar_exit(code) {
-    process.exit(code.value)
+    process.exit(code)
 }
 
 class klar_unit {}
 
-class klar_Int {
-    static klar_from_str(value) {
-        let int
-        try {
-            int = parseInt(value.value)
-        } catch (e) {
-            return new klar_Result_Error(new klar_Str(e.message))
-        }
-        if (isNaN(int) || int < -2147483648 || int > 2147483647) {
-            return new klar_Result_Error(new klar_Str("integer out of range"))
-        }
-        return new klar_Result_Ok(new klar_Int(parseInt(value.value)))
-    }
-
-    constructor(value) {
-        this.value = value
-    }
-
-    klar_to_str() {
-        return new klar_Str(this.value.toString())
-    }
-
-    klar_eq(other) {
-        return this.value === other.value
-    }
-
-    klar_ne(other) {
-        return this.value !== other.value
-    }
-
-    klar_lt(other) {
-        return this.value < other.value
-    }
-
-    klar_le(other) {
-        return this.value <= other.value
-    }
-
-    klar_gt(other) {
-        return this.value > other.value
-    }
-
-    klar_ge(other) {
-        return this.value >= other.value
-    }
-
-    klar_add(other) {
-        return new klar_Int(this.value + other.value)
-    }
-
-    klar_sub(other) {
-        return new klar_Int(this.value - other.value)
-    }
-
-    klar_mul(other) {
-        return new klar_Int(this.value * other.value)
-    }
-
-    klar_div(other) {
-        return new klar_Int(Math.floor(this.value / other.value))
-    }
-
-    klar_modulo(other) {
-        return new klar_Int(this.value % other.value)
-    }
+Number.prototype.klar_to_str = function () {
+    return new klar_Str(this.toString())
 }
+
+Number.prototype.klar_eq = function (other) {
+    return this.valueOf() === other
+}
+
+Number.prototype.klar_ne = function (other) {
+    return this.valueOf() !== other
+}
+
+Number.prototype.klar_lt = function (other) {
+    return this.valueOf() < other
+}
+
+Number.prototype.klar_le = function (other) {
+    return this.valueOf() <= other
+}
+
+Number.prototype.klar_gt = function (other) {
+    return this.valueOf() > other
+}
+
+Number.prototype.klar_ge = function (other) {
+    return this.valueOf() >= other
+}
+
+const klar_Int = Number
 
 Boolean.prototype.klar_to_str = function () {
     return new klar_Str(this.toString())
@@ -173,7 +140,7 @@ class klar_Str {
 
     klar_split(sep) {
         const parts = this.value.split(sep.value)
-        const arr = klar_Vector.klar_new(new klar_Int(parts.length))
+        const arr = klar_Vector.klar_new(parts.length)
         for (const s of parts) {
             arr.klar_push(new klar_Str(s))
         }
@@ -213,11 +180,11 @@ class klar_Str {
     }
 
     klar_slice_copy(start, end) {
-        return new klar_Str(this.value.slice(start.value, end.value))
+        return new klar_Str(this.value.slice(start, end))
     }
 
     klar_len() {
-        return new klar_Int(this.value.length)
+        return this.value.length
     }
 
     klar_join(iter) {
@@ -237,14 +204,12 @@ class klar_Str {
     }
 
     klar_get(index) {
-        if (index.value > this.klar_len().value || index.value < 0) {
+        if (index > this.klar_len() || index < 0) {
             klar_panic(
-                `index out of bound in \`Str[${index.value}]\`, Str has length \`${
-                    this.klar_len().value
-                }`,
+                `index out of bound in \`Str[${index}]\`, Str has length \`${this.klar_len()}`,
             )
         }
-        return new klar_Char(this.value[index.value])
+        return new klar_Char(this.value[index])
     }
 }
 
@@ -266,14 +231,14 @@ class klar_Char {
     }
 
     static klar_from_int(value) {
-        if (value.value < 0 || value.value > 65535) {
-            return new klar_Result_Error(new klar_Str(`cannot convert ${value.value} to Char`))
+        if (value < 0 || value > 65535) {
+            return new klar_Result_Error(new klar_Str(`cannot convert ${value} to Char`))
         }
-        return new klar_Result_Ok(new klar_Char(String.fromCharCode(value.value)))
+        return new klar_Result_Ok(new klar_Char(String.fromCharCode(value)))
     }
 
     klar_to_int() {
-        return new klar_Int(this.value.charCodeAt(0))
+        return this.value.charCodeAt(0)
     }
 }
 
@@ -303,7 +268,7 @@ class klar_StrBuilder {
     }
 
     klar_len() {
-        return new klar_Int(this.value.length)
+        return this.value.length
     }
 
     klar_to_str() {
@@ -319,25 +284,25 @@ class klar_StrBuilder {
     }
 
     klar_get(index) {
-        return new klar_Char(this.value[index.value])
+        return new klar_Char(this.value[index])
     }
 }
 
 class klar_JSArray extends Array {
     static klar_new(size) {
-        return new klar_JSArray(size.value)
+        return new klar_JSArray(size)
     }
 
     klar_len() {
-        return new klar_Int(this.length)
+        return this.length
     }
 
     klar_get(index) {
-        return this[index.value]
+        return this[index]
     }
 
     klar_set(index, value) {
-        this[index.value] = value
+        this[index] = value
     }
 
     klar_push(value) {
@@ -391,10 +356,10 @@ function klar_ext_args() {
     return result
 }
 
+let klar_int_counter = 0
 function klar_int_next() {
-    return new klar_Int(klar_Int.counter++)
+    return klar_int_counter++
 }
-klar_Int.counter = 0
 
 // Used in `compiler.ts` only.
 function to_debug_str(s) {

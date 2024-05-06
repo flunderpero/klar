@@ -29,6 +29,7 @@ use .ast::FStr
 use .ast::GenericArg
 use .ast::Ident
 use .ast::If
+use .ast::IfLet
 use .ast::Impl
 use .ast::IndexAccess
 use .ast::Let
@@ -72,7 +73,8 @@ struct Line:
 end
 
 impl Line:
-    fn copy(self) Line => Line{ indent_: self.indent_, text: StrBuilder::from_str(self.text.to_str()) }
+    fn copy(self) Line
+     => Line{ indent_: self.indent_, text: StrBuilder::from_str(self.text.to_str()) }
 
     fn format(
         self,
@@ -579,7 +581,9 @@ impl Formatter:
         --- Delete the last character from the current line if it is a space.
         ---
         if self.line.text.len() > 0 and self.line.text[self.line.text.len() - 1] == ' '
-         => self.line.text = StrBuilder::from_str(self.line.text.to_str().slice_copy(0, self.line.text.len() - 1))
+         => self.line.text = StrBuilder::from_str(
+                self.line.text.to_str().slice_copy(0, self.line.text.len() - 1)
+            )
         self
     end
 
@@ -1118,6 +1122,7 @@ impl Visitor for Formatter:
         ExprKind::Ident(ident) => self.w_ident(ident)
         ExprKind::IndexAccess(index_access) => self.visit_index_access(index_access)
         ExprKind::If(if_) => self.visit_if(if_)
+        ExprKind::IfLet(if_let) => self.visit_if_let(if_let)
         ExprKind::Let(let_) => self.visit_let(let_)
         ExprKind::Literal(lit) => self.visit_literal(lit)
         ExprKind::Loop(loop_) => self.visit_loop(loop_)
@@ -1373,10 +1378,14 @@ impl Visitor for Formatter:
         let sb = self.soft_break(1)
         sb.open(false, false, false)
         self.visit_expr(if_.cond)
-        self.visit_block(if_.then_block)
-        match if_.else_block:
+        self.w_then_else(if_.then_block, if_.else_block, sb)
+    end)
+
+    fn w_then_else(mut self, then_block Block, else_block_ Block?, sb SoftBreak):
+        self.visit_block(then_block)
+        match else_block_:
             Some(else_block):
-                if not is_single_line_block(else_block) and is_single_line_block(if_.then_block):
+                if not is_single_line_block(else_block) and is_single_line_block(then_block):
                     self.w_nl()
                     self.w_token(TokenKind::Else)
                 end else:
@@ -1388,6 +1397,20 @@ impl Visitor for Formatter:
             None => ()
         end
         sb.close(false, false)
+    end
+
+    fn visit_if_let(mut self, if_let IfLet) => self.with_meta(if_let.meta, fn():
+        self.w_token(TokenKind::If).w_space().w_token(TokenKind::Let).w_space()
+        let sb_pattern = self.soft_break(2)
+        sb_pattern.open(false, false, false)
+        self.visit_pattern(if_let.pattern)
+        sb_pattern.nl(true, true)
+        self.w_token(TokenKind::Equal).w_space()
+        self.visit_expr(if_let.expr)
+        sb_pattern.close(false, false)
+        let sb = self.soft_break(1)
+        sb.open(false, false, false)
+        self.w_then_else(if_let.then_block, if_let.else_block, sb)
     end)
 
     fn visit_index_access(mut self, index_access IndexAccess)

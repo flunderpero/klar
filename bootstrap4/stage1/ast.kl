@@ -140,6 +140,14 @@ struct If:
     meta Meta
 end
 
+struct IfLet:
+    expr Expr
+    pattern Pattern
+    then_block Block
+    else_block Block?
+    meta Meta
+end
+
 struct Loop:
     body Block
     meta Meta
@@ -244,6 +252,7 @@ enum ExprKind:
     Ident(Ident)
     IndexAccess(IndexAccess)
     If(If)
+    IfLet(IfLet)
     Let(Let)
     Literal(Literal)
     Loop(Loop)
@@ -449,16 +458,16 @@ struct Id:
 end
 
 struct Meta:
-    id Id
     --- A unique ID for the node.
     ---
-    tokens Vector<Token>?
+    id Id
     --- The tokens taken from the source code. These tokens never
         change even if the item is desugared.
     ---
-    span Span
+    tokens Vector<Token>?
     --- The span of the node in the source code.
     ---
+    span Span
 end
 
 impl Type:
@@ -617,6 +626,12 @@ trait Visitor:
                     Some(x) => self.visit_block(x)
                     None => ()
                 end
+            end
+            ExprKind::IfLet(child):
+                self.visit_pattern(child.pattern)
+                self.visit_expr(child.expr)
+                self.visit_block(child.then_block)
+                if let Some (x) = child.else_block => self.visit_block(x)
             end
             ExprKind::Let(child) => self.visit_expr(child.expr)
             ExprKind::Literal(child) => ()
@@ -1059,6 +1074,18 @@ impl ToDebugStr for If:
     end
 end
 
+impl ToDebugStr for IfLet:
+    fn to_debug_str(self) Str:
+        let else_block = match self.else_block:
+            Some(x) => f" {x.to_debug_str()}"
+            None => ""
+        end
+        f"(@iflet {
+            self.pattern.to_debug_str()
+        } {self.expr.to_debug_str()} {self.then_block.to_debug_str()}{else_block})"
+    end
+end
+
 impl ToDebugStr for UnaryExpr:
     fn to_debug_str(self) Str:
         let kind = match self.kind:
@@ -1190,6 +1217,7 @@ impl ToDebugStr for ExprKind:
             ExprKind::Ident(value) => value.to_debug_str()
             ExprKind::IndexAccess(value) => value.to_debug_str()
             ExprKind::If(value) => value.to_debug_str()
+            ExprKind::IfLet(value) => value.to_debug_str()
             ExprKind::Let(value) => value.to_debug_str()
             ExprKind::Literal(value) => value.to_debug_str()
             ExprKind::Loop(value) => value.to_debug_str()

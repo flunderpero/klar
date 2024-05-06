@@ -55,7 +55,7 @@ promises, or async/await. There will be no "colored functions" - i.e. types of f
 that cannot be called from other types of functions - like in other languages 
 that support concurrent programming with async/await.
 
-Working with threads should be easy and safe. The language should be able
+Working with threads should be easy and safe.
 
 ### Suitable For Application And Web Development
 
@@ -87,7 +87,7 @@ end
 
 Documentation comments are multi-line comments.
 Put these _inside_ of block elements like `fn`, `struct`, or `trait`
-or right below single line declarations like fields and function declarations.
+or right _above_ single line declarations like fields and function declarations.
 
 ```klar
 
@@ -96,11 +96,11 @@ struct Planet:
         Multi-line comments are indented by 4 spaces.
     ---
 
-    mass Int -- TODO: change to U64
     --- The mass in kg. ---
+    mass Int -- TODO: change to U64
 
-    circumference Int
     --- The circumference in km. ---
+    circumference Int
 
     -- This is a regular comment and not a documentation comment.
     name Str
@@ -110,8 +110,8 @@ trait Orbit:
     --- An orbit describes the path around a bigger mass object.
     ---
 
-    fn mean_distance(self) Int
     --- This is just a declaration, so we document above it. ---
+    fn mean_distance(self) Int
 end
 
 fn calculate_radius(planet Planet) Int:
@@ -912,9 +912,7 @@ end
 Sometimes you just want to match a single pattern. In this case you can use
 the `if let` expression.
 
-TODO: This does not work as expected yet (variable captures are buggy). We are still
-      contemplating if we should keep this feature.
-```
+```klar
 fn main():
     let a = Some(42)
     if let Some(value) = a:
@@ -923,7 +921,7 @@ fn main():
         panic("should not be reached")
     end
 
-    -- `if let` is a regular expression.
+    -- `if let` is an expression.
     let b = if let Some(value) = a:
         value
     end else:
@@ -1027,12 +1025,6 @@ end
 ## Known Issues
 
 ## RFC
-
-### Get Rid of `if let` And Propose Guard Clauses
-
-The syntax is ugly. Most of the time you want to match a single pattern in a
-guard clause. I don't know what the best course of action is here. For now, I
-am completely fine with writing full match expressions.
 
 ### Introduce `..` For Concatenation (Union)
 

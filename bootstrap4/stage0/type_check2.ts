@@ -70,7 +70,18 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
         if (node.else_block) {
             const else_type = type_check(node.else_block, env, {...ctx, used_in_expression: false})
             if (ctx.used_in_expression) {
-                expect_equal_types(then_type, else_type, node.span)
+                const last_then_item = node.then_block.body.at(-1)
+                const last_else_item = node.else_block.body.at(-1)
+                if (
+                    !(last_then_item instanceof ast.Return) &&
+                    !(last_then_item instanceof ast.Break) &&
+                    !(last_then_item instanceof ast.Continue) &&
+                    !(last_else_item instanceof ast.Return) &&
+                    !(last_else_item instanceof ast.Break) &&
+                    !(last_else_item instanceof ast.Continue)
+                ) {
+                    expect_equal_types(then_type, else_type, node.span)
+                }
             }
         }
         type = ctx.used_in_expression ? then_type : Type.unit
@@ -88,7 +99,18 @@ function type_check(node: ast.ASTNode, env: TypeEnvironment, ctx: Context): Type
                 used_in_expression: false,
             })
             if (ctx.used_in_expression) {
-                expect_equal_types(then_type, else_type, node.span)
+                const last_then_item = node.then_block.body.at(-1)
+                const last_else_item = node.else_block.body.at(-1)
+                if (
+                    !(last_then_item instanceof ast.Return) &&
+                    !(last_then_item instanceof ast.Break) &&
+                    !(last_then_item instanceof ast.Continue) &&
+                    !(last_else_item instanceof ast.Return) &&
+                    !(last_else_item instanceof ast.Break) &&
+                    !(last_else_item instanceof ast.Continue)
+                ) {
+                    expect_equal_types(then_type, else_type, node.span)
+                }
             }
         }
         type = ctx.used_in_expression ? then_type : Type.unit
@@ -5595,6 +5617,27 @@ const test = {
             if let Some<Int>(value) = a => value
         `)
         assert.equal(type.signature, "Int")
+    },
+
+    test_if_let_with_branch_type_mismatch() {
+        assert.throws(
+            () => test.type_check("let a = if let 1 = 2 => 1 else => true"),
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
+        )
+    },
+
+    test_if_let_with_branch_type_mismatch_when_used_as_condition_in_if() {
+        assert.throws(
+            () => test.type_check("if (if let 1 = 2 => 1 else => true) => 1 else => 2"),
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
+        )
+    },
+
+    test_if_let_with_branch_type_mismatch_when_used_in_function_call() {
+        assert.throws(
+            () => test.type_check("fn foo(a Int): end foo(if let 1 = 2 => 1 else => true)"),
+            /Expected `Int \(NumericType\)` but got `Bool \(BoolType\)`/,
+        )
     },
 
     test_use_to_import_enum_variants() {

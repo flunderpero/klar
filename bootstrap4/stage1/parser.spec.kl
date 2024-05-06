@@ -949,6 +949,13 @@ fn main():
          => assert(expr("a + b;") == "(@terminatorexpr (@binexpr + (@ident a) (@ident b)))"))
     end)
 
+    test.group("if let", fn()
+     => test.it("passes the happy path", fn() throws
+         => assert(
+                expr("""if let 42 = b => 1""")
+                    == "(@iflet (@pattern (@literal (@int 42))) (@ident b) (@block (@int 1)))"
+            )))
+
     test.group("match", fn():
         test.it("passes the happy path", fn() throws
          => assert(expr(

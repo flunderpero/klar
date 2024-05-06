@@ -1,0 +1,29 @@
+--- expected
+
+# compiler output:
+# exit code:
+0
+# stderr:
+# stdout:
+ok
+ok
+ok 1
+ok
+y: 1
+
+/expected ---
+
+fn main():
+    let x = 5 
+    let some Int? = Some(1)
+    let none Int? = None
+    if let 5 = x => print("ok")
+    if let 6 = x => print("fail")
+    if let Some(1) = some => print("ok")
+    if let Some(captured) = some => print(f"ok {captured}")
+    if let None = some => print("fail")
+    if let None = none => print("ok")
+    if let Some(1) = none => print("fail")
+    let y = if let Some(captured) = some => captured else => 42
+    print(f"y: {y}")
+end

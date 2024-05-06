@@ -51,6 +51,7 @@ use .ast::GenericArg
 use .ast::Ident
 use .ast::IndexAccess
 use .ast::If
+use .ast::IfLet
 use .ast::Impl
 use .ast::Let
 use .ast::Literal
@@ -419,7 +420,12 @@ impl Parser:
                     _ => ident
                 end
             end
-            TokenKind::If => ExprKind::If(self.parse_if(token)!)
+            TokenKind::If
+             => match self.iter.peek():
+                    Some(Token{ kind: TokenKind::Let, span: _ })
+                     => ExprKind::IfLet(self.parse_if_let(token)!)
+                    _ => ExprKind::If(self.parse_if(token)!)
+                end
             TokenKind::Fn => ExprKind::Closure(self.parse_closure()!)
             TokenKind::FStr(items, _) => ExprKind::FStr(self.parse_fstr(items)!)
             TokenKind::Let => ExprKind::Let(self.parse_let_or_mut(token)!)
@@ -925,6 +931,25 @@ impl Parser:
             _ => None
         end
         If{ cond, then_block, else_block, meta: self.meta(mark) }
+    end
+
+    fn parse_if_let(mut self, token Token) IfLet throws ParseError:
+        let mark = self.iter.mark_prev()
+        self.iter.expect_lexical_token(TokenKind::Let)!
+        let pattern = self.parse_pattern(self.iter.force_next()!)!
+        self.iter.expect_lexical_token(TokenKind::Equal)!
+        let expr_token = self.iter.force_next()!
+        let expr = if let Some (x) = self.parse_expr(expr_token)! => x
+        else => return parse_error(ExprExpected(expr_token), expr_token)
+        let then_block = self.parse_block()!
+        let else_block = match self.iter.peek():
+            Some(Token{ kind: TokenKind::Else, span: _ }):
+                self.iter.force_next()!
+                Some(self.parse_block()!)
+            end
+            _ => None
+        end
+        IfLet{ pattern, expr, then_block, else_block, meta: self.meta(mark) }
     end
 
     fn parse_int_literal(self, token Token) Literal throws ParseError:
@@ -1512,14 +1537,10 @@ impl Parser:
             -- todo (lang-feat): We should be able to deconstruct the tuple here.
             let type_and_trait = self.parse_impl_signature()!
             let type_ = type_and_trait.0
-            match type_and_trait.1:
-                -- todo (lang-feat): We couldn't use `if let` here, we had to use `match`.
-                Some(trait_)
-                 => return ExternItem::ExternImplTrait(
-                        ExternImplTrait{ type_, trait_, meta: self.meta(mark) }
-                    )
-                None => ()
-            end
+            if let Some (trait_) = type_and_trait.1
+             => return ExternItem::ExternImplTrait(
+                    ExternImplTrait{ type_, trait_, meta: self.meta(mark) }
+                )
             let fn_decls = Vector<FnDecl>::new()
             self.iter.expect_lexical_token(TokenKind::Colon)!
             loop:
@@ -1593,7 +1614,6 @@ impl Parser:
     end
 
     fn parse_block_item(mut self, token Token) BlockItem throws ParseError:
-        -- todo (lang-bug): I would rather write this using `if let` but it is broken
         let mark = self.iter.mark_prev()
         match self.parse_item(token)!:
             Some(item) => return match item.kind:

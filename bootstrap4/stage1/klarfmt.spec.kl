@@ -896,6 +896,30 @@ fn main():
                 """.dedent().trim()))
     end)
 
+    test.group("if let", fn():
+        test.it("passes the happy path", fn() throws
+         => assert(test_format("""
+                fn test() =>
+                    if let  Some( x)  = y => x else => y
+                """.dedent())! == """
+                fn test() => if let Some(x) = y => x else => y
+                """.dedent().trim()))
+
+        test.it("wraps long patterns", fn() throws
+         => assert(test_format("""
+                    fn test() =>
+                        if let Some( a_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long_that_it_exceeds_the_maximum_line_length) = y => 1 else => 2
+                    """.dedent())! == """
+                    fn test()
+                     => if let Some(
+                            a_very_long_variable_name_that_is_very_long_that_it_is_absurdly_long_that_it_exceeds_the_maximum_line_length
+                        )
+                            = y
+                         => 1
+                        else => 2
+                    """.dedent().trim()))
+    end)
+
     test.group("if", fn():
         test.it("passes the happy path", fn() throws
          => assert(test_format("""

@@ -266,6 +266,9 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
                 return `;${s};`
             }
         } else if (e instanceof AST.IfLet) {
+            let s = "(function() {let __if_result;"
+            const declared_variables = new Set<string>()
+            s += declare_captured_variables(e.pattern, declared_variables)
             const condition = transpile_match_pattern_to_condition(
                 transpile_expression(e.value, {...ctx, used_in_expression: true}),
                 e.pattern,
@@ -275,22 +278,16 @@ function code_gen(ast: AST.AST, opts?: {encapsulate?: boolean}) {
                 {...ctx, used_in_expression: true},
                 {assign_last_expression_to: "__if_result"},
             )
-            let s = `(${condition}) ? (function() {let __if_result;${then} return __if_result})()`
+            s += `if (${condition}) ${then}`
             if (e.else_block) {
                 const else_ = transpile_block(
                     e.else_block,
                     {...ctx, used_in_expression: true},
                     {assign_last_expression_to: "__if_result"},
                 )
-                s += ` : (function() {let if_result;${else_} return __if_result})()`
-            } else {
-                s += ": undefined"
+                s += `else ${else_}`
             }
-            if (ctx.used_in_expression) {
-                return s
-            } else {
-                return `;${s};`
-            }
+            return `${s} return __if_result})();`
         } else if (e instanceof AST.StructDeclaration) {
             const members = Object.keys(e.fields).map(m).join(";")
             return `class ${m(e.name)} {${members}\n};exported.${m(e.name)} = ${m(e.name)};`

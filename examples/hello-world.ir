@@ -1,0 +1,6 @@
+# This is what we expect our immediate representation (IR) to look like.
+%1 = String "Hello, world!"
+%2 = i32 1
+%3 = getptr %1
+%4 = i64 13
+%5 = call i64 print (i32 %2, ptr %3, i64 %4)

@@ -66,18 +66,23 @@ func main() {
 		printTypedAST(node, typeMap)
 		os.Exit(0)
 	}
-	instructions, err := GenerateIR(node, typeMap)
+	block, err := GenerateIR(node, typeMap)
 	if err != nil {
 		fmt.Println("Failed to generate the IR: ", err)
 		os.Exit(1)
 	}
 	if cmd == "generate-ir" {
-		for _, instruction := range instructions {
-			fmt.Println(instruction)
+		err := WalkBlock(block, func(block *IRBlock) error {
+			fmt.Println(block)
+			return nil
+		})
+		if err != nil {
+			fmt.Println("Failed to print the IR: ", err)
+			os.Exit(1)
 		}
 		os.Exit(0)
 	}
-	asm, err := GenerateDarwinArm64ASM(instructions)
+	asm, err := GenerateDarwinArm64ASM(block)
 	if err != nil {
 		fmt.Println("Failed to generate assembly: ", err)
 		os.Exit(1)

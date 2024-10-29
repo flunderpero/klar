@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -43,6 +44,19 @@ func (expr *StringLiteralExpression) String() string {
 	return fmt.Sprintf("StringLiteralExpression(%q)", expr.Value)
 }
 
+type BoolLiteralExpression struct {
+	id    NodeId
+	Value bool
+}
+
+func (expr *BoolLiteralExpression) Id() NodeId {
+	return expr.id
+}
+
+func (expr *BoolLiteralExpression) String() string {
+	return fmt.Sprintf("BoolLiteralExpression(%s)", strconv.FormatBool(expr.Value))
+}
+
 type CallExpression struct {
 	id     NodeId
 	Callee Expression
@@ -73,6 +87,22 @@ func (expr *BlockExpression) String() string {
 		s += nodeStr
 	}
 	return fmt.Sprintf("BlockExpression{%s\n}", s)
+}
+
+type IfExpression struct {
+	id        NodeId
+	Condition Expression
+	TrueBody  *BlockExpression
+}
+
+func (expr *IfExpression) Id() NodeId {
+	return expr.id
+}
+
+func (expr *IfExpression) String() string {
+	condition := strings.ReplaceAll(expr.Condition.String(), "\n", "\n    ")
+	trueBody := strings.ReplaceAll(expr.TrueBody.String(), "\n", "\n    ")
+	return fmt.Sprintf("IfExpression(\n    %s\n    %s\n)", condition, trueBody)
 }
 
 type Parser struct {
@@ -137,6 +167,21 @@ func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
 	return &BlockExpression{id: p.nextNodeId(), Nodes: nodes}, nil
 }
 
+func (p *Parser) parseIfExpression() (*IfExpression, error) {
+	if err := p.consume(TKIf); err != nil {
+		return nil, err
+	}
+	condition, err := p.parseExpression()
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse condition: %v", err)
+	}
+	trueBody, err := p.parseBlockExpression()
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse `true` branch body: %v", err)
+	}
+	return &IfExpression{id: p.nextNodeId(), Condition: condition, TrueBody: trueBody}, nil
+}
+
 func (p *Parser) parseExpression() (Expression, error) {
 	token := p.peek()
 	switch token.Kind {
@@ -154,12 +199,18 @@ func (p *Parser) parseExpression() (Expression, error) {
 		}
 		return expr, nil
 	case TKString:
-		if err := p.consume(TKString); err != nil {
-			return nil, err
-		}
+		p.consumeAny()
 		return &StringLiteralExpression{id: p.nextNodeId(), Value: token.Value}, nil
+	case TKTrue:
+		p.consumeAny()
+		return &BoolLiteralExpression{id: p.nextNodeId(), Value: true}, nil
+	case TKFalse:
+		p.consumeAny()
+		return &BoolLiteralExpression{id: p.nextNodeId(), Value: false}, nil
 	case TKOpenCurly:
 		return p.parseBlockExpression()
+	case TKIf:
+		return p.parseIfExpression()
 	default:
 		return nil, fmt.Errorf("expected expression, got token: %s", token)
 	}
@@ -173,7 +224,7 @@ func (p *Parser) ParseNode() (Node, error) {
 		switch token.Kind {
 		case TKEOF:
 			return nil, EOF
-		case TKIdentifier, TKOpenCurly:
+		case TKIdentifier, TKOpenCurly, TKIf, TKTrue, TKFalse:
 			expr, err := p.parseExpression()
 			if err != nil {
 				return nil, err

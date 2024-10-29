@@ -7,8 +7,10 @@ type ASTVisitor interface {
 	VisitExpression(expr Expression, w ASTWalker) error
 	VisitBlockExpression(expr *BlockExpression, w ASTWalker) error
 	VisitCallExpression(expr *CallExpression, w ASTWalker) error
+	VisitIfExpression(expr *IfExpression, w ASTWalker) error
 	VisitIdentExpression(expr *IdentExpression) error
 	VisitStringLiteralExpression(expr *StringLiteralExpression) error
+	VisitBoolLiteralExpression(expr *BoolLiteralExpression) error
 }
 
 type ASTWalker interface {
@@ -16,6 +18,7 @@ type ASTWalker interface {
 	WalkExpression(expr Expression) error
 	WalkBlockExpression(expr *BlockExpression) error
 	WalkCallExpression(expr *CallExpression) error
+	WalkIfExpression(expr *IfExpression) error
 }
 
 type DefaultASTVisitor struct{}
@@ -28,8 +31,16 @@ func (_ *DefaultASTVisitor) VisitStringLiteralExpression(expr *StringLiteralExpr
 	return nil
 }
 
+func (_ *DefaultASTVisitor) VisitBoolLiteralExpression(expr *BoolLiteralExpression) error {
+	return nil
+}
+
 func (_ *DefaultASTVisitor) VisitCallExpression(expr *CallExpression, w ASTWalker) error {
 	return w.WalkCallExpression(expr)
+}
+
+func (_ *DefaultASTVisitor) VisitIfExpression(expr *IfExpression, w ASTWalker) error {
+	return w.WalkIfExpression(expr)
 }
 
 func (_ *DefaultASTVisitor) VisitBlockExpression(expr *BlockExpression, w ASTWalker) error {
@@ -55,8 +66,12 @@ func (w *DefaultASTWalker) WalkExpression(expr Expression) error {
 		err = w.Visitor.VisitIdentExpression(expr)
 	case *StringLiteralExpression:
 		err = w.Visitor.VisitStringLiteralExpression(expr)
+	case *BoolLiteralExpression:
+		err = w.Visitor.VisitBoolLiteralExpression(expr)
 	case *CallExpression:
 		err = w.Visitor.VisitCallExpression(expr, w)
+	case *IfExpression:
+		err = w.Visitor.VisitIfExpression(expr, w)
 	case *BlockExpression:
 		err = w.Visitor.VisitBlockExpression(expr, w)
 	default:
@@ -75,6 +90,13 @@ func (w *DefaultASTWalker) WalkCallExpression(expr *CallExpression) error {
 		}
 	}
 	return nil
+}
+
+func (w *DefaultASTWalker) WalkIfExpression(expr *IfExpression) error {
+	if err := w.Visitor.VisitNode(expr.Condition, w); err != nil {
+		return err
+	}
+	return w.Visitor.VisitNode(expr.TrueBody, w)
 }
 
 func (w *DefaultASTWalker) WalkBlockExpression(expr *BlockExpression) error {

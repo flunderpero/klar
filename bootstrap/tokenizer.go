@@ -16,6 +16,9 @@ const (
 	TKOpenCurly
 	TKCloseCurly
 	TKString
+	TKTrue
+	TKFalse
+	TKIf
 	TKEOF
 )
 
@@ -33,6 +36,12 @@ func (k TokenKind) String() string {
 		return "ccurly"
 	case TKString:
 		return "string"
+	case TKTrue:
+		return "true"
+	case TKFalse:
+		return "false"
+	case TKIf:
+		return "if"
 	case TKEOF:
 		return "eof"
 	default:
@@ -94,7 +103,18 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 					break
 				}
 			}
-			tokens = append(tokens, Token{Kind: TKIdentifier, Value: string(value)})
+			var token Token
+			switch string(value) {
+			case "if":
+				token = Token{Kind: TKIf, Value: ""}
+			case "true":
+				token = Token{Kind: TKTrue, Value: ""}
+			case "false":
+				token = Token{Kind: TKFalse, Value: ""}
+			default:
+				token = Token{Kind: TKIdentifier, Value: string(value)}
+			}
+			tokens = append(tokens, token)
 		} else {
 			// Unexpected character.
 			return tokens, fmt.Errorf("unexpected character: %c", c)

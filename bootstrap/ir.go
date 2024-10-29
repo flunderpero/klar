@@ -8,6 +8,7 @@ type BasicType int
 
 const (
 	Void BasicType = iota
+	Bool
 	Int8
 	Int32
 	Int64
@@ -27,6 +28,8 @@ func (t *IRBasicType) String() string {
 	switch t.ty {
 	case Void:
 		return "void"
+	case Bool:
+		return "i1"
 	case Int8:
 		return "i8"
 	case Int32:
@@ -40,6 +43,73 @@ func (t *IRBasicType) String() string {
 	default:
 		panic(fmt.Sprintf("Unknown basic type: %d", t.ty))
 	}
+}
+
+type IRBlockId int
+
+func (b IRBlockId) String() string {
+	return fmt.Sprintf("block_%d", b)
+}
+
+type IRBlock struct {
+	Id           IRBlockId
+	Instructions []IRInstruction
+	Terminator   IRTerminator
+	Predecessors []*IRBlock
+}
+
+func (ir *IRBlock) append(instruction IRInstruction) {
+	ir.Instructions = append(ir.Instructions, instruction)
+}
+
+func (ir *IRBlock) String() string {
+	s := ""
+	for _, inst := range ir.Instructions {
+		s += fmt.Sprintf("\n    %s", inst)
+	}
+	s += fmt.Sprintf("\n    %s", ir.Terminator)
+	return fmt.Sprintf("%s:%s", ir.Id, s)
+}
+
+type IRTerminator interface {
+	String() string
+	Targets() []*IRBlock
+}
+
+type IRJump struct {
+	Target *IRBlock
+}
+
+func (ir *IRJump) String() string {
+	return fmt.Sprintf("jmp %s", ir.Target.Id)
+}
+
+func (ir *IRJump) Targets() []*IRBlock {
+	return []*IRBlock{ir.Target}
+}
+
+type IRCondBranch struct {
+	Condition  IRRegister
+	TrueBlock  *IRBlock
+	FalseBlock *IRBlock
+}
+
+func (ir *IRCondBranch) String() string {
+	return fmt.Sprintf("condbr i1 %s, %s, %s", ir.Condition, ir.TrueBlock.Id, ir.FalseBlock.Id)
+}
+
+func (ir *IRCondBranch) Targets() []*IRBlock {
+	return []*IRBlock{ir.TrueBlock, ir.FalseBlock}
+}
+
+type IRReturn struct{}
+
+func (ir *IRReturn) String() string {
+	return "ret"
+}
+
+func (ir *IRReturn) Targets() []*IRBlock {
+	return []*IRBlock{}
 }
 
 type IRFunctionType struct {
@@ -102,6 +172,19 @@ func (i *IRInt32Const) Register() IRRegister {
 	return i.register
 }
 
+type IRBoolConst struct {
+	register IRRegister
+	Value    int
+}
+
+func (i *IRBoolConst) String() string {
+	return fmt.Sprintf("%s = i1 %d", i.register, i.Value)
+}
+
+func (i *IRBoolConst) Register() IRRegister {
+	return i.register
+}
+
 type IRGetPtr struct {
 	register IRRegister
 	Source   IRRegister
@@ -139,10 +222,11 @@ func (inst *IRCall) Register() IRRegister {
 
 type IRGenerator struct {
 	DefaultASTVisitor
-	instructions          []IRInstruction
+	blocks                []*IRBlock
+	currentBlock          *IRBlock
 	typeByNodeId          map[NodeId]Type
 	registerByNodeId      map[NodeId]IRRegister
-	instructionByRegister map[IRRegister]int
+	instructionByRegister map[IRRegister]IRInstruction
 	functions             map[string]IRFunctionType
 	registerIndex         int
 }
@@ -153,22 +237,19 @@ func (g *IRGenerator) NextRegister() IRRegister {
 }
 
 func (g *IRGenerator) Append(instruction IRInstruction, node Node) {
-	g.instructionByRegister[instruction.Register()] = len(g.instructions)
-	g.instructions = append(g.instructions, instruction)
+	g.instructionByRegister[instruction.Register()] = instruction
+	g.currentBlock.append(instruction)
 	if node != nil {
 		g.registerByNodeId[node.Id()] = instruction.Register()
 	}
 }
 
 func (g *IRGenerator) LookupInstruction(register IRRegister) IRInstruction {
-	index, ok := g.instructionByRegister[register]
+	instruction, ok := g.instructionByRegister[register]
 	if !ok {
 		panic(fmt.Sprintf("No instruction found for register %s", register))
 	}
-	if index < 0 || index >= len(g.instructions) {
-		panic(fmt.Sprintf("Instruction index %d out of bounds", index))
-	}
-	return g.instructions[index]
+	return instruction
 }
 
 func (g *IRGenerator) LookupInstructionByNode(node Node) IRInstruction {
@@ -193,6 +274,25 @@ func (g *IRGenerator) TypeOf(node Node) Type {
 		panic(fmt.Sprintf("Type of node %s should have been determined by the type-checker", node))
 	}
 	return ty
+}
+
+func (g *IRGenerator) NewBlock(predecessors ...*IRBlock) *IRBlock {
+	block := &IRBlock{Id: IRBlockId(len(g.blocks))}
+	block.Predecessors = append(block.Predecessors, predecessors...)
+	g.blocks = append(g.blocks, block)
+	return block
+}
+
+func (g *IRGenerator) VisitBoolLiteralExpression(expr *BoolLiteralExpression) error {
+	value := 0
+	if expr.Value {
+		value = 1
+	}
+	g.Append(&IRBoolConst{
+		register: g.NextRegister(),
+		Value:    value,
+	}, expr)
+	return nil
 }
 
 func (g *IRGenerator) VisitCallExpression(expr *CallExpression, w ASTWalker) error {
@@ -231,13 +331,38 @@ func (g *IRGenerator) VisitCallExpression(expr *CallExpression, w ASTWalker) err
 	return nil
 }
 
-func GenerateIR(node Node, typeMap map[NodeId]Type) ([]IRInstruction, error) {
+func (g *IRGenerator) VisitIfExpression(expr *IfExpression, w ASTWalker) error {
+	condBlock := g.NewBlock(g.currentBlock)
+	g.currentBlock.Terminator = &IRJump{Target: condBlock}
+	g.currentBlock = condBlock
+	if err := w.WalkNode(expr.Condition); err != nil {
+		return err
+	}
+	trueBlock := g.NewBlock(condBlock)
+	mergeBlock := g.NewBlock(condBlock, trueBlock)
+	trueBlock.Terminator = &IRJump{Target: mergeBlock}
+	condBlock.Terminator = &IRCondBranch{
+		Condition:  g.registerByNodeId[expr.Condition.Id()],
+		TrueBlock:  trueBlock,
+		FalseBlock: mergeBlock,
+	}
+	g.currentBlock = trueBlock
+	if err := w.WalkBlockExpression(expr.TrueBody); err != nil {
+		return err
+	}
+	g.currentBlock = mergeBlock
+	return nil
+}
+
+func GenerateIR(node Node, typeMap map[NodeId]Type) (*IRBlock, error) {
+	block := &IRBlock{}
 	gen := &IRGenerator{
 		DefaultASTVisitor:     DefaultASTVisitor{},
-		instructions:          []IRInstruction{},
+		blocks:                []*IRBlock{block},
+		currentBlock:          block,
 		typeByNodeId:          typeMap,
 		registerByNodeId:      make(map[NodeId]IRRegister),
-		instructionByRegister: make(map[IRRegister]int),
+		instructionByRegister: make(map[IRRegister]IRInstruction),
 		functions:             make(map[string]IRFunctionType),
 	}
 	// Declare builtin functions.
@@ -250,5 +375,30 @@ func GenerateIR(node Node, typeMap map[NodeId]Type) ([]IRInstruction, error) {
 	if err := walker.WalkNode(node); err != nil {
 		return nil, err
 	}
-	return gen.instructions, nil
+	if gen.currentBlock.Terminator != nil {
+		return nil, fmt.Errorf("expecting the last block to not have a terminator, but got: %s", block.Terminator)
+	}
+	gen.currentBlock.Terminator = &IRReturn{}
+	return block, nil
+}
+
+// Walk the given block and call `visitor` for each block we discover in the graph
+// of reachable blocks. It is guaranteed that each unique block is only visited once.
+func WalkBlock(block *IRBlock, visit func(block *IRBlock) error) error {
+	visited := make(map[IRBlockId]bool)
+	blocks := []*IRBlock{block}
+	i := 0
+	for i < len(blocks) {
+		block := blocks[i]
+		i += 1
+		if visited[block.Id] {
+			continue
+		}
+		if err := visit(block); err != nil {
+			return err
+		}
+		visited[block.Id] = true
+		blocks = append(blocks, block.Terminator.Targets()...)
+	}
+	return nil
 }

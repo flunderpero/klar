@@ -12,6 +12,12 @@ func (ty *StringType) String() string {
 	return "StringType()"
 }
 
+type BoolType struct{}
+
+func (ty *BoolType) String() string {
+	return "BoolType()"
+}
+
 type UnitType struct{}
 
 func (ty *UnitType) String() string {
@@ -64,6 +70,11 @@ func (tc *TypeChecker) VisitStringLiteralExpression(expr *StringLiteralExpressio
 	return nil
 }
 
+func (tc *TypeChecker) VisitBoolLiteralExpression(expr *BoolLiteralExpression) error {
+	tc.typeByNodeId[expr.id] = &BoolType{}
+	return nil
+}
+
 func (tc *TypeChecker) VisitIdentExpression(expr *IdentExpression) error {
 	ty, found := tc.typeEnv.lookup(expr.Name)
 	if !found {
@@ -101,6 +112,20 @@ func (tc *TypeChecker) VisitBlockExpression(expr *BlockExpression, w ASTWalker) 
 	}
 	blockType := tc.mustLookup(expr.Nodes[len(expr.Nodes)-1])
 	tc.typeByNodeId[expr.id] = blockType
+	return nil
+}
+
+func (tc *TypeChecker) VisitIfExpression(expr *IfExpression, w ASTWalker) error {
+	if err := w.WalkIfExpression(expr); err != nil {
+		return fmt.Errorf("failed to walk if expression: %w", err)
+	}
+	condType := tc.mustLookup(expr.Condition)
+	_, ok := tc.mustLookup(expr.Condition).(*BoolType)
+	if !ok {
+		return fmt.Errorf("the condition of an if expression must be a boolean type, got: %s", condType)
+	}
+	trueBodyType := tc.mustLookup(expr.TrueBody)
+	tc.typeByNodeId[expr.id] = trueBodyType
 	return nil
 }
 

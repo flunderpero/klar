@@ -143,6 +143,7 @@ func (r *RegisterAllocator) spill(allocation *RegisterAllocation) {
 type Code struct {
 	indent            string
 	lines             []string
+	stringConstants   []*IRStringConst
 	values            map[IRRegister]*RegisterAllocation
 	registerAllocator RegisterAllocator
 }
@@ -154,6 +155,10 @@ func (c *Code) String() string {
 func (c *Code) emit(s string, args ...any) *Code {
 	c.lines = append(c.lines, c.indent+fmt.Sprintf(s, args...))
 	return c
+}
+
+func (c *Code) addStringConst(constant *IRStringConst) {
+	c.stringConstants = append(c.stringConstants, constant)
 }
 
 func (c *Code) incIndent() *Code {
@@ -174,24 +179,16 @@ func (c *Code) mustLookupValue(reg IRRegister) *RegisterAllocation {
 	return result
 }
 
-func GenerateDarwinArm64ASM(instructions []IRInstruction) (Code, error) {
+func (c *Code) generateBlock(block *IRBlock) error {
 	callArgRegs := []Register{x0, x1, x2, x3, x4, x5, x6, x7, x8}
-	c := Code{
-		values: make(map[IRRegister]*RegisterAllocation),
-		indent: "",
-		lines:  []string{},
-	}
-	c.registerAllocator = NewRegisterAllocator(
-		[]Register{x9, x10, x11, x12, x13, x14, x15, x19, x20, x21, x22, x23, x24, x25, x26, x27, x28, x29},
-		&c,
-	)
-	c.emit(".global _main")
-	c.emit(".text")
-	c.emit("")
-	c.emit("_main:")
+	c.emit("%s:", block.Id)
 	c.incIndent()
-	for _, inst := range instructions {
+	for _, inst := range block.Instructions {
 		switch inst := inst.(type) {
+		case *IRBoolConst:
+			reg := c.registerAllocator.Allocate()
+			c.emit("mov %s, %d", reg, inst.Value)
+			c.values[inst.Register()] = reg
 		case *IRInt32Const:
 			reg := c.registerAllocator.Allocate()
 			c.emit("mov %s, %d", reg, inst.Value)
@@ -218,22 +215,54 @@ func GenerateDarwinArm64ASM(instructions []IRInstruction) (Code, error) {
 			}
 			c.emit("bl _write")
 		case *IRStringConst:
-			// Nothing to do here.
+			c.addStringConst(inst)
 		default:
-			return c, fmt.Errorf("unknown instruction: %T", inst)
+			return fmt.Errorf("unknown instruction: %T", inst)
 		}
 	}
+	switch terminator := block.Terminator.(type) {
+	case *IRJump:
+		c.emit("b %s", terminator.Target.Id)
+	case *IRCondBranch:
+		condRegister := c.mustLookupValue(terminator.Condition)
+		c.emit("cbnz %s, %s", condRegister, terminator.TrueBlock.Id)
+		c.emit("b %s", terminator.FalseBlock.Id)
+	case *IRReturn:
+	default:
+		return fmt.Errorf("unknown terminator: %T", terminator)
+	}
+	c.decIndent()
+	return nil
+}
+
+func GenerateDarwinArm64ASM(block *IRBlock) (Code, error) {
+	c := Code{
+		values: make(map[IRRegister]*RegisterAllocation),
+		indent: "",
+		lines:  []string{},
+	}
+	c.registerAllocator = NewRegisterAllocator(
+		[]Register{x9, x10, x11, x12, x13, x14, x15, x19, x20, x21, x22, x23, x24, x25, x26, x27, x28, x29},
+		&c,
+	)
+	c.emit(".global _main")
+	c.emit(".text")
+	c.emit("")
+	c.emit("_main:")
+	if err := WalkBlock(block, c.generateBlock); err != nil {
+		return c, err
+	}
+	c.incIndent()
 	c.emit("mov x0, #0")
 	c.emit("bl _exit")
 	c.decIndent()
 	c.emit("")
 	c.emit(".data")
-	for _, inst := range instructions {
-		switch inst := inst.(type) {
-		case *IRStringConst:
-			c.emit("str_%d:", inst.Register())
-			c.incIndent().emit(".ascii \"%s\"", inst.Value).decIndent()
-		}
+	c.incIndent()
+	for _, constant := range c.stringConstants {
+		c.emit("str_%d:", constant.Register())
+		c.incIndent().emit(".ascii \"%s\"", constant.Value).decIndent()
 	}
+	c.decIndent()
 	return c, nil
 }

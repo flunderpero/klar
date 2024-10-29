@@ -1,0 +1,8 @@
+{
+    if true {
+        print("It's true!")
+    }
+    if false {
+        print("This should not be reached")
+    }
+}

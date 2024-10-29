@@ -63,7 +63,7 @@ func main() {
 	}
 	if cmd == "typecheck" {
 		fmt.Println(ty)
-		fmt.Println(typeMap)
+		printTypedAST(node, typeMap)
 		os.Exit(0)
 	}
 	instructions, err := GenerateIR(node, typeMap)
@@ -117,4 +117,29 @@ func main() {
 		fmt.Println("Run failed")
 		os.Exit(runCmd.ProcessState.ExitCode())
 	}
+}
+
+func printTypedAST(node Node, typeMap map[NodeId]Type) {
+	visitor := &printTypedASTWalker{DefaultASTVisitor{}, typeMap}
+	walker := &DefaultASTWalker{Visitor: visitor}
+	if err := walker.WalkNode(node); err != nil {
+		fmt.Println("ERROR:", err)
+	}
+}
+
+type printTypedASTWalker struct {
+	DefaultASTVisitor
+	typeMap map[NodeId]Type
+}
+
+func (v *printTypedASTWalker) VisitNode(node Node, w ASTWalker) error {
+	if err := w.WalkNode(node); err != nil {
+		return err
+	}
+	ty, ok := v.typeMap[node.Id()]
+	if !ok {
+		return fmt.Errorf("type of node %s should have been determined by the type-checker", node)
+	}
+	fmt.Printf("%s\n=> %s\n\n", node, ty)
+	return nil
 }

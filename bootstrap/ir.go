@@ -138,8 +138,7 @@ func (inst *IRCall) Register() IRRegister {
 }
 
 type IRGenerator struct {
-	EmptyASTVisitor
-	walker                DepthFirstASTWalker
+	DefaultASTVisitor
 	instructions          []IRInstruction
 	typeByNodeId          map[NodeId]Type
 	registerByNodeId      map[NodeId]IRRegister
@@ -196,7 +195,10 @@ func (g *IRGenerator) TypeOf(node Node) Type {
 	return ty
 }
 
-func (g *IRGenerator) VisitCallExpression(expr *CallExpression) error {
+func (g *IRGenerator) VisitCallExpression(expr *CallExpression, w ASTWalker) error {
+	if err := w.WalkCallExpression(expr); err != nil {
+		return err
+	}
 	funcType := g.TypeOf(expr.Callee).(*FunctionType)
 	if funcType.Name != "print" {
 		return fmt.Errorf("unknown function: %s", funcType.Name)
@@ -231,7 +233,7 @@ func (g *IRGenerator) VisitCallExpression(expr *CallExpression) error {
 
 func GenerateIR(node Node, typeMap map[NodeId]Type) ([]IRInstruction, error) {
 	gen := &IRGenerator{
-		walker:                DepthFirstASTWalker{},
+		DefaultASTVisitor:     DefaultASTVisitor{},
 		instructions:          []IRInstruction{},
 		typeByNodeId:          typeMap,
 		registerByNodeId:      make(map[NodeId]IRRegister),
@@ -244,8 +246,8 @@ func GenerateIR(node Node, typeMap map[NodeId]Type) ([]IRInstruction, error) {
 		ReturnType: &IRBasicType{Int64},
 		ArgTypes:   []IRType{&IRBasicType{Int32}, &IRBasicType{Ptr}, &IRBasicType{Int64}},
 	}
-	gen.walker.Visitor = gen
-	if err := gen.walker.WalkNode(node); err != nil {
+	walker := &DefaultASTWalker{Visitor: gen}
+	if err := walker.WalkNode(node); err != nil {
 		return nil, err
 	}
 	return gen.instructions, nil

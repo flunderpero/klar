@@ -3,45 +3,52 @@ package main
 import "fmt"
 
 type ASTVisitor interface {
+	VisitNode(node Node, w ASTWalker) error
+	VisitExpression(expr Expression, w ASTWalker) error
+	VisitBlockExpression(expr *BlockExpression, w ASTWalker) error
+	VisitCallExpression(expr *CallExpression, w ASTWalker) error
 	VisitIdentExpression(expr *IdentExpression) error
 	VisitStringLiteralExpression(expr *StringLiteralExpression) error
-	VisitCallExpression(expr *CallExpression) error
-	VisitBlockExpression(expr *BlockExpression) error
-	VisitExpression(expr Expression) error
-	VisitNode(node Node) error
 }
 
-type EmptyASTVisitor struct{}
+type ASTWalker interface {
+	WalkNode(node Node) error
+	WalkExpression(expr Expression) error
+	WalkBlockExpression(expr *BlockExpression) error
+	WalkCallExpression(expr *CallExpression) error
+}
 
-func (_ *EmptyASTVisitor) VisitIdentExpression(expr *IdentExpression) error {
+type DefaultASTVisitor struct{}
+
+func (_ *DefaultASTVisitor) VisitIdentExpression(expr *IdentExpression) error {
 	return nil
 }
 
-func (_ *EmptyASTVisitor) VisitStringLiteralExpression(expr *StringLiteralExpression) error {
+func (_ *DefaultASTVisitor) VisitStringLiteralExpression(expr *StringLiteralExpression) error {
 	return nil
 }
 
-func (_ *EmptyASTVisitor) VisitCallExpression(expr *CallExpression) error {
-	return nil
+func (_ *DefaultASTVisitor) VisitCallExpression(expr *CallExpression, w ASTWalker) error {
+	return w.WalkCallExpression(expr)
 }
 
-func (_ *EmptyASTVisitor) VisitBlockExpression(expr *BlockExpression) error {
-	return nil
+func (_ *DefaultASTVisitor) VisitBlockExpression(expr *BlockExpression, w ASTWalker) error {
+	return w.WalkBlockExpression(expr)
 }
 
-func (_ *EmptyASTVisitor) VisitExpression(expr Expression) error {
-	return nil
+func (_ *DefaultASTVisitor) VisitExpression(expr Expression, w ASTWalker) error {
+	return w.WalkExpression(expr)
 }
 
-func (_ *EmptyASTVisitor) VisitNode(node Node) error {
-	return nil
+func (_ *DefaultASTVisitor) VisitNode(node Node, w ASTWalker) error {
+	return w.WalkNode(node)
 }
 
-type DepthFirstASTWalker struct {
+type DefaultASTWalker struct {
 	Visitor ASTVisitor
 }
 
-func (w *DepthFirstASTWalker) WalkExpression(expr Expression) error {
+func (w *DefaultASTWalker) WalkExpression(expr Expression) error {
 	var err error
 	switch expr := expr.(type) {
 	case *IdentExpression:
@@ -49,53 +56,41 @@ func (w *DepthFirstASTWalker) WalkExpression(expr Expression) error {
 	case *StringLiteralExpression:
 		err = w.Visitor.VisitStringLiteralExpression(expr)
 	case *CallExpression:
-		if err = w.WalkCallExpression(expr); err != nil {
-			return err
-		}
-		err = w.Visitor.VisitCallExpression(expr)
+		err = w.Visitor.VisitCallExpression(expr, w)
 	case *BlockExpression:
-		if err = w.WalkBlockExpression(expr); err != nil {
-			return err
-		}
-		err = w.Visitor.VisitBlockExpression(expr)
+		err = w.Visitor.VisitBlockExpression(expr, w)
 	default:
 		return fmt.Errorf("VisitExpression not implemented for expression type: %T", expr)
 	}
-	if err != nil {
-		return err
-	}
-	return w.Visitor.VisitExpression(expr)
+	return err
 }
 
-func (w *DepthFirstASTWalker) WalkCallExpression(expr *CallExpression) error {
-	if err := w.WalkExpression(expr.Callee); err != nil {
+func (w *DefaultASTWalker) WalkCallExpression(expr *CallExpression) error {
+	if err := w.Visitor.VisitNode(expr.Callee, w); err != nil {
 		return err
 	}
 	for _, arg := range expr.Args {
-		if err := w.WalkExpression(arg); err != nil {
+		if err := w.Visitor.VisitNode(arg, w); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (w *DepthFirstASTWalker) WalkBlockExpression(expr *BlockExpression) error {
+func (w *DefaultASTWalker) WalkBlockExpression(expr *BlockExpression) error {
 	for _, node := range expr.Nodes {
-		if err := w.WalkNode(node); err != nil {
+		if err := w.Visitor.VisitNode(node, w); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (w *DepthFirstASTWalker) WalkNode(node Node) error {
+func (w *DefaultASTWalker) WalkNode(node Node) error {
 	var err error
 	switch node := node.(type) {
 	default:
-		err = w.WalkExpression(node)
+		err = w.Visitor.VisitExpression(node, w)
 	}
-	if err != nil {
-		return err
-	}
-	return w.Visitor.VisitNode(node)
+	return err
 }

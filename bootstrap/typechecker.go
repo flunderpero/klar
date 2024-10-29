@@ -46,8 +46,7 @@ func (te *TypeEnvironment) declare(name string, ty Type) error {
 }
 
 type TypeChecker struct {
-	EmptyASTVisitor
-	walker       DepthFirstASTWalker
+	DefaultASTVisitor
 	typeByNodeId map[NodeId]Type
 	typeEnv      TypeEnvironment
 }
@@ -74,7 +73,10 @@ func (tc *TypeChecker) VisitIdentExpression(expr *IdentExpression) error {
 	return nil
 }
 
-func (tc *TypeChecker) VisitCallExpression(expr *CallExpression) error {
+func (tc *TypeChecker) VisitCallExpression(expr *CallExpression, w ASTWalker) error {
+	if err := w.WalkCallExpression(expr); err != nil {
+		return fmt.Errorf("failed to walk call expression: %w", err)
+	}
 	calleeType := tc.mustLookup(expr.Callee)
 	funcType, ok := calleeType.(*FunctionType)
 	if !ok {
@@ -93,14 +95,17 @@ func (tc *TypeChecker) VisitCallExpression(expr *CallExpression) error {
 	return nil
 }
 
-func (tc *TypeChecker) VisitBlockExpression(expr *BlockExpression) error {
+func (tc *TypeChecker) VisitBlockExpression(expr *BlockExpression, w ASTWalker) error {
+	if err := w.WalkBlockExpression(expr); err != nil {
+		return fmt.Errorf("failed to walk block expression: %w", err)
+	}
 	blockType := tc.mustLookup(expr.Nodes[len(expr.Nodes)-1])
 	tc.typeByNodeId[expr.id] = blockType
 	return nil
 }
 
-func (tc *TypeChecker) TypeCheck(node Node) (Type, error) {
-	if err := tc.walker.WalkNode(node); err != nil {
+func (tc *TypeChecker) TypeCheck(node Node, w ASTWalker) (Type, error) {
+	if err := w.WalkNode(node); err != nil {
 		return nil, err
 	}
 	nodeType := tc.mustLookup(node)
@@ -122,13 +127,12 @@ func TypeCheck(node Node) (Type, map[NodeId]Type, error) {
 		panic(fmt.Errorf("Failed to declare print function: %w", err))
 	}
 	tc := &TypeChecker{
-		EmptyASTVisitor: EmptyASTVisitor{},
-		walker:          DepthFirstASTWalker{},
-		typeByNodeId:    make(map[NodeId]Type),
-		typeEnv:         defaultTypeEnv,
+		DefaultASTVisitor: DefaultASTVisitor{},
+		typeByNodeId:      make(map[NodeId]Type),
+		typeEnv:           defaultTypeEnv,
 	}
-	tc.walker.Visitor = tc
-	res, err := tc.TypeCheck(node)
+	walker := &DefaultASTWalker{Visitor: tc}
+	res, err := tc.TypeCheck(node, walker)
 	if err != nil {
 		return nil, nil, err
 	}

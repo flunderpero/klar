@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type NodeId int
 
@@ -54,6 +57,24 @@ func (expr *CallExpression) String() string {
 	return fmt.Sprintf("CallExpression(%s, %v)", expr.Callee, expr.Args)
 }
 
+type BlockExpression struct {
+	id    NodeId
+	Nodes []Node
+}
+
+func (expr *BlockExpression) Id() NodeId {
+	return expr.id
+}
+
+func (expr *BlockExpression) String() string {
+	s := ""
+	for _, node := range expr.Nodes {
+		nodeStr := "\n    " + strings.ReplaceAll(node.String(), "\n", "\n    ")
+		s += nodeStr
+	}
+	return fmt.Sprintf("BlockExpression{%s\n}", s)
+}
+
 type Parser struct {
 	tokens []Token
 	index  int
@@ -70,8 +91,12 @@ func (p *Parser) consume(kind TokenKind) error {
 	if token.Kind != kind {
 		return fmt.Errorf("Expected token kind %s, got %s", kind, token.Kind)
 	}
-	p.index = p.index + 1
+	p.consumeAny()
 	return nil
+}
+
+func (p *Parser) consumeAny() {
+	p.index = p.index + 1
 }
 
 func (p *Parser) peek() Token {
@@ -90,6 +115,26 @@ func (p *Parser) parseCallExpression(callee Expression) (*CallExpression, error)
 		return nil, err
 	}
 	return &CallExpression{id: p.nextNodeId(), Callee: callee, Args: []Expression{arg}}, nil
+}
+
+func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
+	if err := p.consume(TKOpenCurly); err != nil {
+		return nil, err
+	}
+	var nodes []Node
+	for p.index < len(p.tokens) {
+		token := p.peek()
+		if token.Kind == TKCloseCurly {
+			p.consumeAny()
+			break
+		}
+		node, err := p.ParseNode()
+		if err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, node)
+	}
+	return &BlockExpression{id: p.nextNodeId(), Nodes: nodes}, nil
 }
 
 func (p *Parser) parseExpression() (Expression, error) {
@@ -113,6 +158,8 @@ func (p *Parser) parseExpression() (Expression, error) {
 			return nil, err
 		}
 		return &StringLiteralExpression{id: p.nextNodeId(), Value: token.Value}, nil
+	case TKOpenCurly:
+		return p.parseBlockExpression()
 	default:
 		return nil, fmt.Errorf("expected expression, got token: %s", token)
 	}
@@ -126,7 +173,7 @@ func (p *Parser) ParseNode() (Node, error) {
 		switch token.Kind {
 		case TKEOF:
 			return nil, EOF
-		case TKIdentifier:
+		case TKIdentifier, TKOpenCurly:
 			expr, err := p.parseExpression()
 			if err != nil {
 				return nil, err

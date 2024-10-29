@@ -13,6 +13,8 @@ const (
 	TKIdentifier TokenKind = iota
 	TKOpenParen
 	TKCloseParen
+	TKOpenCurly
+	TKCloseCurly
 	TKString
 	TKEOF
 )
@@ -25,6 +27,10 @@ func (k TokenKind) String() string {
 		return "oparen"
 	case TKCloseParen:
 		return "cparen"
+	case TKOpenCurly:
+		return "ocurly"
+	case TKCloseCurly:
+		return "ccurly"
 	case TKString:
 		return "string"
 	case TKEOF:
@@ -58,6 +64,10 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			tokens = append(tokens, Token{Kind: TKOpenParen, Value: ""})
 		} else if c == ')' {
 			tokens = append(tokens, Token{Kind: TKCloseParen, Value: ""})
+		} else if c == '{' {
+			tokens = append(tokens, Token{Kind: TKOpenCurly, Value: ""})
+		} else if c == '}' {
+			tokens = append(tokens, Token{Kind: TKCloseCurly, Value: ""})
 		} else if c == '"' {
 			// Parse string.
 			value := []byte{}

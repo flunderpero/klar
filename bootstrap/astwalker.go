@@ -6,6 +6,7 @@ type ASTVisitor interface {
 	VisitIdentExpression(expr *IdentExpression) error
 	VisitStringLiteralExpression(expr *StringLiteralExpression) error
 	VisitCallExpression(expr *CallExpression) error
+	VisitBlockExpression(expr *BlockExpression) error
 	VisitExpression(expr Expression) error
 	VisitNode(node Node) error
 }
@@ -21,6 +22,10 @@ func (_ *EmptyASTVisitor) VisitStringLiteralExpression(expr *StringLiteralExpres
 }
 
 func (_ *EmptyASTVisitor) VisitCallExpression(expr *CallExpression) error {
+	return nil
+}
+
+func (_ *EmptyASTVisitor) VisitBlockExpression(expr *BlockExpression) error {
 	return nil
 }
 
@@ -48,6 +53,11 @@ func (w *DepthFirstASTWalker) WalkExpression(expr Expression) error {
 			return err
 		}
 		err = w.Visitor.VisitCallExpression(expr)
+	case *BlockExpression:
+		if err = w.WalkBlockExpression(expr); err != nil {
+			return err
+		}
+		err = w.Visitor.VisitBlockExpression(expr)
 	default:
 		return fmt.Errorf("VisitExpression not implemented for expression type: %T", expr)
 	}
@@ -63,6 +73,15 @@ func (w *DepthFirstASTWalker) WalkCallExpression(expr *CallExpression) error {
 	}
 	for _, arg := range expr.Args {
 		if err := w.WalkExpression(arg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *DepthFirstASTWalker) WalkBlockExpression(expr *BlockExpression) error {
+	for _, node := range expr.Nodes {
+		if err := w.WalkNode(node); err != nil {
 			return err
 		}
 	}

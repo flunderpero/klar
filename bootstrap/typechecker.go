@@ -93,6 +93,12 @@ func (tc *TypeChecker) VisitCallExpression(expr *CallExpression) error {
 	return nil
 }
 
+func (tc *TypeChecker) VisitBlockExpression(expr *BlockExpression) error {
+	blockType := tc.mustLookup(expr.Nodes[len(expr.Nodes)-1])
+	tc.typeByNodeId[expr.id] = blockType
+	return nil
+}
+
 func (tc *TypeChecker) TypeCheck(node Node) (Type, error) {
 	if err := tc.walker.WalkNode(node); err != nil {
 		return nil, err

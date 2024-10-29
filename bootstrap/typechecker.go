@@ -129,6 +129,11 @@ func (tc *TypeChecker) VisitIfExpression(expr *IfExpression, w ASTWalker) error 
 	return nil
 }
 
+func (tc *TypeChecker) VisitModule(module *Module, w ASTWalker) error {
+	tc.typeByNodeId[module.id] = &UnitType{}
+	return w.WalkModule(module)
+}
+
 func (tc *TypeChecker) TypeCheck(node Node, w ASTWalker) (Type, error) {
 	if err := w.WalkNode(node); err != nil {
 		return nil, err

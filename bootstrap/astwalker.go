@@ -4,6 +4,7 @@ import "fmt"
 
 type ASTVisitor interface {
 	VisitNode(node Node, w ASTWalker) error
+	VisitModule(module *Module, w ASTWalker) error
 	VisitExpression(expr Expression, w ASTWalker) error
 	VisitBlockExpression(expr *BlockExpression, w ASTWalker) error
 	VisitCallExpression(expr *CallExpression, w ASTWalker) error
@@ -15,6 +16,7 @@ type ASTVisitor interface {
 
 type ASTWalker interface {
 	WalkNode(node Node) error
+	WalkModule(module *Module) error
 	WalkExpression(expr Expression) error
 	WalkBlockExpression(expr *BlockExpression) error
 	WalkCallExpression(expr *CallExpression) error
@@ -49,6 +51,10 @@ func (_ *DefaultASTVisitor) VisitBlockExpression(expr *BlockExpression, w ASTWal
 
 func (_ *DefaultASTVisitor) VisitExpression(expr Expression, w ASTWalker) error {
 	return w.WalkExpression(expr)
+}
+
+func (_ *DefaultASTVisitor) VisitModule(module *Module, w ASTWalker) error {
+	return w.WalkModule(module)
 }
 
 func (_ *DefaultASTVisitor) VisitNode(node Node, w ASTWalker) error {
@@ -108,9 +114,20 @@ func (w *DefaultASTWalker) WalkBlockExpression(expr *BlockExpression) error {
 	return nil
 }
 
+func (w *DefaultASTWalker) WalkModule(module *Module) error {
+	for _, node := range module.Nodes {
+		if err := w.Visitor.VisitNode(node, w); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (w *DefaultASTWalker) WalkNode(node Node) error {
 	var err error
 	switch node := node.(type) {
+	case *Module:
+		err = w.Visitor.VisitModule(node, w)
 	default:
 		err = w.Visitor.VisitExpression(node, w)
 	}

@@ -105,6 +105,24 @@ func (expr *IfExpression) String() string {
 	return fmt.Sprintf("IfExpression(\n    %s\n    %s\n)", condition, trueBody)
 }
 
+type Module struct {
+	id    NodeId
+	Nodes []Node
+}
+
+func (m *Module) Id() NodeId {
+	return m.id
+}
+
+func (m *Module) String() string {
+	nodes := ""
+	for _, node := range m.Nodes {
+		nodes += "\n    "
+		nodes += strings.ReplaceAll(node.String(), "\n", "\n    ")
+	}
+	return fmt.Sprintf("Module(%s\n)", nodes)
+}
+
 type Parser struct {
 	tokens []Token
 	index  int
@@ -237,15 +255,15 @@ func (p *Parser) ParseNode() (Node, error) {
 	return nil, fmt.Errorf("unexpected end of file")
 }
 
-func (p *Parser) Parse() (Node, error) {
+func (p *Parser) Parse() (*Module, error) {
 	nodes := []Node{}
 	for p.index < len(p.tokens) {
 		node, err := p.ParseNode()
 		if err == EOF {
-			if len(nodes) != 1 {
-				return nil, fmt.Errorf("want: exactly one AST node, got: %d", len(nodes))
+			if len(nodes) == 0 {
+				return nil, fmt.Errorf("expected at least one AST node")
 			}
-			return nodes[0], nil
+			return &Module{id: p.nextNodeId(), Nodes: nodes}, nil
 		}
 		if err != nil {
 			return nil, err
@@ -255,7 +273,7 @@ func (p *Parser) Parse() (Node, error) {
 	return nil, fmt.Errorf("unexpected end of file")
 }
 
-func Parse(tokens []Token) (Node, error) {
+func Parse(tokens []Token) (*Module, error) {
 	p := Parser{tokens: tokens, index: 0, nodeId: 0}
 	return p.Parse()
 }

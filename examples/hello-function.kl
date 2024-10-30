@@ -1,0 +1,12 @@
+fn print_hello() {
+    print("Hello, ")
+}
+
+fn print_world() {
+    print("world!")
+}
+
+fn main() {
+    print_hello()
+    print_world()
+}

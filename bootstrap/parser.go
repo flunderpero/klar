@@ -123,6 +123,21 @@ func (m *Module) String() string {
 	return fmt.Sprintf("Module(%s\n)", nodes)
 }
 
+type FunctionDefinition struct {
+	id   NodeId
+	Name string
+	Body *BlockExpression
+}
+
+func (f *FunctionDefinition) Id() NodeId {
+	return f.id
+}
+
+func (f *FunctionDefinition) String() string {
+	body := strings.ReplaceAll(f.Body.String(), "\n", "\n    ")
+	return fmt.Sprintf("FunctionDefinition(\n    %s\n    %s\n)", f.Name, body)
+}
+
 type Parser struct {
 	tokens []Token
 	index  int
@@ -134,17 +149,18 @@ func (p *Parser) nextNodeId() NodeId {
 	return p.nodeId
 }
 
-func (p *Parser) consume(kind TokenKind) error {
+func (p *Parser) consume(kind TokenKind) (Token, error) {
 	token := p.tokens[p.index]
 	if token.Kind != kind {
-		return fmt.Errorf("Expected token kind %s, got %s", kind, token.Kind)
+		return Token{}, fmt.Errorf("Expected token kind %s, got %s", kind, token.Kind)
 	}
-	p.consumeAny()
-	return nil
+	p.index = p.index + 1
+	return token, nil
 }
 
-func (p *Parser) consumeAny() {
+func (p *Parser) consumeAny() Token {
 	p.index = p.index + 1
+	return p.tokens[p.index-1]
 }
 
 func (p *Parser) peek() Token {
@@ -152,21 +168,30 @@ func (p *Parser) peek() Token {
 }
 
 func (p *Parser) parseCallExpression(callee Expression) (*CallExpression, error) {
-	if err := p.consume(TKOpenParen); err != nil {
+	if _, err := p.consume(TKOpenParen); err != nil {
 		return nil, err
 	}
-	arg, err := p.parseExpression()
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse call argument: %v", err)
+	args := []Expression{}
+	done := false
+	for p.index < len(p.tokens) && !done {
+		token := p.peek()
+		switch token.Kind {
+		case TKCloseParen:
+			p.consumeAny()
+			done = true
+		default:
+			arg, err := p.parseExpression()
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse call argument: %v", err)
+			}
+			args = append(args, arg)
+		}
 	}
-	if err = p.consume(TKCloseParen); err != nil {
-		return nil, err
-	}
-	return &CallExpression{id: p.nextNodeId(), Callee: callee, Args: []Expression{arg}}, nil
+	return &CallExpression{id: p.nextNodeId(), Callee: callee, Args: args}, nil
 }
 
 func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
-	if err := p.consume(TKOpenCurly); err != nil {
+	if _, err := p.consume(TKOpenCurly); err != nil {
 		return nil, err
 	}
 	var nodes []Node
@@ -186,7 +211,7 @@ func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
 }
 
 func (p *Parser) parseIfExpression() (*IfExpression, error) {
-	if err := p.consume(TKIf); err != nil {
+	if _, err := p.consume(TKIf); err != nil {
 		return nil, err
 	}
 	condition, err := p.parseExpression()
@@ -200,11 +225,34 @@ func (p *Parser) parseIfExpression() (*IfExpression, error) {
 	return &IfExpression{id: p.nextNodeId(), Condition: condition, TrueBody: trueBody}, nil
 }
 
+func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
+	if _, err := p.consume(TKFn); err != nil {
+		return nil, err
+	}
+	nameToken, err := p.consume(TKIdentifier)
+	if err != nil {
+		return nil, err
+	}
+	_, err = p.consume(TKOpenParen)
+	if err != nil {
+		return nil, err
+	}
+	_, err = p.consume(TKCloseParen)
+	if err != nil {
+		return nil, err
+	}
+	body, err := p.parseBlockExpression()
+	if err != nil {
+		return nil, err
+	}
+	return &FunctionDefinition{id: p.nextNodeId(), Name: nameToken.Value, Body: body}, nil
+}
+
 func (p *Parser) parseExpression() (Expression, error) {
 	token := p.peek()
 	switch token.Kind {
 	case TKIdentifier:
-		if err := p.consume(TKIdentifier); err != nil {
+		if _, err := p.consume(TKIdentifier); err != nil {
 			return nil, err
 		}
 		expr := &IdentExpression{id: p.nextNodeId(), Name: token.Value}
@@ -242,6 +290,8 @@ func (p *Parser) ParseNode() (Node, error) {
 		switch token.Kind {
 		case TKEOF:
 			return nil, EOF
+		case TKFn:
+			return p.parseFunctionDefinition()
 		case TKIdentifier, TKOpenCurly, TKIf, TKTrue, TKFalse:
 			expr, err := p.parseExpression()
 			if err != nil {

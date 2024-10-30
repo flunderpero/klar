@@ -47,42 +47,46 @@ func main() {
 		}
 		os.Exit(0)
 	}
-	node, err := Parse(tokens)
+	module, err := Parse(tokens)
 	if err != nil {
 		fmt.Println("Failed to parse: ", err)
 		os.Exit(1)
 	}
 	if cmd == "parse" {
-		fmt.Println(node)
+		fmt.Println(module)
 		os.Exit(0)
 	}
-	ty, typeMap, err := TypeCheck(node)
+	ty, typeMap, err := TypeCheck(module)
 	if err != nil {
 		fmt.Println("Failed to typecheck: ", err)
 		os.Exit(1)
 	}
 	if cmd == "typecheck" {
 		fmt.Println(ty)
-		printTypedAST(node, typeMap)
+		printTypedAST(module, typeMap)
 		os.Exit(0)
 	}
-	block, err := GenerateIR(node, typeMap)
+	irModule, err := GenerateIR(module, typeMap)
 	if err != nil {
 		fmt.Println("Failed to generate the IR: ", err)
 		os.Exit(1)
 	}
 	if cmd == "generate-ir" {
-		err := WalkBlock(block, func(block *IRBlock) error {
-			fmt.Println(block)
-			return nil
-		})
-		if err != nil {
-			fmt.Println("Failed to print the IR: ", err)
-			os.Exit(1)
+		for _, function := range irModule.Functions {
+			fmt.Println(function, "{")
+			err := WalkBlock(function.Entry, func(block *IRBlock) error {
+				fmt.Println(block)
+				return nil
+			})
+			if err != nil {
+				fmt.Println("Failed to print the IR: ", err)
+				os.Exit(1)
+			}
+			fmt.Println("}")
 		}
 		os.Exit(0)
 	}
-	asm, err := GenerateDarwinArm64ASM(block)
+	asm, err := GenerateDarwinArm64ASM(irModule)
 	if err != nil {
 		fmt.Println("Failed to generate assembly: ", err)
 		os.Exit(1)

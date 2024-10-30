@@ -19,6 +19,7 @@ const (
 	TKTrue
 	TKFalse
 	TKIf
+	TKFn
 	TKEOF
 )
 
@@ -42,6 +43,8 @@ func (k TokenKind) String() string {
 		return "false"
 	case TKIf:
 		return "if"
+	case TKFn:
+		return "fn"
 	case TKEOF:
 		return "eof"
 	default:
@@ -105,6 +108,8 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			}
 			var token Token
 			switch string(value) {
+			case "fn":
+				token = Token{Kind: TKFn, Value: ""}
 			case "if":
 				token = Token{Kind: TKIf, Value: ""}
 			case "true":

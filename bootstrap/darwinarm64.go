@@ -140,35 +140,40 @@ func (r *RegisterAllocator) spill(allocation *RegisterAllocation) {
 	allocation.reg = ""
 }
 
+type ASMText struct {
+	lines  []string
+	indent string
+}
+
+func (asm *ASMText) String() string {
+	return strings.Join(asm.lines, "\n")
+}
+
+func (asm *ASMText) emit(s string, args ...any) *ASMText {
+	asm.lines = append(asm.lines, asm.indent+fmt.Sprintf(s, args...))
+	return asm
+}
+
+func (asm *ASMText) incIndent() *ASMText {
+	asm.indent += "    "
+	return asm
+}
+
+func (c *ASMText) decIndent() *ASMText {
+	c.indent = c.indent[:len(c.indent)-4]
+	return c
+}
+
 type Code struct {
-	indent            string
-	lines             []string
-	stringConstants   []*IRStringConst
+	ASMText
+	function          *IRFunction
+	stringConstants   *[]*IRStringConst
 	values            map[IRRegister]*RegisterAllocation
 	registerAllocator RegisterAllocator
 }
 
-func (c *Code) String() string {
-	return strings.Join(c.lines, "\n")
-}
-
-func (c *Code) emit(s string, args ...any) *Code {
-	c.lines = append(c.lines, c.indent+fmt.Sprintf(s, args...))
-	return c
-}
-
 func (c *Code) addStringConst(constant *IRStringConst) {
-	c.stringConstants = append(c.stringConstants, constant)
-}
-
-func (c *Code) incIndent() *Code {
-	c.indent += "    "
-	return c
-}
-
-func (c *Code) decIndent() *Code {
-	c.indent = c.indent[:len(c.indent)-4]
-	return c
+	*c.stringConstants = append(*c.stringConstants, constant)
 }
 
 func (c *Code) mustLookupValue(reg IRRegister) *RegisterAllocation {
@@ -204,16 +209,17 @@ func (c *Code) generateBlock(block *IRBlock) error {
 			c.emit("add %s, %s, str_%d@PAGEOFF", reg, reg, inst.Source)
 			c.values[inst.Register()] = reg
 		case *IRCall:
-			if inst.Function.Name != "print" {
-				panic("For now we only know about the print function")
-			}
 			// Move the arguments to the argument registers (x0 .. x8)
 			for i, arg := range inst.Args {
 				argReg := c.mustLookupValue(arg)
 				callArgReg := callArgRegs[i]
 				c.registerAllocator.Move(callArgReg, argReg)
 			}
-			c.emit("bl _write")
+			if inst.Function.Name == "print" {
+				c.emit("bl _write")
+			} else {
+				c.emit("bl _%s", inst.Function.Name)
+			}
 		case *IRStringConst:
 			c.addStringConst(inst)
 		default:
@@ -228,6 +234,13 @@ func (c *Code) generateBlock(block *IRBlock) error {
 		c.emit("cbnz %s, %s", condRegister, terminator.TrueBlock.Id)
 		c.emit("b %s", terminator.FalseBlock.Id)
 	case *IRReturn:
+		// Restore the stack frame.
+		c.emit("ldp fp, lr, [sp], #16")
+		if c.function.Name == "main" {
+			// We have to implicitly return the status code in `main`.
+			c.emit("mov x0, xzr")
+		}
+		c.emit("ret")
 	default:
 		return fmt.Errorf("unknown terminator: %T", terminator)
 	}
@@ -235,34 +248,46 @@ func (c *Code) generateBlock(block *IRBlock) error {
 	return nil
 }
 
-func GenerateDarwinArm64ASM(block *IRBlock) (Code, error) {
+func generateFunction(function *IRFunction, stringConstants *[]*IRStringConst) (Code, error) {
 	c := Code{
-		values: make(map[IRRegister]*RegisterAllocation),
-		indent: "",
-		lines:  []string{},
+		function:        function,
+		stringConstants: stringConstants,
+		values:          make(map[IRRegister]*RegisterAllocation),
 	}
 	c.registerAllocator = NewRegisterAllocator(
 		[]Register{x9, x10, x11, x12, x13, x14, x15, x19, x20, x21, x22, x23, x24, x25, x26, x27, x28, x29},
 		&c,
 	)
-	c.emit(".global _main")
-	c.emit(".text")
-	c.emit("")
-	c.emit("_main:")
-	if err := WalkBlock(block, c.generateBlock); err != nil {
+	c.emit("_%s:", function.Name)
+	// Prepare the stack frame.
+	c.incIndent()
+	c.emit("stp fp, lr, [sp, #-16]!")
+	c.emit("mov fp, sp")
+	c.decIndent()
+	if err := WalkBlock(function.Entry, c.generateBlock); err != nil {
 		return c, err
 	}
-	c.incIndent()
-	c.emit("mov x0, #0")
-	c.emit("bl _exit")
-	c.decIndent()
-	c.emit("")
-	c.emit(".data")
-	c.incIndent()
-	for _, constant := range c.stringConstants {
-		c.emit("str_%d:", constant.Register())
-		c.incIndent().emit(".ascii \"%s\"", constant.Value).decIndent()
-	}
-	c.decIndent()
 	return c, nil
+}
+
+func GenerateDarwinArm64ASM(irModule *IRModule) (ASMText, error) {
+	asm := ASMText{}
+	stringConstants := &[]*IRStringConst{}
+	asm.emit(".global _main")
+	asm.emit(".text")
+	for _, function := range irModule.Functions {
+		code, err := generateFunction(function, stringConstants)
+		if err != nil {
+			return asm, nil
+		}
+		asm.emit("")
+		asm.lines = append(asm.lines, code.lines...)
+	}
+	asm.emit("")
+	asm.emit(".data")
+	for _, constant := range *stringConstants {
+		asm.emit("str_%d:", constant.Register())
+		asm.incIndent().emit(".ascii \"%s\"", constant.Value).decIndent()
+	}
+	return asm, nil
 }

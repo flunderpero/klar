@@ -129,6 +129,22 @@ func (tc *TypeChecker) VisitIfExpression(expr *IfExpression, w ASTWalker) error 
 	return nil
 }
 
+func (tc *TypeChecker) VisitFunctionDefinition(fn *FunctionDefinition, w ASTWalker) error {
+	if err := w.WalkFunctionDefinition(fn); err != nil {
+		return fmt.Errorf("failed to walk function definition: %w", err)
+	}
+	funcType := &FunctionType{
+		Name:       fn.Name,
+		ArgTypes:   []Type{},
+		ReturnType: &UnitType{},
+	}
+	tc.typeByNodeId[fn.id] = funcType
+	if err := tc.typeEnv.declare(fn.Name, funcType); err != nil {
+		return fmt.Errorf("failed to declare function %s: %w", fn.Name, err)
+	}
+	return nil
+}
+
 func (tc *TypeChecker) VisitModule(module *Module, w ASTWalker) error {
 	tc.typeByNodeId[module.id] = &UnitType{}
 	return w.WalkModule(module)

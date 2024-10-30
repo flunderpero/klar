@@ -112,14 +112,27 @@ func (ir *IRReturn) Targets() []*IRBlock {
 	return []*IRBlock{}
 }
 
-type IRFunctionType struct {
+type IRFunction struct {
 	Name       string
 	ReturnType IRType
 	ArgTypes   []IRType
+	Entry      *IRBlock
+	Definition *FunctionDefinition
 }
 
-func (t *IRFunctionType) String() string {
-	return fmt.Sprintf("%s(%v)%s", t.Name, t.ArgTypes, t.ReturnType)
+func (t *IRFunction) String() string {
+	args := ""
+	for _, argType := range t.ArgTypes {
+		if len(args) > 0 {
+			args += ", "
+		}
+		args += argType.String()
+	}
+	return fmt.Sprintf("@declare %s %s (%v)", t.ReturnType, t.Name, args)
+}
+
+type IRModule struct {
+	Functions []*IRFunction
 }
 
 type IRRegister int
@@ -139,7 +152,7 @@ type IRStringConst struct {
 }
 
 func (i *IRStringConst) String() string {
-	return fmt.Sprintf("%s = String %q", i.register, i.Value)
+	return fmt.Sprintf("const str_%d = String %q", i.register, i.Value)
 }
 
 func (i *IRStringConst) Register() IRRegister {
@@ -200,7 +213,7 @@ func (i *IRGetPtr) Register() IRRegister {
 
 type IRCall struct {
 	register IRRegister
-	Function IRFunctionType
+	Function *IRFunction
 	Args     []IRRegister
 }
 
@@ -222,12 +235,13 @@ func (inst *IRCall) Register() IRRegister {
 
 type IRGenerator struct {
 	DefaultASTVisitor
-	blocks                []*IRBlock
+	nextGlobalBlockId     int
+	nextGlobalConstId     int
 	currentBlock          *IRBlock
 	typeByNodeId          map[NodeId]Type
 	registerByNodeId      map[NodeId]IRRegister
 	instructionByRegister map[IRRegister]IRInstruction
-	functions             map[string]IRFunctionType
+	functions             map[string]*IRFunction
 	registerIndex         int
 }
 
@@ -261,8 +275,9 @@ func (g *IRGenerator) LookupInstructionByNode(node Node) IRInstruction {
 }
 
 func (g *IRGenerator) VisitStringLiteralExpression(expr *StringLiteralExpression) error {
+	g.nextGlobalConstId += 1
 	g.Append(&IRStringConst{
-		register: g.NextRegister(),
+		register: IRRegister(g.nextGlobalConstId),
 		Value:    expr.Value,
 	}, expr)
 	return nil
@@ -277,9 +292,9 @@ func (g *IRGenerator) TypeOf(node Node) Type {
 }
 
 func (g *IRGenerator) NewBlock(predecessors ...*IRBlock) *IRBlock {
-	block := &IRBlock{Id: IRBlockId(len(g.blocks))}
+	g.nextGlobalBlockId += 1
+	block := &IRBlock{Id: IRBlockId(g.nextGlobalBlockId)}
 	block.Predecessors = append(block.Predecessors, predecessors...)
-	g.blocks = append(g.blocks, block)
 	return block
 }
 
@@ -300,34 +315,39 @@ func (g *IRGenerator) VisitCallExpression(expr *CallExpression, w ASTWalker) err
 		return err
 	}
 	funcType := g.TypeOf(expr.Callee).(*FunctionType)
-	if funcType.Name != "print" {
-		return fmt.Errorf("unknown function: %s", funcType.Name)
-	}
 	function, ok := g.functions[funcType.Name]
 	if !ok {
 		panic(fmt.Sprintf("Unknown function: %s", funcType.Name))
 	}
-	arg0 := g.LookupInstructionByNode(expr.Args[0]).(*IRStringConst)
-	stdOutReg := g.NextRegister()
-	strPtrReg := g.NextRegister()
-	strLenReg := g.NextRegister()
-	g.Append(&IRInt32Const{
-		register: stdOutReg,
-		Value:    1,
-	}, nil)
-	g.Append(&IRGetPtr{
-		register: strPtrReg,
-		Source:   arg0.Register(),
-	}, nil)
-	g.Append(&IRInt64Const{
-		register: strLenReg,
-		Value:    int64(len(arg0.Value)),
-	}, nil)
-	g.Append(&IRCall{
-		register: g.NextRegister(),
-		Function: function,
-		Args:     []IRRegister{stdOutReg, strPtrReg, strLenReg},
-	}, nil)
+	if function.Name == "print" {
+		arg0 := g.LookupInstructionByNode(expr.Args[0]).(*IRStringConst)
+		stdOutReg := g.NextRegister()
+		strPtrReg := g.NextRegister()
+		strLenReg := g.NextRegister()
+		g.Append(&IRInt32Const{
+			register: stdOutReg,
+			Value:    1,
+		}, nil)
+		g.Append(&IRGetPtr{
+			register: strPtrReg,
+			Source:   arg0.Register(),
+		}, nil)
+		g.Append(&IRInt64Const{
+			register: strLenReg,
+			Value:    int64(len(arg0.Value)),
+		}, nil)
+		g.Append(&IRCall{
+			register: g.NextRegister(),
+			Function: function,
+			Args:     []IRRegister{stdOutReg, strPtrReg, strLenReg},
+		}, nil)
+	} else {
+		g.Append(&IRCall{
+			register: g.NextRegister(),
+			Function: function,
+			Args:     []IRRegister{},
+		}, nil)
+	}
 	return nil
 }
 
@@ -354,32 +374,65 @@ func (g *IRGenerator) VisitIfExpression(expr *IfExpression, w ASTWalker) error {
 	return nil
 }
 
-func GenerateIR(node Node, typeMap map[NodeId]Type) (*IRBlock, error) {
-	block := &IRBlock{}
-	gen := &IRGenerator{
-		DefaultASTVisitor:     DefaultASTVisitor{},
-		blocks:                []*IRBlock{block},
-		currentBlock:          block,
-		typeByNodeId:          typeMap,
-		registerByNodeId:      make(map[NodeId]IRRegister),
-		instructionByRegister: make(map[IRRegister]IRInstruction),
-		functions:             make(map[string]IRFunctionType),
+func GenerateIR(module *Module, typeMap map[NodeId]Type) (*IRModule, error) {
+	functionDefinitions := []*FunctionDefinition{}
+	for _, node := range module.Nodes {
+		switch node := node.(type) {
+		case *FunctionDefinition:
+			functionDefinitions = append(functionDefinitions, node)
+		default:
+			return nil, fmt.Errorf("cannot generate IR for node type: %T", node)
+		}
+	}
+	functions := []*IRFunction{}
+	// First forward declare all functions.
+	for _, fd := range functionDefinitions {
+		f := IRFunction{
+			Name:       fd.Name,
+			ReturnType: &IRBasicType{Void},
+			ArgTypes:   []IRType{},
+			Definition: fd,
+		}
+		functions = append(functions, &f)
+	}
+	functionByName := make(map[string]*IRFunction)
+	for _, f := range functions {
+		functionByName[f.Name] = f
 	}
 	// Declare builtin functions.
-	gen.functions["print"] = IRFunctionType{
+	functionByName["print"] = &IRFunction{
 		Name:       "print",
 		ReturnType: &IRBasicType{Int64},
 		ArgTypes:   []IRType{&IRBasicType{Int32}, &IRBasicType{Ptr}, &IRBasicType{Int64}},
 	}
-	walker := &DefaultASTWalker{Visitor: gen}
-	if err := walker.WalkNode(node); err != nil {
-		return nil, err
+	// Generate code for each function.
+	nextGlobalBlockId := 0
+	nextGlobalConstId := 0
+	for _, function := range functions {
+		gen := &IRGenerator{
+			DefaultASTVisitor:     DefaultASTVisitor{},
+			nextGlobalBlockId:     nextGlobalBlockId,
+			nextGlobalConstId:     nextGlobalConstId,
+			typeByNodeId:          typeMap,
+			registerByNodeId:      make(map[NodeId]IRRegister),
+			instructionByRegister: make(map[IRRegister]IRInstruction),
+			functions:             functionByName,
+		}
+		block := gen.NewBlock()
+		gen.currentBlock = block
+		walker := &DefaultASTWalker{Visitor: gen}
+		if err := walker.WalkNode(function.Definition.Body); err != nil {
+			return nil, err
+		}
+		if gen.currentBlock.Terminator != nil {
+			return nil, fmt.Errorf("expecting the last block to not have a terminator, but got: %s", block.Terminator)
+		}
+		gen.currentBlock.Terminator = &IRReturn{}
+		function.Entry = block
+		nextGlobalBlockId = gen.nextGlobalBlockId
+		nextGlobalConstId = gen.nextGlobalConstId
 	}
-	if gen.currentBlock.Terminator != nil {
-		return nil, fmt.Errorf("expecting the last block to not have a terminator, but got: %s", block.Terminator)
-	}
-	gen.currentBlock.Terminator = &IRReturn{}
-	return block, nil
+	return &IRModule{Functions: functions}, nil
 }
 
 // Walk the given block and call `visitor` for each block we discover in the graph

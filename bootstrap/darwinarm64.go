@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -39,8 +40,20 @@ const (
 	x26 Register = "x26"
 	x27 Register = "x27"
 	x28 Register = "x28"
-	x29 Register = "x29"
 )
+
+var calleeSavedRegisters = []Register{x19, x20, x21, x22, x23, x24, x25, x26, x27, x28}
+
+type StackAllocator struct {
+	size int
+}
+
+// Allocate `size` bytes on the stack and return the stack offset that can be used.
+func (s *StackAllocator) Allocate(size int) int {
+	result := s.size
+	s.size += size
+	return result
+}
 
 type RegisterAllocation struct {
 	reg         Register
@@ -62,7 +75,6 @@ type RegisterAllocator struct {
 	registers     []Register
 	usedRegisters map[Register]*RegisterAllocation
 	allocations   []*RegisterAllocation
-	stackSize     int
 	code          *Code
 }
 
@@ -71,9 +83,21 @@ func NewRegisterAllocator(registers []Register, code *Code) RegisterAllocator {
 		registers:     registers,
 		usedRegisters: make(map[Register]*RegisterAllocation),
 		allocations:   []*RegisterAllocation{},
-		stackSize:     0,
 		code:          code,
 	}
+}
+
+func (r *RegisterAllocator) UsedCalleeSavedRegisters() []Register {
+	usedCalleeSaved := []Register{}
+	for reg, _ := range r.usedRegisters {
+		if slices.Contains(calleeSavedRegisters, reg) {
+			usedCalleeSaved = append(usedCalleeSaved, reg)
+		}
+	}
+	slices.SortFunc(usedCalleeSaved, func(a Register, b Register) int {
+		return strings.Compare(string(a), string(b))
+	})
+	return usedCalleeSaved
 }
 
 func (r *RegisterAllocator) Move(target Register, allocation *RegisterAllocation) {
@@ -133,8 +157,7 @@ func (r *RegisterAllocator) spill(allocation *RegisterAllocation) {
 	r.usedRegisters[allocation.reg] = nil
 	if allocation.stackOffset == -1 {
 		// This is the first time this allocation is spilled. Reserve the stack space.
-		allocation.stackOffset = r.stackSize
-		r.stackSize += 16
+		allocation.stackOffset = r.code.stackAllocator.Allocate(16)
 	}
 	r.code.emit("str %s, [sp, #%d]", allocation.reg, allocation.stackOffset)
 	allocation.reg = ""
@@ -170,10 +193,20 @@ type Code struct {
 	stringConstants   *[]*IRStringConst
 	values            map[IRRegister]*RegisterAllocation
 	registerAllocator RegisterAllocator
+	stackAllocator    *StackAllocator
 }
 
 func (c *Code) addStringConst(constant *IRStringConst) {
 	*c.stringConstants = append(*c.stringConstants, constant)
+}
+
+func (c *Code) offset() int {
+	return len(c.lines)
+}
+
+func (c *Code) emitAtOffset(offset int, s string, args ...any) *Code {
+	c.lines = append(c.lines[:offset], append([]string{c.indent + fmt.Sprintf(s, args...)}, c.lines[offset:]...)...)
+	return c
 }
 
 func (c *Code) mustLookupValue(reg IRRegister) *RegisterAllocation {
@@ -234,13 +267,7 @@ func (c *Code) generateBlock(block *IRBlock) error {
 		c.emit("cbnz %s, %s", condRegister, terminator.TrueBlock.Id)
 		c.emit("b %s", terminator.FalseBlock.Id)
 	case *IRReturn:
-		// Restore the stack frame.
-		c.emit("ldp fp, lr, [sp], #16")
-		if c.function.Name == "main" {
-			// We have to implicitly return the status code in `main`.
-			c.emit("mov x0, xzr")
-		}
-		c.emit("ret")
+		// Nothing to do, this is handled in `generateFunction`.
 	default:
 		return fmt.Errorf("unknown terminator: %T", terminator)
 	}
@@ -249,24 +276,56 @@ func (c *Code) generateBlock(block *IRBlock) error {
 }
 
 func generateFunction(function *IRFunction, stringConstants *[]*IRStringConst) (Code, error) {
+	stackAllocator := &StackAllocator{size: 16}
 	c := Code{
 		function:        function,
 		stringConstants: stringConstants,
 		values:          make(map[IRRegister]*RegisterAllocation),
+		stackAllocator:  stackAllocator,
 	}
 	c.registerAllocator = NewRegisterAllocator(
-		[]Register{x9, x10, x11, x12, x13, x14, x15, x19, x20, x21, x22, x23, x24, x25, x26, x27, x28, x29},
+		[]Register{x9, x10, x11, x12, x13, x14, x15, x19, x20, x21, x22, x23, x24, x25, x26, x27, x28},
 		&c,
 	)
 	c.emit("_%s:", function.Name)
-	// Prepare the stack frame.
-	c.incIndent()
-	c.emit("stp fp, lr, [sp, #-16]!")
-	c.emit("mov fp, sp")
-	c.decIndent()
+	// Remember the location where we will have to insert the correct stack frame setup.
+	// We don't know the size of the stack yet, so we have to come back later and insert
+	// the correct code.
+	stackFrameSetupOffset := c.offset()
+	// Generate the function body code.
 	if err := WalkBlock(function.Entry, c.generateBlock); err != nil {
 		return c, err
 	}
+	c.incIndent()
+	// Setup and clean up the stack frame.
+	// First we have to preserve the callee saved registers (x19 .. x28).
+	// We only preserve the registers we actually used.
+	usedCalleeSaved := c.registerAllocator.UsedCalleeSavedRegisters()
+	for i, reg := range usedCalleeSaved {
+		stackOffset := stackAllocator.Allocate(16)
+		c.emitAtOffset(stackFrameSetupOffset+i, "str %s, [sp, #%d]", reg, stackOffset)
+		c.emit("ldr %s, [sp, #%d]", reg, stackOffset)
+	}
+	// Calculate the stack size needed, adjust the sp and save fp and lr.
+	if stackAllocator.size <= 504 {
+		// We can use the shorthand notation.
+		c.emitAtOffset(stackFrameSetupOffset, "stp fp, lr, [sp, #-%d]!", stackAllocator.size)
+		c.emitAtOffset(stackFrameSetupOffset+1, "mov fp, sp")
+		c.emit("ldp fp, lr, [sp], #%d", stackAllocator.size)
+	} else {
+		// We have to update the sp offset explicitly.
+		c.emitAtOffset(stackFrameSetupOffset, "sub sp, sp, #%d", stackAllocator.size)
+		c.emitAtOffset(stackFrameSetupOffset+1, "stp fp, lr, [sp, #0]")
+		c.emitAtOffset(stackFrameSetupOffset+2, "mov fp, sp")
+		c.emit("ldp fp, lr, [sp]")
+		c.emit("add sp, sp, #%d", stackAllocator.size)
+	}
+	if c.function.Name == "main" {
+		// We have to implicitly return the status code (`0`) in `main`.
+		c.emit("mov x0, xzr")
+	}
+	c.emit("ret")
+	c.decIndent()
 	return c, nil
 }
 

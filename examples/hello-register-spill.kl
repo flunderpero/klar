@@ -1,0 +1,24 @@
+fn print_hello_world() {
+    print("H")
+    print("e")
+    print("l")
+    print("l")
+    print("o")
+    print(",")
+    print(" ")
+    print("w")
+    print("o")
+    print("r")
+    print("l")
+    print("d")
+    print("!")
+    print("!")
+    print("!")
+    print("!")
+    print("!")
+    print("!")
+}
+
+fn main() {
+    print_hello_world()
+}

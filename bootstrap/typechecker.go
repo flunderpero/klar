@@ -6,9 +6,9 @@ type Type interface {
 	String() string
 }
 
-type StringType struct{}
+type StrType struct{}
 
-func (ty *StringType) String() string {
+func (ty *StrType) String() string {
 	return "StringType()"
 }
 
@@ -66,7 +66,7 @@ func (tc *TypeChecker) mustLookup(node Node) Type {
 }
 
 func (tc *TypeChecker) VisitStringLiteralExpression(expr *StringLiteralExpression) error {
-	tc.typeByNodeId[expr.id] = &StringType{}
+	tc.typeByNodeId[expr.id] = &StrType{}
 	return nil
 }
 
@@ -162,12 +162,12 @@ func (tc *TypeChecker) TypeCheck(node Node, w ASTWalker) (Type, error) {
 func TypeCheck(node Node) (Type, map[NodeId]Type, error) {
 	defaultTypeEnv := TypeEnvironment{types: make(map[string]Type)}
 	// Declare builtin types.
-	if err := defaultTypeEnv.declare("String", &StringType{}); err != nil {
+	if err := defaultTypeEnv.declare("String", &StrType{}); err != nil {
 		panic(fmt.Errorf("Failed to declare String type: %w", err))
 	}
 	if err := defaultTypeEnv.declare("print", &FunctionType{
 		Name:       "print",
-		ArgTypes:   []Type{&StringType{}},
+		ArgTypes:   []Type{&StrType{}},
 		ReturnType: &UnitType{},
 	}); err != nil {
 		panic(fmt.Errorf("Failed to declare print function: %w", err))

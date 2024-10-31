@@ -4,46 +4,79 @@ import (
 	"fmt"
 )
 
-type BasicType int
-
-const (
-	Void BasicType = iota
-	Bool
-	Int8
-	Int32
-	Int64
-	String
-	Ptr
-)
-
 type IRType interface {
 	String() string
+	Size() int
 }
 
-type IRBasicType struct {
-	ty BasicType
+type IRBasicType string
+
+const (
+	IRUnit  IRBasicType = "unit"
+	IRBool  IRBasicType = "i1"
+	IRInt8  IRBasicType = "i8"
+	IRInt32 IRBasicType = "i32"
+	IRInt64 IRBasicType = "i64"
+)
+
+func (t IRBasicType) String() string {
+	return string(t)
 }
 
-func (t *IRBasicType) String() string {
-	switch t.ty {
-	case Void:
-		return "void"
-	case Bool:
-		return "i1"
-	case Int8:
-		return "i8"
-	case Int32:
-		return "i32"
-	case Int64:
-		return "i64"
-	case String:
-		return "string"
-	case Ptr:
-		return "ptr"
+func (t IRBasicType) Size() int {
+	switch t {
+	case IRUnit:
+		return 0
+	case IRBool:
+		return 1
+	case IRInt8:
+		return 1
+	case IRInt32:
+		return 4
+	case IRInt64:
+		return 8
 	default:
-		panic(fmt.Sprintf("Unknown basic type: %d", t.ty))
+		panic(fmt.Sprintf("Unknown basic type: %s", t))
 	}
 }
+
+type IRPointerType struct {
+	ElementType IRType
+}
+
+func (t IRPointerType) String() string {
+	return fmt.Sprintf("%s*", t.ElementType)
+}
+
+func (t IRPointerType) Size() int {
+	return 8
+}
+
+type IRStructType struct {
+	Name   string
+	Fields []IRType
+}
+
+func (t IRStructType) String() string {
+	fields := ""
+	for _, field := range t.Fields {
+		if len(fields) > 0 {
+			fields += ", "
+		}
+		fields += field.String()
+	}
+	return fmt.Sprintf("struct %s {%s}", t.Name, fields)
+}
+
+func (t IRStructType) Size() int {
+	size := 0
+	for _, field := range t.Fields {
+		size += field.Size()
+	}
+	return size
+}
+
+var IRStrType = &IRStructType{Name: "Str", Fields: []IRType{IRInt64, &IRPointerType{IRInt8}}}
 
 type IRBlockId int
 
@@ -133,12 +166,18 @@ func (t *IRFunction) String() string {
 
 type IRModule struct {
 	Functions []*IRFunction
+	Constants []*IRStringConst
+	Types     []*IRStructType
 }
 
-type IRRegister int
+type IRRegister string
 
 func (r IRRegister) String() string {
-	return fmt.Sprintf("%%%d", r)
+	return string(r)
+}
+
+func (r IRRegister) IsConstant() bool {
+	return string(r)[0] == '_'
 }
 
 type IRInstruction interface {
@@ -152,7 +191,7 @@ type IRStringConst struct {
 }
 
 func (i *IRStringConst) String() string {
-	return fmt.Sprintf("const str_%d = String %q", i.register, i.Value)
+	return fmt.Sprintf("%s = String %q", i.register, i.Value)
 }
 
 func (i *IRStringConst) Register() IRRegister {
@@ -199,16 +238,32 @@ func (i *IRBoolConst) Register() IRRegister {
 }
 
 type IRGetPtr struct {
-	register IRRegister
-	Source   IRRegister
+	register   IRRegister
+	Source     IRRegister
+	Type       IRType
+	FieldIndex int
 }
 
 func (i *IRGetPtr) String() string {
-	return fmt.Sprintf("%s = getptr %s", i.register, i.Source)
+	return fmt.Sprintf("%s = getptr %s, %s, %d", i.register, i.Type, i.Source, i.FieldIndex)
 }
 
 func (i *IRGetPtr) Register() IRRegister {
 	return i.register
+}
+
+type IRLoad struct {
+	register  IRRegister
+	Source    IRRegister
+	FieldType IRType
+}
+
+func (i *IRLoad) Register() IRRegister {
+	return i.register
+}
+
+func (i *IRLoad) String() string {
+	return fmt.Sprintf("%s = load %s, %s", i.register, i.Source, i.FieldType)
 }
 
 type IRCall struct {
@@ -235,19 +290,20 @@ func (inst *IRCall) Register() IRRegister {
 
 type IRGenerator struct {
 	DefaultASTVisitor
-	nextGlobalBlockId     int
-	nextGlobalConstId     int
 	currentBlock          *IRBlock
 	typeByNodeId          map[NodeId]Type
 	registerByNodeId      map[NodeId]IRRegister
 	instructionByRegister map[IRRegister]IRInstruction
 	functions             map[string]*IRFunction
+	globalConstants       *[]*IRStringConst
 	registerIndex         int
+	blockIndex            int
+	declaredTypes         map[string]*IRStructType
 }
 
 func (g *IRGenerator) NextRegister() IRRegister {
 	g.registerIndex++
-	return IRRegister(g.registerIndex)
+	return IRRegister(fmt.Sprintf("%%%d", g.registerIndex))
 }
 
 func (g *IRGenerator) Append(instruction IRInstruction, node Node) {
@@ -275,10 +331,11 @@ func (g *IRGenerator) LookupInstructionByNode(node Node) IRInstruction {
 }
 
 func (g *IRGenerator) VisitStringLiteralExpression(expr *StringLiteralExpression) error {
-	g.nextGlobalConstId += 1
-	g.Append(&IRStringConst{
-		register: IRRegister(g.nextGlobalConstId),
-		Value:    expr.Value,
+	reg := IRRegister(fmt.Sprintf("_const_%d", len(*g.globalConstants)))
+	*g.globalConstants = append(*g.globalConstants, &IRStringConst{register: reg, Value: expr.Value})
+	g.Append(&IRGetPtr{
+		register: g.NextRegister(),
+		Source:   reg,
 	}, expr)
 	return nil
 }
@@ -292,8 +349,8 @@ func (g *IRGenerator) TypeOf(node Node) Type {
 }
 
 func (g *IRGenerator) NewBlock(predecessors ...*IRBlock) *IRBlock {
-	g.nextGlobalBlockId += 1
-	block := &IRBlock{Id: IRBlockId(g.nextGlobalBlockId)}
+	g.blockIndex += 1
+	block := &IRBlock{Id: IRBlockId(g.blockIndex)}
 	block.Predecessors = append(block.Predecessors, predecessors...)
 	return block
 }
@@ -320,26 +377,35 @@ func (g *IRGenerator) VisitCallExpression(expr *CallExpression, w ASTWalker) err
 		panic(fmt.Sprintf("Unknown function: %s", funcType.Name))
 	}
 	if function.Name == "print" {
-		arg0 := g.LookupInstructionByNode(expr.Args[0]).(*IRStringConst)
+		arg0 := g.LookupInstructionByNode(expr.Args[0]).(*IRGetPtr)
 		stdOutReg := g.NextRegister()
 		strPtrReg := g.NextRegister()
+		strPtrLoadReg := g.NextRegister()
 		strLenReg := g.NextRegister()
 		g.Append(&IRInt32Const{
 			register: stdOutReg,
 			Value:    1,
 		}, nil)
 		g.Append(&IRGetPtr{
-			register: strPtrReg,
-			Source:   arg0.Register(),
+			register:   strPtrReg,
+			Source:     arg0.Register(),
+			FieldIndex: 1,
+			Type:       IRStrType,
 		}, nil)
-		g.Append(&IRInt64Const{
-			register: strLenReg,
-			Value:    int64(len(arg0.Value)),
+		g.Append(&IRLoad{
+			register:  strPtrLoadReg,
+			Source:    strPtrReg,
+			FieldType: &IRPointerType{IRInt8},
+		}, nil)
+		g.Append(&IRLoad{
+			register:  strLenReg,
+			Source:    arg0.Register(),
+			FieldType: IRInt64,
 		}, nil)
 		g.Append(&IRCall{
 			register: g.NextRegister(),
 			Function: function,
-			Args:     []IRRegister{stdOutReg, strPtrReg, strLenReg},
+			Args:     []IRRegister{stdOutReg, strPtrLoadReg, strLenReg},
 		}, nil)
 	} else {
 		g.Append(&IRCall{
@@ -389,7 +455,7 @@ func GenerateIR(module *Module, typeMap map[NodeId]Type) (*IRModule, error) {
 	for _, fd := range functionDefinitions {
 		f := IRFunction{
 			Name:       fd.Name,
-			ReturnType: &IRBasicType{Void},
+			ReturnType: IRUnit,
 			ArgTypes:   []IRType{},
 			Definition: fd,
 		}
@@ -402,21 +468,23 @@ func GenerateIR(module *Module, typeMap map[NodeId]Type) (*IRModule, error) {
 	// Declare builtin functions.
 	functionByName["print"] = &IRFunction{
 		Name:       "print",
-		ReturnType: &IRBasicType{Int64},
-		ArgTypes:   []IRType{&IRBasicType{Int32}, &IRBasicType{Ptr}, &IRBasicType{Int64}},
+		ReturnType: IRInt64,
+		ArgTypes:   []IRType{IRInt32, &IRPointerType{IRInt8}, IRInt64},
 	}
+	constants := []*IRStringConst{}
+	declaredTypes := make(map[string]*IRStructType)
+	// Declare built-in types.
+	declaredTypes[IRStrType.Name] = IRStrType
 	// Generate code for each function.
-	nextGlobalBlockId := 0
-	nextGlobalConstId := 0
 	for _, function := range functions {
 		gen := &IRGenerator{
 			DefaultASTVisitor:     DefaultASTVisitor{},
-			nextGlobalBlockId:     nextGlobalBlockId,
-			nextGlobalConstId:     nextGlobalConstId,
 			typeByNodeId:          typeMap,
 			registerByNodeId:      make(map[NodeId]IRRegister),
 			instructionByRegister: make(map[IRRegister]IRInstruction),
 			functions:             functionByName,
+			globalConstants:       &constants,
+			declaredTypes:         declaredTypes,
 		}
 		block := gen.NewBlock()
 		gen.currentBlock = block
@@ -429,10 +497,12 @@ func GenerateIR(module *Module, typeMap map[NodeId]Type) (*IRModule, error) {
 		}
 		gen.currentBlock.Terminator = &IRReturn{}
 		function.Entry = block
-		nextGlobalBlockId = gen.nextGlobalBlockId
-		nextGlobalConstId = gen.nextGlobalConstId
 	}
-	return &IRModule{Functions: functions}, nil
+	types := []*IRStructType{}
+	for _, ty := range declaredTypes {
+		types = append(types, ty)
+	}
+	return &IRModule{Functions: functions, Constants: constants, Types: types}, nil
 }
 
 // Walk the given block and call `visitor` for each block we discover in the graph

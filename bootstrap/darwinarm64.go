@@ -115,19 +115,24 @@ func (r *RegisterAllocator) EnsureInRegister(allocation *RegisterAllocation) Reg
 		return allocation.reg
 	}
 	var spillAllocation *RegisterAllocation
+	var freeReg Register = ""
 	for _, reg := range r.registers {
 		usedAllocation := r.usedRegisters[reg]
 		if usedAllocation == nil {
-			allocation.reg = reg
-			r.usedRegisters[reg] = allocation
-			return reg
+			freeReg = reg
+			break
 		}
 		spillAllocation = usedAllocation
 	}
-	// No registers available, spill a random register to the stack.
-	reg := spillAllocation.reg
-	r.spill(spillAllocation)
-	return reg
+	if freeReg == "" {
+		// No registers available, spill a random register to the stack.
+		freeReg = spillAllocation.reg
+		r.spill(spillAllocation)
+	}
+	allocation.reg = freeReg
+	r.usedRegisters[freeReg] = allocation
+	r.code.emit("ldr %s, [sp, #%d]", freeReg, allocation.stackOffset)
+	return freeReg
 }
 
 func (r *RegisterAllocator) Allocate() *RegisterAllocation {
@@ -196,10 +201,6 @@ type Code struct {
 	stackAllocator    *StackAllocator
 }
 
-func (c *Code) addStringConst(constant *IRStringConst) {
-	*c.stringConstants = append(*c.stringConstants, constant)
-}
-
 func (c *Code) offset() int {
 	return len(c.lines)
 }
@@ -217,9 +218,13 @@ func (c *Code) mustLookupValue(reg IRRegister) *RegisterAllocation {
 	return result
 }
 
+func (c *Code) blockLabel(block *IRBlock) string {
+	return fmt.Sprintf("%s_%s", c.function.Name, block.Id)
+}
+
 func (c *Code) generateBlock(block *IRBlock) error {
 	callArgRegs := []Register{x0, x1, x2, x3, x4, x5, x6, x7, x8}
-	c.emit("%s:", block.Id)
+	c.emit("%s:", c.blockLabel(block))
 	c.incIndent()
 	for _, inst := range block.Instructions {
 		switch inst := inst.(type) {
@@ -236,10 +241,47 @@ func (c *Code) generateBlock(block *IRBlock) error {
 			c.emit("mov %s, %d", reg, inst.Value)
 			c.values[inst.Register()] = reg
 		case *IRGetPtr:
+			var reg *RegisterAllocation
+			offset := 0
+			if inst.FieldIndex > 0 {
+				structType, ok := inst.Type.(*IRStructType)
+				if !ok {
+					return fmt.Errorf("expected a struct type, got: %T", inst.Type)
+				}
+				for _, field := range structType.Fields[:inst.FieldIndex] {
+					offset += field.Size()
+				}
+			}
+			if inst.Source.IsConstant() {
+				reg = c.registerAllocator.Allocate()
+				c.emit("adrp %s, %s@PAGE", reg, inst.Source)
+				c.emit("add %s, %s, %s@PAGEOFF+%d", reg, reg, inst.Source, offset)
+			} else {
+				reg = c.mustLookupValue(inst.Source)
+				if offset > 0 {
+					source := c.registerAllocator.EnsureInRegister(reg)
+					reg = c.registerAllocator.Allocate()
+					c.emit("add %s, %s, #%d", reg, source, offset)
+				}
+			}
+			c.values[inst.Register()] = reg
+		case *IRLoad:
+			source := c.registerAllocator.EnsureInRegister(c.mustLookupValue(inst.Source))
 			reg := c.registerAllocator.Allocate()
-			// For now we only know about constant strings.
-			c.emit("adrp %s, str_%d@PAGE", reg, inst.Source)
-			c.emit("add %s, %s, str_%d@PAGEOFF", reg, reg, inst.Source)
+			switch ty := inst.FieldType.(type) {
+			case IRBasicType:
+				if ty == IRInt64 {
+					c.emit("ldr %s, [%s]", reg, source)
+				} else {
+					// We need `wx` registers to load other types.
+					return fmt.Errorf("we don't know how to load a value of type %d yet", inst.FieldType)
+
+				}
+			case *IRPointerType:
+				c.emit("ldr %s, [%s]", reg, source)
+			default:
+				return fmt.Errorf("invalid target type for load instruction: %T", ty)
+			}
 			c.values[inst.Register()] = reg
 		case *IRCall:
 			// Move the arguments to the argument registers (x0 .. x8)
@@ -253,19 +295,17 @@ func (c *Code) generateBlock(block *IRBlock) error {
 			} else {
 				c.emit("bl _%s", inst.Function.Name)
 			}
-		case *IRStringConst:
-			c.addStringConst(inst)
 		default:
 			return fmt.Errorf("unknown instruction: %T", inst)
 		}
 	}
 	switch terminator := block.Terminator.(type) {
 	case *IRJump:
-		c.emit("b %s", terminator.Target.Id)
+		c.emit("b %s", c.blockLabel(terminator.Target))
 	case *IRCondBranch:
 		condRegister := c.mustLookupValue(terminator.Condition)
-		c.emit("cbnz %s, %s", condRegister, terminator.TrueBlock.Id)
-		c.emit("b %s", terminator.FalseBlock.Id)
+		c.emit("cbnz %s, %s", condRegister, c.blockLabel(terminator.TrueBlock))
+		c.emit("b %s", c.blockLabel(terminator.FalseBlock))
 	case *IRReturn:
 		// Nothing to do, this is handled in `generateFunction`.
 	default:
@@ -331,22 +371,30 @@ func generateFunction(function *IRFunction, stringConstants *[]*IRStringConst) (
 
 func GenerateDarwinArm64ASM(irModule *IRModule) (ASMText, error) {
 	asm := ASMText{}
-	stringConstants := &[]*IRStringConst{}
 	asm.emit(".global _main")
 	asm.emit(".text")
 	for _, function := range irModule.Functions {
-		code, err := generateFunction(function, stringConstants)
+		code, err := generateFunction(function, &irModule.Constants)
 		if err != nil {
-			return asm, nil
+			return asm, err
 		}
 		asm.emit("")
 		asm.lines = append(asm.lines, code.lines...)
 	}
 	asm.emit("")
 	asm.emit(".data")
-	for _, constant := range *stringConstants {
-		asm.emit("str_%d:", constant.Register())
-		asm.incIndent().emit(".ascii \"%s\"", constant.Value).decIndent()
+	for _, constant := range irModule.Constants {
+		asm.emit(".align 3")
+		asm.emit("%s_bytes:", constant.Register())
+		asm.incIndent()
+		asm.emit(".ascii \"%s\"", constant.Value)
+		asm.decIndent()
+		asm.emit(".align 3")
+		asm.emit("%s:", constant.Register())
+		asm.incIndent()
+		asm.emit(".quad %d", len(constant.Value))
+		asm.emit(".quad %s_bytes", constant.Register())
+		asm.decIndent()
 	}
 	return asm, nil
 }

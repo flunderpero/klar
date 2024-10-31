@@ -123,9 +123,24 @@ func (m *Module) String() string {
 	return fmt.Sprintf("Module(%s\n)", nodes)
 }
 
+type FunctionArg struct {
+	id   NodeId
+	Name string
+	Type string
+}
+
+func (f *FunctionArg) Id() NodeId {
+	return f.id
+}
+
+func (f *FunctionArg) String() string {
+	return fmt.Sprintf("FunctionArg(%s, %s)", f.Name, f.Type)
+}
+
 type FunctionDefinition struct {
 	id   NodeId
 	Name string
+	Args []FunctionArg
 	Body *BlockExpression
 }
 
@@ -135,7 +150,14 @@ func (f *FunctionDefinition) Id() NodeId {
 
 func (f *FunctionDefinition) String() string {
 	body := strings.ReplaceAll(f.Body.String(), "\n", "\n    ")
-	return fmt.Sprintf("FunctionDefinition(\n    %s\n    %s\n)", f.Name, body)
+	args := ""
+	for _, arg := range f.Args {
+		if args != "" {
+			args += ", "
+		}
+		args += arg.String()
+	}
+	return fmt.Sprintf("FunctionDefinition(\n    %s(%s)\n    %s\n)", f.Name, args, body)
 }
 
 type Parser struct {
@@ -179,6 +201,8 @@ func (p *Parser) parseCallExpression(callee Expression) (*CallExpression, error)
 		case TKCloseParen:
 			p.consumeAny()
 			done = true
+		case TKComma:
+			p.consumeAny()
 		default:
 			arg, err := p.parseExpression()
 			if err != nil {
@@ -237,15 +261,38 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, err = p.consume(TKCloseParen)
-	if err != nil {
-		return nil, err
+	args := []FunctionArg{}
+	for p.index < len(p.tokens) {
+		token := p.peek()
+		if token.Kind == TKCloseParen {
+			p.consumeAny()
+			break
+		}
+		argNameToken, err := p.consume(TKIdentifier)
+		if err != nil {
+			return nil, err
+		}
+		argTypeToken, err := p.consume(TKIdentifier)
+		if err != nil {
+			return nil, err
+		}
+		arg := FunctionArg{id: p.nextNodeId(), Name: argNameToken.Value, Type: argTypeToken.Value}
+		args = append(args, arg)
+		token = p.peek()
+		if token.Kind == TKCloseParen {
+			p.consumeAny()
+			break
+		}
+		if token.Kind != TKComma {
+			return nil, fmt.Errorf("expected comma or close paren, got %s", token)
+		}
+		p.consumeAny()
 	}
 	body, err := p.parseBlockExpression()
 	if err != nil {
 		return nil, err
 	}
-	return &FunctionDefinition{id: p.nextNodeId(), Name: nameToken.Value, Body: body}, nil
+	return &FunctionDefinition{id: p.nextNodeId(), Name: nameToken.Value, Args: args, Body: body}, nil
 }
 
 func (p *Parser) parseExpression() (Expression, error) {

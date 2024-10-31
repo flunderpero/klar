@@ -15,6 +15,7 @@ const (
 	TKCloseParen
 	TKOpenCurly
 	TKCloseCurly
+	TKComma
 	TKString
 	TKTrue
 	TKFalse
@@ -35,6 +36,8 @@ func (k TokenKind) String() string {
 		return "ocurly"
 	case TKCloseCurly:
 		return "ccurly"
+	case TKComma:
+		return "comma"
 	case TKString:
 		return "string"
 	case TKTrue:
@@ -80,6 +83,8 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			tokens = append(tokens, Token{Kind: TKOpenCurly, Value: ""})
 		} else if c == '}' {
 			tokens = append(tokens, Token{Kind: TKCloseCurly, Value: ""})
+		} else if c == ',' {
+			tokens = append(tokens, Token{Kind: TKComma, Value: ""})
 		} else if c == '"' {
 			// Parse string.
 			value := []byte{}

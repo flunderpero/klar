@@ -1,6 +1,8 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type Type interface {
 	String() string
@@ -9,7 +11,7 @@ type Type interface {
 type StrType struct{}
 
 func (ty *StrType) String() string {
-	return "StringType()"
+	return "StrType()"
 }
 
 type BoolType struct{}
@@ -31,20 +33,31 @@ type FunctionType struct {
 }
 
 func (ty *FunctionType) String() string {
-	return fmt.Sprintf("FunctionType(%s, %v, %s)", ty.Name, ty.ArgTypes, ty.ReturnType)
+	args := ""
+	for _, arg := range ty.ArgTypes {
+		if args != "" {
+			args += ", "
+		}
+		args += arg.String()
+	}
+	return fmt.Sprintf("FunctionType(%s, %s, %s)", ty.Name, args, ty.ReturnType)
 }
 
 type TypeEnvironment struct {
-	types map[string]Type
+	types  map[string]Type
+	parent *TypeEnvironment
 }
 
 func (te *TypeEnvironment) lookup(name string) (Type, bool) {
 	ty, found := te.types[name]
+	if !found && te.parent != nil {
+		return te.parent.lookup(name)
+	}
 	return ty, found
 }
 
 func (te *TypeEnvironment) declare(name string, ty Type) error {
-	if _, found := te.lookup(name); found {
+	if _, found := te.types[name]; found {
 		return fmt.Errorf("type %s already declared", name)
 	}
 	te.types[name] = ty
@@ -54,7 +67,15 @@ func (te *TypeEnvironment) declare(name string, ty Type) error {
 type TypeChecker struct {
 	DefaultASTVisitor
 	typeByNodeId map[NodeId]Type
-	typeEnv      TypeEnvironment
+	typeEnv      *TypeEnvironment
+}
+
+func (tc *TypeChecker) enterScope() {
+	tc.typeEnv = &TypeEnvironment{types: make(map[string]Type), parent: tc.typeEnv}
+}
+
+func (tc *TypeChecker) exitScope() {
+	tc.typeEnv = tc.typeEnv.parent
 }
 
 func (tc *TypeChecker) mustLookup(node Node) Type {
@@ -130,17 +151,34 @@ func (tc *TypeChecker) VisitIfExpression(expr *IfExpression, w ASTWalker) error 
 }
 
 func (tc *TypeChecker) VisitFunctionDefinition(fn *FunctionDefinition, w ASTWalker) error {
-	if err := w.WalkFunctionDefinition(fn); err != nil {
-		return fmt.Errorf("failed to walk function definition: %w", err)
+	argTypes := []Type{}
+	for _, arg := range fn.Args {
+		argType, found := tc.typeEnv.lookup(arg.Type)
+		if !found {
+			return fmt.Errorf("type %s not found for argument %s", arg.Type, arg.Name)
+		}
+		tc.typeByNodeId[arg.Id()] = argType
+		argTypes = append(argTypes, argType)
 	}
 	funcType := &FunctionType{
 		Name:       fn.Name,
-		ArgTypes:   []Type{},
+		ArgTypes:   argTypes,
 		ReturnType: &UnitType{},
 	}
 	tc.typeByNodeId[fn.id] = funcType
 	if err := tc.typeEnv.declare(fn.Name, funcType); err != nil {
 		return fmt.Errorf("failed to declare function %s: %w", fn.Name, err)
+	}
+	tc.enterScope()
+	defer tc.exitScope()
+	for i, arg := range fn.Args {
+		argType := argTypes[i]
+		if err := tc.typeEnv.declare(arg.Name, argType); err != nil {
+			return fmt.Errorf("failed to declare argument %s: %w", arg.Name, err)
+		}
+	}
+	if err := w.WalkFunctionDefinition(fn); err != nil {
+		return fmt.Errorf("failed to walk function definition: %w", err)
 	}
 	return nil
 }
@@ -160,10 +198,10 @@ func (tc *TypeChecker) TypeCheck(node Node, w ASTWalker) (Type, error) {
 }
 
 func TypeCheck(node Node) (Type, map[NodeId]Type, error) {
-	defaultTypeEnv := TypeEnvironment{types: make(map[string]Type)}
+	defaultTypeEnv := &TypeEnvironment{types: make(map[string]Type)}
 	// Declare builtin types.
-	if err := defaultTypeEnv.declare("String", &StrType{}); err != nil {
-		panic(fmt.Errorf("Failed to declare String type: %w", err))
+	if err := defaultTypeEnv.declare("Str", &StrType{}); err != nil {
+		panic(fmt.Errorf("Failed to declare Str type: %w", err))
 	}
 	if err := defaultTypeEnv.declare("print", &FunctionType{
 		Name:       "print",

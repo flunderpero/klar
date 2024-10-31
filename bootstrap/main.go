@@ -72,10 +72,11 @@ func main() {
 		os.Exit(1)
 	}
 	if cmd == "generate-ir" {
+		for _, constant := range irModule.Constants {
+			fmt.Println(constant.String())
+		}
+		fmt.Println()
 		for _, function := range irModule.Functions {
-			for _, constant := range irModule.Constants {
-				fmt.Println(constant.String())
-			}
 			fmt.Println(function, "{")
 			err := WalkBlock(function.Entry, func(block *IRBlock) error {
 				fmt.Println(block)

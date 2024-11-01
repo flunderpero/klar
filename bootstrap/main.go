@@ -6,23 +6,29 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
+
+	"github.com/flunderpero/klar/bootstrap/ast"
+	"github.com/flunderpero/klar/bootstrap/codegen"
+	"github.com/flunderpero/klar/bootstrap/ir"
+	"github.com/flunderpero/klar/bootstrap/token"
+	"github.com/flunderpero/klar/bootstrap/typed"
 )
 
 func main() {
 	if len(os.Args) < 3 {
 		fmt.Println("Usage: klar <command> <file> [<output file>]")
 		fmt.Println("\nAvailable commands:")
-		fmt.Println("  tokenize    : Tokenize and print the tokens")
-		fmt.Println("  parse       : Parse and print the AST")
-		fmt.Println("  typecheck   : Verify the types and the overall correctness of the program")
-		fmt.Println("  generate-ir : Generate the intermediate representation (IR)")
-		fmt.Println("  generate-asm: Generate Darwin ARM64 assembly")
-		fmt.Println("  build       : Compile, link, and write the binary to <output file>")
-		fmt.Println("  run         : Build and run")
+		fmt.Println("  tokens : Tokenize and print the tokens")
+		fmt.Println("  ast    : Parse and print the AST")
+		fmt.Println("  types  : Verify the types and the overall correctness of the program")
+		fmt.Println("  ir     : Generate the intermediate representation (IR)")
+		fmt.Println("  asm    : Generate Darwin ARM64 assembly")
+		fmt.Println("  build  : Compile, link, and write the binary to <output file>")
+		fmt.Println("  run    : Build and run")
 		os.Exit(1)
 	}
 	cmd := os.Args[1]
-	if !slices.Contains([]string{"tokenize", "parse", "typecheck", "generate-ir", "generate-asm", "build", "run"}, cmd) {
+	if !slices.Contains([]string{"tokens", "ast", "types", "ir", "asm", "build", "run"}, cmd) {
 		fmt.Println("Unknown command: ", cmd)
 		os.Exit(1)
 	}
@@ -36,49 +42,49 @@ func main() {
 		fmt.Println("Failed to read file: ", err)
 		os.Exit(1)
 	}
-	tokens, err := Tokenize(src, file)
+	tokens, err := token.Tokenize(src, file)
 	if err != nil {
 		fmt.Println("Failed to tokenize: ", err)
 		os.Exit(1)
 	}
-	if cmd == "tokenize" {
+	if cmd == "tokens" {
 		for _, token := range tokens {
 			fmt.Println(token)
 		}
 		os.Exit(0)
 	}
-	module, err := Parse(tokens)
+	module, err := ast.Parse(tokens)
 	if err != nil {
 		fmt.Println("Failed to parse: ", err)
 		os.Exit(1)
 	}
-	if cmd == "parse" {
+	if cmd == "ast" {
 		fmt.Println(module)
 		os.Exit(0)
 	}
-	ty, typeMap, err := TypeCheck(module)
+	ty, typeMap, err := typed.TypeCheck(module)
 	if err != nil {
 		fmt.Println("Failed to typecheck: ", err)
 		os.Exit(1)
 	}
-	if cmd == "typecheck" {
+	if cmd == "types" {
 		fmt.Println(ty)
 		printTypedAST(module, typeMap)
 		os.Exit(0)
 	}
-	irModule, err := GenerateIR(module, typeMap)
+	irModule, err := ir.GenerateIR(module, typeMap)
 	if err != nil {
 		fmt.Println("Failed to generate the IR: ", err)
 		os.Exit(1)
 	}
-	if cmd == "generate-ir" {
+	if cmd == "ir" {
 		for _, constant := range irModule.Constants {
 			fmt.Println(constant.String())
 		}
 		fmt.Println()
 		for _, function := range irModule.Functions {
 			fmt.Println(function, "{")
-			err := WalkBlock(function.Entry, func(block *IRBlock) error {
+			err := ir.WalkBlock(function.Entry, func(block *ir.IRBlock) error {
 				fmt.Println(block)
 				return nil
 			})
@@ -90,12 +96,12 @@ func main() {
 		}
 		os.Exit(0)
 	}
-	asm, err := GenerateDarwinArm64ASM(irModule)
+	asm, err := codegen.GenerateDarwinArm64ASM(irModule)
 	if err != nil {
 		fmt.Println("Failed to generate assembly: ", err)
 		os.Exit(1)
 	}
-	if cmd == "generate-asm" {
+	if cmd == "asm" {
 		fmt.Println(asm.String())
 		os.Exit(0)
 	}
@@ -132,20 +138,20 @@ func main() {
 	}
 }
 
-func printTypedAST(node Node, typeMap map[NodeId]Type) {
-	visitor := &printTypedASTWalker{DefaultASTVisitor{}, typeMap}
-	walker := &DefaultASTWalker{Visitor: visitor}
+func printTypedAST(node ast.Node, typeMap map[ast.NodeId]typed.Type) {
+	visitor := &printTypedASTWalker{ast.DefaultASTVisitor{}, typeMap}
+	walker := &ast.DefaultASTWalker{Visitor: visitor}
 	if err := walker.WalkNode(node); err != nil {
 		fmt.Println("ERROR:", err)
 	}
 }
 
 type printTypedASTWalker struct {
-	DefaultASTVisitor
-	typeMap map[NodeId]Type
+	ast.DefaultASTVisitor
+	typeMap map[ast.NodeId]typed.Type
 }
 
-func (v *printTypedASTWalker) VisitNode(node Node, w ASTWalker) error {
+func (v *printTypedASTWalker) VisitNode(node ast.Node, w ast.ASTWalker) error {
 	if err := w.WalkNode(node); err != nil {
 		return err
 	}

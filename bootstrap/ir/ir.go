@@ -1,7 +1,10 @@
-package main
+package ir
 
 import (
 	"fmt"
+
+	"github.com/flunderpero/klar/bootstrap/ast"
+	"github.com/flunderpero/klar/bootstrap/typed"
 )
 
 type IRType interface {
@@ -155,7 +158,7 @@ type IRFunction struct {
 	ReturnType IRType
 	Args       []IRFunctionArg
 	Entry      *IRBlock
-	Definition *FunctionDefinition
+	Definition *ast.FunctionDefinition
 }
 
 func (t *IRFunction) String() string {
@@ -307,10 +310,10 @@ func (s *SymbolTable) lookup(name string) (IRRegister, bool) {
 }
 
 type IRGenerator struct {
-	DefaultASTVisitor
+	ast.DefaultASTVisitor
 	currentBlock     *IRBlock
-	typeByNodeId     map[NodeId]Type
-	registerByNodeId map[NodeId]IRRegister
+	typeByNodeId     map[ast.NodeId]typed.Type
+	registerByNodeId map[ast.NodeId]IRRegister
 	symbolTable      *SymbolTable
 	globalConstants  *[]*IRStringConst
 	registerIndex    int
@@ -340,14 +343,14 @@ func (g *IRGenerator) NextRegister() IRRegister {
 	return IRRegister(fmt.Sprintf("%%%d", g.registerIndex))
 }
 
-func (g *IRGenerator) Append(instruction IRInstruction, node Node) {
+func (g *IRGenerator) Append(instruction IRInstruction, node ast.Node) {
 	g.currentBlock.append(instruction)
 	if node != nil {
 		g.registerByNodeId[node.Id()] = instruction.Register()
 	}
 }
 
-func (g *IRGenerator) LookupRegisterByNode(node Node) IRRegister {
+func (g *IRGenerator) LookupRegisterByNode(node ast.Node) IRRegister {
 	reg, ok := g.registerByNodeId[node.Id()]
 	if !ok {
 		panic(fmt.Sprintf("No register found for node %s", node))
@@ -355,7 +358,7 @@ func (g *IRGenerator) LookupRegisterByNode(node Node) IRRegister {
 	return reg
 }
 
-func (g *IRGenerator) VisitStringLiteralExpression(expr *StringLiteralExpression) error {
+func (g *IRGenerator) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
 	reg := IRRegister(fmt.Sprintf("_const_%d", len(*g.globalConstants)))
 	*g.globalConstants = append(*g.globalConstants, &IRStringConst{register: reg, Value: expr.Value})
 	g.Append(&IRGetPtr{
@@ -367,7 +370,7 @@ func (g *IRGenerator) VisitStringLiteralExpression(expr *StringLiteralExpression
 	return nil
 }
 
-func (g *IRGenerator) TypeOf(node Node) Type {
+func (g *IRGenerator) TypeOf(node ast.Node) typed.Type {
 	ty, found := g.typeByNodeId[node.Id()]
 	if !found {
 		panic(fmt.Sprintf("Type of node %s should have been determined by the type-checker", node))
@@ -382,7 +385,7 @@ func (g *IRGenerator) NewBlock(predecessors ...*IRBlock) *IRBlock {
 	return block
 }
 
-func (g *IRGenerator) VisitBoolLiteralExpression(expr *BoolLiteralExpression) error {
+func (g *IRGenerator) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) error {
 	value := 0
 	if expr.Value {
 		value = 1
@@ -394,7 +397,7 @@ func (g *IRGenerator) VisitBoolLiteralExpression(expr *BoolLiteralExpression) er
 	return nil
 }
 
-func (g *IRGenerator) VisitIdentExpression(expr *IdentExpression) error {
+func (g *IRGenerator) VisitIdentExpression(expr *ast.IdentExpression) error {
 	if _, found := g.functions[expr.Name]; found {
 		return nil
 	}
@@ -406,11 +409,11 @@ func (g *IRGenerator) VisitIdentExpression(expr *IdentExpression) error {
 	return nil
 }
 
-func (g *IRGenerator) VisitCallExpression(expr *CallExpression, w ASTWalker) error {
+func (g *IRGenerator) VisitCallExpression(expr *ast.CallExpression, w ast.ASTWalker) error {
 	if err := w.WalkCallExpression(expr); err != nil {
 		return err
 	}
-	funcType := g.TypeOf(expr.Callee).(*FunctionType)
+	funcType := g.TypeOf(expr.Callee).(*typed.FunctionType)
 	function, ok := g.functions[funcType.Name]
 	if !ok {
 		panic(fmt.Sprintf("Unknown function: %s", funcType.Name))
@@ -460,7 +463,7 @@ func (g *IRGenerator) VisitCallExpression(expr *CallExpression, w ASTWalker) err
 	return nil
 }
 
-func (g *IRGenerator) VisitIfExpression(expr *IfExpression, w ASTWalker) error {
+func (g *IRGenerator) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker) error {
 	condBlock := g.NewBlock(g.currentBlock)
 	g.currentBlock.Terminator = &IRJump{Target: condBlock}
 	g.currentBlock = condBlock
@@ -483,11 +486,11 @@ func (g *IRGenerator) VisitIfExpression(expr *IfExpression, w ASTWalker) error {
 	return nil
 }
 
-func GenerateIR(module *Module, typeMap map[NodeId]Type) (*IRModule, error) {
-	functionDefinitions := []*FunctionDefinition{}
+func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*IRModule, error) {
+	functionDefinitions := []*ast.FunctionDefinition{}
 	for _, node := range module.Nodes {
 		switch node := node.(type) {
-		case *FunctionDefinition:
+		case *ast.FunctionDefinition:
 			functionDefinitions = append(functionDefinitions, node)
 		default:
 			return nil, fmt.Errorf("cannot generate IR for node type: %T", node)
@@ -537,9 +540,9 @@ func GenerateIR(module *Module, typeMap map[NodeId]Type) (*IRModule, error) {
 	// Generate code for each function.
 	for _, function := range functions {
 		gen := &IRGenerator{
-			DefaultASTVisitor: DefaultASTVisitor{},
+			DefaultASTVisitor: ast.DefaultASTVisitor{},
 			typeByNodeId:      typeMap,
-			registerByNodeId:  make(map[NodeId]IRRegister),
+			registerByNodeId:  make(map[ast.NodeId]IRRegister),
 			functions:         functionByName,
 			symbolTable:       &SymbolTable{symbols: make(map[string]IRRegister)},
 			globalConstants:   &constants,
@@ -551,7 +554,7 @@ func GenerateIR(module *Module, typeMap map[NodeId]Type) (*IRModule, error) {
 		}
 		block := gen.NewBlock()
 		gen.currentBlock = block
-		walker := &DefaultASTWalker{Visitor: gen}
+		walker := &ast.DefaultASTWalker{Visitor: gen}
 		if err := walker.WalkNode(function.Definition.Body); err != nil {
 			return nil, err
 		}

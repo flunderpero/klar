@@ -1,9 +1,11 @@
-package main
+package codegen
 
 import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/flunderpero/klar/bootstrap/ir"
 )
 
 type Register string
@@ -206,9 +208,9 @@ func (c *ASMText) decIndent() *ASMText {
 
 type Code struct {
 	ASMText
-	function          *IRFunction
-	stringConstants   *[]*IRStringConst
-	values            map[IRRegister]*RegisterAllocation
+	function          *ir.IRFunction
+	stringConstants   *[]*ir.IRStringConst
+	values            map[ir.IRRegister]*RegisterAllocation
 	registerAllocator RegisterAllocator
 	stackAllocator    *StackAllocator
 }
@@ -222,7 +224,7 @@ func (c *Code) emitAtOffset(offset int, s string, args ...any) *Code {
 	return c
 }
 
-func (c *Code) mustLookupValue(reg IRRegister) *RegisterAllocation {
+func (c *Code) mustLookupValue(reg ir.IRRegister) *RegisterAllocation {
 	result, ok := c.values[reg]
 	if !ok {
 		panic(fmt.Sprintf("Value not found for IR register: %s", reg))
@@ -230,32 +232,32 @@ func (c *Code) mustLookupValue(reg IRRegister) *RegisterAllocation {
 	return result
 }
 
-func (c *Code) blockLabel(block *IRBlock) string {
+func (c *Code) blockLabel(block *ir.IRBlock) string {
 	return fmt.Sprintf("%s_%s", c.function.Name, block.Id)
 }
 
-func (c *Code) generateBlock(block *IRBlock) error {
+func (c *Code) generateBlock(block *ir.IRBlock) error {
 	c.emit("%s:", c.blockLabel(block))
 	c.incIndent()
 	for _, inst := range block.Instructions {
 		switch inst := inst.(type) {
-		case *IRBoolConst:
+		case *ir.IRBoolConst:
 			reg := c.registerAllocator.Allocate()
 			c.emit("mov %s, %d", reg, inst.Value)
 			c.values[inst.Register()] = reg
-		case *IRInt32Const:
+		case *ir.IRInt32Const:
 			reg := c.registerAllocator.Allocate()
 			c.emit("mov %s, %d", reg, inst.Value)
 			c.values[inst.Register()] = reg
-		case *IRInt64Const:
+		case *ir.IRInt64Const:
 			reg := c.registerAllocator.Allocate()
 			c.emit("mov %s, %d", reg, inst.Value)
 			c.values[inst.Register()] = reg
-		case *IRGetPtr:
+		case *ir.IRGetPtr:
 			var reg *RegisterAllocation
 			offset := 0
 			if inst.FieldIndex > 0 {
-				structType, ok := inst.Type.(*IRStructType)
+				structType, ok := inst.Type.(*ir.IRStructType)
 				if !ok {
 					return fmt.Errorf("expected a struct type, got: %T", inst.Type)
 				}
@@ -276,25 +278,25 @@ func (c *Code) generateBlock(block *IRBlock) error {
 				}
 			}
 			c.values[inst.Register()] = reg
-		case *IRLoad:
+		case *ir.IRLoad:
 			source := c.registerAllocator.EnsureInRegister(c.mustLookupValue(inst.Source))
 			reg := c.registerAllocator.Allocate()
 			switch ty := inst.FieldType.(type) {
-			case IRBasicType:
-				if ty == IRInt64 {
+			case ir.IRBasicType:
+				if ty == ir.IRInt64 {
 					c.emit("ldr %s, [%s]", reg, source)
 				} else {
 					// We need `wx` registers to load other types.
 					return fmt.Errorf("we don't know how to load a value of type %d yet", inst.FieldType)
 
 				}
-			case *IRPointerType:
+			case *ir.IRPointerType:
 				c.emit("ldr %s, [%s]", reg, source)
 			default:
 				return fmt.Errorf("invalid target type for load instruction: %T", ty)
 			}
 			c.values[inst.Register()] = reg
-		case *IRCall:
+		case *ir.IRCall:
 			for i, arg := range inst.Args {
 				argReg := c.mustLookupValue(arg)
 				callArgAllocation := c.registerAllocator.AllocateCallRegister(i)
@@ -310,13 +312,13 @@ func (c *Code) generateBlock(block *IRBlock) error {
 		}
 	}
 	switch terminator := block.Terminator.(type) {
-	case *IRJump:
+	case *ir.IRJump:
 		c.emit("b %s", c.blockLabel(terminator.Target))
-	case *IRCondBranch:
+	case *ir.IRCondBranch:
 		condRegister := c.mustLookupValue(terminator.Condition)
 		c.emit("cbnz %s, %s", condRegister, c.blockLabel(terminator.TrueBlock))
 		c.emit("b %s", c.blockLabel(terminator.FalseBlock))
-	case *IRReturn:
+	case *ir.IRReturn:
 		// Nothing to do, this is handled in `generateFunction`.
 	default:
 		return fmt.Errorf("unknown terminator: %T", terminator)
@@ -325,12 +327,12 @@ func (c *Code) generateBlock(block *IRBlock) error {
 	return nil
 }
 
-func generateFunction(function *IRFunction, stringConstants *[]*IRStringConst) (Code, error) {
+func generateFunction(function *ir.IRFunction, stringConstants *[]*ir.IRStringConst) (Code, error) {
 	stackAllocator := &StackAllocator{size: 16}
 	c := Code{
 		function:        function,
 		stringConstants: stringConstants,
-		values:          make(map[IRRegister]*RegisterAllocation),
+		values:          make(map[ir.IRRegister]*RegisterAllocation),
 		stackAllocator:  stackAllocator,
 	}
 	c.registerAllocator = NewRegisterAllocator(
@@ -346,7 +348,7 @@ func generateFunction(function *IRFunction, stringConstants *[]*IRStringConst) (
 	// the correct code.
 	stackFrameSetupOffset := c.offset()
 	// Generate the function body code.
-	if err := WalkBlock(function.Entry, c.generateBlock); err != nil {
+	if err := ir.WalkBlock(function.Entry, c.generateBlock); err != nil {
 		return c, err
 	}
 	c.incIndent()
@@ -382,7 +384,7 @@ func generateFunction(function *IRFunction, stringConstants *[]*IRStringConst) (
 	return c, nil
 }
 
-func GenerateDarwinArm64ASM(irModule *IRModule) (ASMText, error) {
+func GenerateDarwinArm64ASM(irModule *ir.IRModule) (ASMText, error) {
 	asm := ASMText{}
 	asm.emit(".global _main")
 	asm.emit(".text")

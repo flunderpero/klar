@@ -1,7 +1,9 @@
-package main
+package typed
 
 import (
 	"fmt"
+
+	"github.com/flunderpero/klar/bootstrap/ast"
 )
 
 type Type interface {
@@ -65,8 +67,8 @@ func (te *TypeEnvironment) declare(name string, ty Type) error {
 }
 
 type TypeChecker struct {
-	DefaultASTVisitor
-	typeByNodeId map[NodeId]Type
+	ast.DefaultASTVisitor
+	typeByNodeId map[ast.NodeId]Type
 	typeEnv      *TypeEnvironment
 }
 
@@ -78,7 +80,7 @@ func (tc *TypeChecker) exitScope() {
 	tc.typeEnv = tc.typeEnv.parent
 }
 
-func (tc *TypeChecker) mustLookup(node Node) Type {
+func (tc *TypeChecker) mustLookup(node ast.Node) Type {
 	ty, found := tc.typeByNodeId[node.Id()]
 	if !found {
 		panic(fmt.Sprintf("Type not found for node #%d: %s", node.Id(), node))
@@ -86,26 +88,26 @@ func (tc *TypeChecker) mustLookup(node Node) Type {
 	return ty
 }
 
-func (tc *TypeChecker) VisitStringLiteralExpression(expr *StringLiteralExpression) error {
-	tc.typeByNodeId[expr.id] = &StrType{}
+func (tc *TypeChecker) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
+	tc.typeByNodeId[expr.Id()] = &StrType{}
 	return nil
 }
 
-func (tc *TypeChecker) VisitBoolLiteralExpression(expr *BoolLiteralExpression) error {
-	tc.typeByNodeId[expr.id] = &BoolType{}
+func (tc *TypeChecker) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) error {
+	tc.typeByNodeId[expr.Id()] = &BoolType{}
 	return nil
 }
 
-func (tc *TypeChecker) VisitIdentExpression(expr *IdentExpression) error {
+func (tc *TypeChecker) VisitIdentExpression(expr *ast.IdentExpression) error {
 	ty, found := tc.typeEnv.lookup(expr.Name)
 	if !found {
 		return fmt.Errorf("type not found for identifier %s", expr.Name)
 	}
-	tc.typeByNodeId[expr.id] = ty
+	tc.typeByNodeId[expr.Id()] = ty
 	return nil
 }
 
-func (tc *TypeChecker) VisitCallExpression(expr *CallExpression, w ASTWalker) error {
+func (tc *TypeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.ASTWalker) error {
 	if err := w.WalkCallExpression(expr); err != nil {
 		return fmt.Errorf("failed to walk call expression: %w", err)
 	}
@@ -123,20 +125,20 @@ func (tc *TypeChecker) VisitCallExpression(expr *CallExpression, w ASTWalker) er
 			return fmt.Errorf("expected argument %d to be of type %s, got %s", i, funcType.ArgTypes[i], argType)
 		}
 	}
-	tc.typeByNodeId[expr.id] = funcType.ReturnType
+	tc.typeByNodeId[expr.Id()] = funcType.ReturnType
 	return nil
 }
 
-func (tc *TypeChecker) VisitBlockExpression(expr *BlockExpression, w ASTWalker) error {
+func (tc *TypeChecker) VisitBlockExpression(expr *ast.BlockExpression, w ast.ASTWalker) error {
 	if err := w.WalkBlockExpression(expr); err != nil {
 		return fmt.Errorf("failed to walk block expression: %w", err)
 	}
 	blockType := tc.mustLookup(expr.Nodes[len(expr.Nodes)-1])
-	tc.typeByNodeId[expr.id] = blockType
+	tc.typeByNodeId[expr.Id()] = blockType
 	return nil
 }
 
-func (tc *TypeChecker) VisitIfExpression(expr *IfExpression, w ASTWalker) error {
+func (tc *TypeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker) error {
 	if err := w.WalkIfExpression(expr); err != nil {
 		return fmt.Errorf("failed to walk if expression: %w", err)
 	}
@@ -146,11 +148,11 @@ func (tc *TypeChecker) VisitIfExpression(expr *IfExpression, w ASTWalker) error 
 		return fmt.Errorf("the condition of an if expression must be a boolean type, got: %s", condType)
 	}
 	trueBodyType := tc.mustLookup(expr.TrueBody)
-	tc.typeByNodeId[expr.id] = trueBodyType
+	tc.typeByNodeId[expr.Id()] = trueBodyType
 	return nil
 }
 
-func (tc *TypeChecker) VisitFunctionDefinition(fn *FunctionDefinition, w ASTWalker) error {
+func (tc *TypeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast.ASTWalker) error {
 	argTypes := []Type{}
 	for _, arg := range fn.Args {
 		argType, found := tc.typeEnv.lookup(arg.Type)
@@ -165,7 +167,7 @@ func (tc *TypeChecker) VisitFunctionDefinition(fn *FunctionDefinition, w ASTWalk
 		ArgTypes:   argTypes,
 		ReturnType: &UnitType{},
 	}
-	tc.typeByNodeId[fn.id] = funcType
+	tc.typeByNodeId[fn.Id()] = funcType
 	if err := tc.typeEnv.declare(fn.Name, funcType); err != nil {
 		return fmt.Errorf("failed to declare function %s: %w", fn.Name, err)
 	}
@@ -183,12 +185,12 @@ func (tc *TypeChecker) VisitFunctionDefinition(fn *FunctionDefinition, w ASTWalk
 	return nil
 }
 
-func (tc *TypeChecker) VisitModule(module *Module, w ASTWalker) error {
-	tc.typeByNodeId[module.id] = &UnitType{}
+func (tc *TypeChecker) VisitModule(module *ast.Module, w ast.ASTWalker) error {
+	tc.typeByNodeId[module.Id()] = &UnitType{}
 	return w.WalkModule(module)
 }
 
-func (tc *TypeChecker) TypeCheck(node Node, w ASTWalker) (Type, error) {
+func (tc *TypeChecker) TypeCheck(node ast.Node, w ast.ASTWalker) (Type, error) {
 	if err := w.WalkNode(node); err != nil {
 		return nil, err
 	}
@@ -197,7 +199,7 @@ func (tc *TypeChecker) TypeCheck(node Node, w ASTWalker) (Type, error) {
 
 }
 
-func TypeCheck(node Node) (Type, map[NodeId]Type, error) {
+func TypeCheck(node ast.Node) (Type, map[ast.NodeId]Type, error) {
 	defaultTypeEnv := &TypeEnvironment{types: make(map[string]Type)}
 	// Declare builtin types.
 	if err := defaultTypeEnv.declare("Str", &StrType{}); err != nil {
@@ -211,11 +213,11 @@ func TypeCheck(node Node) (Type, map[NodeId]Type, error) {
 		panic(fmt.Errorf("Failed to declare print function: %w", err))
 	}
 	tc := &TypeChecker{
-		DefaultASTVisitor: DefaultASTVisitor{},
-		typeByNodeId:      make(map[NodeId]Type),
+		DefaultASTVisitor: ast.DefaultASTVisitor{},
+		typeByNodeId:      make(map[ast.NodeId]Type),
 		typeEnv:           defaultTypeEnv,
 	}
-	walker := &DefaultASTWalker{Visitor: tc}
+	walker := &ast.DefaultASTWalker{Visitor: tc}
 	res, err := tc.TypeCheck(node, walker)
 	if err != nil {
 		return nil, nil, err

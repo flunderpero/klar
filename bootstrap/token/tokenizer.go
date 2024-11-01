@@ -1,4 +1,4 @@
-package main
+package token
 
 import "fmt"
 
@@ -7,60 +7,29 @@ type Token struct {
 	Value string
 }
 
-type TokenKind int
+type TokenKind string
 
 const (
-	TKIdentifier TokenKind = iota
-	TKOpenParen
-	TKCloseParen
-	TKOpenCurly
-	TKCloseCurly
-	TKComma
-	TKString
-	TKTrue
-	TKFalse
-	TKIf
-	TKFn
-	TKEOF
+	Ident  TokenKind = "ident"
+	LParen TokenKind = "("
+	RParen TokenKind = ")"
+	LCurly TokenKind = "{"
+	RCurly TokenKind = "}"
+	Comma  TokenKind = ","
+	Str    TokenKind = "Str"
+	True   TokenKind = "true"
+	False  TokenKind = "false"
+	If     TokenKind = "if"
+	Fn     TokenKind = "fn"
+	EOF    TokenKind = "EOF"
 )
 
-func (k TokenKind) String() string {
-	switch k {
-	case TKIdentifier:
-		return "ident"
-	case TKOpenParen:
-		return "oparen"
-	case TKCloseParen:
-		return "cparen"
-	case TKOpenCurly:
-		return "ocurly"
-	case TKCloseCurly:
-		return "ccurly"
-	case TKComma:
-		return "comma"
-	case TKString:
-		return "string"
-	case TKTrue:
-		return "true"
-	case TKFalse:
-		return "false"
-	case TKIf:
-		return "if"
-	case TKFn:
-		return "fn"
-	case TKEOF:
-		return "eof"
-	default:
-		return fmt.Sprintf("<unknown: %d>", k)
-	}
-}
-
 func (t Token) String() string {
-	kind := t.Kind.String()
+	kind := string(t.Kind)
 	switch t.Kind {
-	case TKString:
+	case Str:
 		return fmt.Sprintf("%s(%q)", kind, t.Value)
-	case TKIdentifier:
+	case Ident:
 		return fmt.Sprintf("%s(%s)", kind, t.Value)
 	default:
 		return kind
@@ -76,15 +45,15 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 		if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
 			// Skip whitespace.
 		} else if c == '(' {
-			tokens = append(tokens, Token{Kind: TKOpenParen, Value: ""})
+			tokens = append(tokens, Token{Kind: LParen, Value: ""})
 		} else if c == ')' {
-			tokens = append(tokens, Token{Kind: TKCloseParen, Value: ""})
+			tokens = append(tokens, Token{Kind: RParen, Value: ""})
 		} else if c == '{' {
-			tokens = append(tokens, Token{Kind: TKOpenCurly, Value: ""})
+			tokens = append(tokens, Token{Kind: LCurly, Value: ""})
 		} else if c == '}' {
-			tokens = append(tokens, Token{Kind: TKCloseCurly, Value: ""})
+			tokens = append(tokens, Token{Kind: RCurly, Value: ""})
 		} else if c == ',' {
-			tokens = append(tokens, Token{Kind: TKComma, Value: ""})
+			tokens = append(tokens, Token{Kind: Comma, Value: ""})
 		} else if c == '"' {
 			// Parse string.
 			value := []byte{}
@@ -98,7 +67,7 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 					break
 				}
 			}
-			tokens = append(tokens, Token{Kind: TKString, Value: string(value)})
+			tokens = append(tokens, Token{Kind: Str, Value: string(value)})
 		} else if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
 			// Parse identifier.
 			value := []byte{c}
@@ -114,15 +83,15 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			var token Token
 			switch string(value) {
 			case "fn":
-				token = Token{Kind: TKFn, Value: ""}
+				token = Token{Kind: Fn, Value: ""}
 			case "if":
-				token = Token{Kind: TKIf, Value: ""}
+				token = Token{Kind: If, Value: ""}
 			case "true":
-				token = Token{Kind: TKTrue, Value: ""}
+				token = Token{Kind: True, Value: ""}
 			case "false":
-				token = Token{Kind: TKFalse, Value: ""}
+				token = Token{Kind: False, Value: ""}
 			default:
-				token = Token{Kind: TKIdentifier, Value: string(value)}
+				token = Token{Kind: Ident, Value: string(value)}
 			}
 			tokens = append(tokens, token)
 		} else {
@@ -130,6 +99,6 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			return tokens, fmt.Errorf("unexpected character: %c", c)
 		}
 	}
-	tokens = append(tokens, Token{Kind: TKEOF, Value: ""})
+	tokens = append(tokens, Token{Kind: EOF, Value: ""})
 	return tokens, nil
 }

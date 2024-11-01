@@ -1,9 +1,11 @@
-package main
+package ast
 
 import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/flunderpero/klar/bootstrap/token"
 )
 
 type NodeId int
@@ -161,7 +163,7 @@ func (f *FunctionDefinition) String() string {
 }
 
 type Parser struct {
-	tokens []Token
+	tokens []token.Token
 	index  int
 	nodeId NodeId
 }
@@ -171,37 +173,37 @@ func (p *Parser) nextNodeId() NodeId {
 	return p.nodeId
 }
 
-func (p *Parser) consume(kind TokenKind) (Token, error) {
-	token := p.tokens[p.index]
-	if token.Kind != kind {
-		return Token{}, fmt.Errorf("Expected token kind %s, got %s", kind, token.Kind)
+func (p *Parser) consume(kind token.TokenKind) (token.Token, error) {
+	t := p.tokens[p.index]
+	if t.Kind != kind {
+		return token.Token{}, fmt.Errorf("Expected token kind %s, got %s", kind, t.Kind)
 	}
 	p.index = p.index + 1
-	return token, nil
+	return t, nil
 }
 
-func (p *Parser) consumeAny() Token {
+func (p *Parser) consumeAny() token.Token {
 	p.index = p.index + 1
 	return p.tokens[p.index-1]
 }
 
-func (p *Parser) peek() Token {
+func (p *Parser) peek() token.Token {
 	return p.tokens[p.index]
 }
 
 func (p *Parser) parseCallExpression(callee Expression) (*CallExpression, error) {
-	if _, err := p.consume(TKOpenParen); err != nil {
+	if _, err := p.consume(token.LParen); err != nil {
 		return nil, err
 	}
 	args := []Expression{}
 	done := false
 	for p.index < len(p.tokens) && !done {
-		token := p.peek()
-		switch token.Kind {
-		case TKCloseParen:
+		t := p.peek()
+		switch t.Kind {
+		case token.RParen:
 			p.consumeAny()
 			done = true
-		case TKComma:
+		case token.Comma:
 			p.consumeAny()
 		default:
 			arg, err := p.parseExpression()
@@ -215,13 +217,13 @@ func (p *Parser) parseCallExpression(callee Expression) (*CallExpression, error)
 }
 
 func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
-	if _, err := p.consume(TKOpenCurly); err != nil {
+	if _, err := p.consume(token.LCurly); err != nil {
 		return nil, err
 	}
 	var nodes []Node
 	for p.index < len(p.tokens) {
-		token := p.peek()
-		if token.Kind == TKCloseCurly {
+		t := p.peek()
+		if t.Kind == token.RCurly {
 			p.consumeAny()
 			break
 		}
@@ -235,7 +237,7 @@ func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
 }
 
 func (p *Parser) parseIfExpression() (*IfExpression, error) {
-	if _, err := p.consume(TKIf); err != nil {
+	if _, err := p.consume(token.If); err != nil {
 		return nil, err
 	}
 	condition, err := p.parseExpression()
@@ -250,41 +252,41 @@ func (p *Parser) parseIfExpression() (*IfExpression, error) {
 }
 
 func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
-	if _, err := p.consume(TKFn); err != nil {
+	if _, err := p.consume(token.Fn); err != nil {
 		return nil, err
 	}
-	nameToken, err := p.consume(TKIdentifier)
+	nameToken, err := p.consume(token.Ident)
 	if err != nil {
 		return nil, err
 	}
-	_, err = p.consume(TKOpenParen)
+	_, err = p.consume(token.LParen)
 	if err != nil {
 		return nil, err
 	}
 	args := []FunctionArg{}
 	for p.index < len(p.tokens) {
-		token := p.peek()
-		if token.Kind == TKCloseParen {
+		t := p.peek()
+		if t.Kind == token.RParen {
 			p.consumeAny()
 			break
 		}
-		argNameToken, err := p.consume(TKIdentifier)
+		argNameToken, err := p.consume(token.Ident)
 		if err != nil {
 			return nil, err
 		}
-		argTypeToken, err := p.consume(TKIdentifier)
+		argTypeToken, err := p.consume(token.Ident)
 		if err != nil {
 			return nil, err
 		}
 		arg := FunctionArg{id: p.nextNodeId(), Name: argNameToken.Value, Type: argTypeToken.Value}
 		args = append(args, arg)
-		token = p.peek()
-		if token.Kind == TKCloseParen {
+		t = p.peek()
+		if t.Kind == token.RParen {
 			p.consumeAny()
 			break
 		}
-		if token.Kind != TKComma {
-			return nil, fmt.Errorf("expected comma or close paren, got %s", token)
+		if t.Kind != token.Comma {
+			return nil, fmt.Errorf("expected comma or close paren, got %s", t)
 		}
 		p.consumeAny()
 	}
@@ -296,14 +298,14 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 }
 
 func (p *Parser) parseExpression() (Expression, error) {
-	token := p.peek()
-	switch token.Kind {
-	case TKIdentifier:
-		if _, err := p.consume(TKIdentifier); err != nil {
+	t := p.peek()
+	switch t.Kind {
+	case token.Ident:
+		if _, err := p.consume(token.Ident); err != nil {
 			return nil, err
 		}
-		expr := &IdentExpression{id: p.nextNodeId(), Name: token.Value}
-		if p.peek().Kind == TKOpenParen {
+		expr := &IdentExpression{id: p.nextNodeId(), Name: t.Value}
+		if p.peek().Kind == token.LParen {
 			expr, err := p.parseCallExpression(expr)
 			if err != nil {
 				return nil, err
@@ -311,21 +313,21 @@ func (p *Parser) parseExpression() (Expression, error) {
 			return expr, nil
 		}
 		return expr, nil
-	case TKString:
+	case token.Str:
 		p.consumeAny()
-		return &StringLiteralExpression{id: p.nextNodeId(), Value: token.Value}, nil
-	case TKTrue:
+		return &StringLiteralExpression{id: p.nextNodeId(), Value: t.Value}, nil
+	case token.True:
 		p.consumeAny()
 		return &BoolLiteralExpression{id: p.nextNodeId(), Value: true}, nil
-	case TKFalse:
+	case token.False:
 		p.consumeAny()
 		return &BoolLiteralExpression{id: p.nextNodeId(), Value: false}, nil
-	case TKOpenCurly:
+	case token.LCurly:
 		return p.parseBlockExpression()
-	case TKIf:
+	case token.If:
 		return p.parseIfExpression()
 	default:
-		return nil, fmt.Errorf("expected expression, got token: %s", token)
+		return nil, fmt.Errorf("expected expression, got token: %s", t)
 	}
 }
 
@@ -333,20 +335,20 @@ var EOF = fmt.Errorf("EOF")
 
 func (p *Parser) ParseNode() (Node, error) {
 	for p.index < len(p.tokens) {
-		token := p.peek()
-		switch token.Kind {
-		case TKEOF:
+		t := p.peek()
+		switch t.Kind {
+		case token.EOF:
 			return nil, EOF
-		case TKFn:
+		case token.Fn:
 			return p.parseFunctionDefinition()
-		case TKIdentifier, TKOpenCurly, TKIf, TKTrue, TKFalse:
+		case token.Ident, token.LCurly, token.If, token.True, token.False:
 			expr, err := p.parseExpression()
 			if err != nil {
 				return nil, err
 			}
 			return expr, nil
 		default:
-			return nil, fmt.Errorf("unexpected token: %s", token)
+			return nil, fmt.Errorf("unexpected token: %s", t)
 		}
 	}
 	return nil, fmt.Errorf("unexpected end of file")
@@ -370,7 +372,7 @@ func (p *Parser) Parse() (*Module, error) {
 	return nil, fmt.Errorf("unexpected end of file")
 }
 
-func Parse(tokens []Token) (*Module, error) {
+func Parse(tokens []token.Token) (*Module, error) {
 	p := Parser{tokens: tokens, index: 0, nodeId: 0}
 	return p.Parse()
 }

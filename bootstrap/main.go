@@ -84,7 +84,7 @@ func main() {
 		fmt.Println()
 		for _, function := range irModule.Functions {
 			fmt.Println(function, "{")
-			err := ir.WalkBlock(function.Entry, func(block *ir.IRBlock) error {
+			err := ir.WalkBlock(function.Entry, func(block *ir.Block) error {
 				fmt.Println(block)
 				return nil
 			})

@@ -7,60 +7,60 @@ import (
 	"github.com/flunderpero/klar/bootstrap/typed"
 )
 
-type IRType interface {
+type Type interface {
 	String() string
 	Size() int
 }
 
-type IRBasicType string
+type BuiltInType string
 
 const (
-	IRUnit  IRBasicType = "unit"
-	IRBool  IRBasicType = "i1"
-	IRInt8  IRBasicType = "i8"
-	IRInt32 IRBasicType = "i32"
-	IRInt64 IRBasicType = "i64"
+	UnitType  BuiltInType = "unit"
+	BoolType  BuiltInType = "i1"
+	Int8Type  BuiltInType = "i8"
+	Int32Type BuiltInType = "i32"
+	Int64Type BuiltInType = "i64"
 )
 
-func (t IRBasicType) String() string {
+func (t BuiltInType) String() string {
 	return string(t)
 }
 
-func (t IRBasicType) Size() int {
+func (t BuiltInType) Size() int {
 	switch t {
-	case IRUnit:
+	case UnitType:
 		return 0
-	case IRBool:
+	case BoolType:
 		return 1
-	case IRInt8:
+	case Int8Type:
 		return 1
-	case IRInt32:
+	case Int32Type:
 		return 4
-	case IRInt64:
+	case Int64Type:
 		return 8
 	default:
 		panic(fmt.Sprintf("Unknown basic type: %s", t))
 	}
 }
 
-type IRPointerType struct {
-	ElementType IRType
+type PointerType struct {
+	ElementType Type
 }
 
-func (t IRPointerType) String() string {
+func (t PointerType) String() string {
 	return fmt.Sprintf("%s*", t.ElementType)
 }
 
-func (t IRPointerType) Size() int {
+func (t PointerType) Size() int {
 	return 8
 }
 
-type IRStructType struct {
+type StructType struct {
 	Name   string
-	Fields []IRType
+	Fields []Type
 }
 
-func (t IRStructType) String() string {
+func (t StructType) String() string {
 	fields := ""
 	for _, field := range t.Fields {
 		if len(fields) > 0 {
@@ -71,7 +71,7 @@ func (t IRStructType) String() string {
 	return fmt.Sprintf("struct %s {%s}", t.Name, fields)
 }
 
-func (t IRStructType) Size() int {
+func (t StructType) Size() int {
 	size := 0
 	for _, field := range t.Fields {
 		size += field.Size()
@@ -79,26 +79,26 @@ func (t IRStructType) Size() int {
 	return size
 }
 
-var IRStrType = &IRStructType{Name: "Str", Fields: []IRType{IRInt64, &IRPointerType{IRInt8}}}
+var StrType = &StructType{Name: "Str", Fields: []Type{Int64Type, &PointerType{Int8Type}}}
 
-type IRBlockId int
+type BlockId int
 
-func (b IRBlockId) String() string {
+func (b BlockId) String() string {
 	return fmt.Sprintf("block_%d", b)
 }
 
-type IRBlock struct {
-	Id           IRBlockId
-	Instructions []IRInstruction
-	Terminator   IRTerminator
-	Predecessors []*IRBlock
+type Block struct {
+	Id           BlockId
+	Instructions []Instruction
+	Terminator   Terminator
+	Predecessors []*Block
 }
 
-func (ir *IRBlock) append(instruction IRInstruction) {
+func (ir *Block) append(instruction Instruction) {
 	ir.Instructions = append(ir.Instructions, instruction)
 }
 
-func (ir *IRBlock) String() string {
+func (ir *Block) String() string {
 	s := ""
 	for _, inst := range ir.Instructions {
 		s += fmt.Sprintf("\n    %s", inst)
@@ -107,61 +107,61 @@ func (ir *IRBlock) String() string {
 	return fmt.Sprintf("%s:%s", ir.Id, s)
 }
 
-type IRTerminator interface {
+type Terminator interface {
 	String() string
-	Targets() []*IRBlock
+	Targets() []*Block
 }
 
-type IRJump struct {
-	Target *IRBlock
+type Jump struct {
+	Target *Block
 }
 
-func (ir *IRJump) String() string {
+func (ir *Jump) String() string {
 	return fmt.Sprintf("jmp %s", ir.Target.Id)
 }
 
-func (ir *IRJump) Targets() []*IRBlock {
-	return []*IRBlock{ir.Target}
+func (ir *Jump) Targets() []*Block {
+	return []*Block{ir.Target}
 }
 
-type IRCondBranch struct {
-	Condition  IRRegister
-	TrueBlock  *IRBlock
-	FalseBlock *IRBlock
+type CondBranch struct {
+	Condition  Register
+	TrueBlock  *Block
+	FalseBlock *Block
 }
 
-func (ir *IRCondBranch) String() string {
+func (ir *CondBranch) String() string {
 	return fmt.Sprintf("condbr i1 %s, %s, %s", ir.Condition, ir.TrueBlock.Id, ir.FalseBlock.Id)
 }
 
-func (ir *IRCondBranch) Targets() []*IRBlock {
-	return []*IRBlock{ir.TrueBlock, ir.FalseBlock}
+func (ir *CondBranch) Targets() []*Block {
+	return []*Block{ir.TrueBlock, ir.FalseBlock}
 }
 
-type IRReturn struct{}
+type Return struct{}
 
-func (ir *IRReturn) String() string {
+func (ir *Return) String() string {
 	return "ret"
 }
 
-func (ir *IRReturn) Targets() []*IRBlock {
-	return []*IRBlock{}
+func (ir *Return) Targets() []*Block {
+	return []*Block{}
 }
 
-type IRFunctionArg struct {
-	Type     IRType
-	Register IRRegister
+type FunctionArg struct {
+	Type     Type
+	Register Register
 }
 
-type IRFunction struct {
+type Function struct {
 	Name       string
-	ReturnType IRType
-	Args       []IRFunctionArg
-	Entry      *IRBlock
+	ReturnType Type
+	Args       []FunctionArg
+	Entry      *Block
 	Definition *ast.FunctionDefinition
 }
 
-func (t *IRFunction) String() string {
+func (t *Function) String() string {
 	args := ""
 	for _, arg := range t.Args {
 		if len(args) > 0 {
@@ -172,115 +172,115 @@ func (t *IRFunction) String() string {
 	return fmt.Sprintf("@declare %s %s(%s)", t.ReturnType, t.Name, args)
 }
 
-type IRModule struct {
-	Functions []*IRFunction
-	Constants []*IRStringConst
-	Types     []*IRStructType
+type Module struct {
+	Functions []*Function
+	Constants []*StrConst
+	Types     []*StructType
 }
 
-type IRRegister string
+type Register string
 
-func (r IRRegister) String() string {
+func (r Register) String() string {
 	return string(r)
 }
 
-func (r IRRegister) IsConstant() bool {
+func (r Register) IsConstant() bool {
 	return string(r)[0] == '_'
 }
 
-type IRInstruction interface {
+type Instruction interface {
 	String() string
-	Register() IRRegister
+	Register() Register
 }
 
-type IRStringConst struct {
-	register IRRegister
+type StrConst struct {
+	register Register
 	Value    string
 }
 
-func (i *IRStringConst) String() string {
-	return fmt.Sprintf("%s = String %q", i.register, i.Value)
+func (i *StrConst) String() string {
+	return fmt.Sprintf("%s = Str %q", i.register, i.Value)
 }
 
-func (i *IRStringConst) Register() IRRegister {
+func (i *StrConst) Register() Register {
 	return i.register
 }
 
-type IRInt64Const struct {
-	register IRRegister
+type Int64Const struct {
+	register Register
 	Value    int64
 }
 
-func (i *IRInt64Const) String() string {
+func (i *Int64Const) String() string {
 	return fmt.Sprintf("%s = i64 %d", i.register, i.Value)
 }
 
-func (i *IRInt64Const) Register() IRRegister {
+func (i *Int64Const) Register() Register {
 	return i.register
 }
 
-type IRInt32Const struct {
-	register IRRegister
+type Int32Const struct {
+	register Register
 	Value    int64
 }
 
-func (i *IRInt32Const) String() string {
+func (i *Int32Const) String() string {
 	return fmt.Sprintf("%s = i32 %d", i.register, i.Value)
 }
 
-func (i *IRInt32Const) Register() IRRegister {
+func (i *Int32Const) Register() Register {
 	return i.register
 }
 
-type IRBoolConst struct {
-	register IRRegister
+type BoolConst struct {
+	register Register
 	Value    int
 }
 
-func (i *IRBoolConst) String() string {
+func (i *BoolConst) String() string {
 	return fmt.Sprintf("%s = i1 %d", i.register, i.Value)
 }
 
-func (i *IRBoolConst) Register() IRRegister {
+func (i *BoolConst) Register() Register {
 	return i.register
 }
 
-type IRGetPtr struct {
-	register   IRRegister
-	Source     IRRegister
-	Type       IRType
+type GetPointer struct {
+	register   Register
+	Source     Register
+	Type       Type
 	FieldIndex int
 }
 
-func (i *IRGetPtr) String() string {
+func (i *GetPointer) String() string {
 	return fmt.Sprintf("%s = getptr %s, %s, %d", i.register, i.Type, i.Source, i.FieldIndex)
 }
 
-func (i *IRGetPtr) Register() IRRegister {
+func (i *GetPointer) Register() Register {
 	return i.register
 }
 
-type IRLoad struct {
-	register  IRRegister
-	Source    IRRegister
-	FieldType IRType
+type Load struct {
+	register  Register
+	Source    Register
+	FieldType Type
 }
 
-func (i *IRLoad) Register() IRRegister {
+func (i *Load) Register() Register {
 	return i.register
 }
 
-func (i *IRLoad) String() string {
+func (i *Load) String() string {
 	return fmt.Sprintf("%s = load %s, %s", i.register, i.Source, i.FieldType)
 }
 
-type IRCall struct {
-	register IRRegister
-	Function *IRFunction
-	Args     []IRRegister
+type Call struct {
+	register Register
+	Function *Function
+	Args     []Register
 }
 
-func (inst *IRCall) String() string {
+func (inst *Call) String() string {
 	args := ""
 	for i, reg := range inst.Args {
 		arg := inst.Function.Args[i]
@@ -292,16 +292,16 @@ func (inst *IRCall) String() string {
 	return fmt.Sprintf("%s = call %s %s (%s)", inst.register, inst.Function.ReturnType, inst.Function.Name, args)
 }
 
-func (inst *IRCall) Register() IRRegister {
+func (inst *Call) Register() Register {
 	return inst.register
 }
 
-type SymbolTable struct {
-	symbols map[string]IRRegister
-	parent  *SymbolTable
+type symbolTable struct {
+	symbols map[string]Register
+	parent  *symbolTable
 }
 
-func (s *SymbolTable) lookup(name string) (IRRegister, bool) {
+func (s *symbolTable) lookup(name string) (Register, bool) {
 	reg, found := s.symbols[name]
 	if !found && s.parent != nil {
 		return s.parent.lookup(name)
@@ -309,48 +309,48 @@ func (s *SymbolTable) lookup(name string) (IRRegister, bool) {
 	return reg, found
 }
 
-type IRGenerator struct {
+type generator struct {
 	ast.DefaultASTVisitor
-	currentBlock     *IRBlock
+	currentBlock     *Block
 	typeByNodeId     map[ast.NodeId]typed.Type
-	registerByNodeId map[ast.NodeId]IRRegister
-	symbolTable      *SymbolTable
-	globalConstants  *[]*IRStringConst
+	registerByNodeId map[ast.NodeId]Register
+	symbolTable      *symbolTable
+	globalConstants  *[]*StrConst
 	registerIndex    int
 	blockIndex       int
-	functions        map[string]*IRFunction
-	declaredTypes    map[string]*IRStructType
+	functions        map[string]*Function
+	declaredTypes    map[string]*StructType
 }
 
-func (g *IRGenerator) EnterScope() {
-	g.symbolTable = &SymbolTable{symbols: make(map[string]IRRegister), parent: g.symbolTable}
+func (g *generator) enterScope() {
+	g.symbolTable = &symbolTable{symbols: make(map[string]Register), parent: g.symbolTable}
 }
 
-func (g *IRGenerator) ExitScope() {
+func (g *generator) exitScope() {
 	g.symbolTable = g.symbolTable.parent
 }
 
-func (g *IRGenerator) SetSymbol(name string, reg IRRegister) {
+func (g *generator) setSymbol(name string, reg Register) {
 	g.symbolTable.symbols[name] = reg
 }
 
-func (g *IRGenerator) GetSymbol(name string) (IRRegister, bool) {
+func (g *generator) getSymbol(name string) (Register, bool) {
 	return g.symbolTable.lookup(name)
 }
 
-func (g *IRGenerator) NextRegister() IRRegister {
+func (g *generator) nextRegister() Register {
 	g.registerIndex++
-	return IRRegister(fmt.Sprintf("%%%d", g.registerIndex))
+	return Register(fmt.Sprintf("%%%d", g.registerIndex))
 }
 
-func (g *IRGenerator) Append(instruction IRInstruction, node ast.Node) {
+func (g *generator) append(instruction Instruction, node ast.Node) {
 	g.currentBlock.append(instruction)
 	if node != nil {
 		g.registerByNodeId[node.Id()] = instruction.Register()
 	}
 }
 
-func (g *IRGenerator) LookupRegisterByNode(node ast.Node) IRRegister {
+func (g *generator) lookupRegisterByNode(node ast.Node) Register {
 	reg, ok := g.registerByNodeId[node.Id()]
 	if !ok {
 		panic(fmt.Sprintf("No register found for node %s", node))
@@ -358,19 +358,7 @@ func (g *IRGenerator) LookupRegisterByNode(node ast.Node) IRRegister {
 	return reg
 }
 
-func (g *IRGenerator) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
-	reg := IRRegister(fmt.Sprintf("_const_%d", len(*g.globalConstants)))
-	*g.globalConstants = append(*g.globalConstants, &IRStringConst{register: reg, Value: expr.Value})
-	g.Append(&IRGetPtr{
-		register:   g.NextRegister(),
-		Source:     reg,
-		Type:       IRStrType,
-		FieldIndex: 0,
-	}, expr)
-	return nil
-}
-
-func (g *IRGenerator) TypeOf(node ast.Node) typed.Type {
+func (g *generator) typeOf(node ast.Node) typed.Type {
 	ty, found := g.typeByNodeId[node.Id()]
 	if !found {
 		panic(fmt.Sprintf("Type of node %s should have been determined by the type-checker", node))
@@ -378,30 +366,42 @@ func (g *IRGenerator) TypeOf(node ast.Node) typed.Type {
 	return ty
 }
 
-func (g *IRGenerator) NewBlock(predecessors ...*IRBlock) *IRBlock {
+func (g *generator) newBlock(predecessors ...*Block) *Block {
 	g.blockIndex += 1
-	block := &IRBlock{Id: IRBlockId(g.blockIndex)}
+	block := &Block{Id: BlockId(g.blockIndex)}
 	block.Predecessors = append(block.Predecessors, predecessors...)
 	return block
 }
 
-func (g *IRGenerator) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) error {
+func (g *generator) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
+	reg := Register(fmt.Sprintf("_const_%d", len(*g.globalConstants)))
+	*g.globalConstants = append(*g.globalConstants, &StrConst{register: reg, Value: expr.Value})
+	g.append(&GetPointer{
+		register:   g.nextRegister(),
+		Source:     reg,
+		Type:       StrType,
+		FieldIndex: 0,
+	}, expr)
+	return nil
+}
+
+func (g *generator) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) error {
 	value := 0
 	if expr.Value {
 		value = 1
 	}
-	g.Append(&IRBoolConst{
-		register: g.NextRegister(),
+	g.append(&BoolConst{
+		register: g.nextRegister(),
 		Value:    value,
 	}, expr)
 	return nil
 }
 
-func (g *IRGenerator) VisitIdentExpression(expr *ast.IdentExpression) error {
+func (g *generator) VisitIdentExpression(expr *ast.IdentExpression) error {
 	if _, found := g.functions[expr.Name]; found {
 		return nil
 	}
-	reg, found := g.GetSymbol(expr.Name)
+	reg, found := g.getSymbol(expr.Name)
 	if !found {
 		return fmt.Errorf("unknown symbol: %s", expr.Name)
 	}
@@ -409,53 +409,53 @@ func (g *IRGenerator) VisitIdentExpression(expr *ast.IdentExpression) error {
 	return nil
 }
 
-func (g *IRGenerator) VisitCallExpression(expr *ast.CallExpression, w ast.ASTWalker) error {
+func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.ASTWalker) error {
 	if err := w.WalkCallExpression(expr); err != nil {
 		return err
 	}
-	funcType := g.TypeOf(expr.Callee).(*typed.FunctionType)
+	funcType := g.typeOf(expr.Callee).(*typed.FunctionType)
 	function, ok := g.functions[funcType.Name]
 	if !ok {
 		panic(fmt.Sprintf("Unknown function: %s", funcType.Name))
 	}
 	if function.Name == "print" {
-		arg0reg := g.LookupRegisterByNode(expr.Args[0])
-		stdOutReg := g.NextRegister()
-		strPtrReg := g.NextRegister()
-		strPtrLoadReg := g.NextRegister()
-		strLenReg := g.NextRegister()
-		g.Append(&IRInt32Const{
+		arg0reg := g.lookupRegisterByNode(expr.Args[0])
+		stdOutReg := g.nextRegister()
+		strPtrReg := g.nextRegister()
+		strPtrLoadReg := g.nextRegister()
+		strLenReg := g.nextRegister()
+		g.append(&Int32Const{
 			register: stdOutReg,
 			Value:    1,
 		}, nil)
-		g.Append(&IRGetPtr{
+		g.append(&GetPointer{
 			register:   strPtrReg,
 			Source:     arg0reg,
 			FieldIndex: 1,
-			Type:       IRStrType,
+			Type:       StrType,
 		}, nil)
-		g.Append(&IRLoad{
+		g.append(&Load{
 			register:  strPtrLoadReg,
 			Source:    strPtrReg,
-			FieldType: &IRPointerType{IRInt8},
+			FieldType: &PointerType{Int8Type},
 		}, nil)
-		g.Append(&IRLoad{
+		g.append(&Load{
 			register:  strLenReg,
 			Source:    arg0reg,
-			FieldType: IRInt64,
+			FieldType: Int64Type,
 		}, nil)
-		g.Append(&IRCall{
-			register: g.NextRegister(),
+		g.append(&Call{
+			register: g.nextRegister(),
 			Function: function,
-			Args:     []IRRegister{stdOutReg, strPtrLoadReg, strLenReg},
+			Args:     []Register{stdOutReg, strPtrLoadReg, strLenReg},
 		}, nil)
 	} else {
-		args := []IRRegister{}
+		args := []Register{}
 		for _, arg := range expr.Args {
-			args = append(args, g.LookupRegisterByNode(arg))
+			args = append(args, g.lookupRegisterByNode(arg))
 		}
-		g.Append(&IRCall{
-			register: g.NextRegister(),
+		g.append(&Call{
+			register: g.nextRegister(),
 			Function: function,
 			Args:     args,
 		}, nil)
@@ -463,17 +463,17 @@ func (g *IRGenerator) VisitCallExpression(expr *ast.CallExpression, w ast.ASTWal
 	return nil
 }
 
-func (g *IRGenerator) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker) error {
-	condBlock := g.NewBlock(g.currentBlock)
-	g.currentBlock.Terminator = &IRJump{Target: condBlock}
+func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker) error {
+	condBlock := g.newBlock(g.currentBlock)
+	g.currentBlock.Terminator = &Jump{Target: condBlock}
 	g.currentBlock = condBlock
 	if err := w.WalkNode(expr.Condition); err != nil {
 		return err
 	}
-	trueBlock := g.NewBlock(condBlock)
-	mergeBlock := g.NewBlock(condBlock, trueBlock)
-	trueBlock.Terminator = &IRJump{Target: mergeBlock}
-	condBlock.Terminator = &IRCondBranch{
+	trueBlock := g.newBlock(condBlock)
+	mergeBlock := g.newBlock(condBlock, trueBlock)
+	trueBlock.Terminator = &Jump{Target: mergeBlock}
+	condBlock.Terminator = &CondBranch{
 		Condition:  g.registerByNodeId[expr.Condition.Id()],
 		TrueBlock:  trueBlock,
 		FalseBlock: mergeBlock,
@@ -486,7 +486,7 @@ func (g *IRGenerator) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker)
 	return nil
 }
 
-func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*IRModule, error) {
+func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module, error) {
 	functionDefinitions := []*ast.FunctionDefinition{}
 	for _, node := range module.Nodes {
 		switch node := node.(type) {
@@ -496,63 +496,63 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*IRModul
 			return nil, fmt.Errorf("cannot generate IR for node type: %T", node)
 		}
 	}
-	functions := []*IRFunction{}
-	declaredTypes := make(map[string]*IRStructType)
+	functions := []*Function{}
+	declaredTypes := make(map[string]*StructType)
 	// Declare built-in types.
-	declaredTypes[IRStrType.Name] = IRStrType
+	declaredTypes[StrType.Name] = StrType
 	// First forward declare all functions.
 	for _, fd := range functionDefinitions {
-		args := []IRFunctionArg{}
+		args := []FunctionArg{}
 		for i, arg := range fd.Args {
 			argType, found := declaredTypes[arg.Type]
 			if !found {
 				return nil, fmt.Errorf("type %s not found for argument %s", arg.Type, arg.Name)
 			}
-			irArg := IRFunctionArg{
+			irArg := FunctionArg{
 				Type:     argType,
-				Register: IRRegister(fmt.Sprintf("%%%d", (i + 1))),
+				Register: Register(fmt.Sprintf("%%%d", (i + 1))),
 			}
 			args = append(args, irArg)
 		}
-		f := IRFunction{
+		f := Function{
 			Name:       fd.Name,
-			ReturnType: IRUnit,
+			ReturnType: UnitType,
 			Args:       args,
 			Definition: fd,
 		}
 		functions = append(functions, &f)
 	}
-	functionByName := make(map[string]*IRFunction)
+	functionByName := make(map[string]*Function)
 	for _, f := range functions {
 		functionByName[f.Name] = f
 	}
 	// Declare builtin functions.
-	functionByName["print"] = &IRFunction{
+	functionByName["print"] = &Function{
 		Name:       "print",
-		ReturnType: IRInt64,
-		Args: []IRFunctionArg{
-			IRFunctionArg{IRInt32, IRRegister("%1")},
-			IRFunctionArg{IRPointerType{IRInt8}, IRRegister("%2")},
-			IRFunctionArg{IRInt64, IRRegister("%3")},
+		ReturnType: Int64Type,
+		Args: []FunctionArg{
+			FunctionArg{Int32Type, Register("%1")},
+			FunctionArg{PointerType{Int8Type}, Register("%2")},
+			FunctionArg{Int64Type, Register("%3")},
 		},
 	}
-	constants := []*IRStringConst{}
+	constants := []*StrConst{}
 	// Generate code for each function.
 	for _, function := range functions {
-		gen := &IRGenerator{
+		gen := &generator{
 			DefaultASTVisitor: ast.DefaultASTVisitor{},
 			typeByNodeId:      typeMap,
-			registerByNodeId:  make(map[ast.NodeId]IRRegister),
+			registerByNodeId:  make(map[ast.NodeId]Register),
 			functions:         functionByName,
-			symbolTable:       &SymbolTable{symbols: make(map[string]IRRegister)},
+			symbolTable:       &symbolTable{symbols: make(map[string]Register)},
 			globalConstants:   &constants,
 			declaredTypes:     declaredTypes,
 		}
 		// Make function arguments visible.
 		for _, arg := range function.Definition.Args {
-			gen.SetSymbol(arg.Name, gen.NextRegister())
+			gen.setSymbol(arg.Name, gen.nextRegister())
 		}
-		block := gen.NewBlock()
+		block := gen.newBlock()
 		gen.currentBlock = block
 		walker := &ast.DefaultASTWalker{Visitor: gen}
 		if err := walker.WalkNode(function.Definition.Body); err != nil {
@@ -561,21 +561,21 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*IRModul
 		if gen.currentBlock.Terminator != nil {
 			return nil, fmt.Errorf("expecting the last block to not have a terminator, but got: %s", block.Terminator)
 		}
-		gen.currentBlock.Terminator = &IRReturn{}
+		gen.currentBlock.Terminator = &Return{}
 		function.Entry = block
 	}
-	types := []*IRStructType{}
+	types := []*StructType{}
 	for _, ty := range declaredTypes {
 		types = append(types, ty)
 	}
-	return &IRModule{Functions: functions, Constants: constants, Types: types}, nil
+	return &Module{Functions: functions, Constants: constants, Types: types}, nil
 }
 
 // Walk the given block and call `visitor` for each block we discover in the graph
 // of reachable blocks. It is guaranteed that each unique block is only visited once.
-func WalkBlock(block *IRBlock, visit func(block *IRBlock) error) error {
-	visited := make(map[IRBlockId]bool)
-	blocks := []*IRBlock{block}
+func WalkBlock(block *Block, visit func(block *Block) error) error {
+	visited := make(map[BlockId]bool)
+	blocks := []*Block{block}
 	i := 0
 	for i < len(blocks) {
 		block := blocks[i]

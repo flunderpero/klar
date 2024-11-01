@@ -15,18 +15,22 @@ type Node interface {
 	Id() NodeId
 }
 
+type node struct {
+	id NodeId
+}
+
+func (n *node) Id() NodeId {
+	return n.id
+}
+
 type Expression interface {
 	String() string
 	Id() NodeId
 }
 
 type IdentExpression struct {
-	id   NodeId
+	node
 	Name string
-}
-
-func (expr *IdentExpression) Id() NodeId {
-	return expr.id
 }
 
 func (expr *IdentExpression) String() string {
@@ -34,12 +38,8 @@ func (expr *IdentExpression) String() string {
 }
 
 type StringLiteralExpression struct {
-	id    NodeId
+	node
 	Value string
-}
-
-func (expr *StringLiteralExpression) Id() NodeId {
-	return expr.id
 }
 
 func (expr *StringLiteralExpression) String() string {
@@ -47,12 +47,8 @@ func (expr *StringLiteralExpression) String() string {
 }
 
 type BoolLiteralExpression struct {
-	id    NodeId
+	node
 	Value bool
-}
-
-func (expr *BoolLiteralExpression) Id() NodeId {
-	return expr.id
 }
 
 func (expr *BoolLiteralExpression) String() string {
@@ -60,13 +56,9 @@ func (expr *BoolLiteralExpression) String() string {
 }
 
 type CallExpression struct {
-	id     NodeId
+	node
 	Callee Expression
 	Args   []Expression
-}
-
-func (expr *CallExpression) Id() NodeId {
-	return expr.id
 }
 
 func (expr *CallExpression) String() string {
@@ -74,12 +66,8 @@ func (expr *CallExpression) String() string {
 }
 
 type BlockExpression struct {
-	id    NodeId
+	node
 	Nodes []Node
-}
-
-func (expr *BlockExpression) Id() NodeId {
-	return expr.id
 }
 
 func (expr *BlockExpression) String() string {
@@ -92,13 +80,9 @@ func (expr *BlockExpression) String() string {
 }
 
 type IfExpression struct {
-	id        NodeId
+	node
 	Condition Expression
 	TrueBody  *BlockExpression
-}
-
-func (expr *IfExpression) Id() NodeId {
-	return expr.id
 }
 
 func (expr *IfExpression) String() string {
@@ -108,12 +92,8 @@ func (expr *IfExpression) String() string {
 }
 
 type Module struct {
-	id    NodeId
+	node
 	Nodes []Node
-}
-
-func (m *Module) Id() NodeId {
-	return m.id
 }
 
 func (m *Module) String() string {
@@ -126,13 +106,9 @@ func (m *Module) String() string {
 }
 
 type FunctionArg struct {
-	id   NodeId
+	node
 	Name string
 	Type string
-}
-
-func (f *FunctionArg) Id() NodeId {
-	return f.id
 }
 
 func (f *FunctionArg) String() string {
@@ -140,14 +116,10 @@ func (f *FunctionArg) String() string {
 }
 
 type FunctionDefinition struct {
-	id   NodeId
+	node
 	Name string
 	Args []FunctionArg
 	Body *BlockExpression
-}
-
-func (f *FunctionDefinition) Id() NodeId {
-	return f.id
 }
 
 func (f *FunctionDefinition) String() string {
@@ -168,9 +140,9 @@ type Parser struct {
 	nodeId NodeId
 }
 
-func (p *Parser) nextNodeId() NodeId {
+func (p *Parser) newNode() node {
 	p.nodeId = p.nodeId + 1
-	return p.nodeId
+	return node{p.nodeId}
 }
 
 func (p *Parser) consume(kind token.TokenKind) (token.Token, error) {
@@ -213,7 +185,7 @@ func (p *Parser) parseCallExpression(callee Expression) (*CallExpression, error)
 			args = append(args, arg)
 		}
 	}
-	return &CallExpression{id: p.nextNodeId(), Callee: callee, Args: args}, nil
+	return &CallExpression{node: p.newNode(), Callee: callee, Args: args}, nil
 }
 
 func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
@@ -233,7 +205,7 @@ func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
 		}
 		nodes = append(nodes, node)
 	}
-	return &BlockExpression{id: p.nextNodeId(), Nodes: nodes}, nil
+	return &BlockExpression{node: p.newNode(), Nodes: nodes}, nil
 }
 
 func (p *Parser) parseIfExpression() (*IfExpression, error) {
@@ -248,7 +220,7 @@ func (p *Parser) parseIfExpression() (*IfExpression, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse `true` branch body: %v", err)
 	}
-	return &IfExpression{id: p.nextNodeId(), Condition: condition, TrueBody: trueBody}, nil
+	return &IfExpression{node: p.newNode(), Condition: condition, TrueBody: trueBody}, nil
 }
 
 func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
@@ -278,7 +250,7 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 		if err != nil {
 			return nil, err
 		}
-		arg := FunctionArg{id: p.nextNodeId(), Name: argNameToken.Value, Type: argTypeToken.Value}
+		arg := FunctionArg{node: p.newNode(), Name: argNameToken.Value, Type: argTypeToken.Value}
 		args = append(args, arg)
 		t = p.peek()
 		if t.Kind == token.RParen {
@@ -294,7 +266,7 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &FunctionDefinition{id: p.nextNodeId(), Name: nameToken.Value, Args: args, Body: body}, nil
+	return &FunctionDefinition{node: p.newNode(), Name: nameToken.Value, Args: args, Body: body}, nil
 }
 
 func (p *Parser) parseExpression() (Expression, error) {
@@ -304,7 +276,7 @@ func (p *Parser) parseExpression() (Expression, error) {
 		if _, err := p.consume(token.Ident); err != nil {
 			return nil, err
 		}
-		expr := &IdentExpression{id: p.nextNodeId(), Name: t.Value}
+		expr := &IdentExpression{node: p.newNode(), Name: t.Value}
 		if p.peek().Kind == token.LParen {
 			expr, err := p.parseCallExpression(expr)
 			if err != nil {
@@ -315,13 +287,13 @@ func (p *Parser) parseExpression() (Expression, error) {
 		return expr, nil
 	case token.Str:
 		p.consumeAny()
-		return &StringLiteralExpression{id: p.nextNodeId(), Value: t.Value}, nil
+		return &StringLiteralExpression{node: p.newNode(), Value: t.Value}, nil
 	case token.True:
 		p.consumeAny()
-		return &BoolLiteralExpression{id: p.nextNodeId(), Value: true}, nil
+		return &BoolLiteralExpression{node: p.newNode(), Value: true}, nil
 	case token.False:
 		p.consumeAny()
-		return &BoolLiteralExpression{id: p.nextNodeId(), Value: false}, nil
+		return &BoolLiteralExpression{node: p.newNode(), Value: false}, nil
 	case token.LCurly:
 		return p.parseBlockExpression()
 	case token.If:
@@ -362,7 +334,7 @@ func (p *Parser) Parse() (*Module, error) {
 			if len(nodes) == 0 {
 				return nil, fmt.Errorf("expected at least one AST node")
 			}
-			return &Module{id: p.nextNodeId(), Nodes: nodes}, nil
+			return &Module{node: p.newNode(), Nodes: nodes}, nil
 		}
 		if err != nil {
 			return nil, err

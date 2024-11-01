@@ -17,6 +17,7 @@ const (
 	RCurly TokenKind = "}"
 	Comma  TokenKind = ","
 	Str    TokenKind = "Str"
+	Int    TokenKind = "Int"
 	True   TokenKind = "true"
 	False  TokenKind = "false"
 	If     TokenKind = "if"
@@ -68,6 +69,19 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 				}
 			}
 			tokens = append(tokens, Token{Kind: Str, Value: string(value)})
+		} else if c >= '0' && c <= '9' {
+			// Parse int.
+			value := []byte{c}
+			for i < len(src) {
+				c = src[i]
+				if c >= '0' && c <= '9' {
+					i += 1
+					value = append(value, c)
+				} else {
+					break
+				}
+			}
+			tokens = append(tokens, Token{Kind: Int, Value: string(value)})
 		} else if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
 			// Parse identifier.
 			value := []byte{c}

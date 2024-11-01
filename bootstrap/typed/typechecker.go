@@ -22,6 +22,12 @@ func (ty *BoolType) String() string {
 	return "BoolType()"
 }
 
+type Int64Type struct{}
+
+func (ty *Int64Type) String() string {
+	return "Int64Type()"
+}
+
 type UnitType struct{}
 
 func (ty *UnitType) String() string {
@@ -90,6 +96,11 @@ func (tc *typeChecker) mustLookup(node ast.Node) Type {
 
 func (tc *typeChecker) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
 	tc.typeByNodeId[expr.Id()] = &StrType{}
+	return nil
+}
+
+func (tc *typeChecker) VisitIntLiteralExpression(expr *ast.IntLiteralExpression) error {
+	tc.typeByNodeId[expr.Id()] = &Int64Type{}
 	return nil
 }
 
@@ -205,12 +216,22 @@ func TypeCheck(node ast.Node) (Type, map[ast.NodeId]Type, error) {
 	if err := defaultTypeEnv.declare("Str", &StrType{}); err != nil {
 		panic(fmt.Errorf("Failed to declare Str type: %w", err))
 	}
+	if err := defaultTypeEnv.declare("Int", &Int64Type{}); err != nil {
+		panic(fmt.Errorf("Failed to declare Int type: %w", err))
+	}
 	if err := defaultTypeEnv.declare("print", &FunctionType{
 		Name:       "print",
 		ArgTypes:   []Type{&StrType{}},
 		ReturnType: &UnitType{},
 	}); err != nil {
 		panic(fmt.Errorf("Failed to declare print function: %w", err))
+	}
+	if err := defaultTypeEnv.declare("print_int", &FunctionType{
+		Name:       "print_int",
+		ArgTypes:   []Type{&Int64Type{}},
+		ReturnType: &UnitType{},
+	}); err != nil {
+		panic(fmt.Errorf("Failed to declare print_int function: %w", err))
 	}
 	tc := &typeChecker{
 		DefaultASTVisitor: ast.DefaultASTVisitor{},

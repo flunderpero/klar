@@ -12,6 +12,7 @@ type ASTVisitor interface {
 	VisitIfExpression(expr *IfExpression, w ASTWalker) error
 	VisitIdentExpression(expr *IdentExpression) error
 	VisitStringLiteralExpression(expr *StringLiteralExpression) error
+	VisitIntLiteralExpression(expr *IntLiteralExpression) error
 	VisitBoolLiteralExpression(expr *BoolLiteralExpression) error
 }
 
@@ -32,6 +33,10 @@ func (_ *DefaultASTVisitor) VisitIdentExpression(expr *IdentExpression) error {
 }
 
 func (_ *DefaultASTVisitor) VisitStringLiteralExpression(expr *StringLiteralExpression) error {
+	return nil
+}
+
+func (_ *DefaultASTVisitor) VisitIntLiteralExpression(expr *IntLiteralExpression) error {
 	return nil
 }
 
@@ -78,6 +83,8 @@ func (w *DefaultASTWalker) WalkExpression(expr Expression) error {
 		err = w.Visitor.VisitIdentExpression(expr)
 	case *StringLiteralExpression:
 		err = w.Visitor.VisitStringLiteralExpression(expr)
+	case *IntLiteralExpression:
+		err = w.Visitor.VisitIntLiteralExpression(expr)
 	case *BoolLiteralExpression:
 		err = w.Visitor.VisitBoolLiteralExpression(expr)
 	case *CallExpression:

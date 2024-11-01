@@ -402,11 +402,28 @@ func defineBuiltInPrintFunction(asm *ASMText) {
     ret`)
 }
 
+func defineBuiltInPrintIntFunction(asm *ASMText) {
+	asm.emit(
+		`_print_int:
+    stp fp, lr, [sp, #-32]!
+    mov fp, sp
+    str x0, [sp]
+    adrp x0, _print_int_format@PAGE
+    add x0, x0, _print_int_format@PAGEOFF+0
+    bl _printf
+    mov x0, 0
+    bl _fflush
+    ldp fp, lr, [sp], #32
+    mov x0, xzr
+    ret`)
+}
+
 func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
 	asm := ASMText{}
 	asm.emit(".global _main")
 	asm.emit(".text")
 	defineBuiltInPrintFunction(&asm)
+	defineBuiltInPrintIntFunction(&asm)
 	for _, function := range irModule.Functions {
 		code, err := generateFunction(function, &irModule.Constants)
 		if err != nil {
@@ -421,7 +438,7 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
 		asm.emit(".align 3")
 		asm.emit("%s_bytes:", constant.Register())
 		asm.incIndent()
-		asm.emit(".ascii \"%s\"", constant.Value)
+		asm.emit(".ascii %q", constant.Value)
 		asm.decIndent()
 		asm.emit(".align 3")
 		asm.emit("%s:", constant.Register())
@@ -430,5 +447,9 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
 		asm.emit(".quad %s_bytes", constant.Register())
 		asm.decIndent()
 	}
+	// Needed for `print_int`.
+	asm.emit(".align 3")
+	asm.emit("_print_int_format:")
+	asm.incIndent().emit(".asciz \"%%lld\"").decIndent()
 	return asm, nil
 }

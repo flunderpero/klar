@@ -11,8 +11,15 @@ fn print_two(first Str, second Str) {
     print(second)
 }
 
+fn print_two_ints_and_a_string(first_int Int, string Str, second_int Int) {
+    print_int(first_int)
+    print(string)
+    print_int(second_int)
+}
+
 fn main() {
     print_hello()
     print_world()
     print_two("Hello, ", "again!")
+    print_two_ints_and_a_string(42, " <<< an int on both sides >>> ", 24)
 }

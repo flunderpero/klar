@@ -175,7 +175,7 @@ func (t *Function) String() string {
 type Module struct {
 	Functions []*Function
 	Constants []*StrConst
-	Types     []*StructType
+	Types     []Type
 }
 
 type Register string
@@ -319,7 +319,7 @@ type generator struct {
 	registerIndex    int
 	blockIndex       int
 	functions        map[string]*Function
-	declaredTypes    map[string]*StructType
+	declaredTypes    map[string]Type
 }
 
 func (g *generator) enterScope() {
@@ -381,6 +381,14 @@ func (g *generator) VisitStringLiteralExpression(expr *ast.StringLiteralExpressi
 		Source:     reg,
 		Type:       StrType,
 		FieldIndex: 0,
+	}, expr)
+	return nil
+}
+
+func (g *generator) VisitIntLiteralExpression(expr *ast.IntLiteralExpression) error {
+	g.append(&Int64Const{
+		register: g.nextRegister(),
+		Value:    expr.Value,
 	}, expr)
 	return nil
 }
@@ -464,9 +472,10 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 		}
 	}
 	functions := []*Function{}
-	declaredTypes := make(map[string]*StructType)
+	declaredTypes := make(map[string]Type)
 	// Declare built-in types.
 	declaredTypes[StrType.Name] = StrType
+	declaredTypes["Int"] = Int64Type
 	// First forward declare all functions.
 	for _, fd := range functionDefinitions {
 		args := []FunctionArg{}
@@ -501,6 +510,14 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 			FunctionArg{PointerType{StrType}, Register("%1")},
 		},
 	}
+	functionByName["print_int"] = &Function{
+		Name:       "print_int",
+		ReturnType: Int64Type,
+		Args: []FunctionArg{
+			FunctionArg{PointerType{Int8Type}, Register("%1")},
+			FunctionArg{Int64Type, Register("%2")},
+		},
+	}
 	constants := []*StrConst{}
 	// Generate code for each function.
 	for _, function := range functions {
@@ -529,7 +546,7 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 		gen.currentBlock.Terminator = &Return{}
 		function.Entry = block
 	}
-	types := []*StructType{}
+	types := []Type{}
 	for _, ty := range declaredTypes {
 		types = append(types, ty)
 	}

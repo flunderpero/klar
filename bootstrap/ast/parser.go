@@ -46,6 +46,15 @@ func (expr *StringLiteralExpression) String() string {
 	return fmt.Sprintf("StringLiteralExpression(%q)", expr.Value)
 }
 
+type IntLiteralExpression struct {
+	node
+	Value int64
+}
+
+func (expr *IntLiteralExpression) String() string {
+	return fmt.Sprintf("IntLiteralExpression(%d)", expr.Value)
+}
+
 type BoolLiteralExpression struct {
 	node
 	Value bool
@@ -288,6 +297,13 @@ func (p *Parser) parseExpression() (Expression, error) {
 	case token.Str:
 		p.consumeAny()
 		return &StringLiteralExpression{node: p.newNode(), Value: t.Value}, nil
+	case token.Int:
+		p.consumeAny()
+		value, err := strconv.ParseInt(t.Value, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse int literal: %v", err)
+		}
+		return &IntLiteralExpression{node: p.newNode(), Value: value}, nil
 	case token.True:
 		p.consumeAny()
 		return &BoolLiteralExpression{node: p.newNode(), Value: true}, nil

@@ -126,9 +126,10 @@ func (f *FunctionArg) String() string {
 
 type FunctionDefinition struct {
 	node
-	Name string
-	Args []FunctionArg
-	Body *BlockExpression
+	Name       string
+	Args       []FunctionArg
+	ReturnType string
+	Body       *BlockExpression
 }
 
 func (f *FunctionDefinition) String() string {
@@ -140,7 +141,7 @@ func (f *FunctionDefinition) String() string {
 		}
 		args += arg.String()
 	}
-	return fmt.Sprintf("FunctionDefinition(\n    %s(%s)\n    %s\n)", f.Name, args, body)
+	return fmt.Sprintf("FunctionDefinition(\n    %s(%s) %s\n    %s\n)", f.Name, args, f.ReturnType, body)
 }
 
 type Parser struct {
@@ -271,11 +272,20 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 		}
 		p.consumeAny()
 	}
+	t := p.peek()
+	returnType := "()"
+	if t.Kind == token.Ident {
+		p.consumeAny()
+		returnType = t.Value
+
+	}
 	body, err := p.parseBlockExpression()
 	if err != nil {
 		return nil, err
 	}
-	return &FunctionDefinition{node: p.newNode(), Name: nameToken.Value, Args: args, Body: body}, nil
+	return &FunctionDefinition{
+		node: p.newNode(), Name: nameToken.Value, Args: args, ReturnType: returnType, Body: body,
+	}, nil
 }
 
 func (p *Parser) parseExpression() (Expression, error) {
@@ -329,7 +339,7 @@ func (p *Parser) ParseNode() (Node, error) {
 			return nil, EOF
 		case token.Fn:
 			return p.parseFunctionDefinition()
-		case token.Ident, token.LCurly, token.If, token.True, token.False:
+		case token.Ident, token.LCurly, token.If, token.True, token.False, token.Str, token.Int:
 			expr, err := p.parseExpression()
 			if err != nil {
 				return nil, err

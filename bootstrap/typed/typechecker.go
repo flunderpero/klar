@@ -158,8 +158,9 @@ func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker
 	if !ok {
 		return fmt.Errorf("the condition of an if expression must be a boolean type, got: %s", condType)
 	}
-	trueBodyType := tc.mustLookup(expr.TrueBody)
-	tc.typeByNodeId[expr.Id()] = trueBodyType
+	// Only an if expression with an else branch can have a type other than unit.
+	// And currently we don't have else branches.
+	tc.typeByNodeId[expr.Id()] = &UnitType{}
 	return nil
 }
 
@@ -173,10 +174,18 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 		tc.typeByNodeId[arg.Id()] = argType
 		argTypes = append(argTypes, argType)
 	}
+	var returnType Type = &UnitType{}
+	if fn.ReturnType != "" {
+		ty, found := tc.typeEnv.lookup(fn.ReturnType)
+		if !found {
+			return fmt.Errorf("type %s not found for return type of function %s", fn.ReturnType, fn.Name)
+		}
+		returnType = ty
+	}
 	funcType := &FunctionType{
 		Name:       fn.Name,
 		ArgTypes:   argTypes,
-		ReturnType: &UnitType{},
+		ReturnType: returnType,
 	}
 	tc.typeByNodeId[fn.Id()] = funcType
 	if err := tc.typeEnv.declare(fn.Name, funcType); err != nil {
@@ -218,6 +227,9 @@ func TypeCheck(node ast.Node) (Type, map[ast.NodeId]Type, error) {
 	}
 	if err := defaultTypeEnv.declare("Int", &Int64Type{}); err != nil {
 		panic(fmt.Errorf("Failed to declare Int type: %w", err))
+	}
+	if err := defaultTypeEnv.declare("()", &UnitType{}); err != nil {
+		panic(fmt.Errorf("Failed to declare UnitType type: %w", err))
 	}
 	if err := defaultTypeEnv.declare("print", &FunctionType{
 		Name:       "print",

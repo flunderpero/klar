@@ -17,9 +17,19 @@ fn print_two_ints_and_a_string(first_int Int, string Str, second_int Int) {
     print_int(second_int)
 }
 
+fn return_string() Str {
+    "a returned string"
+}
+
+fn return_int() Int {
+    42
+}
+
 fn main() {
     print_hello()
     print_world()
     print_two("Hello, ", "again!")
     print_two_ints_and_a_string(42, " <<< an int on both sides >>> ", 24)
+    print(return_string())
+    print_int(return_int())
 }

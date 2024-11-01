@@ -160,6 +160,13 @@ func (r *registerAllocator) allocateScratchRegister() *registerAllocation {
 	return allocation
 }
 
+// Save the call result register x0 to a new register allocation so it doesn't get lost.
+func (r *registerAllocator) saveCallResultRegister() *registerAllocation {
+	allocation := r.allocateScratchRegister()
+	r.code.emit("mov %s, x0", allocation.reg)
+	return allocation
+}
+
 // Spill currently used call argument registers from 0 to `mox`.
 func (r *registerAllocator) spillCallRegisters(max int) {
 	for i := 0; i <= max; i++ {
@@ -232,7 +239,7 @@ func (c *Code) emitAtOffset(offset int, s string, args ...any) *Code {
 	return c
 }
 
-func (c *Code) mustLookupValue(reg ir.Register) *registerAllocation {
+func (c *Code) mustLookupRegisterAllocation(reg ir.Register) *registerAllocation {
 	result, ok := c.values[reg]
 	if !ok {
 		panic(fmt.Sprintf("Value not found for IR register: %s", reg))
@@ -278,7 +285,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 				c.emit("adrp %s, %s@PAGE", reg, inst.Source)
 				c.emit("add %s, %s, %s@PAGEOFF+%d", reg, reg, inst.Source, offset)
 			} else {
-				reg = c.mustLookupValue(inst.Source)
+				reg = c.mustLookupRegisterAllocation(inst.Source)
 				if offset > 0 {
 					source := c.registerAllocator.ensureInRegister(reg)
 					reg = c.registerAllocator.allocateScratchRegister()
@@ -287,7 +294,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			}
 			c.values[inst.Register()] = reg
 		case *ir.Load:
-			source := c.registerAllocator.ensureInRegister(c.mustLookupValue(inst.Source))
+			source := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Source))
 			reg := c.registerAllocator.allocateScratchRegister()
 			switch ty := inst.FieldType.(type) {
 			case ir.BuiltInType:
@@ -307,19 +314,28 @@ func (c *Code) generateBlock(block *ir.Block) error {
 		case *ir.Call:
 			c.registerAllocator.spillCallRegisters(len(c.function.Definition.Args))
 			for i, arg := range inst.Args {
-				argReg := c.mustLookupValue(arg)
+				argReg := c.mustLookupRegisterAllocation(arg)
 				c.registerAllocator.move(callArgsRegisters[i], argReg)
 			}
 			c.emit("bl _%s", inst.Function.Name)
+			if inst.Function.ReturnType != ir.UnitType {
+				allocation := c.registerAllocator.saveCallResultRegister()
+				c.values[inst.Register()] = allocation
+			}
 		default:
 			return fmt.Errorf("unknown instruction: %T", inst)
 		}
+	}
+	if !block.Result.IsUnit() {
+		// Move the value of the block expression to x0.
+		resultAllocation := c.mustLookupRegisterAllocation(block.Result)
+		c.registerAllocator.move(x0, resultAllocation)
 	}
 	switch terminator := block.Terminator.(type) {
 	case *ir.Jump:
 		c.emit("b %s", c.blockLabel(terminator.Target))
 	case *ir.CondBranch:
-		condRegister := c.mustLookupValue(terminator.Condition)
+		condRegister := c.mustLookupRegisterAllocation(terminator.Condition)
 		c.emit("cbnz %s, %s", condRegister, c.blockLabel(terminator.TrueBlock))
 		c.emit("b %s", c.blockLabel(terminator.FalseBlock))
 	case *ir.Return:

@@ -92,6 +92,7 @@ type Block struct {
 	Instructions []Instruction
 	Terminator   Terminator
 	Predecessors []*Block
+	Result       Register
 }
 
 func (ir *Block) append(instruction Instruction) {
@@ -104,7 +105,7 @@ func (ir *Block) String() string {
 		s += fmt.Sprintf("\n    %s", inst)
 	}
 	s += fmt.Sprintf("\n    %s", ir.Terminator)
-	return fmt.Sprintf("%s:%s", ir.Id, s)
+	return fmt.Sprintf("%s:%s\n    -- block_result = %s", ir.Id, s, ir.Result)
 }
 
 type Terminator interface {
@@ -187,6 +188,12 @@ func (r Register) String() string {
 func (r Register) IsConstant() bool {
 	return string(r)[0] == '_'
 }
+
+func (r Register) IsUnit() bool {
+	return string(r) == "()"
+}
+
+const UnitRegister Register = "()"
 
 type Instruction interface {
 	String() string
@@ -430,17 +437,22 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.ASTWalke
 	for _, arg := range expr.Args {
 		args = append(args, g.lookupRegisterByNode(arg))
 	}
+	var reg Register = UnitRegister
+	if function.ReturnType != UnitType {
+		reg = g.nextRegister()
+	}
 	g.append(&Call{
-		register: g.nextRegister(),
+		register: reg,
 		Function: function,
 		Args:     args,
-	}, nil)
+	}, expr)
 	return nil
 }
 
 func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker) error {
 	condBlock := g.newBlock(g.currentBlock)
 	g.currentBlock.Terminator = &Jump{Target: condBlock}
+	g.currentBlock.Result = UnitRegister
 	g.currentBlock = condBlock
 	if err := w.WalkNode(expr.Condition); err != nil {
 		return err
@@ -454,10 +466,28 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker) e
 		FalseBlock: mergeBlock,
 	}
 	g.currentBlock = trueBlock
-	if err := w.WalkBlockExpression(expr.TrueBody); err != nil {
+	if err := g.VisitBlockExpression(expr.TrueBody, w); err != nil {
 		return err
 	}
 	g.currentBlock = mergeBlock
+	// We currently don't support else branches, so the result of an if expression
+	// is always the unit type.
+	condBlock.Result = UnitRegister
+	g.registerByNodeId[expr.Id()] = condBlock.Result
+	return nil
+}
+
+func (g *generator) VisitBlockExpression(expr *ast.BlockExpression, w ast.ASTWalker) error {
+	if err := w.WalkBlockExpression(expr); err != nil {
+		return err
+	}
+	lastExpr := expr.Nodes[len(expr.Nodes)-1]
+	reg, found := g.registerByNodeId[lastExpr.Id()]
+	if !found {
+		reg = UnitRegister
+	}
+	g.currentBlock.Result = reg
+	g.registerByNodeId[expr.Id()] = reg
 	return nil
 }
 
@@ -476,6 +506,7 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 	// Declare built-in types.
 	declaredTypes[StrType.Name] = StrType
 	declaredTypes["Int"] = Int64Type
+	declaredTypes["()"] = UnitType
 	// First forward declare all functions.
 	for _, fd := range functionDefinitions {
 		args := []FunctionArg{}
@@ -490,9 +521,13 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 			}
 			args = append(args, irArg)
 		}
+		returnType, found := declaredTypes[fd.ReturnType]
+		if !found {
+			return nil, fmt.Errorf("type %s not found for return type of function %s", fd.ReturnType, fd.Name)
+		}
 		f := Function{
 			Name:       fd.Name,
-			ReturnType: UnitType,
+			ReturnType: returnType,
 			Args:       args,
 			Definition: fd,
 		}
@@ -505,14 +540,14 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 	// Declare builtin functions.
 	functionByName["print"] = &Function{
 		Name:       "print",
-		ReturnType: Int64Type,
+		ReturnType: UnitType,
 		Args: []FunctionArg{
 			FunctionArg{PointerType{StrType}, Register("%1")},
 		},
 	}
 	functionByName["print_int"] = &Function{
 		Name:       "print_int",
-		ReturnType: Int64Type,
+		ReturnType: UnitType,
 		Args: []FunctionArg{
 			FunctionArg{PointerType{Int8Type}, Register("%1")},
 			FunctionArg{Int64Type, Register("%2")},

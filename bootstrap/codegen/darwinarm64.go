@@ -160,16 +160,24 @@ func (r *registerAllocator) allocateScratchRegister() *registerAllocation {
 	return allocation
 }
 
-// Allocate one of the call registers and spill any previous allocation
-// for that register.
+// Spill currently used call argument registers from 0 to `mox`.
+func (r *registerAllocator) spillCallRegisters(max int) {
+	for i := 0; i <= max; i++ {
+		reg := callArgsRegisters[i]
+		usedAllocation, found := r.usedCallRegisters[reg]
+		if !found {
+			continue
+		}
+		r.spill(usedAllocation)
+		delete(r.usedCallRegisters, reg)
+	}
+}
+
 func (r *registerAllocator) allocateCallRegister(index int) *registerAllocation {
 	reg := callArgsRegisters[index]
-	usedAllocation, found := r.usedCallRegisters[reg]
-	if found {
-		r.spill(usedAllocation)
-	}
 	allocation := &registerAllocation{reg: reg, stackOffset: -1}
 	r.usedCallRegisters[reg] = allocation
+	r.allocations = append(r.allocations, allocation)
 	return allocation
 }
 
@@ -297,16 +305,12 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			}
 			c.values[inst.Register()] = reg
 		case *ir.Call:
+			c.registerAllocator.spillCallRegisters(len(c.function.Definition.Args))
 			for i, arg := range inst.Args {
 				argReg := c.mustLookupValue(arg)
-				callArgAllocation := c.registerAllocator.allocateCallRegister(i)
-				c.registerAllocator.move(callArgAllocation.reg, argReg)
+				c.registerAllocator.move(callArgsRegisters[i], argReg)
 			}
-			if inst.Function.Name == "print" {
-				c.emit("bl _write")
-			} else {
-				c.emit("bl _%s", inst.Function.Name)
-			}
+			c.emit("bl _%s", inst.Function.Name)
 		default:
 			return fmt.Errorf("unknown instruction: %T", inst)
 		}
@@ -384,10 +388,25 @@ func generateFunction(function *ir.Function, stringConstants *[]*ir.StrConst) (C
 	return c, nil
 }
 
+func defineBuiltInPrintFunction(asm *ASMText) {
+	asm.emit(
+		`_print:
+    stp fp, lr, [sp, #-16]!
+    mov fp, sp
+    ldr x1, [x0, 8]
+    ldr x2, [x0]
+    mov x0, 1
+    bl _write
+    ldp fp, lr, [sp], #16
+    mov x0, xzr
+    ret`)
+}
+
 func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
 	asm := ASMText{}
 	asm.emit(".global _main")
 	asm.emit(".text")
+	defineBuiltInPrintFunction(&asm)
 	for _, function := range irModule.Functions {
 		code, err := generateFunction(function, &irModule.Constants)
 		if err != nil {

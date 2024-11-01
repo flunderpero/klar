@@ -418,48 +418,15 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.ASTWalke
 	if !ok {
 		panic(fmt.Sprintf("Unknown function: %s", funcType.Name))
 	}
-	if function.Name == "print" {
-		arg0reg := g.lookupRegisterByNode(expr.Args[0])
-		stdOutReg := g.nextRegister()
-		strPtrReg := g.nextRegister()
-		strPtrLoadReg := g.nextRegister()
-		strLenReg := g.nextRegister()
-		g.append(&Int32Const{
-			register: stdOutReg,
-			Value:    1,
-		}, nil)
-		g.append(&GetPointer{
-			register:   strPtrReg,
-			Source:     arg0reg,
-			FieldIndex: 1,
-			Type:       StrType,
-		}, nil)
-		g.append(&Load{
-			register:  strPtrLoadReg,
-			Source:    strPtrReg,
-			FieldType: &PointerType{Int8Type},
-		}, nil)
-		g.append(&Load{
-			register:  strLenReg,
-			Source:    arg0reg,
-			FieldType: Int64Type,
-		}, nil)
-		g.append(&Call{
-			register: g.nextRegister(),
-			Function: function,
-			Args:     []Register{stdOutReg, strPtrLoadReg, strLenReg},
-		}, nil)
-	} else {
-		args := []Register{}
-		for _, arg := range expr.Args {
-			args = append(args, g.lookupRegisterByNode(arg))
-		}
-		g.append(&Call{
-			register: g.nextRegister(),
-			Function: function,
-			Args:     args,
-		}, nil)
+	args := []Register{}
+	for _, arg := range expr.Args {
+		args = append(args, g.lookupRegisterByNode(arg))
 	}
+	g.append(&Call{
+		register: g.nextRegister(),
+		Function: function,
+		Args:     args,
+	}, nil)
 	return nil
 }
 
@@ -531,9 +498,7 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 		Name:       "print",
 		ReturnType: Int64Type,
 		Args: []FunctionArg{
-			FunctionArg{Int32Type, Register("%1")},
-			FunctionArg{PointerType{Int8Type}, Register("%2")},
-			FunctionArg{Int64Type, Register("%3")},
+			FunctionArg{PointerType{StrType}, Register("%1")},
 		},
 	}
 	constants := []*StrConst{}

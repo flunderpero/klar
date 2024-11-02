@@ -529,6 +529,15 @@ func (g *generator) VisitVariableDefinition(expr *ast.VariableDefinition, w ast.
 	return nil
 }
 
+func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w ast.ASTWalker) error {
+	if err := w.WalkNode(stmt.Rhs); err != nil {
+		return err
+	}
+	reg := g.lookupRegisterByNode(stmt.Rhs)
+	g.setSymbol(stmt.Lhs.Name, reg)
+	return nil
+}
+
 func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module, error) {
 	functionDefinitions := []*ast.FunctionDefinition{}
 	for _, node := range module.Nodes {

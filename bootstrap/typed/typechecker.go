@@ -265,6 +265,28 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 	return nil
 }
 
+func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w ast.ASTWalker) error {
+	if err := w.WalkAssignmentStatement(s); err != nil {
+		return err
+	}
+	lhsType, lhsVar, ok := tc.typeEnv.lookupVariable(s.Lhs.Name)
+	if !ok {
+		return fmt.Errorf("unknown variable %s", s.Lhs.Name)
+	}
+	if !lhsVar.Mutable {
+		return fmt.Errorf("variable %s is not mutable", s.Lhs.Name)
+	}
+	rhsType, ok := tc.typeByNodeId[s.Rhs.Id()]
+	if !ok {
+		return fmt.Errorf("unknown type for rhs of assignment statement: %s", s.Rhs)
+	}
+	if lhsType != rhsType {
+		return fmt.Errorf("lhs and rhs of assignment statement must have the same type, got %s and %s", lhsType, rhsType)
+	}
+	tc.typeByNodeId[s.Id()] = &UnitType{}
+	return nil
+}
+
 func (tc *typeChecker) VisitModule(module *ast.Module, w ast.ASTWalker) error {
 	tc.typeByNodeId[module.Id()] = &UnitType{}
 	return w.WalkModule(module)

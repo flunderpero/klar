@@ -1,0 +1,9 @@
+fn main() {
+    mut a = 30
+    a = a + 12
+    print_int(a)
+    mut c = "Hello, "
+    print(c)
+    c = "world!"
+    print(c)
+}

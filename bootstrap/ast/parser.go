@@ -110,6 +110,16 @@ func (expr *IfExpression) String() string {
 	return fmt.Sprintf("IfExpression(\n    %s\n    %s\n)", condition, trueBody)
 }
 
+type AssignmentStatement struct {
+	node
+	Lhs *IdentExpression
+	Rhs Expression
+}
+
+func (a *AssignmentStatement) String() string {
+	return fmt.Sprintf("AssignmentStatement(%s, %s)", a.Lhs, a.Rhs)
+}
+
 type Module struct {
 	node
 	Nodes []Node
@@ -337,6 +347,20 @@ func (p *Parser) parseExpression() (Expression, error) {
 	lhs, err := p.parsePrimaryExpression()
 	if err != nil {
 		return nil, err
+	}
+	// Technically, the AssignmentStatement is not an expression but we parse it here anyway
+	// because it fits here very well.
+	if p.peek().Kind == token.Equal {
+		lhsIdent, ok := lhs.(*IdentExpression)
+		if !ok {
+			return nil, fmt.Errorf("lhs of assignment statement must be an identifier, got %s", lhs)
+		}
+		p.consumeAny()
+		rhs, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		return &AssignmentStatement{node: p.newNode(), Lhs: lhsIdent, Rhs: rhs}, nil
 	}
 	for p.peek().Kind == token.Plus {
 		p.consumeAny()

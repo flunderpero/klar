@@ -16,6 +16,7 @@ type ASTVisitor interface {
 	VisitStringLiteralExpression(expr *StringLiteralExpression) error
 	VisitIntLiteralExpression(expr *IntLiteralExpression) error
 	VisitBoolLiteralExpression(expr *BoolLiteralExpression) error
+	VisitAssignmentStatement(stmt *AssignmentStatement, w ASTWalker) error
 }
 
 type ASTWalker interface {
@@ -28,6 +29,7 @@ type ASTWalker interface {
 	WalkCallExpression(expr *CallExpression) error
 	WalkIfExpression(expr *IfExpression) error
 	WalkAddExpression(expr *AddExpression) error
+	WalkAssignmentStatement(stmt *AssignmentStatement) error
 }
 
 type DefaultASTVisitor struct{}
@@ -74,6 +76,10 @@ func (_ *DefaultASTVisitor) VisitFunctionDefinition(fn *FunctionDefinition, w AS
 
 func (_ *DefaultASTVisitor) VisitVariableDefinition(fn *VariableDefinition, w ASTWalker) error {
 	return w.WalkVariableDefinition(fn)
+}
+
+func (_ *DefaultASTVisitor) VisitAssignmentStatement(stmt *AssignmentStatement, w ASTWalker) error {
+	return w.WalkAssignmentStatement(stmt)
 }
 
 func (_ *DefaultASTVisitor) VisitModule(module *Module, w ASTWalker) error {
@@ -165,6 +171,13 @@ func (w *DefaultASTWalker) WalkVariableDefinition(fn *VariableDefinition) error 
 	return w.WalkNode(fn.Value)
 }
 
+func (w *DefaultASTWalker) WalkAssignmentStatement(stmt *AssignmentStatement) error {
+	if err := w.WalkNode(stmt.Lhs); err != nil {
+		return err
+	}
+	return w.WalkNode(stmt.Rhs)
+}
+
 func (w *DefaultASTWalker) WalkNode(node Node) error {
 	var err error
 	switch node := node.(type) {
@@ -174,6 +187,8 @@ func (w *DefaultASTWalker) WalkNode(node Node) error {
 		err = w.Visitor.VisitFunctionDefinition(node, w)
 	case *VariableDefinition:
 		err = w.Visitor.VisitVariableDefinition(node, w)
+	case *AssignmentStatement:
+		err = w.Visitor.VisitAssignmentStatement(node, w)
 	default:
 		err = w.Visitor.VisitExpression(node, w)
 	}

@@ -118,6 +118,22 @@ func (tc *typeChecker) VisitIdentExpression(expr *ast.IdentExpression) error {
 	return nil
 }
 
+func (tc *typeChecker) VisitAddExpression(expr *ast.AddExpression, w ast.ASTWalker) error {
+	if err := w.WalkAddExpression(expr); err != nil {
+		return err
+	}
+	lhs := tc.mustLookup(expr.Lhs)
+	if _, ok := lhs.(*Int64Type); !ok {
+		return fmt.Errorf("lhs of add expression must be of type Int64Type, got %s", lhs)
+	}
+	rhs := tc.mustLookup(expr.Rhs)
+	if _, ok := rhs.(*Int64Type); !ok {
+		return fmt.Errorf("rhs of add expression must be of type Int64Type, got %s", rhs)
+	}
+	tc.typeByNodeId[expr.Id()] = &Int64Type{}
+	return nil
+}
+
 func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.ASTWalker) error {
 	if err := w.WalkCallExpression(expr); err != nil {
 		return fmt.Errorf("failed to walk call expression: %w", err)

@@ -281,6 +281,20 @@ func (i *Load) String() string {
 	return fmt.Sprintf("%s = load %s, %s", i.register, i.Source, i.FieldType)
 }
 
+type SignedInt64AddWithOverflow struct {
+	register Register
+	Lhs      Register
+	Rhs      Register
+}
+
+func (i *SignedInt64AddWithOverflow) Register() Register {
+	return i.register
+}
+
+func (i *SignedInt64AddWithOverflow) String() string {
+	return fmt.Sprintf("%s = iaddo i64 %s, i64 %s", i.register, i.Lhs, i.Rhs)
+}
+
 type Call struct {
 	register Register
 	Function *Function
@@ -446,6 +460,21 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.ASTWalke
 		Function: function,
 		Args:     args,
 	}, expr)
+	return nil
+}
+
+func (g *generator) VisitAddExpression(expr *ast.AddExpression, w ast.ASTWalker) error {
+	ty := g.typeOf(expr)
+	if _, ok := ty.(*typed.Int64Type); !ok {
+		// For now we only support 64 integers.
+		return fmt.Errorf("add expression must be of type Int64Type, got %s", ty)
+	}
+	if err := w.WalkAddExpression(expr); err != nil {
+		return err
+	}
+	lhs := g.lookupRegisterByNode(expr.Lhs)
+	rhs := g.lookupRegisterByNode(expr.Rhs)
+	g.append(&SignedInt64AddWithOverflow{register: g.nextRegister(), Lhs: lhs, Rhs: rhs}, expr)
 	return nil
 }
 

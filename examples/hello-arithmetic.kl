@@ -1,0 +1,4 @@
+fn main() {
+    print_int(31 + 11)
+    print_int(10 + 20 + 12)
+}

@@ -64,6 +64,16 @@ func (expr *BoolLiteralExpression) String() string {
 	return fmt.Sprintf("BoolLiteralExpression(%s)", strconv.FormatBool(expr.Value))
 }
 
+type AddExpression struct {
+	node
+	Lhs Expression
+	Rhs Expression
+}
+
+func (expr *AddExpression) String() string {
+	return fmt.Sprintf("AddExpression(%s, %s)", expr.Lhs, expr.Rhs)
+}
+
 type CallExpression struct {
 	node
 	Callee Expression
@@ -289,6 +299,22 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 }
 
 func (p *Parser) parseExpression() (Expression, error) {
+	lhs, err := p.parsePrimaryExpression()
+	if err != nil {
+		return nil, err
+	}
+	for p.peek().Kind == token.Plus {
+		p.consumeAny()
+		rhs, err := p.parsePrimaryExpression()
+		if err != nil {
+			return nil, err
+		}
+		lhs = &AddExpression{node: p.newNode(), Lhs: lhs, Rhs: rhs}
+	}
+	return lhs, nil
+}
+
+func (p *Parser) parsePrimaryExpression() (Expression, error) {
 	t := p.peek()
 	switch t.Kind {
 	case token.Ident:

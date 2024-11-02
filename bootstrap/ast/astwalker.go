@@ -10,6 +10,7 @@ type ASTVisitor interface {
 	VisitBlockExpression(expr *BlockExpression, w ASTWalker) error
 	VisitCallExpression(expr *CallExpression, w ASTWalker) error
 	VisitIfExpression(expr *IfExpression, w ASTWalker) error
+	VisitAddExpression(expr *AddExpression, w ASTWalker) error
 	VisitIdentExpression(expr *IdentExpression) error
 	VisitStringLiteralExpression(expr *StringLiteralExpression) error
 	VisitIntLiteralExpression(expr *IntLiteralExpression) error
@@ -24,6 +25,7 @@ type ASTWalker interface {
 	WalkBlockExpression(expr *BlockExpression) error
 	WalkCallExpression(expr *CallExpression) error
 	WalkIfExpression(expr *IfExpression) error
+	WalkAddExpression(expr *AddExpression) error
 }
 
 type DefaultASTVisitor struct{}
@@ -50,6 +52,10 @@ func (_ *DefaultASTVisitor) VisitCallExpression(expr *CallExpression, w ASTWalke
 
 func (_ *DefaultASTVisitor) VisitIfExpression(expr *IfExpression, w ASTWalker) error {
 	return w.WalkIfExpression(expr)
+}
+
+func (_ *DefaultASTVisitor) VisitAddExpression(expr *AddExpression, w ASTWalker) error {
+	return w.WalkAddExpression(expr)
 }
 
 func (_ *DefaultASTVisitor) VisitBlockExpression(expr *BlockExpression, w ASTWalker) error {
@@ -87,6 +93,8 @@ func (w *DefaultASTWalker) WalkExpression(expr Expression) error {
 		err = w.Visitor.VisitIntLiteralExpression(expr)
 	case *BoolLiteralExpression:
 		err = w.Visitor.VisitBoolLiteralExpression(expr)
+	case *AddExpression:
+		err = w.Visitor.VisitAddExpression(expr, w)
 	case *CallExpression:
 		err = w.Visitor.VisitCallExpression(expr, w)
 	case *IfExpression:
@@ -97,6 +105,13 @@ func (w *DefaultASTWalker) WalkExpression(expr Expression) error {
 		return fmt.Errorf("VisitExpression not implemented for expression type: %T", expr)
 	}
 	return err
+}
+
+func (w *DefaultASTWalker) WalkAddExpression(expr *AddExpression) error {
+	if err := w.Visitor.VisitNode(expr.Lhs, w); err != nil {
+		return err
+	}
+	return w.Visitor.VisitNode(expr.Rhs, w)
 }
 
 func (w *DefaultASTWalker) WalkCallExpression(expr *CallExpression) error {

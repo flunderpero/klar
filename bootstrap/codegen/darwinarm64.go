@@ -268,6 +268,14 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			reg := c.registerAllocator.allocateScratchRegister()
 			c.emit("mov %s, %d", reg, inst.Value)
 			c.values[inst.Register()] = reg
+		case *ir.SignedInt64AddWithOverflow:
+			reg := c.registerAllocator.allocateScratchRegister()
+			lhs := c.mustLookupRegisterAllocation(inst.Lhs)
+			rhs := c.mustLookupRegisterAllocation(inst.Rhs)
+			lhsReg := c.registerAllocator.ensureInRegister(lhs)
+			rhsReg := c.registerAllocator.ensureInRegister(rhs)
+			c.emit("adds %s, %s, %s", reg, lhsReg, rhsReg)
+			c.values[inst.Register()] = reg
 		case *ir.GetPointer:
 			var reg *registerAllocation
 			offset := 0

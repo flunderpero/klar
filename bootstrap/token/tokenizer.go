@@ -16,6 +16,7 @@ const (
 	LCurly TokenKind = "{"
 	RCurly TokenKind = "}"
 	Comma  TokenKind = ","
+	Plus   TokenKind = "+"
 	Str    TokenKind = "Str"
 	Int    TokenKind = "Int"
 	True   TokenKind = "true"
@@ -55,6 +56,8 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			tokens = append(tokens, Token{Kind: RCurly, Value: ""})
 		} else if c == ',' {
 			tokens = append(tokens, Token{Kind: Comma, Value: ""})
+		} else if c == '+' {
+			tokens = append(tokens, Token{Kind: Plus, Value: ""})
 		} else if c == '"' {
 			// Parse string.
 			value := []byte{}

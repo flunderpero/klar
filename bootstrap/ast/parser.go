@@ -64,14 +64,22 @@ func (expr *BoolLiteralExpression) String() string {
 	return fmt.Sprintf("BoolLiteralExpression(%s)", strconv.FormatBool(expr.Value))
 }
 
-type AddExpression struct {
+type BinaryOperator string
+
+const (
+	OpAdd      BinaryOperator = "+"
+	OpEquality BinaryOperator = "=="
+)
+
+type BinaryExpression struct {
 	node
 	Lhs Expression
 	Rhs Expression
+	Op  BinaryOperator
 }
 
-func (expr *AddExpression) String() string {
-	return fmt.Sprintf("AddExpression(%s, %s)", expr.Lhs, expr.Rhs)
+func (expr *BinaryExpression) String() string {
+	return fmt.Sprintf("BinaryExpression(%s, %s, %s)", expr.Op, expr.Lhs, expr.Rhs)
 }
 
 type CallExpression struct {
@@ -342,8 +350,18 @@ func (p *Parser) parseVariableDefinition() (*VariableDefinition, error) {
 	}
 	return &VariableDefinition{node: p.newNode(), Name: identToken.Value, Value: value, Mutable: mutable}, nil
 }
-
 func (p *Parser) parseExpression() (Expression, error) {
+	return p.parseBinaryExpression(0)
+}
+
+// Parse an expression as the left-hand-side and look at the token after it.
+// If that token signals that the expression is part of a binary expression (i.e. is `+`, `==`, etc.),
+// parse the right-hand-side and return a `BinaryExpression`.
+//
+// Parsing a binary expression takes operator precedence into account. That is some operators have
+// a higher precedence than others, i.e. `a + b * c` should be parsed as `a + (b * c)`
+// and not as `(a + b) * c`.
+func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 	lhs, err := p.parsePrimaryExpression()
 	if err != nil {
 		return nil, err
@@ -362,13 +380,26 @@ func (p *Parser) parseExpression() (Expression, error) {
 		}
 		return &AssignmentStatement{node: p.newNode(), Lhs: lhsIdent, Rhs: rhs}, nil
 	}
-	for p.peek().Kind == token.Plus {
+	precedences := map[token.TokenKind]int{
+		token.Plus:       2,
+		token.EqualEqual: 1,
+	}
+	ops := map[token.TokenKind]BinaryOperator{
+		token.Plus:       OpAdd,
+		token.EqualEqual: OpEquality,
+	}
+	for {
+		op := p.peek()
+		precedence, isOp := precedences[op.Kind]
+		if !isOp || precedence <= minPrecedence {
+			break
+		}
 		p.consumeAny()
 		rhs, err := p.parsePrimaryExpression()
 		if err != nil {
 			return nil, err
 		}
-		lhs = &AddExpression{node: p.newNode(), Lhs: lhs, Rhs: rhs}
+		lhs = &BinaryExpression{node: p.newNode(), Op: ops[op.Kind], Lhs: lhs, Rhs: rhs}
 	}
 	return lhs, nil
 }

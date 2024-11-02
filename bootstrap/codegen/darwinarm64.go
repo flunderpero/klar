@@ -264,6 +264,15 @@ func (c *Code) blockLabel(block *ir.Block) string {
 	return fmt.Sprintf("%s_%s", c.function.Name, block.Id)
 }
 
+func (c *Code) prepareBinaryOperation(lhsReg ir.Register, rhsReg ir.Register) (reg *registerAllocation, lhs register, rhs register) {
+	reg = c.registerAllocator.allocateScratchRegister()
+	lhsAllocation := c.mustLookupRegisterAllocation(lhsReg)
+	rhsAllocation := c.mustLookupRegisterAllocation(rhsReg)
+	lhs = c.registerAllocator.ensureInRegister(lhsAllocation)
+	rhs = c.registerAllocator.ensureInRegister(rhsAllocation)
+	return reg, lhs, rhs
+}
+
 func (c *Code) generateBlock(block *ir.Block) error {
 	c.emit("%s:", c.blockLabel(block))
 	c.incIndent()
@@ -282,13 +291,19 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			c.emit("mov %s, %d", reg, inst.Value)
 			c.values[inst.Register()] = reg
 		case *ir.SignedInt64AddWithOverflow:
-			reg := c.registerAllocator.allocateScratchRegister()
-			lhs := c.mustLookupRegisterAllocation(inst.Lhs)
-			rhs := c.mustLookupRegisterAllocation(inst.Rhs)
-			lhsReg := c.registerAllocator.ensureInRegister(lhs)
-			rhsReg := c.registerAllocator.ensureInRegister(rhs)
-			c.emit("adds %s, %s, %s", reg, lhsReg, rhsReg)
+			reg, lhs, rhs := c.prepareBinaryOperation(inst.Lhs, inst.Rhs)
+			c.emit("adds %s, %s, %s", reg, lhs, rhs)
 			c.values[inst.Register()] = reg
+		case *ir.Int64Compare:
+			reg, lhs, rhs := c.prepareBinaryOperation(inst.Lhs, inst.Rhs)
+			c.values[inst.Register()] = reg
+			switch inst.Op {
+			case ir.Int64CompOpEQ:
+				c.emit("cmp %s, %s", lhs, rhs)
+				c.emit("cset %s, eq", reg)
+			default:
+				return fmt.Errorf("unknown comparison operator: %s", inst.Op)
+			}
 		case *ir.GetPointer:
 			var reg *registerAllocation
 			offset := 0

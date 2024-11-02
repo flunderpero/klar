@@ -10,23 +10,24 @@ type Token struct {
 type TokenKind string
 
 const (
-	Ident  TokenKind = "ident"
-	LParen TokenKind = "("
-	RParen TokenKind = ")"
-	LCurly TokenKind = "{"
-	RCurly TokenKind = "}"
-	Comma  TokenKind = ","
-	Plus   TokenKind = "+"
-	Equal  TokenKind = "="
-	Str    TokenKind = "Str"
-	Int    TokenKind = "Int"
-	True   TokenKind = "true"
-	False  TokenKind = "false"
-	If     TokenKind = "if"
-	Fn     TokenKind = "fn"
-	Mut    TokenKind = "mut"
-	Let    TokenKind = "let"
-	EOF    TokenKind = "EOF"
+	Ident      TokenKind = "ident"
+	LParen     TokenKind = "("
+	RParen     TokenKind = ")"
+	LCurly     TokenKind = "{"
+	RCurly     TokenKind = "}"
+	Comma      TokenKind = ","
+	Plus       TokenKind = "+"
+	Equal      TokenKind = "="
+	EqualEqual TokenKind = "=="
+	Str        TokenKind = "Str"
+	Int        TokenKind = "Int"
+	True       TokenKind = "true"
+	False      TokenKind = "false"
+	If         TokenKind = "if"
+	Fn         TokenKind = "fn"
+	Mut        TokenKind = "mut"
+	Let        TokenKind = "let"
+	EOF        TokenKind = "EOF"
 )
 
 func (t Token) String() string {
@@ -62,7 +63,12 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 		} else if c == '+' {
 			tokens = append(tokens, Token{Kind: Plus, Value: ""})
 		} else if c == '=' {
-			tokens = append(tokens, Token{Kind: Equal, Value: ""})
+			if src[i] == '=' {
+				i += 1
+				tokens = append(tokens, Token{Kind: EqualEqual, Value: ""})
+			} else {
+				tokens = append(tokens, Token{Kind: Equal, Value: ""})
+			}
 		} else if c == '"' {
 			// Parse string.
 			value := []byte{}

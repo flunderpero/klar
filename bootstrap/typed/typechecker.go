@@ -147,19 +147,33 @@ func (tc *typeChecker) VisitIdentExpression(expr *ast.IdentExpression) error {
 	return nil
 }
 
-func (tc *typeChecker) VisitAddExpression(expr *ast.AddExpression, w ast.ASTWalker) error {
-	if err := w.WalkAddExpression(expr); err != nil {
+func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.ASTWalker) error {
+	if err := w.WalkBinaryExpression(expr); err != nil {
 		return err
 	}
 	lhs := tc.mustLookup(expr.Lhs)
-	if _, ok := lhs.(*Int64Type); !ok {
-		return fmt.Errorf("lhs of add expression must be of type Int64Type, got %s", lhs)
-	}
 	rhs := tc.mustLookup(expr.Rhs)
-	if _, ok := rhs.(*Int64Type); !ok {
-		return fmt.Errorf("rhs of add expression must be of type Int64Type, got %s", rhs)
+	switch expr.Op {
+	case ast.OpAdd:
+		if _, ok := lhs.(*Int64Type); !ok {
+			return fmt.Errorf("lhs of add expression must be of type Int64Type, got %s", lhs)
+		}
+		if _, ok := rhs.(*Int64Type); !ok {
+			return fmt.Errorf("rhs of add expression must be of type Int64Type, got %s", rhs)
+		}
+		tc.typeByNodeId[expr.Id()] = &Int64Type{}
+	case ast.OpEquality:
+		// For now, we only support equality of numbers.
+		if _, ok := lhs.(*Int64Type); !ok {
+			return fmt.Errorf("lhs of equality expression must be of type Int64Type, got %s", lhs)
+		}
+		if _, ok := rhs.(*Int64Type); !ok {
+			return fmt.Errorf("rhs of equality expression must be of type Int64Type, got %s", rhs)
+		}
+		tc.typeByNodeId[expr.Id()] = &BoolType{}
+	default:
+		return fmt.Errorf("unsupported binary operator: %s", expr.Op)
 	}
-	tc.typeByNodeId[expr.Id()] = &Int64Type{}
 	return nil
 }
 

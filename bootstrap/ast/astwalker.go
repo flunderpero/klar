@@ -11,7 +11,7 @@ type ASTVisitor interface {
 	VisitBlockExpression(expr *BlockExpression, w ASTWalker) error
 	VisitCallExpression(expr *CallExpression, w ASTWalker) error
 	VisitIfExpression(expr *IfExpression, w ASTWalker) error
-	VisitAddExpression(expr *AddExpression, w ASTWalker) error
+	VisitBinaryExpression(expr *BinaryExpression, w ASTWalker) error
 	VisitIdentExpression(expr *IdentExpression) error
 	VisitStringLiteralExpression(expr *StringLiteralExpression) error
 	VisitIntLiteralExpression(expr *IntLiteralExpression) error
@@ -28,7 +28,7 @@ type ASTWalker interface {
 	WalkBlockExpression(expr *BlockExpression) error
 	WalkCallExpression(expr *CallExpression) error
 	WalkIfExpression(expr *IfExpression) error
-	WalkAddExpression(expr *AddExpression) error
+	WalkBinaryExpression(expr *BinaryExpression) error
 	WalkAssignmentStatement(stmt *AssignmentStatement) error
 }
 
@@ -58,8 +58,8 @@ func (_ *DefaultASTVisitor) VisitIfExpression(expr *IfExpression, w ASTWalker) e
 	return w.WalkIfExpression(expr)
 }
 
-func (_ *DefaultASTVisitor) VisitAddExpression(expr *AddExpression, w ASTWalker) error {
-	return w.WalkAddExpression(expr)
+func (_ *DefaultASTVisitor) VisitBinaryExpression(expr *BinaryExpression, w ASTWalker) error {
+	return w.WalkBinaryExpression(expr)
 }
 
 func (_ *DefaultASTVisitor) VisitBlockExpression(expr *BlockExpression, w ASTWalker) error {
@@ -105,8 +105,8 @@ func (w *DefaultASTWalker) WalkExpression(expr Expression) error {
 		err = w.Visitor.VisitIntLiteralExpression(expr)
 	case *BoolLiteralExpression:
 		err = w.Visitor.VisitBoolLiteralExpression(expr)
-	case *AddExpression:
-		err = w.Visitor.VisitAddExpression(expr, w)
+	case *BinaryExpression:
+		err = w.Visitor.VisitBinaryExpression(expr, w)
 	case *CallExpression:
 		err = w.Visitor.VisitCallExpression(expr, w)
 	case *IfExpression:
@@ -119,7 +119,7 @@ func (w *DefaultASTWalker) WalkExpression(expr Expression) error {
 	return err
 }
 
-func (w *DefaultASTWalker) WalkAddExpression(expr *AddExpression) error {
+func (w *DefaultASTWalker) WalkBinaryExpression(expr *BinaryExpression) error {
 	if err := w.Visitor.VisitNode(expr.Lhs, w); err != nil {
 		return err
 	}

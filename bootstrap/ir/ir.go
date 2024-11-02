@@ -295,6 +295,27 @@ func (i *SignedInt64AddWithOverflow) String() string {
 	return fmt.Sprintf("%s = iaddo i64 %s, i64 %s", i.register, i.Lhs, i.Rhs)
 }
 
+type Int64CompOp string
+
+const (
+	Int64CompOpEQ Int64CompOp = "eq"
+)
+
+type Int64Compare struct {
+	register Register
+	Lhs      Register
+	Rhs      Register
+	Op       Int64CompOp
+}
+
+func (i *Int64Compare) Register() Register {
+	return i.register
+}
+
+func (i *Int64Compare) String() string {
+	return fmt.Sprintf("%s = icmp %s i64 %s, %s", i.register, i.Op, i.Lhs, i.Rhs)
+}
+
 type Call struct {
 	register Register
 	Function *Function
@@ -463,18 +484,34 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.ASTWalke
 	return nil
 }
 
-func (g *generator) VisitAddExpression(expr *ast.AddExpression, w ast.ASTWalker) error {
-	ty := g.typeOf(expr)
-	if _, ok := ty.(*typed.Int64Type); !ok {
-		// For now we only support 64 integers.
-		return fmt.Errorf("add expression must be of type Int64Type, got %s", ty)
-	}
-	if err := w.WalkAddExpression(expr); err != nil {
+func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.ASTWalker) error {
+	if err := w.WalkBinaryExpression(expr); err != nil {
 		return err
 	}
 	lhs := g.lookupRegisterByNode(expr.Lhs)
 	rhs := g.lookupRegisterByNode(expr.Rhs)
-	g.append(&SignedInt64AddWithOverflow{register: g.nextRegister(), Lhs: lhs, Rhs: rhs}, expr)
+	switch expr.Op {
+	case ast.OpAdd:
+		ty := g.typeOf(expr)
+		if _, ok := ty.(*typed.Int64Type); !ok {
+			// For now we only support 64 bit integers.
+			return fmt.Errorf("add expression must be of type Int64Type, got %s", ty)
+		}
+		g.append(&SignedInt64AddWithOverflow{register: g.nextRegister(), Lhs: lhs, Rhs: rhs}, expr)
+	case ast.OpEquality:
+		// For now, we only know how to compare 64 bit integers.
+		lhsType, ok := g.typeByNodeId[expr.Lhs.Id()].(*typed.Int64Type)
+		if !ok {
+			return fmt.Errorf("type of lhs is not Int64Type, but %s", lhsType)
+		}
+		rhsType, ok := g.typeByNodeId[expr.Rhs.Id()].(*typed.Int64Type)
+		if !ok {
+			return fmt.Errorf("type of rhs is not Int64Type, but %s", rhsType)
+		}
+		g.append(&Int64Compare{register: g.nextRegister(), Op: Int64CompOpEQ, Lhs: lhs, Rhs: rhs}, expr)
+	default:
+		return fmt.Errorf("unsupported binary operator: %s", expr.Op)
+	}
 	return nil
 }
 

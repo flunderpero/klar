@@ -52,8 +52,17 @@ func (ty *FunctionType) String() string {
 }
 
 type typeEnvironment struct {
-	types  map[string]Type
-	parent *typeEnvironment
+	types     map[string]Type
+	variables map[string]*ast.VariableDefinition
+	parent    *typeEnvironment
+}
+
+func newTypeEnvironment(parent *typeEnvironment) *typeEnvironment {
+	return &typeEnvironment{
+		types:     make(map[string]Type),
+		variables: make(map[string]*ast.VariableDefinition),
+		parent:    parent,
+	}
 }
 
 func (te *typeEnvironment) lookup(name string) (Type, bool) {
@@ -64,11 +73,31 @@ func (te *typeEnvironment) lookup(name string) (Type, bool) {
 	return ty, found
 }
 
+func (te *typeEnvironment) lookupVariable(name string) (Type, *ast.VariableDefinition, bool) {
+	ty, found := te.lookup(name)
+	if !found {
+		return nil, nil, false
+	}
+	def, found := te.variables[name]
+	if !found && te.parent != nil {
+		return te.parent.lookupVariable(name)
+	}
+	return ty, def, found
+}
+
 func (te *typeEnvironment) declare(name string, ty Type) error {
 	if _, found := te.types[name]; found {
 		return fmt.Errorf("type %s already declared", name)
 	}
 	te.types[name] = ty
+	return nil
+}
+
+func (te *typeEnvironment) declareVariable(name string, ty Type, def *ast.VariableDefinition) error {
+	if err := te.declare(name, ty); err != nil {
+		return err
+	}
+	te.variables[name] = def
 	return nil
 }
 
@@ -79,7 +108,7 @@ type typeChecker struct {
 }
 
 func (tc *typeChecker) enterScope() {
-	tc.typeEnv = &typeEnvironment{types: make(map[string]Type), parent: tc.typeEnv}
+	tc.typeEnv = newTypeEnvironment(tc.typeEnv)
 }
 
 func (tc *typeChecker) exitScope() {
@@ -221,6 +250,21 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 	return nil
 }
 
+func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.ASTWalker) error {
+	if err := w.WalkNode(v.Value); err != nil {
+		return err
+	}
+	valueType := tc.mustLookup(v.Value)
+	if _, ok := valueType.(*UnitType); ok {
+		return fmt.Errorf("variable %s must have a non-unit type", v.Name)
+	}
+	if err := tc.typeEnv.declareVariable(v.Name, valueType, v); err != nil {
+		return err
+	}
+	tc.typeByNodeId[v.Id()] = &UnitType{}
+	return nil
+}
+
 func (tc *typeChecker) VisitModule(module *ast.Module, w ast.ASTWalker) error {
 	tc.typeByNodeId[module.Id()] = &UnitType{}
 	return w.WalkModule(module)
@@ -236,7 +280,7 @@ func (tc *typeChecker) check(node ast.Node, w ast.ASTWalker) (Type, error) {
 }
 
 func TypeCheck(node ast.Node) (Type, map[ast.NodeId]Type, error) {
-	defaultTypeEnv := &typeEnvironment{types: make(map[string]Type)}
+	defaultTypeEnv := newTypeEnvironment(nil)
 	// Declare builtin types.
 	if err := defaultTypeEnv.declare("Str", &StrType{}); err != nil {
 		panic(fmt.Errorf("Failed to declare Str type: %w", err))

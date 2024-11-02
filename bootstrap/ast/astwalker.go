@@ -6,6 +6,7 @@ type ASTVisitor interface {
 	VisitNode(node Node, w ASTWalker) error
 	VisitModule(module *Module, w ASTWalker) error
 	VisitFunctionDefinition(fn *FunctionDefinition, w ASTWalker) error
+	VisitVariableDefinition(fn *VariableDefinition, w ASTWalker) error
 	VisitExpression(expr Expression, w ASTWalker) error
 	VisitBlockExpression(expr *BlockExpression, w ASTWalker) error
 	VisitCallExpression(expr *CallExpression, w ASTWalker) error
@@ -21,6 +22,7 @@ type ASTWalker interface {
 	WalkNode(node Node) error
 	WalkModule(module *Module) error
 	WalkFunctionDefinition(fn *FunctionDefinition) error
+	WalkVariableDefinition(fn *VariableDefinition) error
 	WalkExpression(expr Expression) error
 	WalkBlockExpression(expr *BlockExpression) error
 	WalkCallExpression(expr *CallExpression) error
@@ -68,6 +70,10 @@ func (_ *DefaultASTVisitor) VisitExpression(expr Expression, w ASTWalker) error 
 
 func (_ *DefaultASTVisitor) VisitFunctionDefinition(fn *FunctionDefinition, w ASTWalker) error {
 	return w.WalkFunctionDefinition(fn)
+}
+
+func (_ *DefaultASTVisitor) VisitVariableDefinition(fn *VariableDefinition, w ASTWalker) error {
+	return w.WalkVariableDefinition(fn)
 }
 
 func (_ *DefaultASTVisitor) VisitModule(module *Module, w ASTWalker) error {
@@ -155,6 +161,10 @@ func (w *DefaultASTWalker) WalkFunctionDefinition(fn *FunctionDefinition) error 
 	return w.WalkBlockExpression(fn.Body)
 }
 
+func (w *DefaultASTWalker) WalkVariableDefinition(fn *VariableDefinition) error {
+	return w.WalkNode(fn.Value)
+}
+
 func (w *DefaultASTWalker) WalkNode(node Node) error {
 	var err error
 	switch node := node.(type) {
@@ -162,6 +172,8 @@ func (w *DefaultASTWalker) WalkNode(node Node) error {
 		err = w.Visitor.VisitModule(node, w)
 	case *FunctionDefinition:
 		err = w.Visitor.VisitFunctionDefinition(node, w)
+	case *VariableDefinition:
+		err = w.Visitor.VisitVariableDefinition(node, w)
 	default:
 		err = w.Visitor.VisitExpression(node, w)
 	}

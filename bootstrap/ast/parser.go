@@ -154,6 +154,17 @@ func (f *FunctionDefinition) String() string {
 	return fmt.Sprintf("FunctionDefinition(\n    %s(%s) %s\n    %s\n)", f.Name, args, f.ReturnType, body)
 }
 
+type VariableDefinition struct {
+	node
+	Name    string
+	Mutable bool
+	Value   Expression
+}
+
+func (v *VariableDefinition) String() string {
+	return fmt.Sprintf("VariableDefinition(%s, mutable=%t)", v.Name, v.Mutable)
+}
+
 type Parser struct {
 	tokens []token.Token
 	index  int
@@ -298,6 +309,30 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 	}, nil
 }
 
+func (p *Parser) parseVariableDefinition() (*VariableDefinition, error) {
+	var mutable bool
+	switch p.consumeAny().Kind {
+	case token.Mut:
+		mutable = true
+	case token.Let:
+		mutable = false
+	default:
+		return nil, fmt.Errorf("expected mut keyword")
+	}
+	identToken, err := p.consume(token.Ident)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = p.consume(token.Equal); err != nil {
+		return nil, err
+	}
+	value, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+	return &VariableDefinition{node: p.newNode(), Name: identToken.Value, Value: value, Mutable: mutable}, nil
+}
+
 func (p *Parser) parseExpression() (Expression, error) {
 	lhs, err := p.parsePrimaryExpression()
 	if err != nil {
@@ -365,6 +400,8 @@ func (p *Parser) ParseNode() (Node, error) {
 			return nil, EOF
 		case token.Fn:
 			return p.parseFunctionDefinition()
+		case token.Mut, token.Let:
+			return p.parseVariableDefinition()
 		case token.Ident, token.LCurly, token.If, token.True, token.False, token.Str, token.Int:
 			expr, err := p.parseExpression()
 			if err != nil {

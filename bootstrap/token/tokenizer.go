@@ -17,12 +17,15 @@ const (
 	RCurly TokenKind = "}"
 	Comma  TokenKind = ","
 	Plus   TokenKind = "+"
+	Equal  TokenKind = "="
 	Str    TokenKind = "Str"
 	Int    TokenKind = "Int"
 	True   TokenKind = "true"
 	False  TokenKind = "false"
 	If     TokenKind = "if"
 	Fn     TokenKind = "fn"
+	Mut    TokenKind = "mut"
+	Let    TokenKind = "let"
 	EOF    TokenKind = "EOF"
 )
 
@@ -58,6 +61,8 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			tokens = append(tokens, Token{Kind: Comma, Value: ""})
 		} else if c == '+' {
 			tokens = append(tokens, Token{Kind: Plus, Value: ""})
+		} else if c == '=' {
+			tokens = append(tokens, Token{Kind: Equal, Value: ""})
 		} else if c == '"' {
 			// Parse string.
 			value := []byte{}
@@ -101,6 +106,10 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			switch string(value) {
 			case "fn":
 				token = Token{Kind: Fn, Value: ""}
+			case "let":
+				token = Token{Kind: Let, Value: ""}
+			case "mut":
+				token = Token{Kind: Mut, Value: ""}
 			case "if":
 				token = Token{Kind: If, Value: ""}
 			case "true":

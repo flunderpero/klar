@@ -1,0 +1,6 @@
+fn main() {
+    mut a = 42
+    let b = 24
+    print_int(a)
+    print_int(b)
+}

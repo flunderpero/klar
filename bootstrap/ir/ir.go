@@ -520,6 +520,15 @@ func (g *generator) VisitBlockExpression(expr *ast.BlockExpression, w ast.ASTWal
 	return nil
 }
 
+func (g *generator) VisitVariableDefinition(expr *ast.VariableDefinition, w ast.ASTWalker) error {
+	if err := w.WalkNode(expr.Value); err != nil {
+		return err
+	}
+	reg := g.lookupRegisterByNode(expr.Value)
+	g.setSymbol(expr.Name, reg)
+	return nil
+}
+
 func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module, error) {
 	functionDefinitions := []*ast.FunctionDefinition{}
 	for _, node := range module.Nodes {

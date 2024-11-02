@@ -45,6 +45,7 @@ const (
 )
 
 var calleeSavedRegisters = []register{x19, x20, x21, x22, x23, x24, x25, x26, x27, x28}
+var callerSavedRegisters = []register{x9, x10, x11, x12, x13, x14, x15}
 var callArgsRegisters = []register{x0, x1, x2, x3, x4, x5, x6, x7, x8}
 
 type stackAllocator struct {
@@ -177,6 +178,18 @@ func (r *registerAllocator) spillCallRegisters(max int) {
 		}
 		r.spill(usedAllocation)
 		delete(r.usedCallRegisters, reg)
+	}
+}
+
+// Spill all caller saved registers in use.
+func (r *registerAllocator) spillCallerSavedRegisters() {
+	for _, reg := range callerSavedRegisters {
+		usedAllocation, found := r.usedScratchRegisters[reg]
+		if !found {
+			continue
+		}
+		r.spill(usedAllocation)
+		delete(r.usedScratchRegisters, reg)
 	}
 }
 
@@ -321,6 +334,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			c.values[inst.Register()] = reg
 		case *ir.Call:
 			c.registerAllocator.spillCallRegisters(len(c.function.Definition.Args))
+			c.registerAllocator.spillCallerSavedRegisters()
 			for i, arg := range inst.Args {
 				argReg := c.mustLookupRegisterAllocation(arg)
 				c.registerAllocator.move(callArgsRegisters[i], argReg)
@@ -364,7 +378,7 @@ func generateFunction(function *ir.Function, stringConstants *[]*ir.StrConst) (C
 		stackAllocator:  stackAllocator,
 	}
 	c.registerAllocator = newRegisterAllocator(
-		[]register{x9, x10, x11, x12, x13, x14, x15, x19, x20, x21, x22, x23, x24, x25, x26, x27, x28},
+		slices.Concat(callerSavedRegisters, calleeSavedRegisters),
 		&c,
 	)
 	for i, args := range function.Args {

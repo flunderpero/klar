@@ -110,12 +110,19 @@ type IfExpression struct {
 	node
 	Condition Expression
 	TrueBody  *BlockExpression
+	FalseBody *BlockExpression
 }
 
 func (expr *IfExpression) String() string {
 	condition := strings.ReplaceAll(expr.Condition.String(), "\n", "\n    ")
 	trueBody := strings.ReplaceAll(expr.TrueBody.String(), "\n", "\n    ")
-	return fmt.Sprintf("IfExpression(\n    %s\n    %s\n)", condition, trueBody)
+	if expr.FalseBody != nil {
+		falseBody := strings.ReplaceAll(expr.FalseBody.String(), "\n", "\n    ")
+		return fmt.Sprintf("IfExpression(\n    %s\n    %s\n    %s\n)", condition, trueBody, falseBody)
+	} else {
+		return fmt.Sprintf("IfExpression(\n    %s\n    %s\n)", condition, trueBody)
+	}
+
 }
 
 type AssignmentStatement struct {
@@ -269,7 +276,15 @@ func (p *Parser) parseIfExpression() (*IfExpression, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse `true` branch body: %v", err)
 	}
-	return &IfExpression{node: p.newNode(), Condition: condition, TrueBody: trueBody}, nil
+	var falseBody *BlockExpression
+	if p.peek().Kind == token.Else {
+		p.consumeAny()
+		falseBody, err = p.parseBlockExpression()
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse `false` branch body: %v", err)
+		}
+	}
+	return &IfExpression{node: p.newNode(), Condition: condition, TrueBody: trueBody, FalseBody: falseBody}, nil
 }
 
 func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {

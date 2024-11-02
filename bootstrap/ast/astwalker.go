@@ -142,6 +142,11 @@ func (w *DefaultASTWalker) WalkIfExpression(expr *IfExpression) error {
 	if err := w.Visitor.VisitNode(expr.Condition, w); err != nil {
 		return err
 	}
+	if expr.FalseBody != nil {
+		if err := w.Visitor.VisitNode(expr.FalseBody, w); err != nil {
+			return err
+		}
+	}
 	return w.Visitor.VisitNode(expr.TrueBody, w)
 }
 

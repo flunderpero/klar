@@ -524,16 +524,32 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker) e
 		return err
 	}
 	trueBlock := g.newBlock(condBlock)
-	mergeBlock := g.newBlock(condBlock, trueBlock)
+	var falseBlock *Block
+	var mergeBlock *Block
+	if expr.FalseBody != nil {
+		falseBlock = g.newBlock(condBlock)
+		mergeBlock = g.newBlock(condBlock, trueBlock, falseBlock)
+		falseBlock.Terminator = &Jump{Target: mergeBlock}
+	} else {
+		mergeBlock = g.newBlock(condBlock, trueBlock)
+		// We jump straight to the merge block if we don't have a false branch.
+		falseBlock = mergeBlock
+	}
 	trueBlock.Terminator = &Jump{Target: mergeBlock}
 	condBlock.Terminator = &CondBranch{
 		Condition:  g.registerByNodeId[expr.Condition.Id()],
 		TrueBlock:  trueBlock,
-		FalseBlock: mergeBlock,
+		FalseBlock: falseBlock,
 	}
 	g.currentBlock = trueBlock
 	if err := g.VisitBlockExpression(expr.TrueBody, w); err != nil {
 		return err
+	}
+	if expr.FalseBody != nil {
+		g.currentBlock = falseBlock
+		if err := g.VisitBlockExpression(expr.FalseBody, w); err != nil {
+			return err
+		}
 	}
 	g.currentBlock = mergeBlock
 	// We currently don't support else branches, so the result of an if expression

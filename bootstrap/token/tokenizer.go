@@ -24,6 +24,7 @@ const (
 	True       TokenKind = "true"
 	False      TokenKind = "false"
 	If         TokenKind = "if"
+	Else       TokenKind = "else"
 	Fn         TokenKind = "fn"
 	Mut        TokenKind = "mut"
 	Let        TokenKind = "let"
@@ -118,6 +119,8 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 				token = Token{Kind: Mut, Value: ""}
 			case "if":
 				token = Token{Kind: If, Value: ""}
+			case "else":
+				token = Token{Kind: Else, Value: ""}
 			case "true":
 				token = Token{Kind: True, Value: ""}
 			case "false":

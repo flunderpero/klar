@@ -3,6 +3,8 @@ fn main() {
         print("It's true!")
     }
     if false {
-        print("This should not be reached")
+        print("This should not be reached.")
+    } else {
+        print("Got the else.")
     }
 }

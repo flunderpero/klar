@@ -198,14 +198,29 @@ func (r *registerAllocator) spillCallRegisters(max int) {
 }
 
 // Spill all caller saved registers in use.
-func (r *registerAllocator) spillCallerSavedRegisters() {
+func (r *registerAllocator) spillCallerSavedRegisters() []*registerAllocation {
+	res := []*registerAllocation{}
 	for _, reg := range callerSavedRegisters {
 		usedAllocation, found := r.usedScratchRegisters[reg]
 		if !found {
 			continue
 		}
+		res = append(res, usedAllocation)
+		// We remember the register the allocation occupied so we can restore it
+		// in `restoreCallerSavedRegisters`.
+		reg := usedAllocation.reg
 		r.spill(usedAllocation)
+		usedAllocation.reg = reg
 		delete(r.usedScratchRegisters, reg)
+	}
+	return res
+}
+
+// Restore all spilled caller saved registers.
+func (r *registerAllocator) restoreCallerSavedRegisters(allocations []*registerAllocation) {
+	for _, allocation := range allocations {
+		r.code.emit("ldr %s, [sp, #%d]", allocation.reg, allocation.stackOffset)
+		r.usedScratchRegisters[allocation.reg] = allocation
 	}
 }
 
@@ -364,12 +379,13 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			c.values[inst.Register()] = reg
 		case *ir.Call:
 			c.registerAllocator.spillCallRegisters(len(c.function.Definition.Args))
-			c.registerAllocator.spillCallerSavedRegisters()
+			savedCallerRegisters := c.registerAllocator.spillCallerSavedRegisters()
 			for i, arg := range inst.Args {
 				argReg := c.mustLookupRegisterAllocation(arg)
 				c.registerAllocator.move(callArgsRegisters[i], argReg)
 			}
 			c.emit("bl _%s", inst.Function.Name)
+			c.registerAllocator.restoreCallerSavedRegisters(savedCallerRegisters)
 			if inst.Function.ReturnType != ir.UnitType {
 				allocation := c.registerAllocator.saveCallResultRegister(inst.Register())
 				c.values[inst.Register()] = allocation

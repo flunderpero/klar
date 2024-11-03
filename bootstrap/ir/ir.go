@@ -488,6 +488,11 @@ func (s *symbolTable) copy() map[string]Register {
 	return res
 }
 
+type loopScope struct {
+	loopBlock *Block
+	exitBlock *Block
+}
+
 type generator struct {
 	ast.DefaultASTVisitor
 	currentBlock        *Block
@@ -500,6 +505,7 @@ type generator struct {
 	functions           map[string]*Function
 	declaredTypes       map[string]Type
 	registerConstraints RegisterConstraints
+	loopScopes          []loopScope
 }
 
 func (g *generator) enterScope() {
@@ -508,6 +514,18 @@ func (g *generator) enterScope() {
 
 func (g *generator) exitScope() {
 	g.symbolTable = g.symbolTable.parent
+}
+
+func (g *generator) enterLoop(loopBlock *Block, exitBlock *Block) {
+	g.loopScopes = append(g.loopScopes, loopScope{loopBlock: loopBlock, exitBlock: exitBlock})
+}
+
+func (g *generator) loopScope() loopScope {
+	return g.loopScopes[len(g.loopScopes)-1]
+}
+
+func (g *generator) exitLoop() {
+	g.loopScopes = g.loopScopes[:len(g.loopScopes)-1]
 }
 
 func (g *generator) nextRegister() Register {
@@ -735,6 +753,44 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 	return nil
 }
 
+func (g *generator) VisitLoopStatement(stmt *ast.LoopStatement, w ast.ASTWalker) error {
+	loopStartBlock := g.newBlock(g.currentBlock)
+	exitBlock := g.newBlock(loopStartBlock)
+	g.currentBlock.Terminator = &Jump{Target: loopStartBlock}
+	g.currentBlock.Result = UnitRegister
+	g.currentBlock = loopStartBlock
+	g.enterLoop(loopStartBlock, exitBlock)
+	// In order to add the register constraints we need to first take a snapshot
+	// of the current symbol table.
+	symbolTableBeforeBody := g.symbolTable.copy()
+	if err := w.WalkNode(stmt.Body); err != nil {
+		return err
+	}
+	g.updateRegisterConstraints(symbolTableBeforeBody)
+	g.exitLoop()
+	g.currentBlock.Terminator = &Jump{Target: loopStartBlock}
+	g.currentBlock.Result = UnitRegister
+	g.currentBlock = exitBlock
+	g.registerByNodeId[stmt.Id()] = UnitRegister
+	return nil
+}
+
+func (g *generator) VisitBreakStatement(stmt *ast.BreakStatement) error {
+	loopScope := g.loopScope()
+	g.currentBlock.Terminator = &Jump{Target: loopScope.exitBlock}
+	g.currentBlock.Result = UnitRegister
+	g.currentBlock = g.newBlock(nil)
+	return nil
+}
+
+func (g *generator) VisitContinueStatement(stmt *ast.ContinueStatement) error {
+	loopScope := g.loopScope()
+	g.currentBlock.Terminator = &Jump{Target: loopScope.loopBlock}
+	g.currentBlock.Result = UnitRegister
+	g.currentBlock = g.newBlock(nil)
+	return nil
+}
+
 func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module, error) {
 	functionDefinitions := []*ast.FunctionDefinition{}
 	for _, node := range module.Nodes {
@@ -809,6 +865,7 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 			globalConstants:     &constants,
 			declaredTypes:       declaredTypes,
 			registerConstraints: RegisterConstraints{},
+			loopScopes:          []loopScope{},
 		}
 		// Make function arguments visible.
 		for _, arg := range function.Definition.Args {
@@ -850,6 +907,9 @@ func WalkBlock(block *Block, visit func(block *Block) error) error {
 			return err
 		}
 		visited[block.Id] = true
+		if block.Terminator == nil {
+			return fmt.Errorf("block %s has no terminator", block.Id)
+		}
 		blocks = append(blocks, block.Terminator.Targets()...)
 	}
 	return nil

@@ -105,6 +105,7 @@ type typeChecker struct {
 	ast.DefaultASTVisitor
 	typeByNodeId map[ast.NodeId]Type
 	typeEnv      *typeEnvironment
+	loopDepth    int
 }
 
 func (tc *typeChecker) enterScope() {
@@ -113,6 +114,14 @@ func (tc *typeChecker) enterScope() {
 
 func (tc *typeChecker) exitScope() {
 	tc.typeEnv = tc.typeEnv.parent
+}
+
+func (tc *typeChecker) enterLoop() {
+	tc.loopDepth += 1
+}
+
+func (tc *typeChecker) exitLoop() {
+	tc.loopDepth -= 1
 }
 
 func (tc *typeChecker) mustLookup(node ast.Node) Type {
@@ -298,6 +307,29 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 	}
 	if lhsType != rhsType {
 		return fmt.Errorf("lhs and rhs of assignment statement must have the same type, got %s and %s", lhsType, rhsType)
+	}
+	tc.typeByNodeId[s.Id()] = &UnitType{}
+	return nil
+}
+
+func (tc *typeChecker) VisitLoopStatement(s *ast.LoopStatement, w ast.ASTWalker) error {
+	tc.typeByNodeId[s.Id()] = &UnitType{}
+	tc.enterLoop()
+	defer tc.exitLoop()
+	return w.WalkLoopStatement(s)
+}
+
+func (tc *typeChecker) VisitContinueStatement(s *ast.ContinueStatement) error {
+	if tc.loopDepth == 0 {
+		return fmt.Errorf("continue statement outside of a loop")
+	}
+	tc.typeByNodeId[s.Id()] = &UnitType{}
+	return nil
+}
+
+func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
+	if tc.loopDepth == 0 {
+		return fmt.Errorf("break statement outside of a loop")
 	}
 	tc.typeByNodeId[s.Id()] = &UnitType{}
 	return nil

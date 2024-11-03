@@ -1,0 +1,13 @@
+fn main() {
+    mut i = 0
+    loop {
+        i = i + 1
+        if i == 1 {
+            continue
+        }
+        print_int(i)
+        if i == 4 {
+            break
+        }
+    }
+}

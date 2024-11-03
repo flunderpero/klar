@@ -125,6 +125,31 @@ func (expr *IfExpression) String() string {
 
 }
 
+type LoopStatement struct {
+	node
+	Body *BlockExpression
+}
+
+func (l *LoopStatement) String() string {
+	return fmt.Sprintf("LoopStatement(%s)", l.Body)
+}
+
+type BreakStatement struct {
+	node
+}
+
+func (b *BreakStatement) String() string {
+	return "BreakStatement()"
+}
+
+type ContinueStatement struct {
+	node
+}
+
+func (b *ContinueStatement) String() string {
+	return "ContinueStatement()"
+}
+
 type AssignmentStatement struct {
 	node
 	Lhs *IdentExpression
@@ -460,6 +485,17 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 	}
 }
 
+func (p *Parser) parseLoopStatement() (*LoopStatement, error) {
+	if _, err := p.consume(token.Loop); err != nil {
+		return nil, err
+	}
+	body, err := p.parseBlockExpression()
+	if err != nil {
+		return nil, err
+	}
+	return &LoopStatement{node: p.newNode(), Body: body}, nil
+}
+
 var EOF = fmt.Errorf("EOF")
 
 func (p *Parser) ParseNode() (Node, error) {
@@ -472,6 +508,14 @@ func (p *Parser) ParseNode() (Node, error) {
 			return p.parseFunctionDefinition()
 		case token.Mut, token.Let:
 			return p.parseVariableDefinition()
+		case token.Loop:
+			return p.parseLoopStatement()
+		case token.Break:
+			p.consumeAny()
+			return &BreakStatement{node: p.newNode()}, nil
+		case token.Continue:
+			p.consumeAny()
+			return &ContinueStatement{node: p.newNode()}, nil
 		case token.Ident, token.LCurly, token.If, token.True, token.False, token.Str, token.Int:
 			expr, err := p.parseExpression()
 			if err != nil {

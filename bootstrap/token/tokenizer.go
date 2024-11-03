@@ -28,6 +28,9 @@ const (
 	Fn         TokenKind = "fn"
 	Mut        TokenKind = "mut"
 	Let        TokenKind = "let"
+	Loop       TokenKind = "loop"
+	Break      TokenKind = "break"
+	Continue   TokenKind = "continue"
 	EOF        TokenKind = "EOF"
 )
 
@@ -113,6 +116,12 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			switch string(value) {
 			case "fn":
 				token = Token{Kind: Fn, Value: ""}
+			case "loop":
+				token = Token{Kind: Loop, Value: ""}
+			case "break":
+				token = Token{Kind: Break, Value: ""}
+			case "continue":
+				token = Token{Kind: Continue, Value: ""}
 			case "let":
 				token = Token{Kind: Let, Value: ""}
 			case "mut":

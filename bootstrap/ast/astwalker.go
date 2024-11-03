@@ -17,6 +17,9 @@ type ASTVisitor interface {
 	VisitIntLiteralExpression(expr *IntLiteralExpression) error
 	VisitBoolLiteralExpression(expr *BoolLiteralExpression) error
 	VisitAssignmentStatement(stmt *AssignmentStatement, w ASTWalker) error
+	VisitLoopStatement(stmt *LoopStatement, w ASTWalker) error
+	VisitBreakStatement(stmt *BreakStatement) error
+	VisitContinueStatement(stmt *ContinueStatement) error
 }
 
 type ASTWalker interface {
@@ -30,6 +33,7 @@ type ASTWalker interface {
 	WalkIfExpression(expr *IfExpression) error
 	WalkBinaryExpression(expr *BinaryExpression) error
 	WalkAssignmentStatement(stmt *AssignmentStatement) error
+	WalkLoopStatement(stmt *LoopStatement) error
 }
 
 type DefaultASTVisitor struct{}
@@ -80,6 +84,18 @@ func (_ *DefaultASTVisitor) VisitVariableDefinition(fn *VariableDefinition, w AS
 
 func (_ *DefaultASTVisitor) VisitAssignmentStatement(stmt *AssignmentStatement, w ASTWalker) error {
 	return w.WalkAssignmentStatement(stmt)
+}
+
+func (_ *DefaultASTVisitor) VisitLoopStatement(stmt *LoopStatement, w ASTWalker) error {
+	return w.WalkLoopStatement(stmt)
+}
+
+func (_ *DefaultASTVisitor) VisitBreakStatement(stmt *BreakStatement) error {
+	return nil
+}
+
+func (_ *DefaultASTVisitor) VisitContinueStatement(stmt *ContinueStatement) error {
+	return nil
 }
 
 func (_ *DefaultASTVisitor) VisitModule(module *Module, w ASTWalker) error {
@@ -183,6 +199,10 @@ func (w *DefaultASTWalker) WalkAssignmentStatement(stmt *AssignmentStatement) er
 	return w.WalkNode(stmt.Rhs)
 }
 
+func (w *DefaultASTWalker) WalkLoopStatement(stmt *LoopStatement) error {
+	return w.WalkBlockExpression(stmt.Body)
+}
+
 func (w *DefaultASTWalker) WalkNode(node Node) error {
 	var err error
 	switch node := node.(type) {
@@ -194,6 +214,12 @@ func (w *DefaultASTWalker) WalkNode(node Node) error {
 		err = w.Visitor.VisitVariableDefinition(node, w)
 	case *AssignmentStatement:
 		err = w.Visitor.VisitAssignmentStatement(node, w)
+	case *LoopStatement:
+		err = w.Visitor.VisitLoopStatement(node, w)
+	case *BreakStatement:
+		err = w.Visitor.VisitBreakStatement(node)
+	case *ContinueStatement:
+		err = w.Visitor.VisitContinueStatement(node)
 	default:
 		err = w.Visitor.VisitExpression(node, w)
 	}

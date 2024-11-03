@@ -79,16 +79,18 @@ type registerAllocator struct {
 	registers            []register
 	usedScratchRegisters map[register]*registerAllocation
 	usedCallRegisters    map[register]*registerAllocation
-	allocations          []*registerAllocation
+	allocations          map[ir.Register]*registerAllocation
+	constraints          ir.RegisterConstraints
 	code                 *Code
 }
 
-func newRegisterAllocator(registers []register, code *Code) registerAllocator {
+func newRegisterAllocator(registers []register, constraints ir.RegisterConstraints, code *Code) registerAllocator {
 	return registerAllocator{
 		registers:            registers,
 		usedScratchRegisters: make(map[register]*registerAllocation),
 		usedCallRegisters:    make(map[register]*registerAllocation),
-		allocations:          []*registerAllocation{},
+		allocations:          make(map[ir.Register]*registerAllocation),
+		constraints:          constraints,
 		code:                 code,
 	}
 }
@@ -141,14 +143,28 @@ func (r *registerAllocator) ensureInRegister(allocation *registerAllocation) reg
 	return freeReg
 }
 
-func (r *registerAllocator) allocateScratchRegister() *registerAllocation {
+func (r *registerAllocator) allocateScratchRegister(irReg ir.Register) *registerAllocation {
+	if _, found := r.allocations[irReg]; found {
+		panic(fmt.Sprintf("we should never try to create an allocation for the same IR register twice: %s", irReg))
+	}
+	// First look if the given IR register is part of a constraint.
+	constrainedRegisters, isConstrained := r.constraints.Lookup(irReg)
+	if isConstrained {
+		for _, constrainedReg := range *constrainedRegisters {
+			allocation, found := r.allocations[constrainedReg]
+			if found {
+				r.ensureInRegister(allocation)
+				return allocation
+			}
+		}
+	}
 	var spillAllocation *registerAllocation
 	for _, reg := range r.registers {
 		allocation := r.usedScratchRegisters[reg]
 		if allocation == nil {
 			allocation := &registerAllocation{reg: reg, stackOffset: -1}
 			r.usedScratchRegisters[reg] = allocation
-			r.allocations = append(r.allocations, allocation)
+			r.allocations[irReg] = allocation
 			return allocation
 		}
 		spillAllocation = allocation
@@ -157,13 +173,13 @@ func (r *registerAllocator) allocateScratchRegister() *registerAllocation {
 	allocation := &registerAllocation{reg: spillAllocation.reg, stackOffset: -1}
 	r.spill(spillAllocation)
 	r.usedScratchRegisters[allocation.reg] = allocation
-	r.allocations = append(r.allocations, allocation)
+	r.allocations[irReg] = allocation
 	return allocation
 }
 
 // Save the call result register x0 to a new register allocation so it doesn't get lost.
-func (r *registerAllocator) saveCallResultRegister() *registerAllocation {
-	allocation := r.allocateScratchRegister()
+func (r *registerAllocator) saveCallResultRegister(reg ir.Register) *registerAllocation {
+	allocation := r.allocateScratchRegister(reg)
 	r.code.emit("mov %s, x0", allocation.reg)
 	return allocation
 }
@@ -197,7 +213,6 @@ func (r *registerAllocator) allocateCallRegister(index int) *registerAllocation 
 	reg := callArgsRegisters[index]
 	allocation := &registerAllocation{reg: reg, stackOffset: -1}
 	r.usedCallRegisters[reg] = allocation
-	r.allocations = append(r.allocations, allocation)
 	return allocation
 }
 
@@ -264,8 +279,8 @@ func (c *Code) blockLabel(block *ir.Block) string {
 	return fmt.Sprintf("%s_%s", c.function.Name, block.Id)
 }
 
-func (c *Code) prepareBinaryOperation(lhsReg ir.Register, rhsReg ir.Register) (reg *registerAllocation, lhs register, rhs register) {
-	reg = c.registerAllocator.allocateScratchRegister()
+func (c *Code) prepareBinaryOperation(resReg ir.Register, lhsReg ir.Register, rhsReg ir.Register) (reg *registerAllocation, lhs register, rhs register) {
+	reg = c.registerAllocator.allocateScratchRegister(resReg)
 	lhsAllocation := c.mustLookupRegisterAllocation(lhsReg)
 	rhsAllocation := c.mustLookupRegisterAllocation(rhsReg)
 	lhs = c.registerAllocator.ensureInRegister(lhsAllocation)
@@ -279,23 +294,23 @@ func (c *Code) generateBlock(block *ir.Block) error {
 	for _, inst := range block.Instructions {
 		switch inst := inst.(type) {
 		case *ir.BoolConst:
-			reg := c.registerAllocator.allocateScratchRegister()
+			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
 			c.emit("mov %s, %d", reg, inst.Value)
 			c.values[inst.Register()] = reg
 		case *ir.Int32Const:
-			reg := c.registerAllocator.allocateScratchRegister()
+			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
 			c.emit("mov %s, %d", reg, inst.Value)
 			c.values[inst.Register()] = reg
 		case *ir.Int64Const:
-			reg := c.registerAllocator.allocateScratchRegister()
+			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
 			c.emit("mov %s, %d", reg, inst.Value)
 			c.values[inst.Register()] = reg
 		case *ir.SignedInt64AddWithOverflow:
-			reg, lhs, rhs := c.prepareBinaryOperation(inst.Lhs, inst.Rhs)
+			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
 			c.emit("adds %s, %s, %s", reg, lhs, rhs)
 			c.values[inst.Register()] = reg
 		case *ir.Int64Compare:
-			reg, lhs, rhs := c.prepareBinaryOperation(inst.Lhs, inst.Rhs)
+			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
 			c.values[inst.Register()] = reg
 			switch inst.Op {
 			case ir.Int64CompOpEQ:
@@ -317,21 +332,21 @@ func (c *Code) generateBlock(block *ir.Block) error {
 				}
 			}
 			if inst.Source.IsConstant() {
-				reg = c.registerAllocator.allocateScratchRegister()
+				reg = c.registerAllocator.allocateScratchRegister(inst.Register())
 				c.emit("adrp %s, %s@PAGE", reg, inst.Source)
 				c.emit("add %s, %s, %s@PAGEOFF+%d", reg, reg, inst.Source, offset)
 			} else {
 				reg = c.mustLookupRegisterAllocation(inst.Source)
 				if offset > 0 {
 					source := c.registerAllocator.ensureInRegister(reg)
-					reg = c.registerAllocator.allocateScratchRegister()
+					reg = c.registerAllocator.allocateScratchRegister(inst.Register())
 					c.emit("add %s, %s, #%d", reg, source, offset)
 				}
 			}
 			c.values[inst.Register()] = reg
 		case *ir.Load:
 			source := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Source))
-			reg := c.registerAllocator.allocateScratchRegister()
+			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
 			switch ty := inst.FieldType.(type) {
 			case ir.BuiltInType:
 				if ty == ir.Int64Type {
@@ -356,7 +371,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			}
 			c.emit("bl _%s", inst.Function.Name)
 			if inst.Function.ReturnType != ir.UnitType {
-				allocation := c.registerAllocator.saveCallResultRegister()
+				allocation := c.registerAllocator.saveCallResultRegister(inst.Register())
 				c.values[inst.Register()] = allocation
 			}
 		default:
@@ -394,6 +409,7 @@ func generateFunction(function *ir.Function, stringConstants *[]*ir.StrConst) (C
 	}
 	c.registerAllocator = newRegisterAllocator(
 		slices.Concat(callerSavedRegisters, calleeSavedRegisters),
+		function.RegisterConstraints,
 		&c,
 	)
 	for i, args := range function.Args {

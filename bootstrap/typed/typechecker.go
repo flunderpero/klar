@@ -209,6 +209,8 @@ func (tc *typeChecker) VisitBlockExpression(expr *ast.BlockExpression, w ast.AST
 }
 
 func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker) error {
+	tc.enterScope()
+	defer tc.exitScope()
 	if err := w.WalkIfExpression(expr); err != nil {
 		return fmt.Errorf("failed to walk if expression: %w", err)
 	}

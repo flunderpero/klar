@@ -1,0 +1,29 @@
+fn shadow_in_branch() {
+    mut a = 2
+    if true {
+        mut a = 4
+        print_int(a)
+    }
+    print_int(a)
+}
+
+fn mutate_in_branch() {
+    mut a = 0
+    if true {
+        a = 2 + 2
+    } else {
+        a = 1
+    }
+    print_int(a)
+    if false {
+        a = 3
+    } else {
+        a = 2
+    }
+    print_int(a)
+}
+
+fn main() {
+    mutate_in_branch()
+    shadow_in_branch()
+}

@@ -93,6 +93,8 @@ func main() {
 				os.Exit(1)
 			}
 			fmt.Println("}")
+			fmt.Println("RegisterConstraints:")
+			fmt.Println(function.RegisterConstraints.String())
 		}
 		os.Exit(0)
 	}

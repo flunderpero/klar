@@ -2,6 +2,7 @@ package ir
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/flunderpero/klar/bootstrap/ast"
 	"github.com/flunderpero/klar/bootstrap/typed"
@@ -155,11 +156,12 @@ type FunctionArg struct {
 }
 
 type Function struct {
-	Name       string
-	ReturnType Type
-	Args       []FunctionArg
-	Entry      *Block
-	Definition *ast.FunctionDefinition
+	Name                string
+	ReturnType          Type
+	Args                []FunctionArg
+	Entry               *Block
+	Definition          *ast.FunctionDefinition
+	RegisterConstraints RegisterConstraints
 }
 
 func (t *Function) String() string {
@@ -338,30 +340,166 @@ func (inst *Call) Register() Register {
 	return inst.register
 }
 
+/*
+RegisterConstraints make sure that mutating values bound to symbols
+in different branches generates correct code.
+
+Consider this simple if/else and its corresponding IR:
+
+mut a = 1
+
+	if true {
+	    a = 2
+	} else {
+
+	    a = 3
+	}
+
+_main:
+
+	%1 = i64 1          -- mut a = 1
+	%2 = i1 1           -- `true`
+	%3 = condbr i1 %2, true_block, else_block
+
+true_block:
+
+	%4 = i64 2          -- a = 2
+	jmp merge_block
+
+false_block:
+
+	%5 = i64 3          -- a = 3
+	jmp merge_block
+
+merge_block:
+
+	!!! Here, `a` may be in %4 or %5 depending on which branch was taken.
+
+Other compiler frameworks like LLVM insert a so-called phi node to
+communicate that we have to look for the value depending where we came
+from:
+
+merge_block:
+
+	%6 = phi %4 true_block, %5 else_block
+
+This basically says: If you arrived here from the `true_block` then
+%6 will have the value of %4, but %5 if we came from the `else_block`.
+
+We are taking a slightly different approach (with the same result).
+During IR generation we add a register constraint telling the code
+generation to make sure to put %1, %4, and %5 into the same hardware
+register or stack location.
+*/
+type RegisterConstraints struct {
+	constraints []*[]Register
+}
+
+func (r *RegisterConstraints) Lookup(reg Register) (*[]Register, bool) {
+	for _, constraint := range r.constraints {
+		for _, c := range *constraint {
+			if c == reg {
+				return constraint, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func (r *RegisterConstraints) String() string {
+	s := ""
+	for _, c := range r.constraints {
+		if len(s) > 0 {
+			s += ", "
+		}
+		s += "["
+		for i, reg := range *c {
+			if i > 0 {
+				s += ", "
+			}
+			s += reg.String()
+		}
+		s += "]"
+	}
+	return s
+}
+
+func (r *RegisterConstraints) add(reg1 Register, reg2 Register) {
+	c, found := r.Lookup(reg1)
+	if found {
+		if !slices.Contains(*c, reg2) {
+			*c = append(*c, reg2)
+		}
+		return
+	}
+	c, found = r.Lookup(reg2)
+	if found {
+		if !slices.Contains(*c, reg1) {
+			*c = append(*c, reg1)
+		}
+		return
+	}
+	r.constraints = append(r.constraints, &[]Register{reg1, reg2})
+}
+
 type symbolTable struct {
 	symbols map[string]Register
 	parent  *symbolTable
 }
 
-func (s *symbolTable) lookup(name string) (Register, bool) {
-	reg, found := s.symbols[name]
-	if !found && s.parent != nil {
-		return s.parent.lookup(name)
+func (s *symbolTable) lookup(name string) Register {
+	table := s
+	for table != nil {
+		if reg, found := table.symbols[name]; found {
+			return reg
+		}
+		table = table.parent
 	}
-	return reg, found
+	panic(fmt.Sprintf("undeclared symbol: %s", name))
+}
+
+func (s *symbolTable) declare(name string, reg Register) {
+	s.symbols[name] = reg
+}
+
+func (s *symbolTable) assign(name string, reg Register) {
+	table := s
+	for table != nil {
+		if _, found := table.symbols[name]; found {
+			table.symbols[name] = reg
+			return
+		}
+		table = table.parent
+	}
+	panic(fmt.Sprintf("undeclared symbol: %s", name))
+}
+
+func (s *symbolTable) copy() map[string]Register {
+	table := s
+	res := make(map[string]Register)
+	for table != nil {
+		for k, v := range table.symbols {
+			if _, found := res[k]; !found {
+				res[k] = v
+			}
+		}
+		table = table.parent
+	}
+	return res
 }
 
 type generator struct {
 	ast.DefaultASTVisitor
-	currentBlock     *Block
-	typeByNodeId     map[ast.NodeId]typed.Type
-	registerByNodeId map[ast.NodeId]Register
-	symbolTable      *symbolTable
-	globalConstants  *[]*StrConst
-	registerIndex    int
-	blockIndex       int
-	functions        map[string]*Function
-	declaredTypes    map[string]Type
+	currentBlock        *Block
+	typeByNodeId        map[ast.NodeId]typed.Type
+	registerByNodeId    map[ast.NodeId]Register
+	symbolTable         *symbolTable
+	globalConstants     *[]*StrConst
+	registerIndex       int
+	blockIndex          int
+	functions           map[string]*Function
+	declaredTypes       map[string]Type
+	registerConstraints RegisterConstraints
 }
 
 func (g *generator) enterScope() {
@@ -370,14 +508,6 @@ func (g *generator) enterScope() {
 
 func (g *generator) exitScope() {
 	g.symbolTable = g.symbolTable.parent
-}
-
-func (g *generator) setSymbol(name string, reg Register) {
-	g.symbolTable.symbols[name] = reg
-}
-
-func (g *generator) getSymbol(name string) (Register, bool) {
-	return g.symbolTable.lookup(name)
 }
 
 func (g *generator) nextRegister() Register {
@@ -413,6 +543,15 @@ func (g *generator) newBlock(predecessors ...*Block) *Block {
 	block := &Block{Id: BlockId(g.blockIndex)}
 	block.Predecessors = append(block.Predecessors, predecessors...)
 	return block
+}
+
+func (g *generator) updateRegisterConstraints(symbolTableBefore map[string]Register) {
+	for symbol, regBefore := range symbolTableBefore {
+		regNow := g.symbolTable.lookup(symbol)
+		if regNow != regBefore {
+			g.registerConstraints.add(regNow, regBefore)
+		}
+	}
 }
 
 func (g *generator) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
@@ -451,10 +590,7 @@ func (g *generator) VisitIdentExpression(expr *ast.IdentExpression) error {
 	if _, found := g.functions[expr.Name]; found {
 		return nil
 	}
-	reg, found := g.getSymbol(expr.Name)
-	if !found {
-		return fmt.Errorf("unknown symbol: %s", expr.Name)
-	}
+	reg := g.symbolTable.lookup(expr.Name)
 	g.registerByNodeId[expr.Id()] = reg
 	return nil
 }
@@ -541,25 +677,33 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker) e
 		TrueBlock:  trueBlock,
 		FalseBlock: falseBlock,
 	}
+	// Before generating the true and false bodies, we take a snapshot of the symbol table
+	// so we can calculate the register constraints afterwards.
+	// Remember we need to constraint registers that point to the same symbol/value
+	// so that code generation can make sure they use the same hardware register or stack location.
+	symbolTableBeforeBodies := g.symbolTable.copy()
 	g.currentBlock = trueBlock
 	if err := g.VisitBlockExpression(expr.TrueBody, w); err != nil {
 		return err
 	}
+	g.updateRegisterConstraints(symbolTableBeforeBodies)
 	if expr.FalseBody != nil {
 		g.currentBlock = falseBlock
 		if err := g.VisitBlockExpression(expr.FalseBody, w); err != nil {
 			return err
 		}
+		g.updateRegisterConstraints(symbolTableBeforeBodies)
 	}
 	g.currentBlock = mergeBlock
-	// We currently don't support else branches, so the result of an if expression
-	// is always the unit type.
+	// We treat if _expressions_ as statements for now.
 	condBlock.Result = UnitRegister
 	g.registerByNodeId[expr.Id()] = condBlock.Result
 	return nil
 }
 
 func (g *generator) VisitBlockExpression(expr *ast.BlockExpression, w ast.ASTWalker) error {
+	g.enterScope()
+	defer g.exitScope()
 	if err := w.WalkBlockExpression(expr); err != nil {
 		return err
 	}
@@ -578,7 +722,7 @@ func (g *generator) VisitVariableDefinition(expr *ast.VariableDefinition, w ast.
 		return err
 	}
 	reg := g.lookupRegisterByNode(expr.Value)
-	g.setSymbol(expr.Name, reg)
+	g.symbolTable.declare(expr.Name, reg)
 	return nil
 }
 
@@ -587,7 +731,7 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 		return err
 	}
 	reg := g.lookupRegisterByNode(stmt.Rhs)
-	g.setSymbol(stmt.Lhs.Name, reg)
+	g.symbolTable.assign(stmt.Lhs.Name, reg)
 	return nil
 }
 
@@ -657,17 +801,18 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 	// Generate code for each function.
 	for _, function := range functions {
 		gen := &generator{
-			DefaultASTVisitor: ast.DefaultASTVisitor{},
-			typeByNodeId:      typeMap,
-			registerByNodeId:  make(map[ast.NodeId]Register),
-			functions:         functionByName,
-			symbolTable:       &symbolTable{symbols: make(map[string]Register)},
-			globalConstants:   &constants,
-			declaredTypes:     declaredTypes,
+			DefaultASTVisitor:   ast.DefaultASTVisitor{},
+			typeByNodeId:        typeMap,
+			registerByNodeId:    make(map[ast.NodeId]Register),
+			functions:           functionByName,
+			symbolTable:         &symbolTable{symbols: make(map[string]Register)},
+			globalConstants:     &constants,
+			declaredTypes:       declaredTypes,
+			registerConstraints: RegisterConstraints{},
 		}
 		// Make function arguments visible.
 		for _, arg := range function.Definition.Args {
-			gen.setSymbol(arg.Name, gen.nextRegister())
+			gen.symbolTable.declare(arg.Name, gen.nextRegister())
 		}
 		block := gen.newBlock()
 		gen.currentBlock = block
@@ -680,6 +825,7 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 		}
 		gen.currentBlock.Terminator = &Return{}
 		function.Entry = block
+		function.RegisterConstraints = gen.registerConstraints
 	}
 	types := []Type{}
 	for _, ty := range declaredTypes {

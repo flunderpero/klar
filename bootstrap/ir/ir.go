@@ -57,7 +57,7 @@ func (t PointerType) Size() int {
 }
 
 type StructType struct {
-	Name   string
+	Name   ast.TypeIdent
 	Fields []Type
 }
 
@@ -156,7 +156,7 @@ type FunctionArg struct {
 }
 
 type Function struct {
-	Name                string
+	Name                ast.Ident
 	ReturnType          Type
 	Args                []FunctionArg
 	Entry               *Block
@@ -457,11 +457,11 @@ func (r *RegisterConstraints) add(reg1 Register, reg2 Register) {
 }
 
 type symbolTable struct {
-	symbols map[string]Register
+	symbols map[ast.Ident]Register
 	parent  *symbolTable
 }
 
-func (s *symbolTable) lookup(name string) Register {
+func (s *symbolTable) lookup(name ast.Ident) Register {
 	table := s
 	for table != nil {
 		if reg, found := table.symbols[name]; found {
@@ -472,11 +472,11 @@ func (s *symbolTable) lookup(name string) Register {
 	panic(fmt.Sprintf("undeclared symbol: %s", name))
 }
 
-func (s *symbolTable) declare(name string, reg Register) {
+func (s *symbolTable) declare(name ast.Ident, reg Register) {
 	s.symbols[name] = reg
 }
 
-func (s *symbolTable) assign(name string, reg Register) {
+func (s *symbolTable) assign(name ast.Ident, reg Register) {
 	table := s
 	for table != nil {
 		if _, found := table.symbols[name]; found {
@@ -488,9 +488,9 @@ func (s *symbolTable) assign(name string, reg Register) {
 	panic(fmt.Sprintf("undeclared symbol: %s", name))
 }
 
-func (s *symbolTable) copy() map[string]Register {
+func (s *symbolTable) copy() map[ast.Ident]Register {
 	table := s
-	res := make(map[string]Register)
+	res := make(map[ast.Ident]Register)
 	for table != nil {
 		for k, v := range table.symbols {
 			if _, found := res[k]; !found {
@@ -516,14 +516,14 @@ type generator struct {
 	globalConstants     *[]*StrConst
 	registerIndex       int
 	blockIndex          int
-	functions           map[string]*Function
-	declaredTypes       map[string]Type
+	functions           map[ast.Ident]*Function
+	declaredTypes       map[ast.TypeIdent]Type
 	registerConstraints RegisterConstraints
 	loopScopes          []loopScope
 }
 
 func (g *generator) enterScope() {
-	g.symbolTable = &symbolTable{symbols: make(map[string]Register), parent: g.symbolTable}
+	g.symbolTable = &symbolTable{symbols: make(map[ast.Ident]Register), parent: g.symbolTable}
 }
 
 func (g *generator) exitScope() {
@@ -577,7 +577,7 @@ func (g *generator) newBlock(predecessors ...*Block) *Block {
 	return block
 }
 
-func (g *generator) updateRegisterConstraints(symbolTableBefore map[string]Register) {
+func (g *generator) updateRegisterConstraints(symbolTableBefore map[ast.Ident]Register) {
 	for symbol, regBefore := range symbolTableBefore {
 		regNow := g.symbolTable.lookup(symbol)
 		if regNow != regBefore {
@@ -619,10 +619,10 @@ func (g *generator) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) 
 }
 
 func (g *generator) VisitIdentExpression(expr *ast.IdentExpression) error {
-	if _, found := g.functions[expr.Name]; found {
+	if _, found := g.functions[expr.Ident]; found {
 		return nil
 	}
-	reg := g.symbolTable.lookup(expr.Name)
+	reg := g.symbolTable.lookup(expr.Ident)
 	g.registerByNodeId[expr.Id()] = reg
 	return nil
 }
@@ -854,7 +854,7 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 		return err
 	}
 	reg := g.lookupRegisterByNode(stmt.Rhs)
-	g.symbolTable.assign(stmt.Lhs.Name, reg)
+	g.symbolTable.assign(stmt.Lhs.Ident, reg)
 	return nil
 }
 
@@ -896,7 +896,7 @@ func (g *generator) VisitContinueStatement(stmt *ast.ContinueStatement) error {
 	return nil
 }
 
-func declareType(declaredTypes *map[string]Type, node ast.Node) {
+func declareType(declaredTypes *map[ast.TypeIdent]Type, node ast.Node) {
 	switch decl := node.(type) {
 	case *ast.StructTypeDeclaration:
 		fieldTypes := []Type{}
@@ -920,7 +920,7 @@ func declareType(declaredTypes *map[string]Type, node ast.Node) {
 
 func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module, error) {
 	functionDefinitions := []*ast.FunctionDefinition{}
-	declaredTypes := make(map[string]Type)
+	declaredTypes := make(map[ast.TypeIdent]Type)
 	// Declare built-in types.
 	declaredTypes[StrType.Name] = StrType
 	declaredTypes["Int"] = Int64Type
@@ -962,7 +962,7 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 		}
 		functions = append(functions, &f)
 	}
-	functionByName := make(map[string]*Function)
+	functionByName := make(map[ast.Ident]*Function)
 	for _, f := range functions {
 		functionByName[f.Name] = f
 	}
@@ -997,7 +997,7 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 			typeByNodeId:        typeMap,
 			registerByNodeId:    make(map[ast.NodeId]Register),
 			functions:           functionByName,
-			symbolTable:         &symbolTable{symbols: make(map[string]Register)},
+			symbolTable:         &symbolTable{symbols: make(map[ast.Ident]Register)},
 			globalConstants:     &constants,
 			declaredTypes:       declaredTypes,
 			registerConstraints: RegisterConstraints{},

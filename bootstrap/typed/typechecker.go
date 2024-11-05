@@ -36,7 +36,7 @@ func (ty *UnitType) String() string {
 }
 
 type StructField struct {
-	Name string
+	Name ast.Ident
 	Type Type
 }
 
@@ -45,7 +45,7 @@ func (f *StructField) String() string {
 }
 
 type StructType struct {
-	Name        string
+	Name        ast.TypeIdent
 	Fields      []StructField
 	Declaration *ast.StructTypeDeclaration
 }
@@ -61,7 +61,7 @@ func (ty *StructType) String() string {
 	return fmt.Sprintf("StructType(%s, %s)", ty.Name, fields)
 }
 
-func (ty *StructType) FindField(name string) (*StructField, error) {
+func (ty *StructType) FindField(name ast.Ident) (*StructField, error) {
 	fieldIndex := slices.IndexFunc(ty.Fields, func(field StructField) bool { return field.Name == name })
 	if fieldIndex < 0 {
 		return nil, fmt.Errorf("field %q not found in struct type %q", name, ty)
@@ -70,7 +70,7 @@ func (ty *StructType) FindField(name string) (*StructField, error) {
 }
 
 type FunctionType struct {
-	Name       string
+	Name       ast.Ident
 	ArgTypes   []Type
 	ReturnType Type
 }
@@ -108,12 +108,12 @@ func (te *typeEnvironment) lookup(name string) (Type, bool) {
 	return ty, found
 }
 
-func (te *typeEnvironment) lookupVariable(name string) (Type, *ast.VariableDefinition, bool) {
-	ty, found := te.lookup(name)
+func (te *typeEnvironment) lookupVariable(name ast.Ident) (Type, *ast.VariableDefinition, bool) {
+	ty, found := te.lookup(string(name))
 	if !found {
 		return nil, nil, false
 	}
-	def, found := te.variables[name]
+	def, found := te.variables[string(name)]
 	if !found && te.parent != nil {
 		return te.parent.lookupVariable(name)
 	}
@@ -183,9 +183,9 @@ func (tc *typeChecker) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpressio
 }
 
 func (tc *typeChecker) VisitIdentExpression(expr *ast.IdentExpression) error {
-	ty, found := tc.typeEnv.lookup(expr.Name)
+	ty, found := tc.typeEnv.lookup(string(expr.Ident))
 	if !found {
-		return fmt.Errorf("type not found for identifier %s", expr.Name)
+		return fmt.Errorf("type not found for identifier %s", expr.Ident)
 	}
 	tc.typeByNodeId[expr.Id()] = ty
 	return nil
@@ -290,13 +290,13 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 	if err := w.WalkStructInitExpression(expr); err != nil {
 		return err
 	}
-	structType_, found := tc.typeEnv.lookup(expr.Type)
+	structType_, found := tc.typeEnv.lookup(string(expr.TypeIdent))
 	if !found {
-		return fmt.Errorf("type %q not found for struct init expression", expr.Type)
+		return fmt.Errorf("type %q not found for struct init expression", expr.TypeIdent)
 	}
 	structType, isType := structType_.(*StructType)
 	if !isType {
-		return fmt.Errorf("type %q is not a struct type", expr.Type)
+		return fmt.Errorf("type %q is not a struct type", expr.TypeIdent)
 	}
 	for _, initField := range expr.Fields {
 		structField, err := structType.FindField(initField.Name)
@@ -318,7 +318,7 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast.ASTWalker) error {
 	argTypes := []Type{}
 	for _, arg := range fn.Args {
-		argType, found := tc.typeEnv.lookup(arg.Type)
+		argType, found := tc.typeEnv.lookup(string(arg.Type))
 		if !found {
 			return fmt.Errorf("type %s not found for argument %s", arg.Type, arg.Name)
 		}
@@ -326,7 +326,7 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 	}
 	var returnType Type = &UnitType{}
 	if fn.ReturnType != "" {
-		ty, found := tc.typeEnv.lookup(fn.ReturnType)
+		ty, found := tc.typeEnv.lookup(string(fn.ReturnType))
 		if !found {
 			return fmt.Errorf("type %s not found for return type of function %s", fn.ReturnType, fn.Name)
 		}
@@ -338,14 +338,14 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 		ReturnType: returnType,
 	}
 	tc.typeByNodeId[fn.Id()] = funcType
-	if err := tc.typeEnv.declare(fn.Name, funcType); err != nil {
+	if err := tc.typeEnv.declare(string(fn.Name), funcType); err != nil {
 		return fmt.Errorf("failed to declare function %s: %w", fn.Name, err)
 	}
 	tc.enterScope()
 	defer tc.exitScope()
 	for i, arg := range fn.Args {
 		argType := argTypes[i]
-		if err := tc.typeEnv.declare(arg.Name, argType); err != nil {
+		if err := tc.typeEnv.declare(string(arg.Name), argType); err != nil {
 			return fmt.Errorf("failed to declare argument %s: %w", arg.Name, err)
 		}
 	}
@@ -363,7 +363,7 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 	if _, ok := valueType.(*UnitType); ok {
 		return fmt.Errorf("variable %s must have a non-unit type", v.Name)
 	}
-	if err := tc.typeEnv.declareVariable(v.Name, valueType, v); err != nil {
+	if err := tc.typeEnv.declareVariable(string(v.Name), valueType, v); err != nil {
 		return err
 	}
 	tc.typeByNodeId[v.Id()] = &UnitType{}
@@ -374,12 +374,12 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 	if err := w.WalkAssignmentStatement(s); err != nil {
 		return err
 	}
-	lhsType, lhsVar, ok := tc.typeEnv.lookupVariable(s.Lhs.Name)
+	lhsType, lhsVar, ok := tc.typeEnv.lookupVariable(s.Lhs.Ident)
 	if !ok {
-		return fmt.Errorf("unknown variable %s", s.Lhs.Name)
+		return fmt.Errorf("unknown variable %s", s.Lhs.Ident)
 	}
 	if !lhsVar.Mutable {
-		return fmt.Errorf("variable %s is not mutable", s.Lhs.Name)
+		return fmt.Errorf("variable %s is not mutable", s.Lhs.Ident)
 	}
 	rhsType, ok := tc.typeByNodeId[s.Rhs.Id()]
 	if !ok {
@@ -418,14 +418,14 @@ func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 func (tc *typeChecker) VisitStructTypeDeclaration(d *ast.StructTypeDeclaration) error {
 	fields := []StructField{}
 	for _, field := range d.Fields {
-		fieldType, found := tc.typeEnv.lookup(field.Type)
+		fieldType, found := tc.typeEnv.lookup(string(field.Type))
 		if !found {
 			return fmt.Errorf("type %q not found for field %q", field.Type, field.Name)
 		}
 		fields = append(fields, StructField{Name: field.Name, Type: fieldType})
 	}
 	structType := &StructType{Name: d.Name, Fields: fields, Declaration: d}
-	if err := tc.typeEnv.declare(d.Name, structType); err != nil {
+	if err := tc.typeEnv.declare(string(d.Name), structType); err != nil {
 		return err
 	}
 	tc.typeByNodeId[d.Id()] = &UnitType{}

@@ -1,6 +1,9 @@
 package token
 
-import "fmt"
+import (
+	"fmt"
+	"unicode"
+)
 
 type Token struct {
 	Kind  TokenKind
@@ -11,6 +14,7 @@ type TokenKind string
 
 const (
 	Ident      TokenKind = "ident"
+	TypeIdent  TokenKind = "typeident"
 	LParen     TokenKind = "("
 	RParen     TokenKind = ")"
 	LCurly     TokenKind = "{"
@@ -41,11 +45,16 @@ func (t Token) String() string {
 	switch t.Kind {
 	case Str:
 		return fmt.Sprintf("%s(%q)", kind, t.Value)
-	case Ident:
+	case Ident, TypeIdent:
 		return fmt.Sprintf("%s(%s)", kind, t.Value)
 	default:
 		return kind
 	}
+}
+
+func isTypeIdentifier(name string) bool {
+	firstRune := []rune(name)[0]
+	return unicode.IsUpper(firstRune)
 }
 
 func Tokenize(src []byte, file string) ([]Token, error) {
@@ -141,7 +150,11 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			case "struct":
 				token = Token{Kind: Struct, Value: ""}
 			default:
-				token = Token{Kind: Ident, Value: string(value)}
+				kind := Ident
+				if isTypeIdentifier(string(value)) {
+					kind = TypeIdent
+				}
+				token = Token{Kind: kind, Value: string(value)}
 			}
 			tokens = append(tokens, token)
 		} else {

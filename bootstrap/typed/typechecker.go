@@ -2,6 +2,7 @@ package typed
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/flunderpero/klar/bootstrap/ast"
 )
@@ -32,6 +33,40 @@ type UnitType struct{}
 
 func (ty *UnitType) String() string {
 	return "UnitType()"
+}
+
+type StructField struct {
+	Name string
+	Type Type
+}
+
+func (f *StructField) String() string {
+	return fmt.Sprintf("%s = %s", f.Name, f.Type)
+}
+
+type StructType struct {
+	Name        string
+	Fields      []StructField
+	Declaration *ast.StructTypeDeclaration
+}
+
+func (ty *StructType) String() string {
+	fields := ""
+	for _, field := range ty.Fields {
+		if fields != "" {
+			fields += ", "
+		}
+		fields += field.String()
+	}
+	return fmt.Sprintf("StructType(%s, %s)", ty.Name, fields)
+}
+
+func (ty *StructType) FindField(name string) (*StructField, error) {
+	fieldIndex := slices.IndexFunc(ty.Fields, func(field StructField) bool { return field.Name == name })
+	if fieldIndex < 0 {
+		return nil, fmt.Errorf("field %q not found in struct type %q", name, ty)
+	}
+	return &ty.Fields[fieldIndex], nil
 }
 
 type FunctionType struct {
@@ -201,10 +236,27 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.ASTWa
 	for i, arg := range expr.Args {
 		argType := tc.mustLookup(arg)
 		if argType != funcType.ArgTypes[i] {
-			return fmt.Errorf("expected argument %d to be of type %s, got %s", i, funcType.ArgTypes[i], argType)
+			return fmt.Errorf("expected argument %d to be of type %q, got %q", i, funcType.ArgTypes[i], argType)
 		}
 	}
 	tc.typeByNodeId[expr.Id()] = funcType.ReturnType
+	return nil
+}
+
+func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.ASTWalker) error {
+	if err := w.WalkMemberExpression(expr); err != nil {
+		return fmt.Errorf("failed to walk member expression: %w", err)
+	}
+	structType_ := tc.mustLookup(expr.Target)
+	structType, isType := structType_.(*StructType)
+	if !isType {
+		return fmt.Errorf("type %q is not a struct type", structType_)
+	}
+	structField, err := structType.FindField(expr.Field)
+	if err != nil {
+		return err
+	}
+	tc.typeByNodeId[expr.Id()] = structField.Type
 	return nil
 }
 
@@ -234,6 +286,35 @@ func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker
 	return nil
 }
 
+func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression, w ast.ASTWalker) error {
+	if err := w.WalkStructInitExpression(expr); err != nil {
+		return err
+	}
+	structType_, found := tc.typeEnv.lookup(expr.Type)
+	if !found {
+		return fmt.Errorf("type %q not found for struct init expression", expr.Type)
+	}
+	structType, isType := structType_.(*StructType)
+	if !isType {
+		return fmt.Errorf("type %q is not a struct type", expr.Type)
+	}
+	for _, initField := range expr.Fields {
+		structField, err := structType.FindField(initField.Name)
+		if err != nil {
+			return err
+		}
+		fieldType := tc.mustLookup(initField.Value)
+		if structField.Type != fieldType {
+			return fmt.Errorf("expected field %q to be of type %q, got %q", initField.Name, structField.Type, fieldType)
+		}
+	}
+	if len(expr.Fields) != len(structType.Fields) {
+		return fmt.Errorf("expected %d fields, got %d", len(structType.Fields), len(expr.Fields))
+	}
+	tc.typeByNodeId[expr.Id()] = structType
+	return nil
+}
+
 func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast.ASTWalker) error {
 	argTypes := []Type{}
 	for _, arg := range fn.Args {
@@ -241,7 +322,6 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 		if !found {
 			return fmt.Errorf("type %s not found for argument %s", arg.Type, arg.Name)
 		}
-		tc.typeByNodeId[arg.Id()] = argType
 		argTypes = append(argTypes, argType)
 	}
 	var returnType Type = &UnitType{}
@@ -335,6 +415,23 @@ func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 	return nil
 }
 
+func (tc *typeChecker) VisitStructTypeDeclaration(d *ast.StructTypeDeclaration) error {
+	fields := []StructField{}
+	for _, field := range d.Fields {
+		fieldType, found := tc.typeEnv.lookup(field.Type)
+		if !found {
+			return fmt.Errorf("type %q not found for field %q", field.Type, field.Name)
+		}
+		fields = append(fields, StructField{Name: field.Name, Type: fieldType})
+	}
+	structType := &StructType{Name: d.Name, Fields: fields, Declaration: d}
+	if err := tc.typeEnv.declare(d.Name, structType); err != nil {
+		return err
+	}
+	tc.typeByNodeId[d.Id()] = &UnitType{}
+	return nil
+}
+
 func (tc *typeChecker) VisitModule(module *ast.Module, w ast.ASTWalker) error {
 	tc.typeByNodeId[module.Id()] = &UnitType{}
 	return w.WalkModule(module)
@@ -346,7 +443,6 @@ func (tc *typeChecker) check(node ast.Node, w ast.ASTWalker) (Type, error) {
 	}
 	nodeType := tc.mustLookup(node)
 	return nodeType, nil
-
 }
 
 func TypeCheck(node ast.Node) (Type, map[ast.NodeId]Type, error) {

@@ -338,9 +338,9 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			var reg *registerAllocation
 			offset := 0
 			if inst.FieldIndex > 0 {
-				structType, ok := inst.Type.(*ir.StructType)
+				structType, ok := inst.SourceType.(*ir.StructType)
 				if !ok {
-					return fmt.Errorf("expected a struct type, got: %T", inst.Type)
+					return fmt.Errorf("expected a struct type, got: %T", inst.SourceType)
 				}
 				for _, field := range structType.Fields[:inst.FieldIndex] {
 					offset += field.Size()
@@ -362,21 +362,33 @@ func (c *Code) generateBlock(block *ir.Block) error {
 		case *ir.Load:
 			source := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Source))
 			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
-			switch ty := inst.FieldType.(type) {
+			switch ty := inst.TargetType.(type) {
 			case ir.BuiltInType:
-				if ty == ir.Int64Type {
-					c.emit("ldr %s, [%s]", reg, source)
-				} else {
+				if ty != ir.Int64Type {
 					// We need `wx` registers to load other types.
-					return fmt.Errorf("we don't know how to load a value of type %d yet", inst.FieldType)
-
+					return fmt.Errorf("we don't know how to load a value of type %d yet", inst.TargetType)
 				}
 			case *ir.PointerType:
-				c.emit("ldr %s, [%s]", reg, source)
 			default:
 				return fmt.Errorf("invalid target type for load instruction: %T", ty)
 			}
+			c.emit("ldr %s, [%s] ; %s", reg, source, inst.Register())
 			c.values[inst.Register()] = reg
+		case *ir.Store:
+			target := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Target))
+			value := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Value))
+			switch ty := inst.ValueType.(type) {
+			case ir.BuiltInType:
+				if ty != ir.Int64Type {
+					// We need `wx` registers to store other types.
+					return fmt.Errorf("we don't know how to store a value of type %d yet", inst.ValueType)
+
+				}
+			case *ir.PointerType:
+			default:
+				return fmt.Errorf("invalid target type for load instruction: %T", ty)
+			}
+			c.emit("str %s, [%s]", value, target)
 		case *ir.Call:
 			c.registerAllocator.spillCallRegisters(len(c.function.Definition.Args))
 			savedCallerRegisters := c.registerAllocator.spillCallerSavedRegisters()
@@ -503,10 +515,29 @@ func defineBuiltInPrintIntFunction(asm *ASMText) {
     ret`)
 }
 
+func defineBuiltInUnsafeMalloc(asm *ASMText) {
+	asm.emit(
+		`___unsafe_malloc:
+    stp fp, lr, [sp, #-16]!
+    mov fp, sp
+    bl _malloc
+    cmp x0, #0
+    bgt _success      
+    adrp x0, _unsafe_malloc_failed@PAGE
+    add x0, x0, _unsafe_malloc_failed@PAGEOFF
+    bl _puts
+    mov x0, #1
+    bl _exit
+_success:
+    ldp fp, lr, [sp], #16
+    ret`)
+}
+
 func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
 	asm := ASMText{}
 	asm.emit(".global _main")
 	asm.emit(".text")
+	defineBuiltInUnsafeMalloc(&asm)
 	defineBuiltInPrintFunction(&asm)
 	defineBuiltInPrintIntFunction(&asm)
 	for _, function := range irModule.Functions {
@@ -532,9 +563,12 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
 		asm.emit(".quad %s_bytes", constant.Register())
 		asm.decIndent()
 	}
-	// Needed for `print_int`.
+	// Needed for builtin functions.
 	asm.emit(".align 3")
 	asm.emit("_print_int_format:")
 	asm.incIndent().emit(".asciz \"%%lld\"").decIndent()
+	asm.emit(".align 3")
+	asm.emit("_unsafe_malloc_failed:")
+	asm.incIndent().emit(".asciz \"out of memory\"").decIndent()
 	return asm, nil
 }

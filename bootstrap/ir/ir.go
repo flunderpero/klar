@@ -257,12 +257,12 @@ func (i *BoolConst) Register() Register {
 type GetPointer struct {
 	register   Register
 	Source     Register
-	Type       Type
+	SourceType Type
 	FieldIndex int
 }
 
 func (i *GetPointer) String() string {
-	return fmt.Sprintf("%s = getptr %s, %s, %d", i.register, i.Type, i.Source, i.FieldIndex)
+	return fmt.Sprintf("%s = getptr %s %s, %d", i.register, i.SourceType, i.Source, i.FieldIndex)
 }
 
 func (i *GetPointer) Register() Register {
@@ -270,9 +270,9 @@ func (i *GetPointer) Register() Register {
 }
 
 type Load struct {
-	register  Register
-	Source    Register
-	FieldType Type
+	register   Register
+	Source     Register
+	TargetType Type
 }
 
 func (i *Load) Register() Register {
@@ -280,7 +280,21 @@ func (i *Load) Register() Register {
 }
 
 func (i *Load) String() string {
-	return fmt.Sprintf("%s = load %s, %s", i.register, i.Source, i.FieldType)
+	return fmt.Sprintf("%s = load %s %s", i.register, i.TargetType, i.Source)
+}
+
+type Store struct {
+	Target    Register
+	Value     Register
+	ValueType Type
+}
+
+func (s *Store) Register() Register {
+	return UnitRegister
+}
+
+func (s *Store) String() string {
+	return fmt.Sprintf("store %s %s, %s", s.ValueType, s.Value, s.Target)
 }
 
 type SignedInt64AddWithOverflow struct {
@@ -578,7 +592,7 @@ func (g *generator) VisitStringLiteralExpression(expr *ast.StringLiteralExpressi
 	g.append(&GetPointer{
 		register:   g.nextRegister(),
 		Source:     reg,
-		Type:       StrType,
+		SourceType: StrType,
 		FieldIndex: 0,
 	}, expr)
 	return nil
@@ -719,6 +733,56 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker) e
 	return nil
 }
 
+func (g *generator) lookupType(node ast.Node) Type {
+	typedType, found := g.typeByNodeId[node.Id()]
+	if !found {
+		panic(fmt.Sprintf("type not found for node %s", node))
+	}
+	switch typedType := typedType.(type) {
+	case *typed.StructType:
+		ty, found := g.declaredTypes[typedType.Name]
+		if !found {
+			panic(fmt.Sprintf("struct type not found: %s", typedType.Name))
+		}
+		return ty
+	}
+	panic(fmt.Sprintf("type not found: %T", typedType))
+}
+
+func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.ASTWalker) error {
+	if err := w.WalkMemberExpression(expr); err != nil {
+		return err
+	}
+	source := g.lookupRegisterByNode(expr.Target)
+	sourceType := g.lookupType(expr.Target).(*StructType)
+	irSourceType, found := g.typeByNodeId[expr.Target.Id()].(*typed.StructType)
+	if !found {
+		return fmt.Errorf("type not found for node %s", expr.Target)
+	}
+	fieldIndex := slices.IndexFunc(
+		irSourceType.Fields, func(field typed.StructField) bool { return field.Name == expr.Field },
+	)
+	if fieldIndex == -1 {
+		return fmt.Errorf("field %q not found in struct %q", expr.Field, irSourceType.Declaration.Name)
+	}
+	fieldType := sourceType.Fields[fieldIndex]
+	getPtrReg := g.nextRegister()
+	g.append(&GetPointer{
+		register:   getPtrReg,
+		Source:     source,
+		SourceType: sourceType,
+		FieldIndex: fieldIndex,
+	}, expr.Target)
+	reg := g.nextRegister()
+	g.append(&Load{
+		register:   reg,
+		Source:     getPtrReg,
+		TargetType: fieldType,
+	}, expr)
+	g.registerByNodeId[expr.Id()] = reg
+	return nil
+}
+
 func (g *generator) VisitBlockExpression(expr *ast.BlockExpression, w ast.ASTWalker) error {
 	g.enterScope()
 	defer g.exitScope()
@@ -732,6 +796,47 @@ func (g *generator) VisitBlockExpression(expr *ast.BlockExpression, w ast.ASTWal
 	}
 	g.currentBlock.Result = reg
 	g.registerByNodeId[expr.Id()] = reg
+	return nil
+}
+
+func (g *generator) VisitStructInitExpression(expr *ast.StructInitExpression, w ast.ASTWalker) error {
+	if err := w.WalkStructInitExpression(expr); err != nil {
+		return err
+	}
+	structType := g.lookupType(expr).(*StructType)
+	sizeReg := g.nextRegister()
+	mallocReg := g.nextRegister()
+	g.append(&Int64Const{
+		register: sizeReg,
+		Value:    int64(structType.Size()),
+	}, nil)
+	g.append(&Call{
+		register: mallocReg,
+		Function: g.functions["__unsafe_malloc"],
+		Args:     []Register{sizeReg},
+	}, expr)
+	for i, astField := range expr.Fields {
+		fieldType := structType.Fields[i]
+		switch fieldType.(type) {
+		case BuiltInType, *PointerType:
+		default:
+			return fmt.Errorf("only BuiltInType and PointerType can be stored in struct fields, got %q", fieldType)
+		}
+		fieldValueReg := g.lookupRegisterByNode(astField.Value)
+		fieldPtrReg := g.nextRegister()
+		g.append(&GetPointer{
+			register:   fieldPtrReg,
+			Source:     mallocReg,
+			FieldIndex: i,
+			SourceType: structType,
+		}, nil)
+		g.append(&Store{
+			Target:    fieldPtrReg,
+			Value:     fieldValueReg,
+			ValueType: fieldType,
+		}, nil)
+	}
+	g.registerByNodeId[expr.Id()] = mallocReg
 	return nil
 }
 
@@ -791,22 +896,46 @@ func (g *generator) VisitContinueStatement(stmt *ast.ContinueStatement) error {
 	return nil
 }
 
+func declareType(declaredTypes *map[string]Type, node ast.Node) {
+	switch decl := node.(type) {
+	case *ast.StructTypeDeclaration:
+		fieldTypes := []Type{}
+		for _, field := range decl.Fields {
+			fieldType, found := (*declaredTypes)[field.Type]
+			if !found {
+				panic(fmt.Sprintf("type not found for field %s", field.String()))
+			}
+			if _, isStructType := fieldType.(*StructType); isStructType {
+				// We only ever store references (i.e. pointers) to struct types.
+				fieldType = &PointerType{fieldType}
+			}
+			fieldTypes = append(fieldTypes, fieldType)
+		}
+		structType := &StructType{Name: decl.Name, Fields: fieldTypes}
+		(*declaredTypes)[decl.Name] = structType
+	default:
+		panic(fmt.Sprintf("type declaration not implemented for type %T", decl))
+	}
+}
+
 func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module, error) {
 	functionDefinitions := []*ast.FunctionDefinition{}
-	for _, node := range module.Nodes {
-		switch node := node.(type) {
-		case *ast.FunctionDefinition:
-			functionDefinitions = append(functionDefinitions, node)
-		default:
-			return nil, fmt.Errorf("cannot generate IR for node type: %T", node)
-		}
-	}
-	functions := []*Function{}
 	declaredTypes := make(map[string]Type)
 	// Declare built-in types.
 	declaredTypes[StrType.Name] = StrType
 	declaredTypes["Int"] = Int64Type
 	declaredTypes["()"] = UnitType
+	for _, node := range module.Nodes {
+		switch node := node.(type) {
+		case *ast.FunctionDefinition:
+			functionDefinitions = append(functionDefinitions, node)
+		case *ast.StructTypeDeclaration:
+			declareType(&declaredTypes, node)
+		default:
+			return nil, fmt.Errorf("cannot generate IR for node type: %T", node)
+		}
+	}
+	functions := []*Function{}
 	// First forward declare all functions.
 	for _, fd := range functionDefinitions {
 		args := []FunctionArg{}
@@ -851,6 +980,13 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 		Args: []FunctionArg{
 			FunctionArg{PointerType{Int8Type}, Register("%1")},
 			FunctionArg{Int64Type, Register("%2")},
+		},
+	}
+	functionByName["__unsafe_malloc"] = &Function{
+		Name:       "__unsafe_malloc",
+		ReturnType: PointerType{Int8Type},
+		Args: []FunctionArg{
+			FunctionArg{Int64Type, Register("%1")},
 		},
 	}
 	constants := []*StrConst{}

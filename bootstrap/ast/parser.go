@@ -2,8 +2,10 @@ package ast
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/flunderpero/klar/bootstrap/token"
 )
@@ -64,6 +66,16 @@ func (expr *BoolLiteralExpression) String() string {
 	return fmt.Sprintf("BoolLiteralExpression(%s)", strconv.FormatBool(expr.Value))
 }
 
+type MemberExpression struct {
+	node
+	Target Expression
+	Field  string
+}
+
+func (expr *MemberExpression) String() string {
+	return fmt.Sprintf("MemberExpression(%s, %s)", expr.Target, expr.Field)
+}
+
 type BinaryOperator string
 
 const (
@@ -80,6 +92,30 @@ type BinaryExpression struct {
 
 func (expr *BinaryExpression) String() string {
 	return fmt.Sprintf("BinaryExpression(%s, %s, %s)", expr.Op, expr.Lhs, expr.Rhs)
+}
+
+type StructInitField struct {
+	Name  string
+	Value Expression
+}
+
+func (f *StructInitField) String() string {
+	return fmt.Sprintf("StructInitField(%s, %s)", f.Name, f.Value)
+}
+
+type StructInitExpression struct {
+	node
+	Type   string
+	Fields []StructInitField
+}
+
+func (s *StructInitExpression) String() string {
+	fields := ""
+	for _, field := range s.Fields {
+		fields += "\n    "
+		fields += strings.ReplaceAll(field.String(), "\n", "\n    ")
+	}
+	return fmt.Sprintf("StructInitExpression(\n    %s%s\n)", s.Type, fields)
 }
 
 type CallExpression struct {
@@ -174,8 +210,39 @@ func (m *Module) String() string {
 	return fmt.Sprintf("Module(%s\n)", nodes)
 }
 
-type FunctionArg struct {
+type StructTypeField struct {
+	Name string
+	Type string
+}
+
+func (f *StructTypeField) String() string {
+	return fmt.Sprintf("StructTypeField(%s, %s)", f.Name, f.Type)
+}
+
+type StructTypeDeclaration struct {
 	node
+	Name   string
+	Fields []StructTypeField
+}
+
+func (st *StructTypeDeclaration) String() string {
+	fields := ""
+	for _, field := range st.Fields {
+		fields += "\n    "
+		fields += strings.ReplaceAll(field.String(), "\n", "\n    ")
+	}
+	return fmt.Sprintf("StructTypeDeclaration(\n    %s%s\n)", st.Name, fields)
+}
+
+func (st *StructTypeDeclaration) FindField(name string) (*StructTypeField, error) {
+	index := slices.IndexFunc(st.Fields, func(field StructTypeField) bool { return field.Name == name })
+	if index < 0 {
+		return nil, fmt.Errorf("field %q not found in struct %q", name, st)
+	}
+	return &st.Fields[index], nil
+}
+
+type FunctionArg struct {
 	Name string
 	Type string
 }
@@ -212,7 +279,8 @@ type VariableDefinition struct {
 }
 
 func (v *VariableDefinition) String() string {
-	return fmt.Sprintf("VariableDefinition(%s, mutable=%t)", v.Name, v.Mutable)
+	value := strings.ReplaceAll(v.Value.String(), "\n", "\n    ")
+	return fmt.Sprintf("VariableDefinition(\n    %s, \n    mutable=%t, \n    %s\n)", v.Name, v.Mutable, value)
 }
 
 type Parser struct {
@@ -312,6 +380,44 @@ func (p *Parser) parseIfExpression() (*IfExpression, error) {
 	return &IfExpression{node: p.newNode(), Condition: condition, TrueBody: trueBody, FalseBody: falseBody}, nil
 }
 
+func (p *Parser) parseStructInitExpression(type_ string) (*StructInitExpression, error) {
+	if _, err := p.consume(token.LParen); err != nil {
+		return nil, err
+	}
+	fields := []StructInitField{}
+	expectComma := false
+	for p.index < len(p.tokens) {
+		t := p.peek()
+		switch t.Kind {
+		case token.RParen:
+			p.consumeAny()
+			return &StructInitExpression{node: p.newNode(), Type: type_, Fields: fields}, nil
+		case token.Comma:
+			if !expectComma {
+				return nil, fmt.Errorf("unexpected token: %s", t)
+			}
+			p.consumeAny()
+			expectComma = false
+		case token.Ident:
+			p.consumeAny()
+			fieldName := t.Value
+			if _, err := p.consume(token.Equal); err != nil {
+				return nil, err
+			}
+			fieldValue, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			expectComma = true
+			field := StructInitField{Name: fieldName, Value: fieldValue}
+			fields = append(fields, field)
+		default:
+			return nil, fmt.Errorf("unexpected token: %s", t)
+		}
+	}
+	return nil, fmt.Errorf("unexpected end of file while parsing struct init")
+}
+
 func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 	if _, err := p.consume(token.Fn); err != nil {
 		return nil, err
@@ -339,7 +445,7 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 		if err != nil {
 			return nil, err
 		}
-		arg := FunctionArg{node: p.newNode(), Name: argNameToken.Value, Type: argTypeToken.Value}
+		arg := FunctionArg{Name: argNameToken.Value, Type: argTypeToken.Value}
 		args = append(args, arg)
 		t = p.peek()
 		if t.Kind == token.RParen {
@@ -402,7 +508,7 @@ func (p *Parser) parseExpression() (Expression, error) {
 // a higher precedence than others, i.e. `a + b * c` should be parsed as `a + (b * c)`
 // and not as `(a + b) * c`.
 func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
-	lhs, err := p.parsePrimaryExpression()
+	lhs, err := p.parseMemberExpression()
 	if err != nil {
 		return nil, err
 	}
@@ -435,7 +541,7 @@ func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 			break
 		}
 		p.consumeAny()
-		rhs, err := p.parsePrimaryExpression()
+		rhs, err := p.parseMemberExpression()
 		if err != nil {
 			return nil, err
 		}
@@ -444,20 +550,35 @@ func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 	return lhs, nil
 }
 
+func (p *Parser) parseMemberExpression() (Expression, error) {
+	expr, err := p.parsePrimaryExpression()
+	if err != nil {
+		return nil, err
+	}
+	for p.peek().Kind == token.Dot {
+		p.consumeAny()
+		field := p.peek()
+		if field.Kind != token.Ident {
+			return nil, fmt.Errorf("expected identifier after '.', got %s", field)
+		}
+		p.consumeAny()
+		expr = &MemberExpression{node: p.newNode(), Target: expr, Field: field.Value}
+	}
+	return expr, nil
+}
+
 func (p *Parser) parsePrimaryExpression() (Expression, error) {
 	t := p.peek()
 	switch t.Kind {
 	case token.Ident:
-		if _, err := p.consume(token.Ident); err != nil {
-			return nil, err
-		}
+		p.consumeAny()
 		expr := &IdentExpression{node: p.newNode(), Name: t.Value}
-		if p.peek().Kind == token.LParen {
-			expr, err := p.parseCallExpression(expr)
-			if err != nil {
-				return nil, err
+		switch p.peek().Kind {
+		case token.LParen:
+			if isTypeIdentifier(expr.Name) {
+				return p.parseStructInitExpression(expr.Name)
 			}
-			return expr, nil
+			return p.parseCallExpression(expr)
 		}
 		return expr, nil
 	case token.Str:
@@ -496,6 +617,45 @@ func (p *Parser) parseLoopStatement() (*LoopStatement, error) {
 	return &LoopStatement{node: p.newNode(), Body: body}, nil
 }
 
+func (p *Parser) parseStructDeclaration() (*StructTypeDeclaration, error) {
+	if _, err := p.consume(token.Struct); err != nil {
+		return nil, err
+	}
+	identToken, err := p.consume(token.Ident)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = p.consume(token.LCurly); err != nil {
+		return nil, err
+	}
+	fields := []StructTypeField{}
+	for p.index < len(p.tokens) {
+		t := p.peek()
+		switch t.Kind {
+		case token.RCurly:
+			p.consumeAny()
+			return &StructTypeDeclaration{node: p.newNode(), Name: identToken.Value, Fields: fields}, nil
+		case token.Ident:
+			p.consumeAny()
+			fieldName := t.Value
+			typeToken, err := p.consume(token.Ident)
+			if err != nil {
+				return nil, err
+			}
+			field := StructTypeField{Name: fieldName, Type: typeToken.Value}
+			fields = append(fields, field)
+		default:
+			return nil, fmt.Errorf("unexpected token: %s", t)
+		}
+	}
+	return nil, fmt.Errorf("unexpected end of file while parsing struct")
+}
+
+func isTypeIdentifier(name string) bool {
+	firstRune := []rune(name)[0]
+	return unicode.IsUpper(firstRune)
+}
+
 var EOF = fmt.Errorf("EOF")
 
 func (p *Parser) ParseNode() (Node, error) {
@@ -516,6 +676,8 @@ func (p *Parser) ParseNode() (Node, error) {
 		case token.Continue:
 			p.consumeAny()
 			return &ContinueStatement{node: p.newNode()}, nil
+		case token.Struct:
+			return p.parseStructDeclaration()
 		case token.Ident, token.LCurly, token.If, token.True, token.False, token.Str, token.Int:
 			expr, err := p.parseExpression()
 			if err != nil {

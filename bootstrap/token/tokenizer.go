@@ -16,6 +16,7 @@ const (
 	LCurly     TokenKind = "{"
 	RCurly     TokenKind = "}"
 	Comma      TokenKind = ","
+	Dot        TokenKind = "."
 	Plus       TokenKind = "+"
 	Equal      TokenKind = "="
 	EqualEqual TokenKind = "=="
@@ -31,6 +32,7 @@ const (
 	Loop       TokenKind = "loop"
 	Break      TokenKind = "break"
 	Continue   TokenKind = "continue"
+	Struct     TokenKind = "struct"
 	EOF        TokenKind = "EOF"
 )
 
@@ -66,6 +68,8 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			tokens = append(tokens, Token{Kind: Comma, Value: ""})
 		} else if c == '+' {
 			tokens = append(tokens, Token{Kind: Plus, Value: ""})
+		} else if c == '.' {
+			tokens = append(tokens, Token{Kind: Dot, Value: ""})
 		} else if c == '=' {
 			if src[i] == '=' {
 				i += 1
@@ -134,6 +138,8 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 				token = Token{Kind: True, Value: ""}
 			case "false":
 				token = Token{Kind: False, Value: ""}
+			case "struct":
+				token = Token{Kind: Struct, Value: ""}
 			default:
 				token = Token{Kind: Ident, Value: string(value)}
 			}

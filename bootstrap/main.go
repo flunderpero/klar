@@ -81,6 +81,13 @@ func main() {
 		for _, constant := range irModule.Constants {
 			fmt.Println(constant.String())
 		}
+		for _, ty := range irModule.Types {
+			switch ty := ty.(type) {
+			case ir.BuiltInType:
+			default:
+				fmt.Println("@declare", ty)
+			}
+		}
 		fmt.Println()
 		for _, function := range irModule.Functions {
 			fmt.Println(function, "{")

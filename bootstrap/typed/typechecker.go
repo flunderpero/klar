@@ -61,10 +61,18 @@ func (ty *StructType) String() string {
 	return fmt.Sprintf("StructType(%s, %s)", ty.Name, fields)
 }
 
-func (ty *StructType) FindField(name ast.Ident) (*StructField, error) {
+func (ty *StructType) FindFieldIndex(name ast.Ident) (int, error) {
 	fieldIndex := slices.IndexFunc(ty.Fields, func(field StructField) bool { return field.Name == name })
 	if fieldIndex < 0 {
-		return nil, fmt.Errorf("field %q not found in struct type %q", name, ty)
+		return -1, fmt.Errorf("field %q not found in struct type %q", name, ty)
+	}
+	return fieldIndex, nil
+}
+
+func (ty *StructType) FindField(name ast.Ident) (*StructField, error) {
+	fieldIndex, err := ty.FindFieldIndex(name)
+	if err != nil {
+		return nil, err
 	}
 	return &ty.Fields[fieldIndex], nil
 }
@@ -374,19 +382,30 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 	if err := w.WalkAssignmentStatement(s); err != nil {
 		return err
 	}
-	lhsType, lhsVar, ok := tc.typeEnv.lookupVariable(s.Lhs.Ident)
-	if !ok {
-		return fmt.Errorf("unknown variable %s", s.Lhs.Ident)
-	}
-	if !lhsVar.Mutable {
-		return fmt.Errorf("variable %s is not mutable", s.Lhs.Ident)
-	}
 	rhsType, ok := tc.typeByNodeId[s.Rhs.Id()]
 	if !ok {
 		return fmt.Errorf("unknown type for rhs of assignment statement: %s", s.Rhs)
 	}
-	if lhsType != rhsType {
-		return fmt.Errorf("lhs and rhs of assignment statement must have the same type, got %s and %s", lhsType, rhsType)
+	varType, varDefinition, ok := tc.typeEnv.lookupVariable(s.Variable.Ident)
+	if !ok {
+		return fmt.Errorf("unknown variable %q", s.Variable.Ident)
+	}
+	if !varDefinition.Mutable {
+		return fmt.Errorf("variable %q is not mutable", s.Variable.Ident)
+	}
+	if s.IsAssignToMember() {
+		structType, ok := varType.(*StructType)
+		if !ok {
+			return fmt.Errorf("variable %q is not a struct type", s.Variable.Ident)
+		}
+		field, err := structType.FindField(*s.Field)
+		if err != nil {
+			return err
+		}
+		varType = field.Type
+	}
+	if varType != rhsType {
+		return fmt.Errorf("lhs and rhs of assignment statement must have the same type, got %s and %s", varType, rhsType)
 	}
 	tc.typeByNodeId[s.Id()] = &UnitType{}
 	return nil

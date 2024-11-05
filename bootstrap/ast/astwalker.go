@@ -227,7 +227,7 @@ func (w *DefaultASTWalker) WalkVariableDefinition(fn *VariableDefinition) error 
 }
 
 func (w *DefaultASTWalker) WalkAssignmentStatement(stmt *AssignmentStatement) error {
-	if err := w.WalkNode(stmt.Lhs); err != nil {
+	if err := w.WalkNode(stmt.Variable); err != nil {
 		return err
 	}
 	return w.WalkNode(stmt.Rhs)

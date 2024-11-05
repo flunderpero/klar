@@ -854,7 +854,30 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 		return err
 	}
 	reg := g.lookupRegisterByNode(stmt.Rhs)
-	g.symbolTable.assign(stmt.Lhs.Ident, reg)
+	if stmt.IsAssignToMember() {
+		getPtrReg := g.nextRegister()
+		sourceReg := g.symbolTable.lookup(stmt.Variable.Ident)
+		structType := g.typeByNodeId[stmt.Variable.Id()].(*typed.StructType)
+		sourceType := g.lookupType(stmt.Variable).(*StructType)
+		fieldIndex, err := structType.FindFieldIndex(*stmt.Field)
+		fieldType := sourceType.Fields[fieldIndex]
+		if err != nil {
+			return err
+		}
+		g.append(&GetPointer{
+			register:   getPtrReg,
+			Source:     sourceReg,
+			SourceType: sourceType,
+			FieldIndex: fieldIndex,
+		}, nil)
+		g.append(&Store{
+			Target:    getPtrReg,
+			Value:     reg,
+			ValueType: fieldType,
+		}, stmt)
+	} else {
+		g.symbolTable.assign(stmt.Variable.Ident, reg)
+	}
 	return nil
 }
 

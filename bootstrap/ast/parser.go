@@ -200,12 +200,21 @@ func (b *ContinueStatement) String() string {
 
 type AssignmentStatement struct {
 	node
-	Lhs *IdentExpression
-	Rhs Expression
+	Variable *IdentExpression
+	// This is optional but we cannot express this in Go.
+	Field *Ident
+	Rhs   Expression
 }
 
 func (a *AssignmentStatement) String() string {
-	return fmt.Sprintf("AssignmentStatement(%s, %s)", a.Lhs, a.Rhs)
+	if a.IsAssignToMember() {
+		return fmt.Sprintf("AssignmentStatement(%s, %s, %s)", a.Variable, *a.Field, a.Rhs)
+	}
+	return fmt.Sprintf("AssignmentStatement(%s, %s)", a.Variable, a.Rhs)
+}
+
+func (a *AssignmentStatement) IsAssignToMember() bool {
+	return a.Field != nil
 }
 
 type Module struct {
@@ -508,6 +517,24 @@ func (p *Parser) parseVariableDefinition() (*VariableDefinition, error) {
 	}
 	return &VariableDefinition{node: p.newNode(), Name: Ident(identToken.Value), Value: value, Mutable: mutable}, nil
 }
+
+func (p *Parser) parseAssignmentStatement(lhs Expression) (*AssignmentStatement, error) {
+	rhs, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+	switch lhs := lhs.(type) {
+	case *IdentExpression:
+		return &AssignmentStatement{node: p.newNode(), Variable: lhs, Field: nil, Rhs: rhs}, nil
+	case *MemberExpression:
+		switch variable := lhs.Target.(type) {
+		case *IdentExpression:
+			return &AssignmentStatement{node: p.newNode(), Variable: variable, Field: &lhs.Field, Rhs: rhs}, nil
+		}
+	}
+	return nil, fmt.Errorf("expected identifier or member expression with identifier as target, got %s", lhs)
+}
+
 func (p *Parser) parseExpression() (Expression, error) {
 	return p.parseBinaryExpression(0)
 }
@@ -527,16 +554,8 @@ func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 	// Technically, the AssignmentStatement is not an expression but we parse it here anyway
 	// because it fits here very well.
 	if p.peek().Kind == token.Equal {
-		lhsIdent, ok := lhs.(*IdentExpression)
-		if !ok {
-			return nil, fmt.Errorf("lhs of assignment statement must be an identifier, got %q", lhs)
-		}
 		p.consumeAny()
-		rhs, err := p.parseExpression()
-		if err != nil {
-			return nil, err
-		}
-		return &AssignmentStatement{node: p.newNode(), Lhs: lhsIdent, Rhs: rhs}, nil
+		return p.parseAssignmentStatement(lhs)
 	}
 	precedences := map[token.TokenKind]int{
 		token.Plus:       2,

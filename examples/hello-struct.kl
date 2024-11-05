@@ -4,7 +4,9 @@ struct Planet {
 }
 
 fn main() {
-    let planet = Planet(name = "Earth", radius = 6378)
+    mut planet = Planet(name = "Earth", radius = 6378)
     print(planet.name)
     print_int(planet.radius)
+    planet.name = "Pluto?"
+    print(planet.name)
 }

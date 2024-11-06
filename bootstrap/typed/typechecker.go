@@ -144,11 +144,12 @@ func (te *typeEnvironment) declareVariable(name string, ty Type, def *ast.Variab
 	return nil
 }
 
-type TypeByNode struct {
+type TypeInfo struct {
 	types map[ast.NodeId]Type
+	main  *FunctionType
 }
 
-func (m *TypeByNode) Lookup(node ast.Node) (Type, error) {
+func (m *TypeInfo) Lookup(node ast.Node) (Type, error) {
 	ty := m.types[node.Id()]
 	if ty == nil {
 		return nil, fmt.Errorf("type not found for node #%d: %s", node.Id(), node)
@@ -156,7 +157,7 @@ func (m *TypeByNode) Lookup(node ast.Node) (Type, error) {
 	return ty, nil
 }
 
-func (m *TypeByNode) LookupType(node ast.Node, ty Type) (Type, error) {
+func (m *TypeInfo) LookupType(node ast.Node, ty Type) (Type, error) {
 	got, err := m.Lookup(node)
 	if err != nil {
 		return nil, err
@@ -167,7 +168,7 @@ func (m *TypeByNode) LookupType(node ast.Node, ty Type) (Type, error) {
 	return got, nil
 }
 
-func (m *TypeByNode) MustLookup(node ast.Node) Type {
+func (m *TypeInfo) MustLookup(node ast.Node) Type {
 	ty, err := m.Lookup(node)
 	if err != nil {
 		panic(err)
@@ -175,15 +176,15 @@ func (m *TypeByNode) MustLookup(node ast.Node) Type {
 	return ty
 }
 
-func (m *TypeByNode) set(node ast.Node, ty Type) {
+func (m *TypeInfo) set(node ast.Node, ty Type) {
 	m.types[node.Id()] = ty
 }
 
 type typeChecker struct {
 	ast.DefaultVisitor
-	typeByNode TypeByNode
-	typeEnv    *typeEnvironment
-	loopDepth  int
+	typeInfo  *TypeInfo
+	typeEnv   *typeEnvironment
+	loopDepth int
 }
 
 func (tc *typeChecker) enterScope() {
@@ -203,17 +204,17 @@ func (tc *typeChecker) exitLoop() {
 }
 
 func (tc *typeChecker) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
-	tc.typeByNode.set(expr, &StrType{})
+	tc.typeInfo.set(expr, &StrType{})
 	return nil
 }
 
 func (tc *typeChecker) VisitIntLiteralExpression(expr *ast.IntLiteralExpression) error {
-	tc.typeByNode.set(expr, &Int64Type{})
+	tc.typeInfo.set(expr, &Int64Type{})
 	return nil
 }
 
 func (tc *typeChecker) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) error {
-	tc.typeByNode.set(expr, &BoolType{})
+	tc.typeInfo.set(expr, &BoolType{})
 	return nil
 }
 
@@ -222,7 +223,7 @@ func (tc *typeChecker) VisitIdentExpression(expr *ast.IdentExpression) error {
 	if !found {
 		return fmt.Errorf("type not found for identifier %s", expr.Ident)
 	}
-	tc.typeByNode.set(expr, ty)
+	tc.typeInfo.set(expr, ty)
 	return nil
 }
 
@@ -230,8 +231,8 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 	if err := w.WalkBinaryExpression(expr); err != nil {
 		return err
 	}
-	lhs := tc.typeByNode.MustLookup(expr.Lhs)
-	rhs := tc.typeByNode.MustLookup(expr.Rhs)
+	lhs := tc.typeInfo.MustLookup(expr.Lhs)
+	rhs := tc.typeInfo.MustLookup(expr.Rhs)
 	switch expr.Op {
 	case ast.OpAdd:
 		if _, ok := lhs.(*Int64Type); !ok {
@@ -240,7 +241,7 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 		if _, ok := rhs.(*Int64Type); !ok {
 			return fmt.Errorf("rhs of add expression must be of type Int64Type, got %s", rhs)
 		}
-		tc.typeByNode.set(expr, &Int64Type{})
+		tc.typeInfo.set(expr, &Int64Type{})
 	case ast.OpEquality:
 		// For now, we only support equality of numbers.
 		if _, ok := lhs.(*Int64Type); !ok {
@@ -249,7 +250,7 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 		if _, ok := rhs.(*Int64Type); !ok {
 			return fmt.Errorf("rhs of equality expression must be of type Int64Type, got %s", rhs)
 		}
-		tc.typeByNode.set(expr, &BoolType{})
+		tc.typeInfo.set(expr, &BoolType{})
 	default:
 		return fmt.Errorf("unsupported binary operator: %s", expr.Op)
 	}
@@ -260,7 +261,7 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 	if err := w.WalkCallExpression(expr); err != nil {
 		return fmt.Errorf("failed to walk call expression: %w", err)
 	}
-	calleeType := tc.typeByNode.MustLookup(expr.Callee)
+	calleeType := tc.typeInfo.MustLookup(expr.Callee)
 	funcType, ok := calleeType.(*FunctionType)
 	if !ok {
 		return fmt.Errorf("callee %s is not a function type", calleeType)
@@ -269,12 +270,12 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 		return fmt.Errorf("expected %d arguments, got %d for function %s", len(funcType.ArgTypes), len(expr.Args), funcType)
 	}
 	for i, arg := range expr.Args {
-		argType := tc.typeByNode.MustLookup(arg)
+		argType := tc.typeInfo.MustLookup(arg)
 		if argType != funcType.ArgTypes[i] {
 			return fmt.Errorf("expected argument %d to be of type %q, got %q", i, funcType.ArgTypes[i], argType)
 		}
 	}
-	tc.typeByNode.set(expr, funcType.ReturnType)
+	tc.typeInfo.set(expr, funcType.ReturnType)
 	return nil
 }
 
@@ -282,7 +283,7 @@ func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.W
 	if err := w.WalkMemberExpression(expr); err != nil {
 		return fmt.Errorf("failed to walk member expression: %w", err)
 	}
-	structType_ := tc.typeByNode.MustLookup(expr.Target)
+	structType_ := tc.typeInfo.MustLookup(expr.Target)
 	structType, isType := structType_.(*StructType)
 	if !isType {
 		return fmt.Errorf("type %q is not a struct type", structType_)
@@ -291,7 +292,7 @@ func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.W
 	if err != nil {
 		return err
 	}
-	tc.typeByNode.set(expr, structField.Type)
+	tc.typeInfo.set(expr, structField.Type)
 	return nil
 }
 
@@ -299,8 +300,8 @@ func (tc *typeChecker) VisitBlockExpression(expr *ast.BlockExpression, w ast.Wal
 	if err := w.WalkBlockExpression(expr); err != nil {
 		return fmt.Errorf("failed to walk block expression: %w", err)
 	}
-	blockType := tc.typeByNode.MustLookup(expr.Nodes[len(expr.Nodes)-1])
-	tc.typeByNode.set(expr, blockType)
+	blockType := tc.typeInfo.MustLookup(expr.Nodes[len(expr.Nodes)-1])
+	tc.typeInfo.set(expr, blockType)
 	return nil
 }
 
@@ -310,14 +311,14 @@ func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) e
 	if err := w.WalkIfExpression(expr); err != nil {
 		return fmt.Errorf("failed to walk if expression: %w", err)
 	}
-	condType := tc.typeByNode.MustLookup(expr.Condition)
-	_, ok := tc.typeByNode.MustLookup(expr.Condition).(*BoolType)
+	condType := tc.typeInfo.MustLookup(expr.Condition)
+	_, ok := tc.typeInfo.MustLookup(expr.Condition).(*BoolType)
 	if !ok {
 		return fmt.Errorf("the condition of an if expression must be a boolean type, got: %s", condType)
 	}
 	// Only an if expression with an else branch can have a type other than unit.
 	// And currently we don't have else branches.
-	tc.typeByNode.set(expr, &UnitType{})
+	tc.typeInfo.set(expr, &UnitType{})
 	return nil
 }
 
@@ -338,7 +339,7 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 		if err != nil {
 			return err
 		}
-		fieldType := tc.typeByNode.MustLookup(initField.Value)
+		fieldType := tc.typeInfo.MustLookup(initField.Value)
 		if structField.Type != fieldType {
 			return fmt.Errorf("expected field %q to be of type %q, got %q", initField.Name, structField.Type, fieldType)
 		}
@@ -346,7 +347,7 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 	if len(expr.Fields) != len(structType.Fields) {
 		return fmt.Errorf("expected %d fields, got %d", len(structType.Fields), len(expr.Fields))
 	}
-	tc.typeByNode.set(expr, structType)
+	tc.typeInfo.set(expr, structType)
 	return nil
 }
 
@@ -372,7 +373,16 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 		ArgTypes:   argTypes,
 		ReturnType: returnType,
 	}
-	tc.typeByNode.set(fn, funcType)
+	if funcType.Name == "main" {
+		if len(funcType.ArgTypes) > 0 {
+			return fmt.Errorf("main function must not have arguments")
+		}
+		if _, ok := funcType.ReturnType.(*UnitType); !ok {
+			return fmt.Errorf("main function must return () (no return value)")
+		}
+		tc.typeInfo.main = funcType
+	}
+	tc.typeInfo.set(fn, funcType)
 	if err := tc.typeEnv.declare(string(fn.Name), funcType); err != nil {
 		return fmt.Errorf("failed to declare function %s: %w", fn.Name, err)
 	}
@@ -394,14 +404,14 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 	if err := w.WalkNode(v.Value); err != nil {
 		return err
 	}
-	valueType := tc.typeByNode.MustLookup(v.Value)
+	valueType := tc.typeInfo.MustLookup(v.Value)
 	if _, ok := valueType.(*UnitType); ok {
 		return fmt.Errorf("variable %s must have a non-unit type", v.Name)
 	}
 	if err := tc.typeEnv.declareVariable(string(v.Name), valueType, v); err != nil {
 		return err
 	}
-	tc.typeByNode.set(v, &UnitType{})
+	tc.typeInfo.set(v, &UnitType{})
 	return nil
 }
 
@@ -409,7 +419,7 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 	if err := w.WalkAssignmentStatement(s); err != nil {
 		return err
 	}
-	rhsType := tc.typeByNode.MustLookup(s.Rhs)
+	rhsType := tc.typeInfo.MustLookup(s.Rhs)
 	varType, varDefinition, ok := tc.typeEnv.lookupVariable(s.Variable.Ident)
 	if !ok {
 		return fmt.Errorf("unknown variable %q", s.Variable.Ident)
@@ -431,12 +441,12 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 	if varType != rhsType {
 		return fmt.Errorf("lhs and rhs of assignment statement must have the same type, got %s and %s", varType, rhsType)
 	}
-	tc.typeByNode.set(s, &UnitType{})
+	tc.typeInfo.set(s, &UnitType{})
 	return nil
 }
 
 func (tc *typeChecker) VisitLoopStatement(s *ast.LoopStatement, w ast.Walker) error {
-	tc.typeByNode.set(s, &UnitType{})
+	tc.typeInfo.set(s, &UnitType{})
 	tc.enterLoop()
 	defer tc.exitLoop()
 	return w.WalkLoopStatement(s)
@@ -446,7 +456,7 @@ func (tc *typeChecker) VisitContinueStatement(s *ast.ContinueStatement) error {
 	if tc.loopDepth == 0 {
 		return fmt.Errorf("continue statement outside of a loop")
 	}
-	tc.typeByNode.set(s, &UnitType{})
+	tc.typeInfo.set(s, &UnitType{})
 	return nil
 }
 
@@ -454,7 +464,7 @@ func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 	if tc.loopDepth == 0 {
 		return fmt.Errorf("break statement outside of a loop")
 	}
-	tc.typeByNode.set(s, &UnitType{})
+	tc.typeInfo.set(s, &UnitType{})
 	return nil
 }
 
@@ -471,12 +481,12 @@ func (tc *typeChecker) VisitStructTypeDeclaration(d *ast.StructTypeDeclaration) 
 	if err := tc.typeEnv.declare(string(d.Name), structType); err != nil {
 		return err
 	}
-	tc.typeByNode.set(d, &UnitType{})
+	tc.typeInfo.set(d, &UnitType{})
 	return nil
 }
 
 func (tc *typeChecker) VisitModule(module *ast.Module, w ast.Walker) error {
-	tc.typeByNode.set(module, &UnitType{})
+	tc.typeInfo.set(module, &UnitType{})
 	return w.WalkModule(module)
 }
 
@@ -484,11 +494,14 @@ func (tc *typeChecker) check(node ast.Node, w ast.Walker) (Type, error) {
 	if err := w.WalkNode(node); err != nil {
 		return nil, err
 	}
-	nodeType := tc.typeByNode.MustLookup(node)
+	nodeType := tc.typeInfo.MustLookup(node)
+	if tc.typeInfo.main == nil {
+		return nil, fmt.Errorf("main function not found")
+	}
 	return nodeType, nil
 }
 
-func TypeCheck(node ast.Node) (Type, *TypeByNode, error) {
+func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 	defaultTypeEnv := newTypeEnvironment(nil)
 	// Declare builtin types.
 	if err := defaultTypeEnv.declare("Str", &StrType{}); err != nil {
@@ -516,7 +529,7 @@ func TypeCheck(node ast.Node) (Type, *TypeByNode, error) {
 	}
 	tc := &typeChecker{
 		DefaultVisitor: ast.DefaultVisitor{},
-		typeByNode:     TypeByNode{types: make(map[ast.NodeId]Type)},
+		typeInfo:       &TypeInfo{types: make(map[ast.NodeId]Type)},
 		typeEnv:        defaultTypeEnv,
 	}
 	walker := &ast.DefaultWalker{Visitor: tc}
@@ -524,5 +537,5 @@ func TypeCheck(node ast.Node) (Type, *TypeByNode, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return res, &tc.typeByNode, nil
+	return res, tc.typeInfo, nil
 }

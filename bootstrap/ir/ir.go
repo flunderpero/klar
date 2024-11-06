@@ -510,7 +510,7 @@ type loopScope struct {
 type generator struct {
 	ast.DefaultVisitor
 	currentBlock        *Block
-	typeByNode          *typed.TypeByNode
+	typeInfo            *typed.TypeInfo
 	registerByNodeId    map[ast.NodeId]Register
 	symbolTable         *symbolTable
 	globalConstants     *[]*StrConst
@@ -623,7 +623,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 	if err := w.WalkCallExpression(expr); err != nil {
 		return err
 	}
-	funcType := g.typeByNode.MustLookup(expr.Callee).(*typed.FunctionType)
+	funcType := g.typeInfo.MustLookup(expr.Callee).(*typed.FunctionType)
 	function, ok := g.functions[funcType.Name]
 	if !ok {
 		panic(fmt.Sprintf("Unknown function: %s", funcType.Name))
@@ -652,7 +652,7 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 	rhs := g.lookupRegisterByNode(expr.Rhs)
 	switch expr.Op {
 	case ast.OpAdd:
-		ty := g.typeByNode.MustLookup(expr)
+		ty := g.typeInfo.MustLookup(expr)
 		if _, ok := ty.(*typed.Int64Type); !ok {
 			// For now we only support 64 bit integers.
 			return fmt.Errorf("add expression must be of type Int64Type, got %s", ty)
@@ -660,11 +660,11 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 		g.append(&SignedInt64AddWithOverflow{register: g.nextRegister(), Lhs: lhs, Rhs: rhs}, expr)
 	case ast.OpEquality:
 		// For now, we only know how to compare 64 bit integers.
-		lhsType, ok := g.typeByNode.MustLookup(expr.Lhs).(*typed.Int64Type)
+		lhsType, ok := g.typeInfo.MustLookup(expr.Lhs).(*typed.Int64Type)
 		if !ok {
 			return fmt.Errorf("type of lhs is not Int64Type, but %s", lhsType)
 		}
-		rhsType, ok := g.typeByNode.MustLookup(expr.Rhs).(*typed.Int64Type)
+		rhsType, ok := g.typeInfo.MustLookup(expr.Rhs).(*typed.Int64Type)
 		if !ok {
 			return fmt.Errorf("type of rhs is not Int64Type, but %s", rhsType)
 		}
@@ -726,7 +726,7 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) erro
 }
 
 func (g *generator) lookupType(node ast.Node) Type {
-	typedType := g.typeByNode.MustLookup(node)
+	typedType := g.typeInfo.MustLookup(node)
 	switch typedType := typedType.(type) {
 	case *typed.StructType:
 		ty, found := g.declaredTypes[typedType.Name]
@@ -744,7 +744,7 @@ func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.Walk
 	}
 	source := g.lookupRegisterByNode(expr.Target)
 	sourceType := g.lookupType(expr.Target).(*StructType)
-	irSourceType, ok := g.typeByNode.MustLookup(expr.Target).(*typed.StructType)
+	irSourceType, ok := g.typeInfo.MustLookup(expr.Target).(*typed.StructType)
 	if !ok {
 		return fmt.Errorf("expected a struct type, got %T", irSourceType)
 	}
@@ -846,7 +846,7 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 	if stmt.IsAssignToMember() {
 		getPtrReg := g.nextRegister()
 		sourceReg := g.symbolTable.lookup(stmt.Variable.Ident)
-		structType := g.typeByNode.MustLookup(stmt.Variable).(*typed.StructType)
+		structType := g.typeInfo.MustLookup(stmt.Variable).(*typed.StructType)
 		sourceType := g.lookupType(stmt.Variable).(*StructType)
 		fieldIndex, err := structType.FindFieldIndex(*stmt.Field)
 		fieldType := sourceType.Fields[fieldIndex]
@@ -930,7 +930,7 @@ func declareType(declaredTypes *map[ast.TypeIdent]Type, node ast.Node) {
 	}
 }
 
-func GenerateIR(module *ast.Module, typeByNode *typed.TypeByNode) (*Module, error) {
+func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 	functionDefinitions := []*ast.FunctionDefinition{}
 	declaredTypes := make(map[ast.TypeIdent]Type)
 	// Declare built-in types.
@@ -1006,7 +1006,7 @@ func GenerateIR(module *ast.Module, typeByNode *typed.TypeByNode) (*Module, erro
 	for _, function := range functions {
 		gen := &generator{
 			DefaultVisitor:      ast.DefaultVisitor{},
-			typeByNode:          typeByNode,
+			typeInfo:            typeInfo,
 			registerByNodeId:    make(map[ast.NodeId]Register),
 			functions:           functionByName,
 			symbolTable:         &symbolTable{symbols: make(map[ast.Ident]Register)},

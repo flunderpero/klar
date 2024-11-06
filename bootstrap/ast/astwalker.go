@@ -219,22 +219,22 @@ func (w *DefaultWalker) WalkModule(module *Module) error {
 }
 
 func (w *DefaultWalker) WalkFunctionDefinition(fn *FunctionDefinition) error {
-	return w.WalkBlockExpression(fn.Body)
+	return w.Visitor.VisitBlockExpression(fn.Body, w)
 }
 
 func (w *DefaultWalker) WalkVariableDefinition(fn *VariableDefinition) error {
-	return w.WalkNode(fn.Value)
+	return w.Visitor.VisitNode(fn.Value, w)
 }
 
 func (w *DefaultWalker) WalkAssignmentStatement(stmt *AssignmentStatement) error {
-	if err := w.WalkNode(stmt.Variable); err != nil {
+	if err := w.Visitor.VisitNode(stmt.Variable, w); err != nil {
 		return err
 	}
-	return w.WalkNode(stmt.Rhs)
+	return w.Visitor.VisitNode(stmt.Rhs, w)
 }
 
 func (w *DefaultWalker) WalkLoopStatement(stmt *LoopStatement) error {
-	return w.WalkBlockExpression(stmt.Body)
+	return w.Visitor.VisitBlockExpression(stmt.Body, w)
 }
 
 func (w *DefaultWalker) WalkNode(node Node) error {

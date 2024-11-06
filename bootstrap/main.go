@@ -53,7 +53,9 @@ func main() {
 		}
 		os.Exit(0)
 	}
-	module, err := ast.Parse(tokens)
+	fileParts := strings.Split(strings.Split(file, ".")[0], "/")
+	moduleName := fileParts[len(fileParts)-1]
+	module, err := ast.Parse(tokens, ast.Ident(moduleName))
 	if err != nil {
 		fmt.Println("Failed to parse: ", err)
 		os.Exit(1)

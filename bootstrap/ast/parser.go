@@ -219,6 +219,7 @@ func (a *AssignmentStatement) IsAssignToMember() bool {
 
 type Module struct {
 	node
+	Name  Ident
 	Nodes []Node
 }
 
@@ -228,7 +229,7 @@ func (m *Module) String() string {
 		nodes += "\n    "
 		nodes += strings.ReplaceAll(node.String(), "\n", "\n    ")
 	}
-	return fmt.Sprintf("Module(%s\n)", nodes)
+	return fmt.Sprintf("Module(\n    %s%s\n)", m.Name, nodes)
 }
 
 type StructTypeField struct {
@@ -723,7 +724,7 @@ func (p *Parser) ParseNode() (Node, error) {
 	return nil, fmt.Errorf("unexpected end of file")
 }
 
-func (p *Parser) Parse() (*Module, error) {
+func (p *Parser) Parse(moduleName Ident) (*Module, error) {
 	nodes := []Node{}
 	for p.index < len(p.tokens) {
 		node, err := p.ParseNode()
@@ -731,7 +732,7 @@ func (p *Parser) Parse() (*Module, error) {
 			if len(nodes) == 0 {
 				return nil, fmt.Errorf("expected at least one AST node")
 			}
-			return &Module{node: p.newNode(), Nodes: nodes}, nil
+			return &Module{node: p.newNode(), Name: moduleName, Nodes: nodes}, nil
 		}
 		if err != nil {
 			return nil, err
@@ -741,7 +742,7 @@ func (p *Parser) Parse() (*Module, error) {
 	return nil, fmt.Errorf("unexpected end of file")
 }
 
-func Parse(tokens []token.Token) (*Module, error) {
+func Parse(tokens []token.Token, moduleName Ident) (*Module, error) {
 	p := Parser{tokens: tokens, index: 0, nodeId: 0}
-	return p.Parse()
+	return p.Parse(moduleName)
 }

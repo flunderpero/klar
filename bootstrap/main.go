@@ -10,6 +10,7 @@ import (
 	"github.com/flunderpero/klar/bootstrap/ast"
 	"github.com/flunderpero/klar/bootstrap/codegen"
 	"github.com/flunderpero/klar/bootstrap/ir"
+	"github.com/flunderpero/klar/bootstrap/lower"
 	"github.com/flunderpero/klar/bootstrap/token"
 	"github.com/flunderpero/klar/bootstrap/typed"
 )
@@ -21,6 +22,7 @@ func main() {
 		fmt.Println("  tokens : Tokenize and print the tokens")
 		fmt.Println("  ast    : Parse and print the AST")
 		fmt.Println("  types  : Verify the types and the overall correctness of the program")
+		fmt.Println("  lower  : Lower and simplify the AST")
 		fmt.Println("  ir     : Generate the intermediate representation (IR)")
 		fmt.Println("  asm    : Generate Darwin ARM64 assembly")
 		fmt.Println("  build  : Compile, link, and write the binary to <output file>")
@@ -28,7 +30,7 @@ func main() {
 		os.Exit(1)
 	}
 	cmd := os.Args[1]
-	if !slices.Contains([]string{"tokens", "ast", "types", "ir", "asm", "build", "run"}, cmd) {
+	if !slices.Contains([]string{"tokens", "ast", "types", "lower", "ir", "asm", "build", "run"}, cmd) {
 		fmt.Println("Unknown command: ", cmd)
 		os.Exit(1)
 	}
@@ -54,7 +56,8 @@ func main() {
 		os.Exit(0)
 	}
 	fileParts := strings.Split(strings.Split(file, ".")[0], "/")
-	moduleName := fileParts[len(fileParts)-1]
+	// todo: We don't want to allow hyphens in modules.
+	moduleName := strings.ReplaceAll(fileParts[len(fileParts)-1], "-", "_")
 	module, err := ast.Parse(tokens, ast.Ident(moduleName))
 	if err != nil {
 		fmt.Println("Failed to parse: ", err)
@@ -74,7 +77,16 @@ func main() {
 		printTypedAST(module, typeInfo)
 		os.Exit(0)
 	}
-	irModule, err := ir.GenerateIR(module, typeInfo)
+	lowered, err := lower.Lower(module, typeInfo)
+	if err != nil {
+		fmt.Println("Failed to lower: ", err)
+		os.Exit(1)
+	}
+	if cmd == "lower" {
+		fmt.Println(lowered)
+		os.Exit(0)
+	}
+	irModule, err := ir.GenerateIR(lowered, typeInfo)
 	if err != nil {
 		fmt.Println("Failed to generate the IR: ", err)
 		os.Exit(1)
@@ -83,7 +95,7 @@ func main() {
 		for _, constant := range irModule.Constants {
 			fmt.Println(constant.String())
 		}
-		for _, ty := range irModule.Types {
+		for _, ty := range irModule.DeclaredTypes.Types {
 			switch ty := ty.(type) {
 			case ir.BuiltInType:
 			default:

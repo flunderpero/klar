@@ -47,6 +47,10 @@ type IdentExpression struct {
 	Ident Ident
 }
 
+func NewIdentExpression(ident Ident, id NodeId) *IdentExpression {
+	return &IdentExpression{node: node{id: id}, Ident: ident}
+}
+
 func (expr *IdentExpression) String() string {
 	return fmt.Sprintf("IdentExpression(%s)", expr.Ident)
 }
@@ -293,6 +297,21 @@ func (f *FunctionDefinition) String() string {
 	return fmt.Sprintf("FunctionDefinition(\n    %s(%s) %s\n    %s\n)", f.Name, args, f.ReturnType, body)
 }
 
+type ImplDefinition struct {
+	node
+	Target  TypeIdent
+	Methods []*FunctionDefinition
+}
+
+func (impl *ImplDefinition) String() string {
+	functions := ""
+	for _, function := range impl.Methods {
+		functions += "\n    "
+		functions += strings.ReplaceAll(function.String(), "\n", "\n    ")
+	}
+	return fmt.Sprintf("ImplDefinition(\n    %s    %s\n)", impl.Target, functions)
+}
+
 type VariableDefinition struct {
 	node
 	Name    Ident
@@ -440,7 +459,7 @@ func (p *Parser) parseStructInitExpression(typeIdent TypeIdent) (*StructInitExpr
 	return nil, fmt.Errorf("unexpected end of file while parsing struct init")
 }
 
-func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
+func (p *Parser) parseFunctionDefinition(acceptSelfParameter bool) (*FunctionDefinition, error) {
 	if _, err := p.consume(token.Fn); err != nil {
 		return nil, err
 	}
@@ -459,16 +478,26 @@ func (p *Parser) parseFunctionDefinition() (*FunctionDefinition, error) {
 			p.consumeAny()
 			break
 		}
-		argNameToken, err := p.consume(token.Ident)
-		if err != nil {
-			return nil, err
+		argNameToken := p.consumeAny()
+		if argNameToken.Kind == token.Ident {
+			argName := Ident(argNameToken.Value)
+			argTypeToken, err := p.consume(token.TypeIdent)
+			if err != nil {
+				return nil, err
+			}
+			argType := TypeIdent(argTypeToken.Value)
+			arg := FunctionArg{Name: argName, Type: argType}
+			args = append(args, arg)
+		} else if argNameToken.Kind == token.Self {
+			if !acceptSelfParameter {
+				return nil, fmt.Errorf("self parameter not allowed here")
+			}
+			if len(args) > 0 {
+				return nil, fmt.Errorf("self parameter must be the first parameter")
+			}
+			arg := FunctionArg{Name: Ident("self"), Type: TypeIdent("Self")}
+			args = append(args, arg)
 		}
-		argTypeToken, err := p.consume(token.TypeIdent)
-		if err != nil {
-			return nil, err
-		}
-		arg := FunctionArg{Name: Ident(argNameToken.Value), Type: TypeIdent(argTypeToken.Value)}
-		args = append(args, arg)
 		t = p.peek()
 		if t.Kind == token.RParen {
 			p.consumeAny()
@@ -537,7 +566,15 @@ func (p *Parser) parseAssignmentStatement(lhs Expression) (*AssignmentStatement,
 }
 
 func (p *Parser) parseExpression() (Expression, error) {
-	return p.parseBinaryExpression(0)
+	expr, err := p.parseBinaryExpression(0)
+	if err != nil {
+		return nil, err
+	}
+	switch p.peek().Kind {
+	case token.LParen:
+		return p.parseCallExpression(expr)
+	}
+	return expr, nil
 }
 
 // Parse an expression as the left-hand-side and look at the token after it.
@@ -604,12 +641,7 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 	switch t.Kind {
 	case token.Ident:
 		p.consumeAny()
-		expr := &IdentExpression{node: p.newNode(), Ident: Ident(t.Value)}
-		switch p.peek().Kind {
-		case token.LParen:
-			return p.parseCallExpression(expr)
-		}
-		return expr, nil
+		return &IdentExpression{node: p.newNode(), Ident: Ident(t.Value)}, nil
 	case token.TypeIdent:
 		p.consumeAny()
 		ident := TypeIdent(t.Value)
@@ -619,6 +651,9 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 		}
 		expr := &TypeIdentExpression{node: p.newNode(), Ident: ident}
 		return expr, nil
+	case token.Self:
+		p.consumeAny()
+		return &IdentExpression{node: p.newNode(), Ident: Ident("self")}, nil
 	case token.Str:
 		p.consumeAny()
 		return &StringLiteralExpression{node: p.newNode(), Value: t.Value}, nil
@@ -689,6 +724,37 @@ func (p *Parser) parseStructDeclaration() (*StructTypeDeclaration, error) {
 	return nil, fmt.Errorf("unexpected end of file while parsing struct")
 }
 
+func (p *Parser) parseImplDefinition() (*ImplDefinition, error) {
+	if _, err := p.consume(token.Impl); err != nil {
+		return nil, err
+	}
+	typeIdentToken, err := p.consume(token.TypeIdent)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = p.consume(token.LCurly); err != nil {
+		return nil, err
+	}
+	functions := []*FunctionDefinition{}
+	for p.index < len(p.tokens) {
+		t := p.peek()
+		switch t.Kind {
+		case token.RCurly:
+			p.consumeAny()
+			return &ImplDefinition{node: p.newNode(), Target: TypeIdent(typeIdentToken.Value), Methods: functions}, nil
+		case token.Fn:
+			function, err := p.parseFunctionDefinition(true)
+			if err != nil {
+				return nil, err
+			}
+			functions = append(functions, function)
+		default:
+			return nil, fmt.Errorf("unexpected token: %s", t)
+		}
+	}
+	return nil, fmt.Errorf("unexpected end of file while parsing impl")
+}
+
 var EOF = fmt.Errorf("EOF")
 
 func (p *Parser) ParseNode() (Node, error) {
@@ -698,7 +764,7 @@ func (p *Parser) ParseNode() (Node, error) {
 		case token.EOF:
 			return nil, EOF
 		case token.Fn:
-			return p.parseFunctionDefinition()
+			return p.parseFunctionDefinition(false)
 		case token.Mut, token.Let:
 			return p.parseVariableDefinition()
 		case token.Loop:
@@ -711,7 +777,9 @@ func (p *Parser) ParseNode() (Node, error) {
 			return &ContinueStatement{node: p.newNode()}, nil
 		case token.Struct:
 			return p.parseStructDeclaration()
-		case token.Ident, token.LCurly, token.If, token.True, token.False, token.Str, token.Int:
+		case token.Impl:
+			return p.parseImplDefinition()
+		case token.Ident, token.LCurly, token.If, token.True, token.False, token.Str, token.Int, token.Self:
 			expr, err := p.parseExpression()
 			if err != nil {
 				return nil, err

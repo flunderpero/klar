@@ -37,6 +37,8 @@ const (
 	Break      TokenKind = "break"
 	Continue   TokenKind = "continue"
 	Struct     TokenKind = "struct"
+	Impl       TokenKind = "impl"
+	Self       TokenKind = "self"
 	EOF        TokenKind = "EOF"
 )
 
@@ -149,6 +151,10 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 				token = Token{Kind: False, Value: ""}
 			case "struct":
 				token = Token{Kind: Struct, Value: ""}
+			case "impl":
+				token = Token{Kind: Impl, Value: ""}
+			case "self":
+				token = Token{Kind: Self, Value: ""}
 			default:
 				kind := Ident
 				if isTypeIdentifier(string(value)) {

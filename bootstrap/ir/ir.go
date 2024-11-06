@@ -160,7 +160,6 @@ type Function struct {
 	ReturnType          Type
 	Args                []FunctionArg
 	Entry               *Block
-	Definition          *ast.FunctionDefinition
 	RegisterConstraints RegisterConstraints
 }
 
@@ -176,9 +175,9 @@ func (t *Function) String() string {
 }
 
 type Module struct {
-	Functions []*Function
-	Constants []*StrConst
-	Types     []Type
+	Functions     []*Function
+	Constants     []*StrConst
+	DeclaredTypes *DeclaredTypes
 }
 
 type Register string
@@ -517,7 +516,7 @@ type generator struct {
 	registerIndex       int
 	blockIndex          int
 	functions           map[ast.Ident]*Function
-	declaredTypes       map[ast.TypeIdent]Type
+	declaredTypes       *DeclaredTypes
 	registerConstraints RegisterConstraints
 	loopScopes          []loopScope
 }
@@ -727,15 +726,7 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) erro
 
 func (g *generator) lookupType(node ast.Node) Type {
 	typedType := g.typeInfo.MustLookup(node)
-	switch typedType := typedType.(type) {
-	case *typed.StructType:
-		ty, found := g.declaredTypes[typedType.Name]
-		if !found {
-			panic(fmt.Sprintf("struct type not found: %s", typedType.Name))
-		}
-		return ty
-	}
-	panic(fmt.Sprintf("type not found: %T", typedType))
+	return g.declaredTypes.MustLookup(typedType)
 }
 
 func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.Walker) error {
@@ -744,15 +735,15 @@ func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.Walk
 	}
 	source := g.lookupRegisterByNode(expr.Target)
 	sourceType := g.lookupType(expr.Target).(*StructType)
-	irSourceType, ok := g.typeInfo.MustLookup(expr.Target).(*typed.StructType)
-	if !ok {
-		return fmt.Errorf("expected a struct type, got %T", irSourceType)
-	}
+	irSourceType := g.typeInfo.MustLookup(expr.Target).(*typed.StructType)
 	fieldIndex := slices.IndexFunc(
 		irSourceType.Fields, func(field typed.StructField) bool { return field.Name == expr.Field },
 	)
 	if fieldIndex == -1 {
-		return fmt.Errorf("field %q not found in struct %q", expr.Field, irSourceType.Declaration.Name)
+		if _, err := irSourceType.FindMethod(expr.Field); err == nil {
+			return nil
+		}
+		return fmt.Errorf("field %q not found in struct %q", expr.Field, irSourceType.Name)
 	}
 	fieldType := sourceType.Fields[fieldIndex]
 	getPtrReg := g.nextRegister()
@@ -908,69 +899,82 @@ func (g *generator) VisitContinueStatement(stmt *ast.ContinueStatement) error {
 	return nil
 }
 
-func declareType(declaredTypes *map[ast.TypeIdent]Type, node ast.Node) {
-	switch decl := node.(type) {
-	case *ast.StructTypeDeclaration:
+type DeclaredTypes struct {
+	Types map[ast.TypeIdent]Type
+}
+
+func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
+	switch ty := ty.(type) {
+	case *typed.UnitType:
+		return UnitType
+	case *typed.StrType:
+		return StrType
+	case *typed.Int64Type:
+		return Int64Type
+	case *typed.StructType:
+		return dt.Types[ty.Name]
+	default:
+		panic(fmt.Sprintf("type not found for %T", ty))
+	}
+}
+
+func (dt *DeclaredTypes) declare(ty typed.Type) {
+	typeDecl, ok := ty.(*typed.DeclaredType)
+	if !ok {
+		panic(fmt.Sprintf("cannot declare type %T", ty))
+	}
+	switch ty := typeDecl.Type.(type) {
+	case *typed.StructType:
 		fieldTypes := []Type{}
-		for _, field := range decl.Fields {
-			fieldType, found := (*declaredTypes)[field.Type]
-			if !found {
-				panic(fmt.Sprintf("type not found for field %s", field.String()))
-			}
+		for _, field := range ty.Fields {
+			fieldType := dt.MustLookup(field.Type)
 			if _, isStructType := fieldType.(*StructType); isStructType {
 				// We only ever store references (i.e. pointers) to struct types.
 				fieldType = &PointerType{fieldType}
 			}
 			fieldTypes = append(fieldTypes, fieldType)
 		}
-		structType := &StructType{Name: decl.Name, Fields: fieldTypes}
-		(*declaredTypes)[decl.Name] = structType
+		structType := &StructType{Name: ty.Name, Fields: fieldTypes}
+		dt.Types[structType.Name] = structType
 	default:
-		panic(fmt.Sprintf("type declaration not implemented for type %T", decl))
+		panic(fmt.Sprintf("cannot declare type %T", ty))
 	}
 }
 
 func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 	functionDefinitions := []*ast.FunctionDefinition{}
-	declaredTypes := make(map[ast.TypeIdent]Type)
-	// Declare built-in types.
-	declaredTypes[StrType.Name] = StrType
-	declaredTypes["Int"] = Int64Type
-	declaredTypes["()"] = UnitType
+	declaredTypes := &DeclaredTypes{Types: make(map[ast.TypeIdent]Type)}
 	for _, node := range module.Nodes {
 		switch node := node.(type) {
 		case *ast.FunctionDefinition:
 			functionDefinitions = append(functionDefinitions, node)
+		case *ast.ImplDefinition:
+			functionDefinitions = append(functionDefinitions, node.Methods...)
 		case *ast.StructTypeDeclaration:
-			declareType(&declaredTypes, node)
+			ty := typeInfo.MustLookup(node)
+			declaredTypes.declare(ty)
 		default:
 			return nil, fmt.Errorf("cannot generate IR for node type: %T", node)
 		}
 	}
 	functions := []*Function{}
 	// First forward declare all functions.
-	for _, fd := range functionDefinitions {
+	for _, functionDef := range functionDefinitions {
+		funcType := typeInfo.MustLookupDeclaredType(functionDef).Type.(typed.CallableType)
 		args := []FunctionArg{}
-		for i, arg := range fd.Args {
-			argType, found := declaredTypes[arg.Type]
-			if !found {
-				return nil, fmt.Errorf("type %s not found for argument %s", arg.Type, arg.Name)
-			}
+		for i, arg := range funcType.CallArgTypes() {
+			argType := declaredTypes.MustLookup(arg.Type)
 			irArg := FunctionArg{
 				Type:     argType,
 				Register: Register(fmt.Sprintf("%%%d", (i + 1))),
 			}
 			args = append(args, irArg)
 		}
-		returnType, found := declaredTypes[fd.ReturnType]
-		if !found {
-			return nil, fmt.Errorf("type %s not found for return type of function %s", fd.ReturnType, fd.Name)
-		}
+		returnType := declaredTypes.MustLookup(funcType.CallReturnType())
 		f := Function{
-			Name:       fd.Name,
+			Name:       ast.Ident(funcType.TypeName()),
 			ReturnType: returnType,
 			Args:       args,
-			Definition: fd,
 		}
 		functions = append(functions, &f)
 	}
@@ -1003,7 +1007,8 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 	}
 	constants := []*StrConst{}
 	// Generate code for each function.
-	for _, function := range functions {
+	for i, function := range functions {
+		definition := functionDefinitions[i]
 		gen := &generator{
 			DefaultVisitor:      ast.DefaultVisitor{},
 			typeInfo:            typeInfo,
@@ -1016,13 +1021,13 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 			loopScopes:          []loopScope{},
 		}
 		// Make function arguments visible.
-		for _, arg := range function.Definition.Args {
+		for _, arg := range definition.Args {
 			gen.symbolTable.declare(arg.Name, gen.nextRegister())
 		}
 		block := gen.newBlock()
 		gen.currentBlock = block
 		walker := &ast.DefaultWalker{Visitor: gen}
-		if err := walker.WalkNode(function.Definition.Body); err != nil {
+		if err := walker.WalkNode(definition.Body); err != nil {
 			return nil, err
 		}
 		if gen.currentBlock.Terminator != nil {
@@ -1032,11 +1037,7 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 		function.Entry = block
 		function.RegisterConstraints = gen.registerConstraints
 	}
-	types := []Type{}
-	for _, ty := range declaredTypes {
-		types = append(types, ty)
-	}
-	return &Module{Functions: functions, Constants: constants, Types: types}, nil
+	return &Module{Functions: functions, Constants: constants, DeclaredTypes: declaredTypes}, nil
 }
 
 // Walk the given block and call `visitor` for each block we discover in the graph

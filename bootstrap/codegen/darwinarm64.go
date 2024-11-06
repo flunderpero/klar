@@ -390,7 +390,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			}
 			c.emit("str %s, [%s]", value, target)
 		case *ir.Call:
-			c.registerAllocator.spillCallRegisters(len(c.function.Definition.Args))
+			c.registerAllocator.spillCallRegisters(len(c.function.Args))
 			savedCallerRegisters := c.registerAllocator.spillCallerSavedRegisters()
 			for i, arg := range inst.Args {
 				argReg := c.mustLookupRegisterAllocation(arg)

@@ -7,7 +7,7 @@ type Visitor interface {
 	VisitModule(module *Module, w Walker) error
 	VisitStructTypeDeclaration(ty *StructTypeDeclaration) error
 	VisitFunctionDefinition(fn *FunctionDefinition, w Walker) error
-	VisitVariableDefinition(fn *VariableDefinition, w Walker) error
+	VisitVariableDefinition(variable *VariableDefinition, w Walker) error
 	VisitExpression(expr Expression, w Walker) error
 	VisitBlockExpression(expr *BlockExpression, w Walker) error
 	VisitCallExpression(expr *CallExpression, w Walker) error
@@ -15,6 +15,7 @@ type Visitor interface {
 	VisitStructInitExpression(expr *StructInitExpression, w Walker) error
 	VisitIfExpression(expr *IfExpression, w Walker) error
 	VisitBinaryExpression(expr *BinaryExpression, w Walker) error
+	VisitImplDefinition(impl *ImplDefinition, w Walker) error
 	VisitIdentExpression(expr *IdentExpression) error
 	VisitStringLiteralExpression(expr *StringLiteralExpression) error
 	VisitIntLiteralExpression(expr *IntLiteralExpression) error
@@ -29,7 +30,8 @@ type Walker interface {
 	WalkNode(node Node) error
 	WalkModule(module *Module) error
 	WalkFunctionDefinition(fn *FunctionDefinition) error
-	WalkVariableDefinition(fn *VariableDefinition) error
+	WalkImplDefinition(impl *ImplDefinition) error
+	WalkVariableDefinition(variable *VariableDefinition) error
 	WalkExpression(expr Expression) error
 	WalkBlockExpression(expr *BlockExpression) error
 	WalkCallExpression(expr *CallExpression) error
@@ -91,8 +93,12 @@ func (_ *DefaultVisitor) VisitFunctionDefinition(fn *FunctionDefinition, w Walke
 	return w.WalkFunctionDefinition(fn)
 }
 
-func (_ *DefaultVisitor) VisitVariableDefinition(fn *VariableDefinition, w Walker) error {
-	return w.WalkVariableDefinition(fn)
+func (_ *DefaultVisitor) VisitImplDefinition(impl *ImplDefinition, w Walker) error {
+	return w.WalkImplDefinition(impl)
+}
+
+func (_ *DefaultVisitor) VisitVariableDefinition(variable *VariableDefinition, w Walker) error {
+	return w.WalkVariableDefinition(variable)
 }
 
 func (_ *DefaultVisitor) VisitAssignmentStatement(stmt *AssignmentStatement, w Walker) error {
@@ -218,12 +224,22 @@ func (w *DefaultWalker) WalkModule(module *Module) error {
 	return nil
 }
 
+func (w *DefaultWalker) WalkImplDefinition(impl *ImplDefinition) error {
+	for _, method := range impl.Methods {
+		err := w.Visitor.VisitFunctionDefinition(method, w)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (w *DefaultWalker) WalkFunctionDefinition(fn *FunctionDefinition) error {
 	return w.Visitor.VisitBlockExpression(fn.Body, w)
 }
 
-func (w *DefaultWalker) WalkVariableDefinition(fn *VariableDefinition) error {
-	return w.Visitor.VisitNode(fn.Value, w)
+func (w *DefaultWalker) WalkVariableDefinition(variable *VariableDefinition) error {
+	return w.Visitor.VisitNode(variable.Value, w)
 }
 
 func (w *DefaultWalker) WalkAssignmentStatement(stmt *AssignmentStatement) error {
@@ -244,6 +260,8 @@ func (w *DefaultWalker) WalkNode(node Node) error {
 		err = w.Visitor.VisitModule(node, w)
 	case *StructTypeDeclaration:
 		err = w.Visitor.VisitStructTypeDeclaration(node)
+	case *ImplDefinition:
+		err = w.Visitor.VisitImplDefinition(node, w)
 	case *FunctionDefinition:
 		err = w.Visitor.VisitFunctionDefinition(node, w)
 	case *VariableDefinition:

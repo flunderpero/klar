@@ -128,6 +128,11 @@ func (te *typeEnvironment) lookupVariable(name ast.Ident) (Type, *ast.VariableDe
 	return ty, def, found
 }
 
+func (te *typeEnvironment) isVariable(name string) bool {
+	_, found := te.variables[name]
+	return found
+}
+
 func (te *typeEnvironment) declare(name string, ty Type) error {
 	if _, found := te.types[name]; found {
 		return fmt.Errorf("type %s already declared", name)
@@ -146,7 +151,17 @@ func (te *typeEnvironment) declareVariable(name string, ty Type, def *ast.Variab
 
 type TypeInfo struct {
 	types map[ast.NodeId]Type
-	main  *FunctionType
+	// The type an `IdentExpression` points to if it does not refer to a variable.
+	typeBindings map[*ast.IdentExpression]Type
+	main         *FunctionType
+}
+
+func (m *TypeInfo) LookupTypeBinding(expr *ast.IdentExpression) Type {
+	declaration, found := m.typeBindings[expr]
+	if !found {
+		panic(fmt.Errorf("declaration not found for identifier %s", expr.Ident))
+	}
+	return declaration
 }
 
 func (m *TypeInfo) Lookup(node ast.Node) (Type, error) {
@@ -224,6 +239,9 @@ func (tc *typeChecker) VisitIdentExpression(expr *ast.IdentExpression) error {
 		return fmt.Errorf("type not found for identifier %s", expr.Ident)
 	}
 	tc.typeInfo.set(expr, ty)
+	if !tc.typeEnv.isVariable(string(expr.Ident)) {
+		tc.typeInfo.typeBindings[expr] = ty
+	}
 	return nil
 }
 
@@ -529,7 +547,7 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 	}
 	tc := &typeChecker{
 		DefaultVisitor: ast.DefaultVisitor{},
-		typeInfo:       &TypeInfo{types: make(map[ast.NodeId]Type)},
+		typeInfo:       &TypeInfo{types: make(map[ast.NodeId]Type), typeBindings: make(map[*ast.IdentExpression]Type)},
 		typeEnv:        defaultTypeEnv,
 	}
 	walker := &ast.DefaultWalker{Visitor: tc}

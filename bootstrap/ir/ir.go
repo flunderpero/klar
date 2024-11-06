@@ -510,7 +510,7 @@ type loopScope struct {
 type generator struct {
 	ast.DefaultVisitor
 	currentBlock        *Block
-	typeByNodeId        map[ast.NodeId]typed.Type
+	typeByNode          *typed.TypeByNode
 	registerByNodeId    map[ast.NodeId]Register
 	symbolTable         *symbolTable
 	globalConstants     *[]*StrConst
@@ -560,14 +560,6 @@ func (g *generator) lookupRegisterByNode(node ast.Node) Register {
 		panic(fmt.Sprintf("No register found for node %s", node))
 	}
 	return reg
-}
-
-func (g *generator) typeOf(node ast.Node) typed.Type {
-	ty, found := g.typeByNodeId[node.Id()]
-	if !found {
-		panic(fmt.Sprintf("Type of node %s should have been determined by the type-checker", node))
-	}
-	return ty
 }
 
 func (g *generator) newBlock(predecessors ...*Block) *Block {
@@ -631,7 +623,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 	if err := w.WalkCallExpression(expr); err != nil {
 		return err
 	}
-	funcType := g.typeOf(expr.Callee).(*typed.FunctionType)
+	funcType := g.typeByNode.MustLookup(expr.Callee).(*typed.FunctionType)
 	function, ok := g.functions[funcType.Name]
 	if !ok {
 		panic(fmt.Sprintf("Unknown function: %s", funcType.Name))
@@ -660,7 +652,7 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 	rhs := g.lookupRegisterByNode(expr.Rhs)
 	switch expr.Op {
 	case ast.OpAdd:
-		ty := g.typeOf(expr)
+		ty := g.typeByNode.MustLookup(expr)
 		if _, ok := ty.(*typed.Int64Type); !ok {
 			// For now we only support 64 bit integers.
 			return fmt.Errorf("add expression must be of type Int64Type, got %s", ty)
@@ -668,11 +660,11 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 		g.append(&SignedInt64AddWithOverflow{register: g.nextRegister(), Lhs: lhs, Rhs: rhs}, expr)
 	case ast.OpEquality:
 		// For now, we only know how to compare 64 bit integers.
-		lhsType, ok := g.typeByNodeId[expr.Lhs.Id()].(*typed.Int64Type)
+		lhsType, ok := g.typeByNode.MustLookup(expr.Lhs).(*typed.Int64Type)
 		if !ok {
 			return fmt.Errorf("type of lhs is not Int64Type, but %s", lhsType)
 		}
-		rhsType, ok := g.typeByNodeId[expr.Rhs.Id()].(*typed.Int64Type)
+		rhsType, ok := g.typeByNode.MustLookup(expr.Rhs).(*typed.Int64Type)
 		if !ok {
 			return fmt.Errorf("type of rhs is not Int64Type, but %s", rhsType)
 		}
@@ -734,10 +726,7 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) erro
 }
 
 func (g *generator) lookupType(node ast.Node) Type {
-	typedType, found := g.typeByNodeId[node.Id()]
-	if !found {
-		panic(fmt.Sprintf("type not found for node %s", node))
-	}
+	typedType := g.typeByNode.MustLookup(node)
 	switch typedType := typedType.(type) {
 	case *typed.StructType:
 		ty, found := g.declaredTypes[typedType.Name]
@@ -755,9 +744,9 @@ func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.Walk
 	}
 	source := g.lookupRegisterByNode(expr.Target)
 	sourceType := g.lookupType(expr.Target).(*StructType)
-	irSourceType, found := g.typeByNodeId[expr.Target.Id()].(*typed.StructType)
-	if !found {
-		return fmt.Errorf("type not found for node %s", expr.Target)
+	irSourceType, ok := g.typeByNode.MustLookup(expr.Target).(*typed.StructType)
+	if !ok {
+		return fmt.Errorf("expected a struct type, got %T", irSourceType)
 	}
 	fieldIndex := slices.IndexFunc(
 		irSourceType.Fields, func(field typed.StructField) bool { return field.Name == expr.Field },
@@ -857,7 +846,7 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 	if stmt.IsAssignToMember() {
 		getPtrReg := g.nextRegister()
 		sourceReg := g.symbolTable.lookup(stmt.Variable.Ident)
-		structType := g.typeByNodeId[stmt.Variable.Id()].(*typed.StructType)
+		structType := g.typeByNode.MustLookup(stmt.Variable).(*typed.StructType)
 		sourceType := g.lookupType(stmt.Variable).(*StructType)
 		fieldIndex, err := structType.FindFieldIndex(*stmt.Field)
 		fieldType := sourceType.Fields[fieldIndex]
@@ -941,7 +930,7 @@ func declareType(declaredTypes *map[ast.TypeIdent]Type, node ast.Node) {
 	}
 }
 
-func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module, error) {
+func GenerateIR(module *ast.Module, typeByNode *typed.TypeByNode) (*Module, error) {
 	functionDefinitions := []*ast.FunctionDefinition{}
 	declaredTypes := make(map[ast.TypeIdent]Type)
 	// Declare built-in types.
@@ -1017,7 +1006,7 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 	for _, function := range functions {
 		gen := &generator{
 			DefaultVisitor:      ast.DefaultVisitor{},
-			typeByNodeId:        typeMap,
+			typeByNode:          typeByNode,
 			registerByNodeId:    make(map[ast.NodeId]Register),
 			functions:           functionByName,
 			symbolTable:         &symbolTable{symbols: make(map[ast.Ident]Register)},

@@ -62,17 +62,17 @@ func main() {
 		fmt.Println(module)
 		os.Exit(0)
 	}
-	ty, typeMap, err := typed.TypeCheck(module)
+	ty, typeByNode, err := typed.TypeCheck(module)
 	if err != nil {
 		fmt.Println("Failed to typecheck: ", err)
 		os.Exit(1)
 	}
 	if cmd == "types" {
 		fmt.Println(ty)
-		printTypedAST(module, typeMap)
+		printTypedAST(module, typeByNode)
 		os.Exit(0)
 	}
-	irModule, err := ir.GenerateIR(module, typeMap)
+	irModule, err := ir.GenerateIR(module, typeByNode)
 	if err != nil {
 		fmt.Println("Failed to generate the IR: ", err)
 		os.Exit(1)
@@ -147,8 +147,8 @@ func main() {
 	}
 }
 
-func printTypedAST(node ast.Node, typeMap map[ast.NodeId]typed.Type) {
-	visitor := &printTypedASTWalker{ast.DefaultVisitor{}, typeMap}
+func printTypedAST(node ast.Node, typeByNode *typed.TypeByNode) {
+	visitor := &printTypedASTWalker{ast.DefaultVisitor{}, typeByNode}
 	walker := &ast.DefaultWalker{Visitor: visitor}
 	if err := walker.WalkNode(node); err != nil {
 		fmt.Println("ERROR:", err)
@@ -157,17 +157,14 @@ func printTypedAST(node ast.Node, typeMap map[ast.NodeId]typed.Type) {
 
 type printTypedASTWalker struct {
 	ast.DefaultVisitor
-	typeMap map[ast.NodeId]typed.Type
+	typeByNode *typed.TypeByNode
 }
 
 func (v *printTypedASTWalker) VisitNode(node ast.Node, w ast.Walker) error {
 	if err := w.WalkNode(node); err != nil {
 		return err
 	}
-	ty, ok := v.typeMap[node.Id()]
-	if !ok {
-		return fmt.Errorf("type of node %s should have been determined by the type-checker", node)
-	}
+	ty := v.typeByNode.MustLookup(node)
 	fmt.Printf("%s\n=> %s\n\n", node, ty)
 	return nil
 }

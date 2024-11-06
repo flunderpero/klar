@@ -145,7 +145,7 @@ func (te *typeEnvironment) declareVariable(name string, ty Type, def *ast.Variab
 }
 
 type typeChecker struct {
-	ast.DefaultASTVisitor
+	ast.DefaultVisitor
 	typeByNodeId map[ast.NodeId]Type
 	typeEnv      *typeEnvironment
 	loopDepth    int
@@ -199,7 +199,7 @@ func (tc *typeChecker) VisitIdentExpression(expr *ast.IdentExpression) error {
 	return nil
 }
 
-func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.ASTWalker) error {
+func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walker) error {
 	if err := w.WalkBinaryExpression(expr); err != nil {
 		return err
 	}
@@ -229,7 +229,7 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.A
 	return nil
 }
 
-func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.ASTWalker) error {
+func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) error {
 	if err := w.WalkCallExpression(expr); err != nil {
 		return fmt.Errorf("failed to walk call expression: %w", err)
 	}
@@ -251,7 +251,7 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.ASTWa
 	return nil
 }
 
-func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.ASTWalker) error {
+func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.Walker) error {
 	if err := w.WalkMemberExpression(expr); err != nil {
 		return fmt.Errorf("failed to walk member expression: %w", err)
 	}
@@ -268,7 +268,7 @@ func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.A
 	return nil
 }
 
-func (tc *typeChecker) VisitBlockExpression(expr *ast.BlockExpression, w ast.ASTWalker) error {
+func (tc *typeChecker) VisitBlockExpression(expr *ast.BlockExpression, w ast.Walker) error {
 	if err := w.WalkBlockExpression(expr); err != nil {
 		return fmt.Errorf("failed to walk block expression: %w", err)
 	}
@@ -277,7 +277,7 @@ func (tc *typeChecker) VisitBlockExpression(expr *ast.BlockExpression, w ast.AST
 	return nil
 }
 
-func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker) error {
+func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) error {
 	tc.enterScope()
 	defer tc.exitScope()
 	if err := w.WalkIfExpression(expr); err != nil {
@@ -294,7 +294,7 @@ func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker
 	return nil
 }
 
-func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression, w ast.ASTWalker) error {
+func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression, w ast.Walker) error {
 	if err := w.WalkStructInitExpression(expr); err != nil {
 		return err
 	}
@@ -323,7 +323,7 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 	return nil
 }
 
-func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast.ASTWalker) error {
+func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast.Walker) error {
 	argTypes := []Type{}
 	for _, arg := range fn.Args {
 		argType, found := tc.typeEnv.lookup(string(arg.Type))
@@ -363,7 +363,7 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 	return nil
 }
 
-func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.ASTWalker) error {
+func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.Walker) error {
 	if err := w.WalkNode(v.Value); err != nil {
 		return err
 	}
@@ -378,7 +378,7 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 	return nil
 }
 
-func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w ast.ASTWalker) error {
+func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w ast.Walker) error {
 	if err := w.WalkAssignmentStatement(s); err != nil {
 		return err
 	}
@@ -411,7 +411,7 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 	return nil
 }
 
-func (tc *typeChecker) VisitLoopStatement(s *ast.LoopStatement, w ast.ASTWalker) error {
+func (tc *typeChecker) VisitLoopStatement(s *ast.LoopStatement, w ast.Walker) error {
 	tc.typeByNodeId[s.Id()] = &UnitType{}
 	tc.enterLoop()
 	defer tc.exitLoop()
@@ -451,12 +451,12 @@ func (tc *typeChecker) VisitStructTypeDeclaration(d *ast.StructTypeDeclaration) 
 	return nil
 }
 
-func (tc *typeChecker) VisitModule(module *ast.Module, w ast.ASTWalker) error {
+func (tc *typeChecker) VisitModule(module *ast.Module, w ast.Walker) error {
 	tc.typeByNodeId[module.Id()] = &UnitType{}
 	return w.WalkModule(module)
 }
 
-func (tc *typeChecker) check(node ast.Node, w ast.ASTWalker) (Type, error) {
+func (tc *typeChecker) check(node ast.Node, w ast.Walker) (Type, error) {
 	if err := w.WalkNode(node); err != nil {
 		return nil, err
 	}
@@ -491,11 +491,11 @@ func TypeCheck(node ast.Node) (Type, map[ast.NodeId]Type, error) {
 		panic(fmt.Errorf("Failed to declare print_int function: %w", err))
 	}
 	tc := &typeChecker{
-		DefaultASTVisitor: ast.DefaultASTVisitor{},
-		typeByNodeId:      make(map[ast.NodeId]Type),
-		typeEnv:           defaultTypeEnv,
+		DefaultVisitor: ast.DefaultVisitor{},
+		typeByNodeId:   make(map[ast.NodeId]Type),
+		typeEnv:        defaultTypeEnv,
 	}
-	walker := &ast.DefaultASTWalker{Visitor: tc}
+	walker := &ast.DefaultWalker{Visitor: tc}
 	res, err := tc.check(node, walker)
 	if err != nil {
 		return nil, nil, err

@@ -2,30 +2,30 @@ package ast
 
 import "fmt"
 
-type ASTVisitor interface {
-	VisitNode(node Node, w ASTWalker) error
-	VisitModule(module *Module, w ASTWalker) error
+type Visitor interface {
+	VisitNode(node Node, w Walker) error
+	VisitModule(module *Module, w Walker) error
 	VisitStructTypeDeclaration(ty *StructTypeDeclaration) error
-	VisitFunctionDefinition(fn *FunctionDefinition, w ASTWalker) error
-	VisitVariableDefinition(fn *VariableDefinition, w ASTWalker) error
-	VisitExpression(expr Expression, w ASTWalker) error
-	VisitBlockExpression(expr *BlockExpression, w ASTWalker) error
-	VisitCallExpression(expr *CallExpression, w ASTWalker) error
-	VisitMemberExpression(expr *MemberExpression, w ASTWalker) error
-	VisitStructInitExpression(expr *StructInitExpression, w ASTWalker) error
-	VisitIfExpression(expr *IfExpression, w ASTWalker) error
-	VisitBinaryExpression(expr *BinaryExpression, w ASTWalker) error
+	VisitFunctionDefinition(fn *FunctionDefinition, w Walker) error
+	VisitVariableDefinition(fn *VariableDefinition, w Walker) error
+	VisitExpression(expr Expression, w Walker) error
+	VisitBlockExpression(expr *BlockExpression, w Walker) error
+	VisitCallExpression(expr *CallExpression, w Walker) error
+	VisitMemberExpression(expr *MemberExpression, w Walker) error
+	VisitStructInitExpression(expr *StructInitExpression, w Walker) error
+	VisitIfExpression(expr *IfExpression, w Walker) error
+	VisitBinaryExpression(expr *BinaryExpression, w Walker) error
 	VisitIdentExpression(expr *IdentExpression) error
 	VisitStringLiteralExpression(expr *StringLiteralExpression) error
 	VisitIntLiteralExpression(expr *IntLiteralExpression) error
 	VisitBoolLiteralExpression(expr *BoolLiteralExpression) error
-	VisitAssignmentStatement(stmt *AssignmentStatement, w ASTWalker) error
-	VisitLoopStatement(stmt *LoopStatement, w ASTWalker) error
+	VisitAssignmentStatement(stmt *AssignmentStatement, w Walker) error
+	VisitLoopStatement(stmt *LoopStatement, w Walker) error
 	VisitBreakStatement(stmt *BreakStatement) error
 	VisitContinueStatement(stmt *ContinueStatement) error
 }
 
-type ASTWalker interface {
+type Walker interface {
 	WalkNode(node Node) error
 	WalkModule(module *Module) error
 	WalkFunctionDefinition(fn *FunctionDefinition) error
@@ -41,93 +41,93 @@ type ASTWalker interface {
 	WalkLoopStatement(stmt *LoopStatement) error
 }
 
-type DefaultASTVisitor struct{}
+type DefaultVisitor struct{}
 
-func (_ *DefaultASTVisitor) VisitIdentExpression(expr *IdentExpression) error {
+func (_ *DefaultVisitor) VisitIdentExpression(expr *IdentExpression) error {
 	return nil
 }
 
-func (_ *DefaultASTVisitor) VisitStringLiteralExpression(expr *StringLiteralExpression) error {
+func (_ *DefaultVisitor) VisitStringLiteralExpression(expr *StringLiteralExpression) error {
 	return nil
 }
 
-func (_ *DefaultASTVisitor) VisitIntLiteralExpression(expr *IntLiteralExpression) error {
+func (_ *DefaultVisitor) VisitIntLiteralExpression(expr *IntLiteralExpression) error {
 	return nil
 }
 
-func (_ *DefaultASTVisitor) VisitBoolLiteralExpression(expr *BoolLiteralExpression) error {
+func (_ *DefaultVisitor) VisitBoolLiteralExpression(expr *BoolLiteralExpression) error {
 	return nil
 }
 
-func (_ *DefaultASTVisitor) VisitCallExpression(expr *CallExpression, w ASTWalker) error {
+func (_ *DefaultVisitor) VisitCallExpression(expr *CallExpression, w Walker) error {
 	return w.WalkCallExpression(expr)
 }
 
-func (_ *DefaultASTVisitor) VisitMemberExpression(expr *MemberExpression, w ASTWalker) error {
+func (_ *DefaultVisitor) VisitMemberExpression(expr *MemberExpression, w Walker) error {
 	return w.WalkMemberExpression(expr)
 }
 
-func (_ *DefaultASTVisitor) VisitStructInitExpression(expr *StructInitExpression, w ASTWalker) error {
+func (_ *DefaultVisitor) VisitStructInitExpression(expr *StructInitExpression, w Walker) error {
 	return w.WalkStructInitExpression(expr)
 }
 
-func (_ *DefaultASTVisitor) VisitIfExpression(expr *IfExpression, w ASTWalker) error {
+func (_ *DefaultVisitor) VisitIfExpression(expr *IfExpression, w Walker) error {
 	return w.WalkIfExpression(expr)
 }
 
-func (_ *DefaultASTVisitor) VisitBinaryExpression(expr *BinaryExpression, w ASTWalker) error {
+func (_ *DefaultVisitor) VisitBinaryExpression(expr *BinaryExpression, w Walker) error {
 	return w.WalkBinaryExpression(expr)
 }
 
-func (_ *DefaultASTVisitor) VisitBlockExpression(expr *BlockExpression, w ASTWalker) error {
+func (_ *DefaultVisitor) VisitBlockExpression(expr *BlockExpression, w Walker) error {
 	return w.WalkBlockExpression(expr)
 }
 
-func (_ *DefaultASTVisitor) VisitExpression(expr Expression, w ASTWalker) error {
+func (_ *DefaultVisitor) VisitExpression(expr Expression, w Walker) error {
 	return w.WalkExpression(expr)
 }
 
-func (_ *DefaultASTVisitor) VisitFunctionDefinition(fn *FunctionDefinition, w ASTWalker) error {
+func (_ *DefaultVisitor) VisitFunctionDefinition(fn *FunctionDefinition, w Walker) error {
 	return w.WalkFunctionDefinition(fn)
 }
 
-func (_ *DefaultASTVisitor) VisitVariableDefinition(fn *VariableDefinition, w ASTWalker) error {
+func (_ *DefaultVisitor) VisitVariableDefinition(fn *VariableDefinition, w Walker) error {
 	return w.WalkVariableDefinition(fn)
 }
 
-func (_ *DefaultASTVisitor) VisitAssignmentStatement(stmt *AssignmentStatement, w ASTWalker) error {
+func (_ *DefaultVisitor) VisitAssignmentStatement(stmt *AssignmentStatement, w Walker) error {
 	return w.WalkAssignmentStatement(stmt)
 }
 
-func (_ *DefaultASTVisitor) VisitLoopStatement(stmt *LoopStatement, w ASTWalker) error {
+func (_ *DefaultVisitor) VisitLoopStatement(stmt *LoopStatement, w Walker) error {
 	return w.WalkLoopStatement(stmt)
 }
 
-func (_ *DefaultASTVisitor) VisitBreakStatement(stmt *BreakStatement) error {
+func (_ *DefaultVisitor) VisitBreakStatement(stmt *BreakStatement) error {
 	return nil
 }
 
-func (_ *DefaultASTVisitor) VisitContinueStatement(stmt *ContinueStatement) error {
+func (_ *DefaultVisitor) VisitContinueStatement(stmt *ContinueStatement) error {
 	return nil
 }
 
-func (_ *DefaultASTVisitor) VisitStructTypeDeclaration(tc *StructTypeDeclaration) error {
+func (_ *DefaultVisitor) VisitStructTypeDeclaration(tc *StructTypeDeclaration) error {
 	return nil
 }
 
-func (_ *DefaultASTVisitor) VisitModule(module *Module, w ASTWalker) error {
+func (_ *DefaultVisitor) VisitModule(module *Module, w Walker) error {
 	return w.WalkModule(module)
 }
 
-func (_ *DefaultASTVisitor) VisitNode(node Node, w ASTWalker) error {
+func (_ *DefaultVisitor) VisitNode(node Node, w Walker) error {
 	return w.WalkNode(node)
 }
 
-type DefaultASTWalker struct {
-	Visitor ASTVisitor
+type DefaultWalker struct {
+	Visitor Visitor
 }
 
-func (w *DefaultASTWalker) WalkExpression(expr Expression) error {
+func (w *DefaultWalker) WalkExpression(expr Expression) error {
 	var err error
 	switch expr := expr.(type) {
 	case *IdentExpression:
@@ -156,14 +156,14 @@ func (w *DefaultASTWalker) WalkExpression(expr Expression) error {
 	return err
 }
 
-func (w *DefaultASTWalker) WalkBinaryExpression(expr *BinaryExpression) error {
+func (w *DefaultWalker) WalkBinaryExpression(expr *BinaryExpression) error {
 	if err := w.Visitor.VisitNode(expr.Lhs, w); err != nil {
 		return err
 	}
 	return w.Visitor.VisitNode(expr.Rhs, w)
 }
 
-func (w *DefaultASTWalker) WalkCallExpression(expr *CallExpression) error {
+func (w *DefaultWalker) WalkCallExpression(expr *CallExpression) error {
 	if err := w.Visitor.VisitNode(expr.Callee, w); err != nil {
 		return err
 	}
@@ -175,7 +175,7 @@ func (w *DefaultASTWalker) WalkCallExpression(expr *CallExpression) error {
 	return nil
 }
 
-func (w *DefaultASTWalker) WalkStructInitExpression(expr *StructInitExpression) error {
+func (w *DefaultWalker) WalkStructInitExpression(expr *StructInitExpression) error {
 	for _, field := range expr.Fields {
 		if err := w.Visitor.VisitNode(field.Value, w); err != nil {
 			return err
@@ -184,7 +184,7 @@ func (w *DefaultASTWalker) WalkStructInitExpression(expr *StructInitExpression) 
 	return nil
 }
 
-func (w *DefaultASTWalker) WalkIfExpression(expr *IfExpression) error {
+func (w *DefaultWalker) WalkIfExpression(expr *IfExpression) error {
 	if err := w.Visitor.VisitNode(expr.Condition, w); err != nil {
 		return err
 	}
@@ -196,7 +196,7 @@ func (w *DefaultASTWalker) WalkIfExpression(expr *IfExpression) error {
 	return w.Visitor.VisitNode(expr.TrueBody, w)
 }
 
-func (w *DefaultASTWalker) WalkBlockExpression(expr *BlockExpression) error {
+func (w *DefaultWalker) WalkBlockExpression(expr *BlockExpression) error {
 	for _, node := range expr.Nodes {
 		if err := w.Visitor.VisitNode(node, w); err != nil {
 			return err
@@ -205,11 +205,11 @@ func (w *DefaultASTWalker) WalkBlockExpression(expr *BlockExpression) error {
 	return nil
 }
 
-func (w *DefaultASTWalker) WalkMemberExpression(expr *MemberExpression) error {
+func (w *DefaultWalker) WalkMemberExpression(expr *MemberExpression) error {
 	return w.Visitor.VisitNode(expr.Target, w)
 }
 
-func (w *DefaultASTWalker) WalkModule(module *Module) error {
+func (w *DefaultWalker) WalkModule(module *Module) error {
 	for _, node := range module.Nodes {
 		if err := w.Visitor.VisitNode(node, w); err != nil {
 			return err
@@ -218,26 +218,26 @@ func (w *DefaultASTWalker) WalkModule(module *Module) error {
 	return nil
 }
 
-func (w *DefaultASTWalker) WalkFunctionDefinition(fn *FunctionDefinition) error {
+func (w *DefaultWalker) WalkFunctionDefinition(fn *FunctionDefinition) error {
 	return w.WalkBlockExpression(fn.Body)
 }
 
-func (w *DefaultASTWalker) WalkVariableDefinition(fn *VariableDefinition) error {
+func (w *DefaultWalker) WalkVariableDefinition(fn *VariableDefinition) error {
 	return w.WalkNode(fn.Value)
 }
 
-func (w *DefaultASTWalker) WalkAssignmentStatement(stmt *AssignmentStatement) error {
+func (w *DefaultWalker) WalkAssignmentStatement(stmt *AssignmentStatement) error {
 	if err := w.WalkNode(stmt.Variable); err != nil {
 		return err
 	}
 	return w.WalkNode(stmt.Rhs)
 }
 
-func (w *DefaultASTWalker) WalkLoopStatement(stmt *LoopStatement) error {
+func (w *DefaultWalker) WalkLoopStatement(stmt *LoopStatement) error {
 	return w.WalkBlockExpression(stmt.Body)
 }
 
-func (w *DefaultASTWalker) WalkNode(node Node) error {
+func (w *DefaultWalker) WalkNode(node Node) error {
 	var err error
 	switch node := node.(type) {
 	case *Module:

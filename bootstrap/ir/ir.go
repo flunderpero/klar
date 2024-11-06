@@ -508,7 +508,7 @@ type loopScope struct {
 }
 
 type generator struct {
-	ast.DefaultASTVisitor
+	ast.DefaultVisitor
 	currentBlock        *Block
 	typeByNodeId        map[ast.NodeId]typed.Type
 	registerByNodeId    map[ast.NodeId]Register
@@ -627,7 +627,7 @@ func (g *generator) VisitIdentExpression(expr *ast.IdentExpression) error {
 	return nil
 }
 
-func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.ASTWalker) error {
+func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) error {
 	if err := w.WalkCallExpression(expr); err != nil {
 		return err
 	}
@@ -652,7 +652,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.ASTWalke
 	return nil
 }
 
-func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.ASTWalker) error {
+func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walker) error {
 	if err := w.WalkBinaryExpression(expr); err != nil {
 		return err
 	}
@@ -683,7 +683,7 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.ASTW
 	return nil
 }
 
-func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.ASTWalker) error {
+func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) error {
 	condBlock := g.newBlock(g.currentBlock)
 	g.currentBlock.Terminator = &Jump{Target: condBlock}
 	g.currentBlock.Result = UnitRegister
@@ -749,7 +749,7 @@ func (g *generator) lookupType(node ast.Node) Type {
 	panic(fmt.Sprintf("type not found: %T", typedType))
 }
 
-func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.ASTWalker) error {
+func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.Walker) error {
 	if err := w.WalkMemberExpression(expr); err != nil {
 		return err
 	}
@@ -783,7 +783,7 @@ func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.ASTW
 	return nil
 }
 
-func (g *generator) VisitBlockExpression(expr *ast.BlockExpression, w ast.ASTWalker) error {
+func (g *generator) VisitBlockExpression(expr *ast.BlockExpression, w ast.Walker) error {
 	g.enterScope()
 	defer g.exitScope()
 	if err := w.WalkBlockExpression(expr); err != nil {
@@ -799,7 +799,7 @@ func (g *generator) VisitBlockExpression(expr *ast.BlockExpression, w ast.ASTWal
 	return nil
 }
 
-func (g *generator) VisitStructInitExpression(expr *ast.StructInitExpression, w ast.ASTWalker) error {
+func (g *generator) VisitStructInitExpression(expr *ast.StructInitExpression, w ast.Walker) error {
 	if err := w.WalkStructInitExpression(expr); err != nil {
 		return err
 	}
@@ -840,7 +840,7 @@ func (g *generator) VisitStructInitExpression(expr *ast.StructInitExpression, w 
 	return nil
 }
 
-func (g *generator) VisitVariableDefinition(expr *ast.VariableDefinition, w ast.ASTWalker) error {
+func (g *generator) VisitVariableDefinition(expr *ast.VariableDefinition, w ast.Walker) error {
 	if err := w.WalkNode(expr.Value); err != nil {
 		return err
 	}
@@ -849,7 +849,7 @@ func (g *generator) VisitVariableDefinition(expr *ast.VariableDefinition, w ast.
 	return nil
 }
 
-func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w ast.ASTWalker) error {
+func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w ast.Walker) error {
 	if err := w.WalkNode(stmt.Rhs); err != nil {
 		return err
 	}
@@ -881,7 +881,7 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 	return nil
 }
 
-func (g *generator) VisitLoopStatement(stmt *ast.LoopStatement, w ast.ASTWalker) error {
+func (g *generator) VisitLoopStatement(stmt *ast.LoopStatement, w ast.Walker) error {
 	loopStartBlock := g.newBlock(g.currentBlock)
 	exitBlock := g.newBlock(loopStartBlock)
 	g.currentBlock.Terminator = &Jump{Target: loopStartBlock}
@@ -1016,7 +1016,7 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 	// Generate code for each function.
 	for _, function := range functions {
 		gen := &generator{
-			DefaultASTVisitor:   ast.DefaultASTVisitor{},
+			DefaultVisitor:      ast.DefaultVisitor{},
 			typeByNodeId:        typeMap,
 			registerByNodeId:    make(map[ast.NodeId]Register),
 			functions:           functionByName,
@@ -1032,7 +1032,7 @@ func GenerateIR(module *ast.Module, typeMap map[ast.NodeId]typed.Type) (*Module,
 		}
 		block := gen.newBlock()
 		gen.currentBlock = block
-		walker := &ast.DefaultASTWalker{Visitor: gen}
+		walker := &ast.DefaultWalker{Visitor: gen}
 		if err := walker.WalkNode(function.Definition.Body); err != nil {
 			return nil, err
 		}

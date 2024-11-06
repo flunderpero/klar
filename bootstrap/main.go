@@ -148,19 +148,19 @@ func main() {
 }
 
 func printTypedAST(node ast.Node, typeMap map[ast.NodeId]typed.Type) {
-	visitor := &printTypedASTWalker{ast.DefaultASTVisitor{}, typeMap}
-	walker := &ast.DefaultASTWalker{Visitor: visitor}
+	visitor := &printTypedASTWalker{ast.DefaultVisitor{}, typeMap}
+	walker := &ast.DefaultWalker{Visitor: visitor}
 	if err := walker.WalkNode(node); err != nil {
 		fmt.Println("ERROR:", err)
 	}
 }
 
 type printTypedASTWalker struct {
-	ast.DefaultASTVisitor
+	ast.DefaultVisitor
 	typeMap map[ast.NodeId]typed.Type
 }
 
-func (v *printTypedASTWalker) VisitNode(node ast.Node, w ast.ASTWalker) error {
+func (v *printTypedASTWalker) VisitNode(node ast.Node, w ast.Walker) error {
 	if err := w.WalkNode(node); err != nil {
 		return err
 	}

@@ -1,12 +1,19 @@
+struct Moon {
+    name Str
+}
+
 struct Planet {
     name Str
     radius Int
+    moon Moon
 }
 
 fn main() {
-    mut planet = Planet(name = "Earth", radius = 6378)
+    mut moon = Moon(name = "The Moon")
+    mut planet = Planet(name = "Earth", radius = 6378, moon = moon)
     print(planet.name)
     print_int(planet.radius)
     planet.name = "Pluto?"
     print(planet.name)
+    print(planet.moon.name)
 }

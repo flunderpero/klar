@@ -22,4 +22,5 @@ fn main() {
     let p = Planet(name="Earth", radius=6750)
     p.print_planet(" - nice to be on you!")
     print_int(p.diameter())
+    p.return_self().return_self().print_planet(" - again?")
 }

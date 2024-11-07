@@ -566,15 +566,7 @@ func (p *Parser) parseAssignmentStatement(lhs Expression) (*AssignmentStatement,
 }
 
 func (p *Parser) parseExpression() (Expression, error) {
-	expr, err := p.parseBinaryExpression(0)
-	if err != nil {
-		return nil, err
-	}
-	switch p.peek().Kind {
-	case token.LParen:
-		return p.parseCallExpression(expr)
-	}
-	return expr, nil
+	return p.parseBinaryExpression(0)
 }
 
 // Parse an expression as the left-hand-side and look at the token after it.
@@ -585,7 +577,7 @@ func (p *Parser) parseExpression() (Expression, error) {
 // a higher precedence than others, i.e. `a + b * c` should be parsed as `a + (b * c)`
 // and not as `(a + b) * c`.
 func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
-	lhs, err := p.parseMemberExpression()
+	lhs, err := p.parseExpressionWithPostfix()
 	if err != nil {
 		return nil, err
 	}
@@ -610,7 +602,7 @@ func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 			break
 		}
 		p.consumeAny()
-		rhs, err := p.parseMemberExpression()
+		rhs, err := p.parseExpressionWithPostfix()
 		if err != nil {
 			return nil, err
 		}
@@ -619,21 +611,45 @@ func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 	return lhs, nil
 }
 
-func (p *Parser) parseMemberExpression() (Expression, error) {
+// Parse an expression and then look at the next token to determine whether it's a
+// member expression or call expression.
+// Even though syntactically possible we forbid some expressions from being callable
+// or the lhs of a member expression like the if expression. You would have to use
+// parenthesis around those expressions to call them or use them as a member expression.
+func (p *Parser) parseExpressionWithPostfix() (Expression, error) {
 	expr, err := p.parsePrimaryExpression()
 	if err != nil {
 		return nil, err
 	}
-	for p.peek().Kind == token.Dot {
-		p.consumeAny()
-		field := p.peek()
-		if field.Kind != token.Ident {
-			return nil, fmt.Errorf("expected identifier after '.', got %s", field)
+	for p.index < len(p.tokens) {
+		_, is_forbidden_expression := expr.(*IfExpression)
+		if !is_forbidden_expression {
+			_, is_forbidden_expression = expr.(*BlockExpression)
 		}
-		p.consumeAny()
-		expr = &MemberExpression{node: p.newNode(), Target: expr, Field: Ident(field.Value)}
+		switch p.peek().Kind {
+		case token.Dot:
+			if is_forbidden_expression {
+				return nil, fmt.Errorf("block and if expressions cannot be used as member expressions")
+			}
+			p.consumeAny()
+			field := p.consumeAny()
+			if field.Kind != token.Ident {
+				return nil, fmt.Errorf("expected identifier after '.', got %s", field)
+			}
+			expr = &MemberExpression{node: p.newNode(), Target: expr, Field: Ident(field.Value)}
+		case token.LParen:
+			if is_forbidden_expression {
+				return nil, fmt.Errorf("block and if expressions cannot be called")
+			}
+			expr, err = p.parseCallExpression(expr)
+			if err != nil {
+				return nil, err
+			}
+		default:
+			return expr, nil
+		}
 	}
-	return expr, nil
+	panic("unreachable")
 }
 
 func (p *Parser) parsePrimaryExpression() (Expression, error) {
@@ -677,6 +693,7 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 	default:
 		return nil, fmt.Errorf("expected expression, got token: %s", t)
 	}
+
 }
 
 func (p *Parser) parseLoopStatement() (*LoopStatement, error) {

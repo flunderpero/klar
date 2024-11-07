@@ -60,24 +60,27 @@ func (l *lower) mangleName(node ast.Node) string {
 	return name
 }
 
-func (l *lower) VisitIdentExpression(expr *ast.IdentExpression) *ast.IdentExpression {
+func (l *lower) VisitIdentExpression(expr *ast.IdentExpression) (*ast.IdentExpression, bool) {
 	l.identExpressions = append(l.identExpressions, expr)
-	return expr
+	return expr, true
 }
 
-func (l *lower) VisitStructTypeDeclaration(s *ast.StructTypeDeclaration) *ast.StructTypeDeclaration {
+func (l *lower) VisitStructTypeDeclaration(s *ast.StructTypeDeclaration) (*ast.StructTypeDeclaration, bool) {
 	l.mangleName(s)
-	return s
+	return s, true
 }
 
-func (l *lower) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) *ast.FunctionDeclaration {
+func (l *lower) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) (*ast.FunctionDeclaration, bool) {
 	l.mangleName(decl)
-	return decl
+	return decl, true
 }
 
 // Convert `receiver.method(...)` call to `method(receiver, ...)` call.
-func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker) *ast.CallExpression {
-	expr = w.WalkCallExpression(expr)
+func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker) (*ast.CallExpression, bool) {
+	expr, ok := w.WalkCallExpression(expr)
+	if !ok {
+		return nil, false
+	}
 	calleeType := l.typeInfo.MustLookup(expr.Callee)
 	if method, isMethod := calleeType.(*typed.MethodType); isMethod {
 		if method.IsStatic() {
@@ -96,21 +99,21 @@ func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker)
 			l.loweredMethods[method] = functionType
 		}
 		l.typeInfo.Set(expr.Callee, functionType)
-		return expr
+		return expr, true
 	}
-	return expr
+	return expr, true
 }
 
 // Convert all references to the `Self` type with the actual receiver type
 // and mangle function names.
-func (l *lower) VisitImplDefinition(impl *ast.ImplDefinition, w TransformWalker) *ast.ImplDefinition {
+func (l *lower) VisitImplDefinition(impl *ast.ImplDefinition, w TransformWalker) (*ast.ImplDefinition, bool) {
 	for _, method := range impl.Methods {
 		l.mangleName(method.Decl)
 	}
-	return impl
+	return impl, true
 }
 
-func (l *lower) VisitModule(module *ast.Module, w TransformWalker) *ast.Module {
+func (l *lower) VisitModule(module *ast.Module, w TransformWalker) (*ast.Module, bool) {
 	l.enterScope(module)
 	defer l.exitScope()
 	return w.WalkModule(module)
@@ -135,7 +138,10 @@ func Lower(module *ast.Module, typeInfo *typed.TypeInfo) (*ast.Module, error) {
 		mangledNameScope:   []string{""},
 	}
 	walker := DefaultTransformWalker{Transformer: l}
-	module = walker.Transformer.VisitModule(module, &walker)
+	module, ok := walker.Transformer.VisitModule(module, &walker)
+	if !ok {
+		panic("Module has been deleted")
+	}
 	l.mangleIdentExpressions()
 	return module, nil
 }

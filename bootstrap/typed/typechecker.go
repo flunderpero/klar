@@ -510,9 +510,9 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 	return nil
 }
 
-func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast.Walker) error {
+func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) error {
 	args := []*FunctionArg{}
-	for _, arg := range fn.Args {
+	for _, arg := range decl.Args {
 		argType, found := tc.typeEnv.lookup(string(arg.Type))
 		if !found {
 			return fmt.Errorf("type %s not found for argument %s", arg.Type, arg.Name)
@@ -520,15 +520,15 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 		args = append(args, &FunctionArg{Name: arg.Name, Type: argType})
 	}
 	var returnType Type = &UnitType{}
-	if fn.ReturnType != "" {
-		ty, found := tc.typeEnv.lookup(string(fn.ReturnType))
+	if decl.ReturnType != "" {
+		ty, found := tc.typeEnv.lookup(string(decl.ReturnType))
 		if !found {
-			return fmt.Errorf("type %s not found for return type of function %s", fn.ReturnType, fn.Name)
+			return fmt.Errorf("type %s not found for return type of function %s", decl.ReturnType, decl.Name)
 		}
 		returnType = ty
 	}
 	funcType := &FunctionType{
-		Name:       fn.Name,
+		Name:       decl.Name,
 		Args:       args,
 		ReturnType: returnType,
 	}
@@ -541,14 +541,24 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 		}
 		tc.typeInfo.Main = funcType
 	}
-	tc.typeInfo.Set(fn, &DeclaredType{Type: funcType})
-	if err := tc.typeEnv.declare(string(fn.Name), funcType); err != nil {
-		return fmt.Errorf("failed to declare function %s: %w", fn.Name, err)
+	tc.typeInfo.Set(decl, &DeclaredType{Type: funcType})
+	if err := tc.typeEnv.declare(string(decl.Name), funcType); err != nil {
+		return fmt.Errorf("failed to declare function %s: %w", decl.Name, err)
 	}
+	return nil
+}
+
+func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast.Walker) error {
+	if err := tc.VisitFunctionDeclaration(fn.Decl); err != nil {
+		return err
+	}
+	funcDeclType := tc.typeInfo.MustLookup(fn.Decl).(*DeclaredType)
+	funcType := funcDeclType.Type.(*FunctionType)
+	tc.typeInfo.Set(fn, funcDeclType)
 	tc.enterScope()
 	defer tc.exitScope()
-	for i, arg := range fn.Args {
-		argType := args[i].Type
+	for i, arg := range fn.Decl.Args {
+		argType := funcType.Args[i].Type
 		if err := tc.typeEnv.declare(string(arg.Name), argType); err != nil {
 			return fmt.Errorf("failed to declare argument %s: %w", arg.Name, err)
 		}
@@ -577,11 +587,12 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 		return err
 	}
 	for _, method := range impl.Methods {
-		if _, err := structType.FindField(method.Name); err == nil {
-			return fmt.Errorf("method name %q already used in struct type %q", method.Name, structType.Name)
+		decl := method.Decl
+		if _, err := structType.FindField(decl.Name); err == nil {
+			return fmt.Errorf("method name %q already used in struct type %q", decl.Name, structType.Name)
 		}
-		if _, err := structType.FindMethod(method.Name); err == nil {
-			return fmt.Errorf("method name %q already used in struct type %q", method.Name, structType.Name)
+		if _, err := structType.FindMethod(decl.Name); err == nil {
+			return fmt.Errorf("method name %q already used in struct type %q", decl.Name, structType.Name)
 		}
 		typeDecl := tc.typeInfo.MustLookupDeclaredType(method)
 		functionType, ok := typeDecl.Type.(*FunctionType)

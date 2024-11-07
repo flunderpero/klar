@@ -37,7 +37,7 @@ func (l *lower) mangleName(node ast.Node) string {
 	switch node := node.(type) {
 	case *ast.Module:
 		name = string(node.Name)
-	case *ast.FunctionDefinition:
+	case *ast.FunctionDeclaration:
 		ty := l.typeInfo.MustLookupDeclaredType(node).Type.(typed.NamedType)
 		if ty != l.typeInfo.Main {
 			name = scope + "_" + string(ty.TypeName())
@@ -70,10 +70,9 @@ func (l *lower) VisitStructTypeDeclaration(s *ast.StructTypeDeclaration) *ast.St
 	return s
 }
 
-func (l *lower) VisitFunctionDefinition(fn *ast.FunctionDefinition, w TransformWalker) *ast.FunctionDefinition {
-	l.mangleName(fn)
-	fn = w.WalkFunctionDefinition(fn)
-	return fn
+func (l *lower) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) *ast.FunctionDeclaration {
+	l.mangleName(decl)
+	return decl
 }
 
 // Convert `receiver.method(...)` call to `method(receiver, ...)` call.
@@ -106,7 +105,7 @@ func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker)
 // and mangle function names.
 func (l *lower) VisitImplDefinition(impl *ast.ImplDefinition, w TransformWalker) *ast.ImplDefinition {
 	for _, method := range impl.Methods {
-		l.mangleName(method)
+		l.mangleName(method.Decl)
 	}
 	return impl
 }

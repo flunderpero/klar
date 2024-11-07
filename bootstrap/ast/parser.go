@@ -277,16 +277,14 @@ func (f *FunctionArg) String() string {
 	return fmt.Sprintf("FunctionArg(%s, %s)", f.Name, f.Type)
 }
 
-type FunctionDefinition struct {
+type FunctionDeclaration struct {
 	node
 	Name       Ident
 	Args       []FunctionArg
 	ReturnType TypeIdent
-	Body       *BlockExpression
 }
 
-func (f *FunctionDefinition) String() string {
-	body := strings.ReplaceAll(f.Body.String(), "\n", "\n    ")
+func (f *FunctionDeclaration) String() string {
 	args := ""
 	for _, arg := range f.Args {
 		if args != "" {
@@ -294,7 +292,18 @@ func (f *FunctionDefinition) String() string {
 		}
 		args += arg.String()
 	}
-	return fmt.Sprintf("FunctionDefinition(\n    %s(%s) %s\n    %s\n)", f.Name, args, f.ReturnType, body)
+	return fmt.Sprintf("FunctionDeclaration(%s(%s) %s)", f.Name, args, f.ReturnType)
+}
+
+type FunctionDefinition struct {
+	node
+	Decl *FunctionDeclaration
+	Body *BlockExpression
+}
+
+func (f *FunctionDefinition) String() string {
+	body := strings.ReplaceAll(f.Body.String(), "\n", "\n    ")
+	return fmt.Sprintf("FunctionDefinition(\n    %s\n    %s\n)", f.Decl, body)
 }
 
 type ImplDefinition struct {
@@ -459,7 +468,7 @@ func (p *Parser) parseStructInitExpression(typeIdent TypeIdent) (*StructInitExpr
 	return nil, fmt.Errorf("unexpected end of file while parsing struct init")
 }
 
-func (p *Parser) parseFunctionDefinition(acceptSelfParameter bool) (*FunctionDefinition, error) {
+func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDeclaration, error) {
 	if _, err := p.consume(token.Fn); err != nil {
 		return nil, err
 	}
@@ -515,13 +524,21 @@ func (p *Parser) parseFunctionDefinition(acceptSelfParameter bool) (*FunctionDef
 		returnType = TypeIdent(t.Value)
 
 	}
+	return &FunctionDeclaration{
+		node: p.newNode(), Name: Ident(nameToken.Value), Args: args, ReturnType: returnType,
+	}, nil
+}
+
+func (p *Parser) parseFunctionDefinition(acceptSelfParameter bool) (*FunctionDefinition, error) {
+	decl, err := p.parseFunctionDeclaration(acceptSelfParameter)
+	if err != nil {
+		return nil, err
+	}
 	body, err := p.parseBlockExpression()
 	if err != nil {
 		return nil, err
 	}
-	return &FunctionDefinition{
-		node: p.newNode(), Name: Ident(nameToken.Value), Args: args, ReturnType: returnType, Body: body,
-	}, nil
+	return &FunctionDefinition{node: p.newNode(), Decl: decl, Body: body}, nil
 }
 
 func (p *Parser) parseVariableDefinition() (*VariableDefinition, error) {

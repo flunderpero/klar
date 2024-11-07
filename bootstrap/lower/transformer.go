@@ -19,6 +19,7 @@ type Transformer interface {
 	VisitModule(module *ast.Module, w TransformWalker) *ast.Module
 	VisitStructTypeDeclaration(ty *ast.StructTypeDeclaration) *ast.StructTypeDeclaration
 	VisitImplDefinition(impl *ast.ImplDefinition, w TransformWalker) *ast.ImplDefinition
+	VisitFunctionDeclaration(decl *ast.FunctionDeclaration) *ast.FunctionDeclaration
 	VisitFunctionDefinition(fn *ast.FunctionDefinition, w TransformWalker) *ast.FunctionDefinition
 	VisitVariableDefinition(variable *ast.VariableDefinition, w TransformWalker) *ast.VariableDefinition
 	VisitExpression(expr ast.Expression, w TransformWalker) ast.Expression
@@ -99,6 +100,10 @@ func (_ *DefaultTransformer) VisitBlockExpression(expr *ast.BlockExpression, w T
 
 func (_ *DefaultTransformer) VisitExpression(expr ast.Expression, w TransformWalker) ast.Expression {
 	return w.WalkExpression(expr)
+}
+
+func (_ *DefaultTransformer) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) *ast.FunctionDeclaration {
+	return decl
 }
 
 func (_ *DefaultTransformer) VisitFunctionDefinition(fn *ast.FunctionDefinition, w TransformWalker) *ast.FunctionDefinition {

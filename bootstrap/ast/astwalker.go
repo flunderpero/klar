@@ -6,6 +6,7 @@ type Visitor interface {
 	VisitNode(node Node, w Walker) error
 	VisitModule(module *Module, w Walker) error
 	VisitStructTypeDeclaration(ty *StructTypeDeclaration) error
+	VisitFunctionDeclaration(decl *FunctionDeclaration) error
 	VisitFunctionDefinition(fn *FunctionDefinition, w Walker) error
 	VisitVariableDefinition(variable *VariableDefinition, w Walker) error
 	VisitExpression(expr Expression, w Walker) error
@@ -87,6 +88,10 @@ func (_ *DefaultVisitor) VisitBlockExpression(expr *BlockExpression, w Walker) e
 
 func (_ *DefaultVisitor) VisitExpression(expr Expression, w Walker) error {
 	return w.WalkExpression(expr)
+}
+
+func (_ *DefaultVisitor) VisitFunctionDeclaration(decl *FunctionDeclaration) error {
+	return nil
 }
 
 func (_ *DefaultVisitor) VisitFunctionDefinition(fn *FunctionDefinition, w Walker) error {
@@ -235,6 +240,9 @@ func (w *DefaultWalker) WalkImplDefinition(impl *ImplDefinition) error {
 }
 
 func (w *DefaultWalker) WalkFunctionDefinition(fn *FunctionDefinition) error {
+	if err := w.Visitor.VisitFunctionDeclaration(fn.Decl); err != nil {
+		return nil
+	}
 	return w.Visitor.VisitBlockExpression(fn.Body, w)
 }
 

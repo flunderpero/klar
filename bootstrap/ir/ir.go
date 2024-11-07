@@ -1021,7 +1021,7 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 			loopScopes:          []loopScope{},
 		}
 		// Make function arguments visible.
-		for _, arg := range definition.Args {
+		for _, arg := range definition.Decl.Args {
 			gen.symbolTable.declare(arg.Name, gen.nextRegister())
 		}
 		block := gen.newBlock()

@@ -303,6 +303,33 @@ func (c *Code) prepareBinaryOperation(resReg ir.Register, lhsReg ir.Register, rh
 	return reg, lhs, rhs
 }
 
+// It is not straight forward to load int values > 16bit. There are a lot of ways to optimize
+// this, but that's an exercise for another day.
+func (c *Code) generateIntImmediate(target register, value int64) {
+	if value >= 0 && value <= 0xFFFF {
+		c.emit("mov %s, #%d", target, value)
+		return
+	}
+	chunk0 := value & 0xFFFF
+	chunk1 := (value >> 16) & 0xFFFF
+	chunk2 := (value >> 32) & 0xFFFF
+	chunk3 := (value >> 48) & 0xFFFF
+	mov := "movz"
+	if chunk3 != 0 {
+		c.emit("%s %s, #%d, lsl #48", mov, target, chunk3)
+		mov = "movk"
+	}
+	if chunk2 != 0 {
+		c.emit("%s %s, #%d, lsl #32", mov, target, chunk2)
+		mov = "movk"
+	}
+	if chunk1 != 0 {
+		c.emit("%s %s, #%d, lsl #16", mov, target, chunk1)
+		mov = "movk"
+	}
+	c.emit("%s %s, #%d", mov, target, chunk0)
+}
+
 func (c *Code) generateBlock(block *ir.Block) error {
 	c.emit("%s:", c.blockLabel(block))
 	c.incIndent()
@@ -310,15 +337,15 @@ func (c *Code) generateBlock(block *ir.Block) error {
 		switch inst := inst.(type) {
 		case *ir.BoolConst:
 			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
-			c.emit("mov %s, %d", reg, inst.Value)
+			c.emit("mov %s, #%d", reg, inst.Value)
 			c.values[inst.Register()] = reg
 		case *ir.Int32Const:
 			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
-			c.emit("mov %s, %d", reg, inst.Value)
+			c.generateIntImmediate(reg.reg, inst.Value)
 			c.values[inst.Register()] = reg
 		case *ir.Int64Const:
 			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
-			c.emit("mov %s, %d", reg, inst.Value)
+			c.generateIntImmediate(reg.reg, inst.Value)
 			c.values[inst.Register()] = reg
 		case *ir.SignedInt64AddWithOverflow:
 			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)

@@ -1,3 +1,4 @@
 fn main() {
     print_int(42)
+    print_int(9223372036854775805)
 }

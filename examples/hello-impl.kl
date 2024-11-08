@@ -16,6 +16,14 @@ impl Planet {
     fn return_self(self) Self {
         self
     }
+
+    fn static() Str {
+        "I am static"
+    }
+
+    fn some_planet() Self {
+        Planet(name="Surprise", radius=4242)
+    }
 }
 
 fn main() {
@@ -23,4 +31,6 @@ fn main() {
     p.print_planet(" - nice to be on you!")
     print_int(p.diameter())
     p.return_self().return_self().print_planet(" - again?")
+    print(Planet.static())
+    Planet.some_planet().print_planet(" - wonderful")
 }

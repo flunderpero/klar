@@ -378,12 +378,12 @@ func (te *typeEnvironment) declareVariable(name string, ty Type, def *ast.Variab
 
 type TypeInfo struct {
 	types map[ast.NodeId]Type
-	// The type an `IdentExpression` points to if it does not refer to a variable.
-	typeBindings map[*ast.IdentExpression]NamedType
+	// The type an `AnyIdentExpression` points to if it does not refer to a variable.
+	typeBindings map[ast.AnyIdentExpression]NamedType
 	Main         *FunctionType
 }
 
-func (m *TypeInfo) LookupTypeBinding(expr *ast.IdentExpression) (NamedType, bool) {
+func (m *TypeInfo) LookupTypeBinding(expr ast.AnyIdentExpression) (NamedType, bool) {
 	declaration, found := m.typeBindings[expr]
 	return declaration, found
 }
@@ -466,13 +466,13 @@ func (tc *typeChecker) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpressio
 	return nil
 }
 
-func (tc *typeChecker) VisitIdentExpression(expr *ast.IdentExpression) error {
-	ty, found := tc.typeEnv.lookup(string(expr.Ident))
+func (tc *typeChecker) VisitAnyIdentExpression(expr ast.AnyIdentExpression) error {
+	ty, found := tc.typeEnv.lookup(string(expr.IdentString()))
 	if !found {
-		return fmt.Errorf("type not found for identifier %s", expr.Ident)
+		return fmt.Errorf("type not found for identifier %s", expr.IdentString())
 	}
 	tc.typeInfo.Set(expr, ty)
-	if !tc.typeEnv.isVariable(string(expr.Ident)) {
+	if !tc.typeEnv.isVariable(expr.IdentString()) {
 		if namedType, ok := ty.(NamedType); ok {
 			tc.typeInfo.typeBindings[expr] = namedType
 		}
@@ -902,7 +902,7 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 		DefaultVisitor: ast.DefaultVisitor{},
 		typeInfo: &TypeInfo{
 			types:        make(map[ast.NodeId]Type),
-			typeBindings: make(map[*ast.IdentExpression]NamedType),
+			typeBindings: make(map[ast.AnyIdentExpression]NamedType),
 		},
 		typeEnv: defaultTypeEnv,
 	}

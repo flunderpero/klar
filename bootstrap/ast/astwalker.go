@@ -18,7 +18,7 @@ type Visitor interface {
 	VisitBinaryExpression(expr *BinaryExpression, w Walker) error
 	VisitTraitDeclaration(impl *TraitDeclaration, w Walker) error
 	VisitImplDefinition(impl *ImplDefinition, w Walker) error
-	VisitIdentExpression(expr *IdentExpression) error
+	VisitAnyIdentExpression(expr AnyIdentExpression) error
 	VisitStringLiteralExpression(expr *StringLiteralExpression) error
 	VisitIntLiteralExpression(expr *IntLiteralExpression) error
 	VisitBoolLiteralExpression(expr *BoolLiteralExpression) error
@@ -48,7 +48,7 @@ type Walker interface {
 
 type DefaultVisitor struct{}
 
-func (_ *DefaultVisitor) VisitIdentExpression(expr *IdentExpression) error {
+func (_ *DefaultVisitor) VisitAnyIdentExpression(expr AnyIdentExpression) error {
 	return nil
 }
 
@@ -147,8 +147,8 @@ type DefaultWalker struct {
 func (w *DefaultWalker) WalkExpression(expr Expression) error {
 	var err error
 	switch expr := expr.(type) {
-	case *IdentExpression:
-		err = w.Visitor.VisitIdentExpression(expr)
+	case AnyIdentExpression:
+		err = w.Visitor.VisitAnyIdentExpression(expr)
 	case *StringLiteralExpression:
 		err = w.Visitor.VisitStringLiteralExpression(expr)
 	case *IntLiteralExpression:

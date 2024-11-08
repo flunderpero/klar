@@ -13,11 +13,11 @@ import (
 
 type lower struct {
 	DefaultTransformer
-	typeInfo         *typed.TypeInfo
-	loweredMethods   map[*typed.MethodType]*typed.FunctionType
-	mangledNames     map[ast.NodeId]string
-	mangledNameScope []string
-	identExpressions []*ast.IdentExpression
+	typeInfo            *typed.TypeInfo
+	loweredMethods      map[*typed.MethodType]*typed.FunctionType
+	mangledNames        map[ast.NodeId]string
+	mangledNameScope    []string
+	anyIdentExpressions []ast.AnyIdentExpression
 }
 
 func (l *lower) enterScope(node ast.Node) {
@@ -60,8 +60,8 @@ func (l *lower) mangleName(node ast.Node) string {
 	return name
 }
 
-func (l *lower) VisitIdentExpression(expr *ast.IdentExpression) (*ast.IdentExpression, bool) {
-	l.identExpressions = append(l.identExpressions, expr)
+func (l *lower) VisitAnyIdentExpression(expr ast.AnyIdentExpression) (ast.AnyIdentExpression, bool) {
+	l.anyIdentExpressions = append(l.anyIdentExpressions, expr)
 	return expr, true
 }
 
@@ -83,11 +83,10 @@ func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker)
 	}
 	calleeType := l.typeInfo.MustLookup(expr.Callee)
 	if method, isMethod := calleeType.(*typed.MethodType); isMethod {
-		if method.IsStatic() {
-			panic("Don't know how to handle static methods yet")
+		if !method.IsStatic() {
+			obj := expr.Callee.(*ast.MemberExpression).Target
+			expr.Args = append([]ast.Expression{obj}, expr.Args...)
 		}
-		obj := expr.Callee.(*ast.MemberExpression).Target
-		expr.Args = append([]ast.Expression{obj}, expr.Args...)
 		expr.Callee = ast.NewIdentExpression(method.Name, expr.Callee.Id())
 		functionType, found := l.loweredMethods[method]
 		if !found {
@@ -123,13 +122,20 @@ func (l *lower) VisitModule(module *ast.Module, w TransformWalker) (*ast.Module,
 	return w.WalkModule(module)
 }
 
-func (l *lower) mangleIdentExpressions() {
-	for _, expr := range l.identExpressions {
+func (l *lower) mangleAnyIdentExpressions() {
+	for _, expr := range l.anyIdentExpressions {
 		ty, found := l.typeInfo.LookupTypeBinding(expr)
 		if !found {
 			continue
 		}
-		expr.Ident = ast.Ident(ty.TypeName())
+		switch expr := expr.(type) {
+		case *ast.IdentExpression:
+			expr.Ident = ast.Ident(ty.TypeName())
+		case *ast.TypeIdentExpression:
+			expr.Ident = ast.TypeIdent(ty.TypeName())
+		default:
+			panic(fmt.Sprintf("name mangling not implemented for node: %T", expr))
+		}
 	}
 }
 
@@ -146,6 +152,6 @@ func Lower(module *ast.Module, typeInfo *typed.TypeInfo) (*ast.Module, error) {
 	if !ok {
 		panic("Module has been deleted")
 	}
-	l.mangleIdentExpressions()
+	l.mangleAnyIdentExpressions()
 	return module, nil
 }

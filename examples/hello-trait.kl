@@ -7,6 +7,8 @@ trait Foo {
     fn to_str(self) Str
 
     fn return_self(self) Self
+
+    fn new() Self
 }
 
 impl Foo for Planet {
@@ -17,9 +19,14 @@ impl Foo for Planet {
     fn return_self(self) Self {
         self
     }
+
+    fn new() Self {
+        Planet(name="Surprise", radius=4242)
+    }
 }
 
 fn main() {
     let p = Planet(name = "Earth", radius = 6750)
     print(p.return_self().to_str())
+    print(Planet.new().name)
 }

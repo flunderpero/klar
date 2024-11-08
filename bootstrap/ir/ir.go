@@ -609,12 +609,18 @@ func (g *generator) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) 
 	return nil
 }
 
-func (g *generator) VisitIdentExpression(expr *ast.IdentExpression) error {
-	if _, found := g.functions[expr.Ident]; found {
-		return nil
+func (g *generator) VisitAnyIdentExpression(expr ast.AnyIdentExpression) error {
+	switch expr := expr.(type) {
+	case *ast.IdentExpression:
+		if _, found := g.functions[expr.Ident]; found {
+			return nil
+		}
+		reg := g.symbolTable.lookup(expr.Ident)
+		g.registerByNodeId[expr.Id()] = reg
+	case *ast.TypeIdentExpression:
+	default:
+		panic(fmt.Sprintf("VisitAnyIdentExpression not implemented for expression type: %T", expr))
 	}
-	reg := g.symbolTable.lookup(expr.Ident)
-	g.registerByNodeId[expr.Id()] = reg
 	return nil
 }
 

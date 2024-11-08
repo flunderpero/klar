@@ -24,12 +24,30 @@ func (n *node) Id() NodeId {
 	return n.id
 }
 
+type AnyIdent interface {
+	IdentString()
+}
+
 type TypeIdent string
+
+func (ident TypeIdent) IdentString() string {
+	return string(ident)
+}
 
 type Ident string
 
+func (ident Ident) IdentString() string {
+	return string(ident)
+}
+
 type Expression interface {
 	String() string
+	Id() NodeId
+}
+
+type AnyIdentExpression interface {
+	String() string
+	IdentString() string
 	Id() NodeId
 }
 
@@ -40,6 +58,10 @@ type TypeIdentExpression struct {
 
 func (expr *TypeIdentExpression) String() string {
 	return fmt.Sprintf("TypeIdentExpression(%s)", expr.Ident)
+}
+
+func (expr *TypeIdentExpression) IdentString() string {
+	return expr.Ident.IdentString()
 }
 
 type IdentExpression struct {
@@ -53,6 +75,10 @@ func NewIdentExpression(ident Ident, id NodeId) *IdentExpression {
 
 func (expr *IdentExpression) String() string {
 	return fmt.Sprintf("IdentExpression(%s)", expr.Ident)
+}
+
+func (expr *IdentExpression) IdentString() string {
+	return expr.Ident.IdentString()
 }
 
 type StringLiteralExpression struct {
@@ -886,7 +912,7 @@ func (p *Parser) ParseNode() (Node, error) {
 			return p.parseImplDefinition()
 		case token.Trait:
 			return p.parseTraitDeclaration()
-		case token.Ident, token.LCurly, token.If, token.True, token.False, token.Str, token.Int, token.Self:
+		case token.Ident, token.TypeIdent, token.LCurly, token.If, token.True, token.False, token.Str, token.Int, token.Self:
 			expr, err := p.parseExpression()
 			if err != nil {
 				return nil, err

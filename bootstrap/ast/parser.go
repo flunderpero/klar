@@ -310,6 +310,11 @@ type ImplDefinition struct {
 	node
 	Target  TypeIdent
 	Methods []*FunctionDefinition
+	Trait   TypeIdent // optional
+}
+
+func (impl *ImplDefinition) ImplementsTrait() bool {
+	return impl.Trait != ""
 }
 
 func (impl *ImplDefinition) String() string {
@@ -318,7 +323,26 @@ func (impl *ImplDefinition) String() string {
 		functions += "\n    "
 		functions += strings.ReplaceAll(function.String(), "\n", "\n    ")
 	}
-	return fmt.Sprintf("ImplDefinition(\n    %s    %s\n)", impl.Target, functions)
+	target := string(impl.Target)
+	if impl.ImplementsTrait() {
+		target = fmt.Sprintf("%s for %s", impl.Trait, target)
+	}
+	return fmt.Sprintf("ImplDefinition(\n    %s    %s\n)", target, functions)
+}
+
+type TraitDeclaration struct {
+	node
+	Name        TypeIdent
+	MethodDecls []*FunctionDeclaration
+}
+
+func (trait *TraitDeclaration) String() string {
+	methods := ""
+	for _, decl := range trait.MethodDecls {
+		methods += "\n    "
+		methods += strings.ReplaceAll(decl.String(), "\n", "\n    ")
+	}
+	return fmt.Sprintf("TraitDeclaration(\n    %s    %s\n)", trait.Name, methods)
 }
 
 type VariableDefinition struct {
@@ -762,9 +786,20 @@ func (p *Parser) parseImplDefinition() (*ImplDefinition, error) {
 	if _, err := p.consume(token.Impl); err != nil {
 		return nil, err
 	}
-	typeIdentToken, err := p.consume(token.TypeIdent)
+	targetIdentToken, err := p.consume(token.TypeIdent)
 	if err != nil {
 		return nil, err
+	}
+	target := TypeIdent(targetIdentToken.Value)
+	var trait TypeIdent = ""
+	if p.peek().Kind == token.For {
+		p.consumeAny()
+		traitIdentToken, err := p.consume(token.TypeIdent)
+		if err != nil {
+			return nil, err
+		}
+		trait = target
+		target = TypeIdent(traitIdentToken.Value)
 	}
 	if _, err = p.consume(token.LCurly); err != nil {
 		return nil, err
@@ -775,7 +810,7 @@ func (p *Parser) parseImplDefinition() (*ImplDefinition, error) {
 		switch t.Kind {
 		case token.RCurly:
 			p.consumeAny()
-			return &ImplDefinition{node: p.newNode(), Target: TypeIdent(typeIdentToken.Value), Methods: functions}, nil
+			return &ImplDefinition{node: p.newNode(), Trait: trait, Target: target, Methods: functions}, nil
 		case token.Fn:
 			function, err := p.parseFunctionDefinition(true)
 			if err != nil {
@@ -787,6 +822,42 @@ func (p *Parser) parseImplDefinition() (*ImplDefinition, error) {
 		}
 	}
 	return nil, fmt.Errorf("unexpected end of file while parsing impl")
+}
+
+func (p *Parser) parseTraitDeclaration() (*TraitDeclaration, error) {
+	if _, err := p.consume(token.Trait); err != nil {
+		return nil, err
+	}
+	typeIdentToken, err := p.consume(token.TypeIdent)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = p.consume(token.LCurly); err != nil {
+		return nil, err
+	}
+	methodDecls := []*FunctionDeclaration{}
+	for p.index < len(p.tokens) {
+		t := p.peek()
+		switch t.Kind {
+		case token.RCurly:
+			p.consumeAny()
+			return &TraitDeclaration{
+				node:        p.newNode(),
+				Name:        TypeIdent(typeIdentToken.Value),
+				MethodDecls: methodDecls,
+			}, nil
+		case token.Fn:
+			decl, err := p.parseFunctionDeclaration(true)
+			if err != nil {
+				return nil, err
+			}
+			methodDecls = append(methodDecls, decl)
+		default:
+			return nil, fmt.Errorf("unexpected token: %s", t)
+		}
+	}
+	return nil, fmt.Errorf("unexpected end of file while parsing trait")
+
 }
 
 var EOF = fmt.Errorf("EOF")
@@ -813,6 +884,8 @@ func (p *Parser) ParseNode() (Node, error) {
 			return p.parseStructDeclaration()
 		case token.Impl:
 			return p.parseImplDefinition()
+		case token.Trait:
+			return p.parseTraitDeclaration()
 		case token.Ident, token.LCurly, token.If, token.True, token.False, token.Str, token.Int, token.Self:
 			expr, err := p.parseExpression()
 			if err != nil {

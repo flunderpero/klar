@@ -3,6 +3,7 @@ package typed
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/flunderpero/klar/bootstrap/ast"
 )
@@ -10,6 +11,11 @@ import (
 type Type interface {
 	String() string
 }
+
+var StrType = &strType{}
+var BoolType = &boolType{}
+var Int64Type = &int64Type{}
+var UnitType = &unitType{}
 
 type NamedType interface {
 	String() string
@@ -23,27 +29,50 @@ type CallableType interface {
 	CallReturnType() Type
 }
 
-type StrType struct{}
+type TypeWithTraits interface {
+	String() string
+	Traits() *[]*TraitType
+}
 
-func (ty *StrType) String() string {
+type strType struct {
+	traits []*TraitType
+}
+
+func (ty *strType) String() string {
 	return "StrType()"
 }
 
-type BoolType struct{}
+func (ty *strType) Traits() *[]*TraitType {
+	return &ty.traits
+}
 
-func (ty *BoolType) String() string {
+type boolType struct {
+	traits []*TraitType
+}
+
+func (ty *boolType) Traits() *[]*TraitType {
+	return &ty.traits
+}
+
+func (ty *boolType) String() string {
 	return "BoolType()"
 }
 
-type Int64Type struct{}
+type int64Type struct {
+	traits []*TraitType
+}
 
-func (ty *Int64Type) String() string {
+func (ty *int64Type) Traits() *[]*TraitType {
+	return &ty.traits
+}
+
+func (ty *int64Type) String() string {
 	return "Int64Type()"
 }
 
-type UnitType struct{}
+type unitType struct{}
 
-func (ty *UnitType) String() string {
+func (ty *unitType) String() string {
 	return "UnitType()"
 }
 
@@ -60,6 +89,10 @@ type DeclaredType struct {
 	Type Type
 }
 
+func (ty *DeclaredType) TypeName() string {
+	return ty.Type.String()
+}
+
 func (ty *DeclaredType) String() string {
 	return fmt.Sprintf("DeclaredType(%s)", ty.Type)
 }
@@ -68,6 +101,11 @@ type StructType struct {
 	Name    ast.TypeIdent
 	Fields  []StructField
 	Methods []*MethodType
+	traits  []*TraitType
+}
+
+func (ty *StructType) Traits() *[]*TraitType {
+	return &ty.traits
 }
 
 func (ty *StructType) TypeName() string {
@@ -127,6 +165,33 @@ func (ty *StructType) FindMember(name ast.Ident) (Type, error) {
 	return nil, fmt.Errorf("member %q not found in struct type %q", name, ty)
 }
 
+type TraitType struct {
+	Name    ast.TypeIdent
+	Methods []*MethodType
+}
+
+func (ty *TraitType) String() string {
+	methods := ""
+	for _, method := range ty.Methods {
+		methods += "\n    "
+		methods += method.String()
+	}
+	return fmt.Sprintf("TraitType(\n    %s%s\n)", ty.Name, methods)
+}
+
+func (ty *TraitType) TypeName() string {
+	return string(ty.Name)
+}
+
+func (ty *TraitType) FindMethod(name ast.Ident) (*MethodType, error) {
+	for _, method := range ty.Methods {
+		if method.Name == name {
+			return method, nil
+		}
+	}
+	return nil, fmt.Errorf("method %q not found in trait type %q", name, ty)
+}
+
 type ImplType struct {
 	ReceiverType Type
 }
@@ -157,6 +222,31 @@ func (ty *MethodType) CallArgTypes() []*FunctionArg {
 
 func (ty *MethodType) CallReturnType() Type {
 	return ty.ReturnType
+}
+
+func (ty *MethodType) CheckSameSignatureIgnoringReceiverTypes(other *MethodType) error {
+	match := func(thisType Type, otherType Type) bool {
+		if otherType == other.ReceiverType {
+			return thisType == ty.ReceiverType
+		}
+		return thisType == otherType
+	}
+	if ty.Name != other.Name {
+		return fmt.Errorf("method names do not match: %s != %s", ty.Name, other.Name)
+	}
+	if len(ty.Args) != len(other.Args) {
+		return fmt.Errorf("argument count does not match: %d != %d", len(ty.Args), len(other.Args))
+	}
+	if !match(ty.ReturnType, other.ReturnType) {
+		return fmt.Errorf("return types do not match: %s != %s", ty.ReturnType, other.ReturnType)
+	}
+	for i, arg := range ty.Args {
+		otherArg := other.Args[i]
+		if !match(arg.Type, otherArg.Type) {
+			return fmt.Errorf("argument types do not match: %s != %s", arg.Type, otherArg.Type)
+		}
+	}
+	return nil
 }
 
 func (ty *MethodType) IsStatic() bool {
@@ -191,6 +281,15 @@ func (ty *MethodType) ArgTypesWithoutSelf() []*FunctionArg {
 		return ty.Args[1:]
 	}
 	return ty.Args
+}
+
+func newMethodTypeFromFunctionType(functionType *FunctionType, receiverType NamedType) *MethodType {
+	return &MethodType{
+		Name:         functionType.Name,
+		Args:         functionType.Args,
+		ReturnType:   functionType.ReturnType,
+		ReceiverType: receiverType,
+	}
 }
 
 type FunctionType struct {
@@ -353,17 +452,17 @@ func (tc *typeChecker) exitLoop() {
 }
 
 func (tc *typeChecker) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
-	tc.typeInfo.Set(expr, &StrType{})
+	tc.typeInfo.Set(expr, StrType)
 	return nil
 }
 
 func (tc *typeChecker) VisitIntLiteralExpression(expr *ast.IntLiteralExpression) error {
-	tc.typeInfo.Set(expr, &Int64Type{})
+	tc.typeInfo.Set(expr, Int64Type)
 	return nil
 }
 
 func (tc *typeChecker) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) error {
-	tc.typeInfo.Set(expr, &BoolType{})
+	tc.typeInfo.Set(expr, BoolType)
 	return nil
 }
 
@@ -389,22 +488,22 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 	rhs := tc.typeInfo.MustLookup(expr.Rhs)
 	switch expr.Op {
 	case ast.OpAdd:
-		if _, ok := lhs.(*Int64Type); !ok {
+		if lhs != Int64Type {
 			return fmt.Errorf("lhs of add expression must be of type Int64Type, got %s", lhs)
 		}
-		if _, ok := rhs.(*Int64Type); !ok {
+		if rhs != Int64Type {
 			return fmt.Errorf("rhs of add expression must be of type Int64Type, got %s", rhs)
 		}
-		tc.typeInfo.Set(expr, &Int64Type{})
+		tc.typeInfo.Set(expr, Int64Type)
 	case ast.OpEquality:
 		// For now, we only support equality of numbers.
-		if _, ok := lhs.(*Int64Type); !ok {
+		if lhs != Int64Type {
 			return fmt.Errorf("lhs of equality expression must be of type Int64Type, got %s", lhs)
 		}
-		if _, ok := rhs.(*Int64Type); !ok {
+		if rhs != Int64Type {
 			return fmt.Errorf("rhs of equality expression must be of type Int64Type, got %s", rhs)
 		}
-		tc.typeInfo.Set(expr, &BoolType{})
+		tc.typeInfo.Set(expr, BoolType)
 	default:
 		return fmt.Errorf("unsupported binary operator: %s", expr.Op)
 	}
@@ -471,13 +570,12 @@ func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) e
 		return fmt.Errorf("failed to walk if expression: %w", err)
 	}
 	condType := tc.typeInfo.MustLookup(expr.Condition)
-	_, ok := tc.typeInfo.MustLookup(expr.Condition).(*BoolType)
-	if !ok {
+	if tc.typeInfo.MustLookup(expr.Condition) != BoolType {
 		return fmt.Errorf("the condition of an if expression must be a boolean type, got: %s", condType)
 	}
 	// Only an if expression with an else branch can have a type other than unit.
 	// And currently we don't have else branches.
-	tc.typeInfo.Set(expr, &UnitType{})
+	tc.typeInfo.Set(expr, UnitType)
 	return nil
 }
 
@@ -500,7 +598,7 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 		}
 		fieldType := tc.typeInfo.MustLookup(initField.Value)
 		if structField.Type != fieldType {
-			return fmt.Errorf("expected field %q to be of type %q, got %q", initField.Name, structField.Type, fieldType)
+			return fmt.Errorf("struct init: expected field %q to be of type %q, got %q", initField.Name, structField.Type, fieldType)
 		}
 	}
 	if len(expr.Fields) != len(structType.Fields) {
@@ -519,7 +617,7 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 		}
 		args = append(args, &FunctionArg{Name: arg.Name, Type: argType})
 	}
-	var returnType Type = &UnitType{}
+	var returnType Type = UnitType
 	if decl.ReturnType != "" {
 		ty, found := tc.typeEnv.lookup(string(decl.ReturnType))
 		if !found {
@@ -536,7 +634,7 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 		if len(funcType.Args) > 0 {
 			return fmt.Errorf("main function must not have arguments")
 		}
-		if _, ok := funcType.ReturnType.(*UnitType); !ok {
+		if _, ok := funcType.ReturnType.(*unitType); !ok {
 			return fmt.Errorf("main function must return () (no return value)")
 		}
 		tc.typeInfo.Main = funcType
@@ -569,6 +667,29 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 	return nil
 }
 
+func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.Walker) error {
+	// We need to forward declare the trait type so that we can set the `Self` type correctly.
+	traitType := &TraitType{Name: trait.Name}
+	if err := tc.typeEnv.declare(string(trait.Name), traitType); err != nil {
+		return err
+	}
+	tc.enterScope()
+	defer tc.exitScope()
+	if err := tc.typeEnv.declare("Self", traitType); err != nil {
+		return err
+	}
+	if err := w.WalkTraitDeclaration(trait); err != nil {
+		return err
+	}
+	for _, methodDecl := range trait.MethodDecls {
+		functionType := tc.typeInfo.MustLookupDeclaredType(methodDecl).Type.(*FunctionType)
+		methodType := newMethodTypeFromFunctionType(functionType, traitType)
+		traitType.Methods = append(traitType.Methods, methodType)
+	}
+	tc.typeInfo.Set(trait, traitType)
+	return nil
+}
+
 func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walker) error {
 	structType_, found := tc.typeEnv.lookup(string(impl.Target))
 	if !found {
@@ -586,6 +707,21 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 	if err := w.WalkImplDefinition(impl); err != nil {
 		return err
 	}
+	var traitType *TraitType = nil
+	unimplementedTraitMethods := map[ast.Ident]*MethodType{}
+	if impl.ImplementsTrait() {
+		traitType_, found := tc.typeEnv.lookup(string(impl.Trait))
+		if !found {
+			return fmt.Errorf("trait %q not found for impl definition", impl.Trait)
+		}
+		traitType, ok = traitType_.(*TraitType)
+		if !ok {
+			return fmt.Errorf("type %q is not a trait type", traitType_)
+		}
+		for _, method := range traitType.Methods {
+			unimplementedTraitMethods[method.Name] = method
+		}
+	}
 	for _, method := range impl.Methods {
 		decl := method.Decl
 		if _, err := structType.FindField(decl.Name); err == nil {
@@ -599,14 +735,37 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 		if !ok {
 			return fmt.Errorf("type is not a function type: %s", typeDecl)
 		}
-		methodType := &MethodType{
-			Name:         functionType.Name,
-			Args:         functionType.Args,
-			ReturnType:   functionType.ReturnType,
-			ReceiverType: structType,
+		methodType := newMethodTypeFromFunctionType(functionType, structType)
+		if traitType != nil {
+			traitMethodType, err := traitType.FindMethod(decl.Name)
+			if err != nil {
+				return fmt.Errorf("method %q not found in trait %q", decl.Name, traitType.Name)
+			}
+			if err := traitMethodType.CheckSameSignatureIgnoringReceiverTypes(methodType); err != nil {
+				return fmt.Errorf(
+					"method %q in impl %q has different signature than in trait %q: %w",
+					decl.Name,
+					structType.Name,
+					traitType.Name,
+					err,
+				)
+			}
+			delete(unimplementedTraitMethods, decl.Name)
 		}
 		structType.Methods = append(structType.Methods, methodType)
 		tc.typeInfo.Set(method, &DeclaredType{Type: methodType})
+	}
+	if traitType != nil && len(unimplementedTraitMethods) > 0 {
+		missingTraitMethods := []string{}
+		for _, method := range unimplementedTraitMethods {
+			missingTraitMethods = append(missingTraitMethods, method.String())
+		}
+		return fmt.Errorf(
+			"impl %q does not implement all methods of trait %q: %s",
+			structType.Name,
+			traitType.Name,
+			strings.Join(missingTraitMethods, ", "),
+		)
 	}
 	tc.typeInfo.Set(impl, &ImplType{ReceiverType: structType})
 	return nil
@@ -617,13 +776,13 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 		return err
 	}
 	valueType := tc.typeInfo.MustLookup(v.Value)
-	if _, ok := valueType.(*UnitType); ok {
+	if valueType == UnitType {
 		return fmt.Errorf("variable %s must have a non-unit type", v.Name)
 	}
 	if err := tc.typeEnv.declareVariable(string(v.Name), valueType, v); err != nil {
 		return err
 	}
-	tc.typeInfo.Set(v, &UnitType{})
+	tc.typeInfo.Set(v, UnitType)
 	return nil
 }
 
@@ -653,12 +812,12 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 	if varType != rhsType {
 		return fmt.Errorf("lhs and rhs of assignment statement must have the same type, got %s and %s", varType, rhsType)
 	}
-	tc.typeInfo.Set(s, &UnitType{})
+	tc.typeInfo.Set(s, UnitType)
 	return nil
 }
 
 func (tc *typeChecker) VisitLoopStatement(s *ast.LoopStatement, w ast.Walker) error {
-	tc.typeInfo.Set(s, &UnitType{})
+	tc.typeInfo.Set(s, UnitType)
 	tc.enterLoop()
 	defer tc.exitLoop()
 	return w.WalkLoopStatement(s)
@@ -668,7 +827,7 @@ func (tc *typeChecker) VisitContinueStatement(s *ast.ContinueStatement) error {
 	if tc.loopDepth == 0 {
 		return fmt.Errorf("continue statement outside of a loop")
 	}
-	tc.typeInfo.Set(s, &UnitType{})
+	tc.typeInfo.Set(s, UnitType)
 	return nil
 }
 
@@ -676,7 +835,7 @@ func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 	if tc.loopDepth == 0 {
 		return fmt.Errorf("break statement outside of a loop")
 	}
-	tc.typeInfo.Set(s, &UnitType{})
+	tc.typeInfo.Set(s, UnitType)
 	return nil
 }
 
@@ -698,7 +857,7 @@ func (tc *typeChecker) VisitStructTypeDeclaration(d *ast.StructTypeDeclaration) 
 }
 
 func (tc *typeChecker) VisitModule(module *ast.Module, w ast.Walker) error {
-	tc.typeInfo.Set(module, &UnitType{})
+	tc.typeInfo.Set(module, UnitType)
 	return w.WalkModule(module)
 }
 
@@ -716,26 +875,26 @@ func (tc *typeChecker) check(node ast.Node, w ast.Walker) (Type, error) {
 func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 	defaultTypeEnv := newTypeEnvironment(nil)
 	// Declare builtin types.
-	if err := defaultTypeEnv.declare("Str", &StrType{}); err != nil {
+	if err := defaultTypeEnv.declare("Str", StrType); err != nil {
 		panic(fmt.Errorf("Failed to declare Str type: %w", err))
 	}
-	if err := defaultTypeEnv.declare("Int", &Int64Type{}); err != nil {
+	if err := defaultTypeEnv.declare("Int", Int64Type); err != nil {
 		panic(fmt.Errorf("Failed to declare Int type: %w", err))
 	}
-	if err := defaultTypeEnv.declare("()", &UnitType{}); err != nil {
+	if err := defaultTypeEnv.declare("()", UnitType); err != nil {
 		panic(fmt.Errorf("Failed to declare UnitType type: %w", err))
 	}
 	if err := defaultTypeEnv.declare("print", &FunctionType{
 		Name:       "print",
-		Args:       []*FunctionArg{&FunctionArg{Name: "s", Type: &StrType{}}},
-		ReturnType: &UnitType{},
+		Args:       []*FunctionArg{&FunctionArg{Name: "s", Type: StrType}},
+		ReturnType: UnitType,
 	}); err != nil {
 		panic(fmt.Errorf("Failed to declare print function: %w", err))
 	}
 	if err := defaultTypeEnv.declare("print_int", &FunctionType{
 		Name:       "print_int",
-		Args:       []*FunctionArg{&FunctionArg{Name: "i", Type: &Int64Type{}}},
-		ReturnType: &UnitType{},
+		Args:       []*FunctionArg{&FunctionArg{Name: "i", Type: Int64Type}},
+		ReturnType: UnitType,
 	}); err != nil {
 		panic(fmt.Errorf("Failed to declare print_int function: %w", err))
 	}

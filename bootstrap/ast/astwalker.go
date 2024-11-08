@@ -16,6 +16,7 @@ type Visitor interface {
 	VisitStructInitExpression(expr *StructInitExpression, w Walker) error
 	VisitIfExpression(expr *IfExpression, w Walker) error
 	VisitBinaryExpression(expr *BinaryExpression, w Walker) error
+	VisitTraitDeclaration(impl *TraitDeclaration, w Walker) error
 	VisitImplDefinition(impl *ImplDefinition, w Walker) error
 	VisitIdentExpression(expr *IdentExpression) error
 	VisitStringLiteralExpression(expr *StringLiteralExpression) error
@@ -31,6 +32,7 @@ type Walker interface {
 	WalkNode(node Node) error
 	WalkModule(module *Module) error
 	WalkFunctionDefinition(fn *FunctionDefinition) error
+	WalkTraitDeclaration(impl *TraitDeclaration) error
 	WalkImplDefinition(impl *ImplDefinition) error
 	WalkVariableDefinition(variable *VariableDefinition) error
 	WalkExpression(expr Expression) error
@@ -96,6 +98,10 @@ func (_ *DefaultVisitor) VisitFunctionDeclaration(decl *FunctionDeclaration) err
 
 func (_ *DefaultVisitor) VisitFunctionDefinition(fn *FunctionDefinition, w Walker) error {
 	return w.WalkFunctionDefinition(fn)
+}
+
+func (_ *DefaultVisitor) VisitTraitDeclaration(impl *TraitDeclaration, w Walker) error {
+	return w.WalkTraitDeclaration(impl)
 }
 
 func (_ *DefaultVisitor) VisitImplDefinition(impl *ImplDefinition, w Walker) error {
@@ -229,6 +235,16 @@ func (w *DefaultWalker) WalkModule(module *Module) error {
 	return nil
 }
 
+func (w *DefaultWalker) WalkTraitDeclaration(impl *TraitDeclaration) error {
+	for _, decl := range impl.MethodDecls {
+		err := w.Visitor.VisitFunctionDeclaration(decl)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (w *DefaultWalker) WalkImplDefinition(impl *ImplDefinition) error {
 	for _, method := range impl.Methods {
 		err := w.Visitor.VisitFunctionDefinition(method, w)
@@ -268,6 +284,8 @@ func (w *DefaultWalker) WalkNode(node Node) error {
 		err = w.Visitor.VisitModule(node, w)
 	case *StructTypeDeclaration:
 		err = w.Visitor.VisitStructTypeDeclaration(node)
+	case *TraitDeclaration:
+		err = w.Visitor.VisitTraitDeclaration(node, w)
 	case *ImplDefinition:
 		err = w.Visitor.VisitImplDefinition(node, w)
 	case *FunctionDefinition:

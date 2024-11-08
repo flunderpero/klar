@@ -38,6 +38,8 @@ const (
 	Continue   TokenKind = "continue"
 	Struct     TokenKind = "struct"
 	Impl       TokenKind = "impl"
+	Trait      TokenKind = "trait"
+	For        TokenKind = "for"
 	Self       TokenKind = "self"
 	EOF        TokenKind = "EOF"
 )
@@ -153,6 +155,10 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 				token = Token{Kind: Struct, Value: ""}
 			case "impl":
 				token = Token{Kind: Impl, Value: ""}
+			case "trait":
+				token = Token{Kind: Trait, Value: ""}
+			case "for":
+				token = Token{Kind: For, Value: ""}
 			case "self":
 				token = Token{Kind: Self, Value: ""}
 			default:

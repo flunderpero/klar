@@ -18,6 +18,7 @@ type Transformer interface {
 	VisitNode(node ast.Node, w TransformWalker) (ast.Node, bool)
 	VisitModule(module *ast.Module, w TransformWalker) (*ast.Module, bool)
 	VisitStructTypeDeclaration(ty *ast.StructTypeDeclaration) (*ast.StructTypeDeclaration, bool)
+	VisitTraitDeclaration(train *ast.TraitDeclaration, w TransformWalker) (*ast.TraitDeclaration, bool)
 	VisitImplDefinition(impl *ast.ImplDefinition, w TransformWalker) (*ast.ImplDefinition, bool)
 	VisitFunctionDeclaration(decl *ast.FunctionDeclaration) (*ast.FunctionDeclaration, bool)
 	VisitFunctionDefinition(fn *ast.FunctionDefinition, w TransformWalker) (*ast.FunctionDefinition, bool)
@@ -43,6 +44,7 @@ type TransformWalker interface {
 	WalkNode(node ast.Node) (ast.Node, bool)
 	WalkModule(module *ast.Module) (*ast.Module, bool)
 	WalkFunctionDefinition(fn *ast.FunctionDefinition) (*ast.FunctionDefinition, bool)
+	WalkTraitDeclaration(trait *ast.TraitDeclaration) (*ast.TraitDeclaration, bool)
 	WalkImplDefinition(impl *ast.ImplDefinition) (*ast.ImplDefinition, bool)
 	WalkVariableDefinition(variable *ast.VariableDefinition) (*ast.VariableDefinition, bool)
 	WalkExpression(expr ast.Expression) (ast.Expression, bool)
@@ -108,6 +110,10 @@ func (_ *DefaultTransformer) VisitFunctionDeclaration(decl *ast.FunctionDeclarat
 
 func (_ *DefaultTransformer) VisitFunctionDefinition(fn *ast.FunctionDefinition, w TransformWalker) (*ast.FunctionDefinition, bool) {
 	return w.WalkFunctionDefinition(fn)
+}
+
+func (_ *DefaultTransformer) VisitTraitDeclaration(trait *ast.TraitDeclaration, w TransformWalker) (*ast.TraitDeclaration, bool) {
+	return w.WalkTraitDeclaration(trait)
 }
 
 func (_ *DefaultTransformer) VisitImplDefinition(impl *ast.ImplDefinition, w TransformWalker) (*ast.ImplDefinition, bool) {
@@ -272,6 +278,18 @@ func (w *DefaultTransformWalker) WalkModule(module *ast.Module) (*ast.Module, bo
 	return module, true
 }
 
+func (w *DefaultTransformWalker) WalkTraitDeclaration(trait *ast.TraitDeclaration) (*ast.TraitDeclaration, bool) {
+	methodDecls := []*ast.FunctionDeclaration{}
+	for _, methodDecl := range trait.MethodDecls {
+		transformed, ok := w.Transformer.VisitFunctionDeclaration(methodDecl)
+		if ok {
+			methodDecls = append(methodDecls, transformed)
+		}
+	}
+	trait.MethodDecls = methodDecls
+	return trait, true
+}
+
 func (w *DefaultTransformWalker) WalkImplDefinition(impl *ast.ImplDefinition) (*ast.ImplDefinition, bool) {
 	methods := []*ast.FunctionDefinition{}
 	for _, method := range impl.Methods {
@@ -331,6 +349,8 @@ func (w *DefaultTransformWalker) WalkNode(node ast.Node) (ast.Node, bool) {
 		return w.Transformer.VisitModule(node, w)
 	case *ast.StructTypeDeclaration:
 		return w.Transformer.VisitStructTypeDeclaration(node)
+	case *ast.TraitDeclaration:
+		return w.Transformer.VisitTraitDeclaration(node, w)
 	case *ast.ImplDefinition:
 		return w.Transformer.VisitImplDefinition(node, w)
 	case *ast.FunctionDefinition:

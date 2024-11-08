@@ -113,6 +113,10 @@ func (l *lower) VisitImplDefinition(impl *ast.ImplDefinition, w TransformWalker)
 	return impl, true
 }
 
+func (l *lower) VisitTraitDeclaration(trait *ast.TraitDeclaration, w TransformWalker) (*ast.TraitDeclaration, bool) {
+	return nil, false
+}
+
 func (l *lower) VisitModule(module *ast.Module, w TransformWalker) (*ast.Module, bool) {
 	l.enterScope(module)
 	defer l.exitScope()

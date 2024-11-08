@@ -1,0 +1,25 @@
+struct Planet {
+    name Str
+    radius Int
+}
+
+trait Foo {
+    fn to_str(self) Str
+
+    fn return_self(self) Self
+}
+
+impl Foo for Planet {
+    fn to_str(self) Str {
+        self.name
+    }
+
+    fn return_self(self) Self {
+        self
+    }
+}
+
+fn main() {
+    let p = Planet(name = "Earth", radius = 6750)
+    print(p.return_self().to_str())
+}

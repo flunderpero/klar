@@ -652,19 +652,19 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 	switch expr.Op {
 	case ast.OpAdd:
 		ty := g.typeInfo.MustLookup(expr)
-		if _, ok := ty.(*typed.Int64Type); !ok {
+		if ty != typed.Int64Type {
 			// For now we only support 64 bit integers.
 			return fmt.Errorf("add expression must be of type Int64Type, got %s", ty)
 		}
 		g.append(&SignedInt64AddWithOverflow{register: g.nextRegister(), Lhs: lhs, Rhs: rhs}, expr)
 	case ast.OpEquality:
 		// For now, we only know how to compare 64 bit integers.
-		lhsType, ok := g.typeInfo.MustLookup(expr.Lhs).(*typed.Int64Type)
-		if !ok {
+		lhsType := g.typeInfo.MustLookup(expr.Lhs)
+		if lhsType != typed.Int64Type {
 			return fmt.Errorf("type of lhs is not Int64Type, but %s", lhsType)
 		}
-		rhsType, ok := g.typeInfo.MustLookup(expr.Rhs).(*typed.Int64Type)
-		if !ok {
+		rhsType := g.typeInfo.MustLookup(expr.Rhs)
+		if rhsType != typed.Int64Type {
 			return fmt.Errorf("type of rhs is not Int64Type, but %s", rhsType)
 		}
 		g.append(&Int64Compare{register: g.nextRegister(), Op: Int64CompOpEQ, Lhs: lhs, Rhs: rhs}, expr)
@@ -904,13 +904,15 @@ type DeclaredTypes struct {
 }
 
 func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
-	switch ty := ty.(type) {
-	case *typed.UnitType:
+	switch ty {
+	case typed.UnitType:
 		return UnitType
-	case *typed.StrType:
+	case typed.StrType:
 		return StrType
-	case *typed.Int64Type:
+	case typed.Int64Type:
 		return Int64Type
+	}
+	switch ty := ty.(type) {
 	case *typed.StructType:
 		return dt.Types[ty.Name]
 	default:

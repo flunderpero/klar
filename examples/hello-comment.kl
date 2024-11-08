@@ -1,0 +1,5 @@
+-- This is a line comment.
+
+fn main() { -- Another comment
+    print("Hello, comment!")
+}

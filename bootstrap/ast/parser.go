@@ -883,7 +883,6 @@ func (p *Parser) parseTraitDeclaration() (*TraitDeclaration, error) {
 		}
 	}
 	return nil, fmt.Errorf("unexpected end of file while parsing trait")
-
 }
 
 var EOF = fmt.Errorf("EOF")
@@ -912,6 +911,8 @@ func (p *Parser) ParseNode() (Node, error) {
 			return p.parseImplDefinition()
 		case token.Trait:
 			return p.parseTraitDeclaration()
+		case token.LineComment:
+			p.consumeAny()
 		case token.Ident, token.TypeIdent, token.LCurly, token.If, token.True, token.False, token.Str, token.Int, token.Self:
 			expr, err := p.parseExpression()
 			if err != nil {

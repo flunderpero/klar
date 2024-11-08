@@ -13,35 +13,37 @@ type Token struct {
 type TokenKind string
 
 const (
-	Ident      TokenKind = "ident"
-	TypeIdent  TokenKind = "typeident"
-	LParen     TokenKind = "("
-	RParen     TokenKind = ")"
-	LCurly     TokenKind = "{"
-	RCurly     TokenKind = "}"
-	Comma      TokenKind = ","
-	Dot        TokenKind = "."
-	Plus       TokenKind = "+"
-	Equal      TokenKind = "="
-	EqualEqual TokenKind = "=="
-	Str        TokenKind = "Str"
-	Int        TokenKind = "Int"
-	True       TokenKind = "true"
-	False      TokenKind = "false"
-	If         TokenKind = "if"
-	Else       TokenKind = "else"
-	Fn         TokenKind = "fn"
-	Mut        TokenKind = "mut"
-	Let        TokenKind = "let"
-	Loop       TokenKind = "loop"
-	Break      TokenKind = "break"
-	Continue   TokenKind = "continue"
-	Struct     TokenKind = "struct"
-	Impl       TokenKind = "impl"
-	Trait      TokenKind = "trait"
-	For        TokenKind = "for"
-	Self       TokenKind = "self"
-	EOF        TokenKind = "EOF"
+	Ident       TokenKind = "ident"
+	TypeIdent   TokenKind = "typeident"
+	LParen      TokenKind = "("
+	RParen      TokenKind = ")"
+	LCurly      TokenKind = "{"
+	RCurly      TokenKind = "}"
+	Comma       TokenKind = ","
+	Dot         TokenKind = "."
+	Plus        TokenKind = "+"
+	Equal       TokenKind = "="
+	EqualEqual  TokenKind = "=="
+	Str         TokenKind = "Str"
+	Int         TokenKind = "Int"
+	True        TokenKind = "true"
+	False       TokenKind = "false"
+	If          TokenKind = "if"
+	Else        TokenKind = "else"
+	Fn          TokenKind = "fn"
+	Mut         TokenKind = "mut"
+	Let         TokenKind = "let"
+	Loop        TokenKind = "loop"
+	Break       TokenKind = "break"
+	Continue    TokenKind = "continue"
+	Struct      TokenKind = "struct"
+	Impl        TokenKind = "impl"
+	Trait       TokenKind = "trait"
+	For         TokenKind = "for"
+	Self        TokenKind = "self"
+	Minus       TokenKind = "-"
+	LineComment TokenKind = "line_comment"
+	EOF         TokenKind = "EOF"
 )
 
 func (t Token) String() string {
@@ -83,6 +85,24 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			tokens = append(tokens, Token{Kind: Plus, Value: ""})
 		} else if c == '.' {
 			tokens = append(tokens, Token{Kind: Dot, Value: ""})
+		} else if c == '-' {
+			if src[i] == '-' {
+				i += 1
+				value := []byte{}
+				for i < len(src) {
+					c = src[i]
+					if c != '\n' {
+						i += 1
+						value = append(value, c)
+					} else {
+						break
+					}
+				}
+				tokens = append(tokens, Token{Kind: LineComment, Value: string(value)})
+			} else {
+				tokens = append(tokens, Token{Kind: Minus, Value: ""})
+			}
+
 		} else if c == '=' {
 			if src[i] == '=' {
 				i += 1

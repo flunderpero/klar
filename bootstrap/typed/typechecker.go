@@ -378,12 +378,12 @@ func (te *typeEnvironment) declareVariable(name string, ty Type, def *ast.Variab
 
 type TypeInfo struct {
 	types map[ast.NodeId]Type
-	// The type an `AnyIdentExpression` points to if it does not refer to a variable.
-	typeBindings map[ast.AnyIdentExpression]NamedType
+	// The type an `ReferenceExpression` points to if it does not refer to a variable.
+	typeBindings map[ast.ReferenceExpression]NamedType
 	Main         *FunctionType
 }
 
-func (m *TypeInfo) LookupTypeBinding(expr ast.AnyIdentExpression) (NamedType, bool) {
+func (m *TypeInfo) LookupTypeBinding(expr ast.ReferenceExpression) (NamedType, bool) {
 	declaration, found := m.typeBindings[expr]
 	return declaration, found
 }
@@ -466,13 +466,22 @@ func (tc *typeChecker) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpressio
 	return nil
 }
 
-func (tc *typeChecker) VisitAnyIdentExpression(expr ast.AnyIdentExpression) error {
-	ty, found := tc.typeEnv.lookup(string(expr.IdentString()))
+func (tc *typeChecker) VisitReferenceExpression(expr ast.ReferenceExpression) error {
+	var refStr string
+	switch expr := expr.(type) {
+	case *ast.TypeIdentExpression:
+		refStr = string(expr.Ident)
+	case *ast.IdentExpression:
+		refStr = string(expr.Ident)
+	default:
+		panic(fmt.Sprintf("unexpected reference expression type: %T", expr))
+	}
+	ty, found := tc.typeEnv.lookup(refStr)
 	if !found {
-		return fmt.Errorf("type not found for identifier %s", expr.IdentString())
+		return fmt.Errorf("type not found for identifier %s", refStr)
 	}
 	tc.typeInfo.Set(expr, ty)
-	if !tc.typeEnv.isVariable(expr.IdentString()) {
+	if !tc.typeEnv.isVariable(refStr) {
 		if namedType, ok := ty.(NamedType); ok {
 			tc.typeInfo.typeBindings[expr] = namedType
 		}
@@ -902,7 +911,7 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 		DefaultVisitor: ast.DefaultVisitor{},
 		typeInfo: &TypeInfo{
 			types:        make(map[ast.NodeId]Type),
-			typeBindings: make(map[ast.AnyIdentExpression]NamedType),
+			typeBindings: make(map[ast.ReferenceExpression]NamedType),
 		},
 		typeEnv: defaultTypeEnv,
 	}

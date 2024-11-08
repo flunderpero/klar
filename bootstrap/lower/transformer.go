@@ -30,7 +30,7 @@ type Transformer interface {
 	VisitStructInitExpression(expr *ast.StructInitExpression, w TransformWalker) (*ast.StructInitExpression, bool)
 	VisitIfExpression(expr *ast.IfExpression, w TransformWalker) (*ast.IfExpression, bool)
 	VisitBinaryExpression(expr *ast.BinaryExpression, w TransformWalker) (*ast.BinaryExpression, bool)
-	VisitAnyIdentExpression(expr ast.AnyIdentExpression) (ast.AnyIdentExpression, bool)
+	VisitReferenceExpression(expr ast.ReferenceExpression) (ast.ReferenceExpression, bool)
 	VisitStringLiteralExpression(expr *ast.StringLiteralExpression) (*ast.StringLiteralExpression, bool)
 	VisitIntLiteralExpression(expr *ast.IntLiteralExpression) (*ast.IntLiteralExpression, bool)
 	VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) (*ast.BoolLiteralExpression, bool)
@@ -60,7 +60,7 @@ type TransformWalker interface {
 
 type DefaultTransformer struct{}
 
-func (_ *DefaultTransformer) VisitAnyIdentExpression(expr ast.AnyIdentExpression) (ast.AnyIdentExpression, bool) {
+func (_ *DefaultTransformer) VisitReferenceExpression(expr ast.ReferenceExpression) (ast.ReferenceExpression, bool) {
 	return expr, true
 }
 
@@ -158,8 +158,8 @@ type DefaultTransformWalker struct {
 
 func (w *DefaultTransformWalker) WalkExpression(expr ast.Expression) (ast.Expression, bool) {
 	switch expr := expr.(type) {
-	case ast.AnyIdentExpression:
-		return w.Transformer.VisitAnyIdentExpression(expr)
+	case ast.ReferenceExpression:
+		return w.Transformer.VisitReferenceExpression(expr)
 	case *ast.StringLiteralExpression:
 		return w.Transformer.VisitStringLiteralExpression(expr)
 	case *ast.IntLiteralExpression:
@@ -321,7 +321,7 @@ func (w *DefaultTransformWalker) WalkVariableDefinition(variable *ast.VariableDe
 }
 
 func (w *DefaultTransformWalker) WalkAssignmentStatement(stmt *ast.AssignmentStatement) (*ast.AssignmentStatement, bool) {
-	variable, variableOk := w.Transformer.VisitAnyIdentExpression(stmt.Variable)
+	variable, variableOk := w.Transformer.VisitReferenceExpression(stmt.Variable)
 	rhs, rhsOk := w.Transformer.VisitExpression(stmt.Rhs, w)
 	if variableOk != rhsOk {
 		panic("either both or none of variable and rhs can be deleted")

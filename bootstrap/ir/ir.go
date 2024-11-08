@@ -609,7 +609,7 @@ func (g *generator) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) 
 	return nil
 }
 
-func (g *generator) VisitAnyIdentExpression(expr ast.AnyIdentExpression) error {
+func (g *generator) VisitReferenceExpression(expr ast.ReferenceExpression) error {
 	switch expr := expr.(type) {
 	case *ast.IdentExpression:
 		if _, found := g.functions[expr.Ident]; found {
@@ -619,7 +619,7 @@ func (g *generator) VisitAnyIdentExpression(expr ast.AnyIdentExpression) error {
 		g.registerByNodeId[expr.Id()] = reg
 	case *ast.TypeIdentExpression:
 	default:
-		panic(fmt.Sprintf("VisitAnyIdentExpression not implemented for expression type: %T", expr))
+		panic(fmt.Sprintf("VisitReferenceExpression not implemented for expression type: %T", expr))
 	}
 	return nil
 }

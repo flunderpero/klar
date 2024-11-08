@@ -13,11 +13,11 @@ import (
 
 type lower struct {
 	DefaultTransformer
-	typeInfo            *typed.TypeInfo
-	loweredMethods      map[*typed.MethodType]*typed.FunctionType
-	mangledNames        map[ast.NodeId]string
-	mangledNameScope    []string
-	anyIdentExpressions []ast.AnyIdentExpression
+	typeInfo             *typed.TypeInfo
+	loweredMethods       map[*typed.MethodType]*typed.FunctionType
+	mangledNames         map[ast.NodeId]string
+	mangledNameScope     []string
+	referenceExpressions []ast.ReferenceExpression
 }
 
 func (l *lower) enterScope(node ast.Node) {
@@ -60,8 +60,8 @@ func (l *lower) mangleName(node ast.Node) string {
 	return name
 }
 
-func (l *lower) VisitAnyIdentExpression(expr ast.AnyIdentExpression) (ast.AnyIdentExpression, bool) {
-	l.anyIdentExpressions = append(l.anyIdentExpressions, expr)
+func (l *lower) VisitReferenceExpression(expr ast.ReferenceExpression) (ast.ReferenceExpression, bool) {
+	l.referenceExpressions = append(l.referenceExpressions, expr)
 	return expr, true
 }
 
@@ -122,8 +122,8 @@ func (l *lower) VisitModule(module *ast.Module, w TransformWalker) (*ast.Module,
 	return w.WalkModule(module)
 }
 
-func (l *lower) mangleAnyIdentExpressions() {
-	for _, expr := range l.anyIdentExpressions {
+func (l *lower) mangleReferenceExpressions() {
+	for _, expr := range l.referenceExpressions {
 		ty, found := l.typeInfo.LookupTypeBinding(expr)
 		if !found {
 			continue
@@ -152,6 +152,6 @@ func Lower(module *ast.Module, typeInfo *typed.TypeInfo) (*ast.Module, error) {
 	if !ok {
 		panic("Module has been deleted")
 	}
-	l.mangleAnyIdentExpressions()
+	l.mangleReferenceExpressions()
 	return module, nil
 }

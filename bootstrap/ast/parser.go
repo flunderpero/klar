@@ -24,31 +24,19 @@ func (n *node) Id() NodeId {
 	return n.id
 }
 
-type AnyIdent interface {
-	IdentString()
-}
-
 type TypeIdent string
 
-func (ident TypeIdent) IdentString() string {
-	return string(ident)
-}
-
 type Ident string
-
-func (ident Ident) IdentString() string {
-	return string(ident)
-}
 
 type Expression interface {
 	String() string
 	Id() NodeId
 }
 
-type AnyIdentExpression interface {
+type ReferenceExpression interface {
 	String() string
-	IdentString() string
 	Id() NodeId
+	ReferenceExpressionMarker()
 }
 
 type TypeIdentExpression struct {
@@ -60,9 +48,7 @@ func (expr *TypeIdentExpression) String() string {
 	return fmt.Sprintf("TypeIdentExpression(%s)", expr.Ident)
 }
 
-func (expr *TypeIdentExpression) IdentString() string {
-	return expr.Ident.IdentString()
-}
+func (expr *TypeIdentExpression) ReferenceExpressionMarker() {}
 
 type IdentExpression struct {
 	node
@@ -77,9 +63,7 @@ func (expr *IdentExpression) String() string {
 	return fmt.Sprintf("IdentExpression(%s)", expr.Ident)
 }
 
-func (expr *IdentExpression) IdentString() string {
-	return expr.Ident.IdentString()
-}
+func (expr *IdentExpression) ReferenceExpressionMarker() {}
 
 type StringLiteralExpression struct {
 	node

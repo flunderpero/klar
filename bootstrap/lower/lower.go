@@ -87,7 +87,7 @@ func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker)
 			obj := expr.Callee.(*ast.MemberExpression).Target
 			expr.Args = append([]ast.Expression{obj}, expr.Args...)
 		}
-		expr.Callee = ast.NewIdentExpression(method.Name, expr.Callee.Id())
+		expr.Callee = ast.NewIdentExpression(method.Name, expr.Callee.Id(), expr.Callee.Span())
 		functionType, found := l.loweredMethods[method]
 		if !found {
 			functionType = &typed.FunctionType{

@@ -747,7 +747,7 @@ func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.Walk
 		irSourceType.Fields, func(field typed.StructField) bool { return field.Name == expr.Field },
 	)
 	if fieldIndex == -1 {
-		if _, err := irSourceType.FindMethod(expr.Field); err == nil {
+		if _, err := irSourceType.FindMethod(expr.Field, expr.Span()); err == nil {
 			return nil
 		}
 		return errors.Errorf("field %q not found in struct %q", expr.Field, irSourceType.Name)
@@ -846,7 +846,7 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 		sourceReg := g.symbolTable.lookup(stmt.Variable.Ident)
 		structType := g.typeInfo.MustLookup(stmt.Variable).(*typed.StructType)
 		sourceType := g.lookupType(stmt.Variable).(*StructType)
-		fieldIndex, err := structType.FindFieldIndex(*stmt.Field)
+		fieldIndex, err := structType.FindFieldIndex(*stmt.Field, stmt.Span())
 		fieldType := sourceType.Fields[fieldIndex]
 		if err != nil {
 			return err

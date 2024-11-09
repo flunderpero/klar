@@ -7,9 +7,36 @@ import (
 	"github.com/pkg/errors"
 )
 
+type Span struct {
+	File  *string
+	Src   *[]byte
+	Start int
+	End   int
+}
+
+func (span Span) Pos() (row int, col int) {
+	row = 1
+	col = 1
+	for i := 0; i < span.Start; i++ {
+		if (*span.Src)[i] == '\n' {
+			row++
+			col = 1
+		} else {
+			col++
+		}
+	}
+	return row, col
+}
+
+func (span Span) String() string {
+	row, col := span.Pos()
+	return fmt.Sprintf("%s:%d:%d", *span.File, row, col)
+}
+
 type Token struct {
 	Kind  TokenKind
 	Value string
+	Span  Span
 }
 
 type TokenKind string
@@ -52,11 +79,11 @@ func (t Token) String() string {
 	kind := string(t.Kind)
 	switch t.Kind {
 	case Str:
-		return fmt.Sprintf("%s(%q)", kind, t.Value)
+		return fmt.Sprintf("%s(%q) at %s", kind, t.Value, t.Span)
 	case Ident, TypeIdent:
-		return fmt.Sprintf("%s(%s)", kind, t.Value)
+		return fmt.Sprintf("%s(%s) at %s", kind, t.Value, t.Span)
 	default:
-		return kind
+		return fmt.Sprintf("%s at %s", kind, t.Span)
 	}
 }
 
@@ -70,23 +97,24 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 	var i = 0
 	for i < len(src) {
 		c := src[i]
+		span := Span{&file, &src, i, i}
 		i += 1
 		if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
 			// Skip whitespace.
 		} else if c == '(' {
-			tokens = append(tokens, Token{Kind: LParen, Value: ""})
+			tokens = append(tokens, Token{Kind: LParen, Value: "", Span: span})
 		} else if c == ')' {
-			tokens = append(tokens, Token{Kind: RParen, Value: ""})
+			tokens = append(tokens, Token{Kind: RParen, Value: "", Span: span})
 		} else if c == '{' {
-			tokens = append(tokens, Token{Kind: LCurly, Value: ""})
+			tokens = append(tokens, Token{Kind: LCurly, Value: "", Span: span})
 		} else if c == '}' {
-			tokens = append(tokens, Token{Kind: RCurly, Value: ""})
+			tokens = append(tokens, Token{Kind: RCurly, Value: "", Span: span})
 		} else if c == ',' {
-			tokens = append(tokens, Token{Kind: Comma, Value: ""})
+			tokens = append(tokens, Token{Kind: Comma, Value: "", Span: span})
 		} else if c == '+' {
-			tokens = append(tokens, Token{Kind: Plus, Value: ""})
+			tokens = append(tokens, Token{Kind: Plus, Value: "", Span: span})
 		} else if c == '.' {
-			tokens = append(tokens, Token{Kind: Dot, Value: ""})
+			tokens = append(tokens, Token{Kind: Dot, Value: "", Span: span})
 		} else if c == '-' {
 			if src[i] == '-' {
 				i += 1
@@ -100,17 +128,19 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 						break
 					}
 				}
-				tokens = append(tokens, Token{Kind: LineComment, Value: string(value)})
+				span.End = i - 1
+				tokens = append(tokens, Token{Kind: LineComment, Value: string(value), Span: span})
 			} else {
-				tokens = append(tokens, Token{Kind: Minus, Value: ""})
+				tokens = append(tokens, Token{Kind: Minus, Value: "", Span: span})
 			}
 
 		} else if c == '=' {
 			if src[i] == '=' {
 				i += 1
-				tokens = append(tokens, Token{Kind: EqualEqual, Value: ""})
+				span.End += 1
+				tokens = append(tokens, Token{Kind: EqualEqual, Value: "", Span: span})
 			} else {
-				tokens = append(tokens, Token{Kind: Equal, Value: ""})
+				tokens = append(tokens, Token{Kind: Equal, Value: "", Span: span})
 			}
 		} else if c == '"' {
 			// Parse string.
@@ -125,7 +155,8 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 					break
 				}
 			}
-			tokens = append(tokens, Token{Kind: Str, Value: string(value)})
+			span.End = i
+			tokens = append(tokens, Token{Kind: Str, Value: string(value), Span: span})
 		} else if c >= '0' && c <= '9' {
 			// Parse int.
 			value := []byte{c}
@@ -138,7 +169,8 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 					break
 				}
 			}
-			tokens = append(tokens, Token{Kind: Int, Value: string(value)})
+			span.End = i - 1
+			tokens = append(tokens, Token{Kind: Int, Value: string(value), Span: span})
 		} else if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
 			// Parse identifier.
 			value := []byte{c}
@@ -151,6 +183,7 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 					break
 				}
 			}
+			span.End = i - 1
 			var token Token
 			switch string(value) {
 			case "fn":
@@ -190,12 +223,13 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 				}
 				token = Token{Kind: kind, Value: string(value)}
 			}
+			token.Span = span
 			tokens = append(tokens, token)
 		} else {
 			// Unexpected character.
 			return tokens, errors.Errorf("unexpected character: %c", c)
 		}
 	}
-	tokens = append(tokens, Token{Kind: EOF, Value: ""})
+	tokens = append(tokens, Token{Kind: EOF, Value: "", Span: Span{&file, &src, i, i}})
 	return tokens, nil
 }

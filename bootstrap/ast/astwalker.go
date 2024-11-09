@@ -1,6 +1,6 @@
 package ast
 
-import "fmt"
+import "github.com/pkg/errors"
 
 type Visitor interface {
 	VisitNode(node Node, w Walker) error
@@ -168,7 +168,7 @@ func (w *DefaultWalker) WalkExpression(expr Expression) error {
 	case *StructInitExpression:
 		err = w.Visitor.VisitStructInitExpression(expr, w)
 	default:
-		return fmt.Errorf("VisitExpression not implemented for expression type: %T", expr)
+		return errors.Errorf("VisitExpression not implemented for expression type: %T", expr)
 	}
 	return err
 }

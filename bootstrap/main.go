@@ -41,12 +41,12 @@ func main() {
 	file := os.Args[2]
 	src, err := os.ReadFile(file)
 	if err != nil {
-		fmt.Println("Failed to read file: ", err)
+		fmt.Printf("Failed to read file: %+v\n", err)
 		os.Exit(1)
 	}
 	tokens, err := token.Tokenize(src, file)
 	if err != nil {
-		fmt.Println("Failed to tokenize: ", err)
+		fmt.Printf("Failed to tokenize: %+v\n", err)
 		os.Exit(1)
 	}
 	if cmd == "tokens" {
@@ -60,7 +60,7 @@ func main() {
 	moduleName := strings.ReplaceAll(fileParts[len(fileParts)-1], "-", "_")
 	module, err := ast.Parse(tokens, ast.Ident(moduleName))
 	if err != nil {
-		fmt.Println("Failed to parse: ", err)
+		fmt.Printf("Failed to parse: %+v\n", err)
 		os.Exit(1)
 	}
 	if cmd == "ast" {
@@ -69,7 +69,7 @@ func main() {
 	}
 	ty, typeInfo, err := typed.TypeCheck(module)
 	if err != nil {
-		fmt.Println("Failed to typecheck: ", err)
+		fmt.Printf("Failed to typecheck: %+v\n", err)
 		os.Exit(1)
 	}
 	if cmd == "types" {
@@ -79,7 +79,7 @@ func main() {
 	}
 	lowered, err := lower.Lower(module, typeInfo)
 	if err != nil {
-		fmt.Println("Failed to lower: ", err)
+		fmt.Printf("Failed to lower: %+v\n", err)
 		os.Exit(1)
 	}
 	if cmd == "lower" {
@@ -88,7 +88,7 @@ func main() {
 	}
 	irModule, err := ir.GenerateIR(lowered, typeInfo)
 	if err != nil {
-		fmt.Println("Failed to generate the IR: ", err)
+		fmt.Printf("Failed to generate the IR: %+v\n", err)
 		os.Exit(1)
 	}
 	if cmd == "ir" {
@@ -110,7 +110,7 @@ func main() {
 				return nil
 			})
 			if err != nil {
-				fmt.Println("Failed to print the IR: ", err)
+				fmt.Printf("Failed to print the IR: %+v\n", err)
 				os.Exit(1)
 			}
 			fmt.Println("}")
@@ -121,7 +121,7 @@ func main() {
 	}
 	asm, err := codegen.GenerateDarwinArm64ASM(irModule)
 	if err != nil {
-		fmt.Println("Failed to generate assembly: ", err)
+		fmt.Printf("Failed to generate assembly: %+v\n", err)
 		os.Exit(1)
 	}
 	if cmd == "asm" {
@@ -134,7 +134,7 @@ func main() {
 	} else {
 		tmpFile, err := os.CreateTemp("", "klar_run_*")
 		if err != nil {
-			fmt.Println(fmt.Errorf("Failed to create temporary file: %v", err))
+			fmt.Printf("Failed to create temporary file: %+v\n", err)
 			os.Exit(1)
 		}
 		defer os.Remove(tmpFile.Name())
@@ -165,7 +165,7 @@ func printTypedAST(node ast.Node, typeInfo *typed.TypeInfo) {
 	visitor := &printTypedASTWalker{ast.DefaultVisitor{}, typeInfo}
 	walker := &ast.DefaultWalker{Visitor: visitor}
 	if err := walker.WalkNode(node); err != nil {
-		fmt.Println("ERROR:", err)
+		fmt.Printf("ERROR: %+v\n", err)
 	}
 }
 

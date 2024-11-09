@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/flunderpero/klar/bootstrap/token"
+	"github.com/pkg/errors"
 )
 
 type NodeId int
@@ -273,7 +274,7 @@ func (st *StructTypeDeclaration) String() string {
 func (st *StructTypeDeclaration) FindField(name Ident) (*StructTypeField, error) {
 	index := slices.IndexFunc(st.Fields, func(field StructTypeField) bool { return field.Name == name })
 	if index < 0 {
-		return nil, fmt.Errorf("field %q not found in struct %q", name, st)
+		return nil, errors.Errorf("field %q not found in struct %q", name, st)
 	}
 	return &st.Fields[index], nil
 }
@@ -381,7 +382,7 @@ func (p *Parser) newNode() node {
 func (p *Parser) consume(kind token.TokenKind) (token.Token, error) {
 	t := p.tokens[p.index]
 	if t.Kind != kind {
-		return token.Token{}, fmt.Errorf("Expected token kind %s, got %s", kind, t.Kind)
+		return token.Token{}, errors.Errorf("Expected token kind %s, got %s", kind, t.Kind)
 	}
 	p.index = p.index + 1
 	return t, nil
@@ -413,7 +414,7 @@ func (p *Parser) parseCallExpression(callee Expression) (*CallExpression, error)
 		default:
 			arg, err := p.parseExpression()
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse call argument: %v", err)
+				return nil, errors.Errorf("failed to parse call argument: %v", err)
 			}
 			args = append(args, arg)
 		}
@@ -447,18 +448,18 @@ func (p *Parser) parseIfExpression() (*IfExpression, error) {
 	}
 	condition, err := p.parseExpression()
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse condition: %v", err)
+		return nil, errors.Errorf("failed to parse condition: %v", err)
 	}
 	trueBody, err := p.parseBlockExpression()
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse `true` branch body: %v", err)
+		return nil, errors.Errorf("failed to parse `true` branch body: %v", err)
 	}
 	var falseBody *BlockExpression
 	if p.peek().Kind == token.Else {
 		p.consumeAny()
 		falseBody, err = p.parseBlockExpression()
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse `false` branch body: %v", err)
+			return nil, errors.Errorf("failed to parse `false` branch body: %v", err)
 		}
 	}
 	return &IfExpression{node: p.newNode(), Condition: condition, TrueBody: trueBody, FalseBody: falseBody}, nil
@@ -478,7 +479,7 @@ func (p *Parser) parseStructInitExpression(typeIdent TypeIdent) (*StructInitExpr
 			return &StructInitExpression{node: p.newNode(), TypeIdent: typeIdent, Fields: fields}, nil
 		case token.Comma:
 			if !expectComma {
-				return nil, fmt.Errorf("unexpected token: %s", t)
+				return nil, errors.Errorf("unexpected token: %s", t)
 			}
 			p.consumeAny()
 			expectComma = false
@@ -496,10 +497,10 @@ func (p *Parser) parseStructInitExpression(typeIdent TypeIdent) (*StructInitExpr
 			field := StructInitField{Name: fieldName, Value: fieldValue}
 			fields = append(fields, field)
 		default:
-			return nil, fmt.Errorf("unexpected token: %s", t)
+			return nil, errors.Errorf("unexpected token: %s", t)
 		}
 	}
-	return nil, fmt.Errorf("unexpected end of file while parsing struct init")
+	return nil, errors.Errorf("unexpected end of file while parsing struct init")
 }
 
 func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDeclaration, error) {
@@ -533,10 +534,10 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 			args = append(args, arg)
 		} else if argNameToken.Kind == token.Self {
 			if !acceptSelfParameter {
-				return nil, fmt.Errorf("self parameter not allowed here")
+				return nil, errors.Errorf("self parameter not allowed here")
 			}
 			if len(args) > 0 {
-				return nil, fmt.Errorf("self parameter must be the first parameter")
+				return nil, errors.Errorf("self parameter must be the first parameter")
 			}
 			arg := FunctionArg{Name: Ident("self"), Type: TypeIdent("Self")}
 			args = append(args, arg)
@@ -547,7 +548,7 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 			break
 		}
 		if t.Kind != token.Comma {
-			return nil, fmt.Errorf("expected comma or close paren, got %s", t)
+			return nil, errors.Errorf("expected comma or close paren, got %s", t)
 		}
 		p.consumeAny()
 	}
@@ -583,7 +584,7 @@ func (p *Parser) parseVariableDefinition() (*VariableDefinition, error) {
 	case token.Let:
 		mutable = false
 	default:
-		return nil, fmt.Errorf("expected mut keyword")
+		return nil, errors.Errorf("expected mut keyword")
 	}
 	identToken, err := p.consume(token.Ident)
 	if err != nil {
@@ -613,7 +614,7 @@ func (p *Parser) parseAssignmentStatement(lhs Expression) (*AssignmentStatement,
 			return &AssignmentStatement{node: p.newNode(), Variable: variable, Field: &lhs.Field, Rhs: rhs}, nil
 		}
 	}
-	return nil, fmt.Errorf("expected identifier or member expression with identifier as target, got %s", lhs)
+	return nil, errors.Errorf("expected identifier or member expression with identifier as target, got %s", lhs)
 }
 
 func (p *Parser) parseExpression() (Expression, error) {
@@ -680,17 +681,17 @@ func (p *Parser) parseExpressionWithPostfix() (Expression, error) {
 		switch p.peek().Kind {
 		case token.Dot:
 			if is_forbidden_expression {
-				return nil, fmt.Errorf("block and if expressions cannot be used as member expressions")
+				return nil, errors.Errorf("block and if expressions cannot be used as member expressions")
 			}
 			p.consumeAny()
 			field := p.consumeAny()
 			if field.Kind != token.Ident {
-				return nil, fmt.Errorf("expected identifier after '.', got %s", field)
+				return nil, errors.Errorf("expected identifier after '.', got %s", field)
 			}
 			expr = &MemberExpression{node: p.newNode(), Target: expr, Field: Ident(field.Value)}
 		case token.LParen:
 			if is_forbidden_expression {
-				return nil, fmt.Errorf("block and if expressions cannot be called")
+				return nil, errors.Errorf("block and if expressions cannot be called")
 			}
 			expr, err = p.parseCallExpression(expr)
 			if err != nil {
@@ -728,7 +729,7 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 		p.consumeAny()
 		value, err := strconv.ParseInt(t.Value, 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse int literal: %v", err)
+			return nil, errors.Errorf("failed to parse int literal: %v", err)
 		}
 		return &IntLiteralExpression{node: p.newNode(), Value: value}, nil
 	case token.True:
@@ -742,7 +743,7 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 	case token.If:
 		return p.parseIfExpression()
 	default:
-		return nil, fmt.Errorf("expected expression, got token: %s", t)
+		return nil, errors.Errorf("expected expression, got token: %s", t)
 	}
 
 }
@@ -786,10 +787,10 @@ func (p *Parser) parseStructDeclaration() (*StructTypeDeclaration, error) {
 			field := StructTypeField{Name: Ident(fieldName), Type: TypeIdent(typeToken.Value)}
 			fields = append(fields, field)
 		default:
-			return nil, fmt.Errorf("unexpected token: %s", t)
+			return nil, errors.Errorf("unexpected token: %s", t)
 		}
 	}
-	return nil, fmt.Errorf("unexpected end of file while parsing struct")
+	return nil, errors.Errorf("unexpected end of file while parsing struct")
 }
 
 func (p *Parser) parseImplDefinition() (*ImplDefinition, error) {
@@ -828,10 +829,10 @@ func (p *Parser) parseImplDefinition() (*ImplDefinition, error) {
 			}
 			functions = append(functions, function)
 		default:
-			return nil, fmt.Errorf("unexpected token: %s", t)
+			return nil, errors.Errorf("unexpected token: %s", t)
 		}
 	}
-	return nil, fmt.Errorf("unexpected end of file while parsing impl")
+	return nil, errors.Errorf("unexpected end of file while parsing impl")
 }
 
 func (p *Parser) parseTraitDeclaration() (*TraitDeclaration, error) {
@@ -863,13 +864,13 @@ func (p *Parser) parseTraitDeclaration() (*TraitDeclaration, error) {
 			}
 			methodDecls = append(methodDecls, decl)
 		default:
-			return nil, fmt.Errorf("unexpected token: %s", t)
+			return nil, errors.Errorf("unexpected token: %s", t)
 		}
 	}
-	return nil, fmt.Errorf("unexpected end of file while parsing trait")
+	return nil, errors.Errorf("unexpected end of file while parsing trait")
 }
 
-var EOF = fmt.Errorf("EOF")
+var EOF = errors.Errorf("EOF")
 
 func (p *Parser) ParseNode() (Node, error) {
 	for p.index < len(p.tokens) {
@@ -904,10 +905,10 @@ func (p *Parser) ParseNode() (Node, error) {
 			}
 			return expr, nil
 		default:
-			return nil, fmt.Errorf("unexpected token: %s", t)
+			return nil, errors.Errorf("unexpected token: %s", t)
 		}
 	}
-	return nil, fmt.Errorf("unexpected end of file")
+	return nil, errors.Errorf("unexpected end of file")
 }
 
 func (p *Parser) Parse(moduleName Ident) (*Module, error) {
@@ -916,7 +917,7 @@ func (p *Parser) Parse(moduleName Ident) (*Module, error) {
 		node, err := p.ParseNode()
 		if err == EOF {
 			if len(nodes) == 0 {
-				return nil, fmt.Errorf("expected at least one AST node")
+				return nil, errors.Errorf("expected at least one AST node")
 			}
 			return &Module{node: p.newNode(), Name: moduleName, Nodes: nodes}, nil
 		}
@@ -925,7 +926,7 @@ func (p *Parser) Parse(moduleName Ident) (*Module, error) {
 		}
 		nodes = append(nodes, node)
 	}
-	return nil, fmt.Errorf("unexpected end of file")
+	return nil, errors.Errorf("unexpected end of file")
 }
 
 func Parse(tokens []token.Token, moduleName Ident) (*Module, error) {

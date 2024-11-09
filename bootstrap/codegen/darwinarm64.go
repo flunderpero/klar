@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/flunderpero/klar/bootstrap/ir"
+	"github.com/pkg/errors"
 )
 
 type register string
@@ -359,7 +360,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 				c.emit("cmp %s, %s", lhs, rhs)
 				c.emit("cset %s, eq", reg)
 			default:
-				return fmt.Errorf("unknown comparison operator: %s", inst.Op)
+				return errors.Errorf("unknown comparison operator: %s", inst.Op)
 			}
 		case *ir.GetPointer:
 			var reg *registerAllocation
@@ -367,7 +368,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			if inst.FieldIndex > 0 {
 				structType, ok := inst.SourceType.(*ir.StructType)
 				if !ok {
-					return fmt.Errorf("expected a struct type, got: %T", inst.SourceType)
+					return errors.Errorf("expected a struct type, got: %T", inst.SourceType)
 				}
 				for _, field := range structType.Fields[:inst.FieldIndex] {
 					offset += field.Size()
@@ -393,11 +394,11 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			case ir.BuiltInType:
 				if ty != ir.Int64Type {
 					// We need `wx` registers to load other types.
-					return fmt.Errorf("we don't know how to load a value of type %d yet", inst.TargetType)
+					return errors.Errorf("we don't know how to load a value of type %d yet", inst.TargetType)
 				}
 			case *ir.PointerType:
 			default:
-				return fmt.Errorf("invalid target type for load instruction: %T", ty)
+				return errors.Errorf("invalid target type for load instruction: %T", ty)
 			}
 			c.emit("ldr %s, [%s] ; %s", reg, source, inst.Register())
 			c.values[inst.Register()] = reg
@@ -408,12 +409,12 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			case ir.BuiltInType:
 				if ty != ir.Int64Type {
 					// We need `wx` registers to store other types.
-					return fmt.Errorf("we don't know how to store a value of type %d yet", inst.ValueType)
+					return errors.Errorf("we don't know how to store a value of type %d yet", inst.ValueType)
 
 				}
 			case *ir.PointerType:
 			default:
-				return fmt.Errorf("invalid target type for load instruction: %T", ty)
+				return errors.Errorf("invalid target type for load instruction: %T", ty)
 			}
 			c.emit("str %s, [%s]", value, target)
 		case *ir.Call:
@@ -430,7 +431,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 				c.values[inst.Register()] = allocation
 			}
 		default:
-			return fmt.Errorf("unknown instruction: %T", inst)
+			return errors.Errorf("unknown instruction: %T", inst)
 		}
 	}
 	if !block.Result.IsUnit() {
@@ -448,7 +449,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 	case *ir.Return:
 		// Nothing to do, this is handled in `generateFunction`.
 	default:
-		return fmt.Errorf("unknown terminator: %T", terminator)
+		return errors.Errorf("unknown terminator: %T", terminator)
 	}
 	c.decIndent()
 	return nil

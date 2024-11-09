@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/flunderpero/klar/bootstrap/ast"
+	"github.com/pkg/errors"
 )
 
 type Type interface {
@@ -131,7 +132,7 @@ func (ty *StructType) String() string {
 func (ty *StructType) FindFieldIndex(name ast.Ident) (int, error) {
 	fieldIndex := slices.IndexFunc(ty.Fields, func(field StructField) bool { return field.Name == name })
 	if fieldIndex < 0 {
-		return -1, fmt.Errorf("field %q not found in struct type %q", name, ty)
+		return -1, errors.Errorf("field %q not found in struct type %q", name, ty)
 	}
 	return fieldIndex, nil
 }
@@ -150,7 +151,7 @@ func (ty *StructType) FindMethod(name ast.Ident) (*MethodType, error) {
 			return method, nil
 		}
 	}
-	return nil, fmt.Errorf("method %q not found in struct type %q", name, ty)
+	return nil, errors.Errorf("method %q not found in struct type %q", name, ty)
 }
 
 func (ty *StructType) FindMember(name ast.Ident) (Type, error) {
@@ -162,7 +163,7 @@ func (ty *StructType) FindMember(name ast.Ident) (Type, error) {
 	if err == nil {
 		return method, nil
 	}
-	return nil, fmt.Errorf("member %q not found in struct type %q", name, ty)
+	return nil, errors.Errorf("member %q not found in struct type %q", name, ty)
 }
 
 type TraitType struct {
@@ -189,7 +190,7 @@ func (ty *TraitType) FindMethod(name ast.Ident) (*MethodType, error) {
 			return method, nil
 		}
 	}
-	return nil, fmt.Errorf("method %q not found in trait type %q", name, ty)
+	return nil, errors.Errorf("method %q not found in trait type %q", name, ty)
 }
 
 type ImplType struct {
@@ -232,18 +233,18 @@ func (ty *MethodType) CheckSameSignatureIgnoringReceiverTypes(other *MethodType)
 		return thisType == otherType
 	}
 	if ty.Name != other.Name {
-		return fmt.Errorf("method names do not match: %s != %s", ty.Name, other.Name)
+		return errors.Errorf("method names do not match: %s != %s", ty.Name, other.Name)
 	}
 	if len(ty.Args) != len(other.Args) {
-		return fmt.Errorf("argument count does not match: %d != %d", len(ty.Args), len(other.Args))
+		return errors.Errorf("argument count does not match: %d != %d", len(ty.Args), len(other.Args))
 	}
 	if !match(ty.ReturnType, other.ReturnType) {
-		return fmt.Errorf("return types do not match: %s != %s", ty.ReturnType, other.ReturnType)
+		return errors.Errorf("return types do not match: %s != %s", ty.ReturnType, other.ReturnType)
 	}
 	for i, arg := range ty.Args {
 		otherArg := other.Args[i]
 		if !match(arg.Type, otherArg.Type) {
-			return fmt.Errorf("argument types do not match: %s != %s", arg.Type, otherArg.Type)
+			return errors.Errorf("argument types do not match: %s != %s", arg.Type, otherArg.Type)
 		}
 	}
 	return nil
@@ -362,7 +363,7 @@ func (te *typeEnvironment) isVariable(name string) bool {
 
 func (te *typeEnvironment) declare(name string, ty Type) error {
 	if _, found := te.types[name]; found {
-		return fmt.Errorf("type %s already declared", name)
+		return errors.Errorf("type %s already declared", name)
 	}
 	te.types[name] = ty
 	return nil
@@ -391,7 +392,7 @@ func (m *TypeInfo) LookupTypeBinding(expr ast.ReferenceExpression) (NamedType, b
 func (m *TypeInfo) Lookup(node ast.Node) (Type, error) {
 	ty := m.types[node.Id()]
 	if ty == nil {
-		return nil, fmt.Errorf("type not found for node #%d: %s", node.Id(), node)
+		return nil, errors.Errorf("type not found for node #%d: %s", node.Id(), node)
 	}
 	return ty, nil
 }
@@ -402,7 +403,7 @@ func (m *TypeInfo) LookupType(node ast.Node, ty Type) (Type, error) {
 		return nil, err
 	}
 	if got != ty {
-		return nil, fmt.Errorf("expected type %s, got %s", ty, got)
+		return nil, errors.Errorf("expected type %s, got %s", ty, got)
 	}
 	return got, nil
 }
@@ -419,7 +420,7 @@ func (m *TypeInfo) MustLookupDeclaredType(node ast.Node) *DeclaredType {
 	ty := m.MustLookup(node)
 	typeDecl, ok := m.MustLookup(node).(*DeclaredType)
 	if !ok {
-		panic(fmt.Errorf("expected type declaration, got %s", ty))
+		panic(errors.Errorf("expected type declaration, got %s", ty))
 	}
 	return typeDecl
 }
@@ -478,7 +479,7 @@ func (tc *typeChecker) VisitReferenceExpression(expr ast.ReferenceExpression) er
 	}
 	ty, found := tc.typeEnv.lookup(refStr)
 	if !found {
-		return fmt.Errorf("type not found for identifier %s", refStr)
+		return errors.Errorf("type not found for identifier %s", refStr)
 	}
 	tc.typeInfo.Set(expr, ty)
 	if !tc.typeEnv.isVariable(refStr) {
@@ -498,34 +499,34 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 	switch expr.Op {
 	case ast.OpAdd:
 		if lhs != Int64Type {
-			return fmt.Errorf("lhs of add expression must be of type Int64Type, got %s", lhs)
+			return errors.Errorf("lhs of add expression must be of type Int64Type, got %s", lhs)
 		}
 		if rhs != Int64Type {
-			return fmt.Errorf("rhs of add expression must be of type Int64Type, got %s", rhs)
+			return errors.Errorf("rhs of add expression must be of type Int64Type, got %s", rhs)
 		}
 		tc.typeInfo.Set(expr, Int64Type)
 	case ast.OpEquality:
 		// For now, we only support equality of numbers.
 		if lhs != Int64Type {
-			return fmt.Errorf("lhs of equality expression must be of type Int64Type, got %s", lhs)
+			return errors.Errorf("lhs of equality expression must be of type Int64Type, got %s", lhs)
 		}
 		if rhs != Int64Type {
-			return fmt.Errorf("rhs of equality expression must be of type Int64Type, got %s", rhs)
+			return errors.Errorf("rhs of equality expression must be of type Int64Type, got %s", rhs)
 		}
 		tc.typeInfo.Set(expr, BoolType)
 	default:
-		return fmt.Errorf("unsupported binary operator: %s", expr.Op)
+		return errors.Errorf("unsupported binary operator: %s", expr.Op)
 	}
 	return nil
 }
 
 func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) error {
 	if err := w.WalkCallExpression(expr); err != nil {
-		return fmt.Errorf("failed to walk call expression: %w", err)
+		return err
 	}
 	calleeType, ok := tc.typeInfo.MustLookup(expr.Callee).(CallableType)
 	if !ok {
-		return fmt.Errorf("callee %q is not a callable type", calleeType)
+		return errors.Errorf("callee %q is not a callable type", calleeType)
 	}
 	var args []*FunctionArg
 	if method, ok := calleeType.(*MethodType); ok {
@@ -534,12 +535,12 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 		args = calleeType.CallArgTypes()
 	}
 	if len(args) != len(expr.Args) {
-		return fmt.Errorf("expected %d arguments, got %d for %s", len(args), len(expr.Args), calleeType)
+		return errors.Errorf("expected %d arguments, got %d for %s", len(args), len(expr.Args), calleeType)
 	}
 	for i, arg := range expr.Args {
 		argType := tc.typeInfo.MustLookup(arg)
 		if argType != args[i].Type {
-			return fmt.Errorf("expected argument %d to be of type %q, got %q", i, args[i].Type, argType)
+			return errors.Errorf("expected argument %d to be of type %q, got %q", i, args[i].Type, argType)
 		}
 	}
 	tc.typeInfo.Set(expr, calleeType.CallReturnType())
@@ -548,12 +549,12 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 
 func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.Walker) error {
 	if err := w.WalkMemberExpression(expr); err != nil {
-		return fmt.Errorf("failed to walk member expression: %w", err)
+		return err
 	}
 	structType_ := tc.typeInfo.MustLookup(expr.Target)
 	structType, isType := structType_.(*StructType)
 	if !isType {
-		return fmt.Errorf("type %q is not a struct type", structType_)
+		return errors.Errorf("type %q is not a struct type", structType_)
 	}
 	member, err := structType.FindMember(expr.Field)
 	if err != nil {
@@ -565,7 +566,7 @@ func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.W
 
 func (tc *typeChecker) VisitBlockExpression(expr *ast.BlockExpression, w ast.Walker) error {
 	if err := w.WalkBlockExpression(expr); err != nil {
-		return fmt.Errorf("failed to walk block expression: %w", err)
+		return err
 	}
 	blockType := tc.typeInfo.MustLookup(expr.Nodes[len(expr.Nodes)-1])
 	tc.typeInfo.Set(expr, blockType)
@@ -576,11 +577,11 @@ func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) e
 	tc.enterScope()
 	defer tc.exitScope()
 	if err := w.WalkIfExpression(expr); err != nil {
-		return fmt.Errorf("failed to walk if expression: %w", err)
+		return err
 	}
 	condType := tc.typeInfo.MustLookup(expr.Condition)
 	if tc.typeInfo.MustLookup(expr.Condition) != BoolType {
-		return fmt.Errorf("the condition of an if expression must be a boolean type, got: %s", condType)
+		return errors.Errorf("the condition of an if expression must be a boolean type, got: %s", condType)
 	}
 	// Only an if expression with an else branch can have a type other than unit.
 	// And currently we don't have else branches.
@@ -594,11 +595,11 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 	}
 	structType_, found := tc.typeEnv.lookup(string(expr.TypeIdent))
 	if !found {
-		return fmt.Errorf("type %q not found for struct init expression", expr.TypeIdent)
+		return errors.Errorf("type %q not found for struct init expression", expr.TypeIdent)
 	}
 	structType, isType := structType_.(*StructType)
 	if !isType {
-		return fmt.Errorf("type %q is not a struct type", expr.TypeIdent)
+		return errors.Errorf("type %q is not a struct type", expr.TypeIdent)
 	}
 	for _, initField := range expr.Fields {
 		structField, err := structType.FindField(initField.Name)
@@ -607,11 +608,11 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 		}
 		fieldType := tc.typeInfo.MustLookup(initField.Value)
 		if structField.Type != fieldType {
-			return fmt.Errorf("struct init: expected field %q to be of type %q, got %q", initField.Name, structField.Type, fieldType)
+			return errors.Errorf("struct init: expected field %q to be of type %q, got %q", initField.Name, structField.Type, fieldType)
 		}
 	}
 	if len(expr.Fields) != len(structType.Fields) {
-		return fmt.Errorf("expected %d fields, got %d", len(structType.Fields), len(expr.Fields))
+		return errors.Errorf("expected %d fields, got %d", len(structType.Fields), len(expr.Fields))
 	}
 	tc.typeInfo.Set(expr, structType)
 	return nil
@@ -622,7 +623,7 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 	for _, arg := range decl.Args {
 		argType, found := tc.typeEnv.lookup(string(arg.Type))
 		if !found {
-			return fmt.Errorf("type %s not found for argument %s", arg.Type, arg.Name)
+			return errors.Errorf("type %s not found for argument %s", arg.Type, arg.Name)
 		}
 		args = append(args, &FunctionArg{Name: arg.Name, Type: argType})
 	}
@@ -630,7 +631,7 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 	if decl.ReturnType != "" {
 		ty, found := tc.typeEnv.lookup(string(decl.ReturnType))
 		if !found {
-			return fmt.Errorf("type %s not found for return type of function %s", decl.ReturnType, decl.Name)
+			return errors.Errorf("type %s not found for return type of function %s", decl.ReturnType, decl.Name)
 		}
 		returnType = ty
 	}
@@ -641,16 +642,16 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 	}
 	if funcType.Name == "main" {
 		if len(funcType.Args) > 0 {
-			return fmt.Errorf("main function must not have arguments")
+			return errors.Errorf("main function must not have arguments")
 		}
 		if _, ok := funcType.ReturnType.(*unitType); !ok {
-			return fmt.Errorf("main function must return () (no return value)")
+			return errors.Errorf("main function must return () (no return value)")
 		}
 		tc.typeInfo.Main = funcType
 	}
 	tc.typeInfo.Set(decl, &DeclaredType{Type: funcType})
 	if err := tc.typeEnv.declare(string(decl.Name), funcType); err != nil {
-		return fmt.Errorf("failed to declare function %s: %w", decl.Name, err)
+		return errors.Wrapf(err, "failed to declare function: %s", decl)
 	}
 	return nil
 }
@@ -667,11 +668,11 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 	for i, arg := range fn.Decl.Args {
 		argType := funcType.Args[i].Type
 		if err := tc.typeEnv.declare(string(arg.Name), argType); err != nil {
-			return fmt.Errorf("failed to declare argument %s: %w", arg.Name, err)
+			return errors.Wrapf(err, "failed to declare argument %q for function: %s", arg.Name, funcType)
 		}
 	}
 	if err := w.WalkFunctionDefinition(fn); err != nil {
-		return fmt.Errorf("failed to walk function definition: %w", err)
+		return err
 	}
 	return nil
 }
@@ -702,11 +703,11 @@ func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.
 func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walker) error {
 	structType_, found := tc.typeEnv.lookup(string(impl.Target))
 	if !found {
-		return fmt.Errorf("type %q not found for impl definition", impl.Target)
+		return errors.Errorf("type %q not found for impl definition", impl.Target)
 	}
 	structType, ok := structType_.(*StructType)
 	if !ok {
-		return fmt.Errorf("type %q is not a struct type", structType_)
+		return errors.Errorf("type %q is not a struct type", structType_)
 	}
 	tc.enterScope()
 	defer tc.exitScope()
@@ -721,11 +722,11 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 	if impl.ImplementsTrait() {
 		traitType_, found := tc.typeEnv.lookup(string(impl.Trait))
 		if !found {
-			return fmt.Errorf("trait %q not found for impl definition", impl.Trait)
+			return errors.Errorf("trait %q not found for impl definition", impl.Trait)
 		}
 		traitType, ok = traitType_.(*TraitType)
 		if !ok {
-			return fmt.Errorf("type %q is not a trait type", traitType_)
+			return errors.Errorf("type %q is not a trait type", traitType_)
 		}
 		for _, method := range traitType.Methods {
 			unimplementedTraitMethods[method.Name] = method
@@ -734,29 +735,29 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 	for _, method := range impl.Methods {
 		decl := method.Decl
 		if _, err := structType.FindField(decl.Name); err == nil {
-			return fmt.Errorf("method name %q already used in struct type %q", decl.Name, structType.Name)
+			return errors.Errorf("method name %q already used in struct type %q", decl.Name, structType.Name)
 		}
 		if _, err := structType.FindMethod(decl.Name); err == nil {
-			return fmt.Errorf("method name %q already used in struct type %q", decl.Name, structType.Name)
+			return errors.Errorf("method name %q already used in struct type %q", decl.Name, structType.Name)
 		}
 		typeDecl := tc.typeInfo.MustLookupDeclaredType(method)
 		functionType, ok := typeDecl.Type.(*FunctionType)
 		if !ok {
-			return fmt.Errorf("type is not a function type: %s", typeDecl)
+			return errors.Errorf("type is not a function type: %s", typeDecl)
 		}
 		methodType := newMethodTypeFromFunctionType(functionType, structType)
 		if traitType != nil {
 			traitMethodType, err := traitType.FindMethod(decl.Name)
 			if err != nil {
-				return fmt.Errorf("method %q not found in trait %q", decl.Name, traitType.Name)
+				return errors.Errorf("method %q not found in trait %q", decl.Name, traitType.Name)
 			}
 			if err := traitMethodType.CheckSameSignatureIgnoringReceiverTypes(methodType); err != nil {
-				return fmt.Errorf(
-					"method %q in impl %q has different signature than in trait %q: %w",
+				return errors.Wrapf(
+					err,
+					"method %q in impl %q has different signature than in trait: %s",
 					decl.Name,
 					structType.Name,
-					traitType.Name,
-					err,
+					traitType,
 				)
 			}
 			delete(unimplementedTraitMethods, decl.Name)
@@ -769,7 +770,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 		for _, method := range unimplementedTraitMethods {
 			missingTraitMethods = append(missingTraitMethods, method.String())
 		}
-		return fmt.Errorf(
+		return errors.Errorf(
 			"impl %q does not implement all methods of trait %q: %s",
 			structType.Name,
 			traitType.Name,
@@ -786,7 +787,7 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 	}
 	valueType := tc.typeInfo.MustLookup(v.Value)
 	if valueType == UnitType {
-		return fmt.Errorf("variable %s must have a non-unit type", v.Name)
+		return errors.Errorf("variable %s must have a non-unit type", v.Name)
 	}
 	if err := tc.typeEnv.declareVariable(string(v.Name), valueType, v); err != nil {
 		return err
@@ -802,15 +803,15 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 	rhsType := tc.typeInfo.MustLookup(s.Rhs)
 	varType, varDefinition, ok := tc.typeEnv.lookupVariable(s.Variable.Ident)
 	if !ok {
-		return fmt.Errorf("unknown variable %q", s.Variable.Ident)
+		return errors.Errorf("unknown variable %q", s.Variable.Ident)
 	}
 	if !varDefinition.Mutable {
-		return fmt.Errorf("variable %q is not mutable", s.Variable.Ident)
+		return errors.Errorf("variable %q is not mutable", s.Variable.Ident)
 	}
 	if s.IsAssignToMember() {
 		structType, ok := varType.(*StructType)
 		if !ok {
-			return fmt.Errorf("variable %q is not a struct type", s.Variable.Ident)
+			return errors.Errorf("variable %q is not a struct type", s.Variable.Ident)
 		}
 		field, err := structType.FindField(*s.Field)
 		if err != nil {
@@ -819,7 +820,7 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 		varType = field.Type
 	}
 	if varType != rhsType {
-		return fmt.Errorf("lhs and rhs of assignment statement must have the same type, got %s and %s", varType, rhsType)
+		return errors.Errorf("lhs and rhs of assignment statement must have the same type, got %s and %s", varType, rhsType)
 	}
 	tc.typeInfo.Set(s, UnitType)
 	return nil
@@ -834,7 +835,7 @@ func (tc *typeChecker) VisitLoopStatement(s *ast.LoopStatement, w ast.Walker) er
 
 func (tc *typeChecker) VisitContinueStatement(s *ast.ContinueStatement) error {
 	if tc.loopDepth == 0 {
-		return fmt.Errorf("continue statement outside of a loop")
+		return errors.Errorf("continue statement outside of a loop")
 	}
 	tc.typeInfo.Set(s, UnitType)
 	return nil
@@ -842,7 +843,7 @@ func (tc *typeChecker) VisitContinueStatement(s *ast.ContinueStatement) error {
 
 func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 	if tc.loopDepth == 0 {
-		return fmt.Errorf("break statement outside of a loop")
+		return errors.Errorf("break statement outside of a loop")
 	}
 	tc.typeInfo.Set(s, UnitType)
 	return nil
@@ -853,7 +854,7 @@ func (tc *typeChecker) VisitStructTypeDeclaration(d *ast.StructTypeDeclaration) 
 	for _, field := range d.Fields {
 		fieldType, found := tc.typeEnv.lookup(string(field.Type))
 		if !found {
-			return fmt.Errorf("type %q not found for field %q", field.Type, field.Name)
+			return errors.Errorf("type %q not found for field %q", field.Type, field.Name)
 		}
 		fields = append(fields, StructField{Name: field.Name, Type: fieldType})
 	}
@@ -876,7 +877,7 @@ func (tc *typeChecker) check(node ast.Node, w ast.Walker) (Type, error) {
 	}
 	nodeType := tc.typeInfo.MustLookup(node)
 	if tc.typeInfo.Main == nil {
-		return nil, fmt.Errorf("main function not found")
+		return nil, errors.Errorf("main function not found")
 	}
 	return nodeType, nil
 }
@@ -885,27 +886,27 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 	defaultTypeEnv := newTypeEnvironment(nil)
 	// Declare builtin types.
 	if err := defaultTypeEnv.declare("Str", StrType); err != nil {
-		panic(fmt.Errorf("Failed to declare Str type: %w", err))
+		panic(errors.Wrap(err, "failed to declare Str type"))
 	}
 	if err := defaultTypeEnv.declare("Int", Int64Type); err != nil {
-		panic(fmt.Errorf("Failed to declare Int type: %w", err))
+		panic(errors.Wrap(err, "failed to declare Int type"))
 	}
 	if err := defaultTypeEnv.declare("()", UnitType); err != nil {
-		panic(fmt.Errorf("Failed to declare UnitType type: %w", err))
+		panic(errors.Wrap(err, "failed to declare UnitType type"))
 	}
 	if err := defaultTypeEnv.declare("print", &FunctionType{
 		Name:       "print",
 		Args:       []*FunctionArg{&FunctionArg{Name: "s", Type: StrType}},
 		ReturnType: UnitType,
 	}); err != nil {
-		panic(fmt.Errorf("Failed to declare print function: %w", err))
+		panic(errors.Wrap(err, "Failed to declare print function"))
 	}
 	if err := defaultTypeEnv.declare("print_int", &FunctionType{
 		Name:       "print_int",
 		Args:       []*FunctionArg{&FunctionArg{Name: "i", Type: Int64Type}},
 		ReturnType: UnitType,
 	}); err != nil {
-		panic(fmt.Errorf("Failed to declare print_int function: %w", err))
+		panic(errors.Wrap(err, "Failed to declare print_int function"))
 	}
 	tc := &typeChecker{
 		DefaultVisitor: ast.DefaultVisitor{},

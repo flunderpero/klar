@@ -6,6 +6,7 @@ import (
 
 	"github.com/flunderpero/klar/bootstrap/ast"
 	"github.com/flunderpero/klar/bootstrap/typed"
+	"github.com/pkg/errors"
 )
 
 type Type interface {
@@ -660,22 +661,22 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 		ty := g.typeInfo.MustLookup(expr)
 		if ty != typed.Int64Type {
 			// For now we only support 64 bit integers.
-			return fmt.Errorf("add expression must be of type Int64Type, got %s", ty)
+			return errors.Errorf("add expression must be of type Int64Type, got %s", ty)
 		}
 		g.append(&SignedInt64AddWithOverflow{register: g.nextRegister(), Lhs: lhs, Rhs: rhs}, expr)
 	case ast.OpEquality:
 		// For now, we only know how to compare 64 bit integers.
 		lhsType := g.typeInfo.MustLookup(expr.Lhs)
 		if lhsType != typed.Int64Type {
-			return fmt.Errorf("type of lhs is not Int64Type, but %s", lhsType)
+			return errors.Errorf("type of lhs is not Int64Type, but %s", lhsType)
 		}
 		rhsType := g.typeInfo.MustLookup(expr.Rhs)
 		if rhsType != typed.Int64Type {
-			return fmt.Errorf("type of rhs is not Int64Type, but %s", rhsType)
+			return errors.Errorf("type of rhs is not Int64Type, but %s", rhsType)
 		}
 		g.append(&Int64Compare{register: g.nextRegister(), Op: Int64CompOpEQ, Lhs: lhs, Rhs: rhs}, expr)
 	default:
-		return fmt.Errorf("unsupported binary operator: %s", expr.Op)
+		return errors.Errorf("unsupported binary operator: %s", expr.Op)
 	}
 	return nil
 }
@@ -749,7 +750,7 @@ func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.Walk
 		if _, err := irSourceType.FindMethod(expr.Field); err == nil {
 			return nil
 		}
-		return fmt.Errorf("field %q not found in struct %q", expr.Field, irSourceType.Name)
+		return errors.Errorf("field %q not found in struct %q", expr.Field, irSourceType.Name)
 	}
 	fieldType := sourceType.Fields[fieldIndex]
 	getPtrReg := g.nextRegister()
@@ -806,7 +807,7 @@ func (g *generator) VisitStructInitExpression(expr *ast.StructInitExpression, w 
 		switch fieldType.(type) {
 		case BuiltInType, *PointerType:
 		default:
-			return fmt.Errorf("only BuiltInType and PointerType can be stored in struct fields, got %q", fieldType)
+			return errors.Errorf("only BuiltInType and PointerType can be stored in struct fields, got %q", fieldType)
 		}
 		fieldValueReg := g.lookupRegisterByNode(astField.Value)
 		fieldPtrReg := g.nextRegister()
@@ -962,7 +963,7 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 			ty := typeInfo.MustLookup(node)
 			declaredTypes.declare(ty)
 		default:
-			return nil, fmt.Errorf("cannot generate IR for node type: %T", node)
+			return nil, errors.Errorf("cannot generate IR for node type: %T", node)
 		}
 	}
 	functions := []*Function{}
@@ -1039,7 +1040,7 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 			return nil, err
 		}
 		if gen.currentBlock.Terminator != nil {
-			return nil, fmt.Errorf("expecting the last block to not have a terminator, but got: %s", block.Terminator)
+			return nil, errors.Errorf("expecting the last block to not have a terminator, but got: %s", block.Terminator)
 		}
 		gen.currentBlock.Terminator = &Return{}
 		function.Entry = block
@@ -1065,7 +1066,7 @@ func WalkBlock(block *Block, visit func(block *Block) error) error {
 		}
 		visited[block.Id] = true
 		if block.Terminator == nil {
-			return fmt.Errorf("block %s has no terminator", block.Id)
+			return errors.Errorf("block %s has no terminator", block.Id)
 		}
 		blocks = append(blocks, block.Terminator.Targets()...)
 	}

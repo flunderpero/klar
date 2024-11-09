@@ -3,6 +3,8 @@ package token
 import (
 	"fmt"
 	"unicode"
+
+	"github.com/pkg/errors"
 )
 
 type Token struct {
@@ -191,7 +193,7 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			tokens = append(tokens, token)
 		} else {
 			// Unexpected character.
-			return tokens, fmt.Errorf("unexpected character: %c", c)
+			return tokens, errors.Errorf("unexpected character: %c", c)
 		}
 	}
 	tokens = append(tokens, Token{Kind: EOF, Value: ""})

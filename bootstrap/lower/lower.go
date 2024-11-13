@@ -131,8 +131,13 @@ func (l *lower) mangleReferenceExpressions() {
 		switch expr := expr.(type) {
 		case *ast.IdentExpression:
 			expr.Ident = ast.Ident(ty.TypeName())
-		case *ast.TypeIdentExpression:
-			expr.Ident = ast.TypeIdent(ty.TypeName())
+		case *ast.TypeExpression:
+			switch ty := expr.Type.(type) {
+			case *ast.SimpleType:
+				ty.Name = ast.TypeIdent(ty.Name)
+			default:
+				panic(fmt.Sprintf("name mangling not implemented for type expression type: %T", ty))
+			}
 		default:
 			panic(fmt.Sprintf("name mangling not implemented for node: %T", expr))
 		}

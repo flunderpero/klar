@@ -450,8 +450,13 @@ func (tc *typeChecker) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpressio
 func (tc *typeChecker) VisitReferenceExpression(expr ast.ReferenceExpression) error {
 	var refStr string
 	switch expr := expr.(type) {
-	case *ast.TypeIdentExpression:
-		refStr = string(expr.Ident)
+	case *ast.TypeExpression:
+		switch ty := expr.Type.(type) {
+		case *ast.SimpleType:
+			refStr = string(ty.Name)
+		default:
+			return errors.Errorf("%s: unexpected type expression type: %T", expr.Span(), expr)
+		}
 	case *ast.IdentExpression:
 		refStr = string(expr.Ident)
 	default:
@@ -607,19 +612,15 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) error {
 	args := []*FunctionArg{}
 	for _, arg := range decl.Args {
-		argType, found := tc.typeEnv.lookup(string(arg.Type))
+		argType, found := tc.typeEnv.lookup(arg.Type.TypeName())
 		if !found {
 			return errors.Errorf("%s: type %s not found for argument %s", arg.Span, arg.Type, arg.Name)
 		}
 		args = append(args, &FunctionArg{Name: arg.Name, Type: argType})
 	}
-	var returnType Type = UnitType
-	if decl.ReturnType != "" {
-		ty, found := tc.typeEnv.lookup(string(decl.ReturnType))
-		if !found {
-			return errors.Errorf("%s: type %s not found for return type of function %s", decl.Span(), decl.ReturnType, decl.Name)
-		}
-		returnType = ty
+	returnType, found := tc.typeEnv.lookup(decl.ReturnType.TypeName())
+	if !found {
+		return errors.Errorf("%s: type %s not found for return type of function %s", decl.Span(), decl.ReturnType, decl.Name)
 	}
 	funcType := &FunctionType{
 		Name:       decl.Name,
@@ -840,7 +841,7 @@ func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 func (tc *typeChecker) VisitStructTypeDeclaration(d *ast.StructTypeDeclaration) error {
 	fields := []StructField{}
 	for _, field := range d.Fields {
-		fieldType, found := tc.typeEnv.lookup(string(field.Type))
+		fieldType, found := tc.typeEnv.lookup(field.Type.TypeName())
 		if !found {
 			return errors.Errorf("%s: type %q not found for field %q", field.Span, field.Type, field.Name)
 		}

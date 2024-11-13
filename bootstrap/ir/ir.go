@@ -702,7 +702,7 @@ func (g *generator) VisitReferenceExpression(expr ast.ReferenceExpression) error
 		}
 		reg := g.symbolTable.lookup(expr.Ident)
 		g.registerByNodeId[expr.Id()] = reg
-	case *ast.TypeIdentExpression:
+	case *ast.TypeExpression:
 	default:
 		panic(fmt.Sprintf("VisitReferenceExpression not implemented for expression type: %T", expr))
 	}

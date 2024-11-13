@@ -39,33 +39,47 @@ func (ty TypeIdent) String() string {
 
 type Ident string
 
+type Type interface {
+	Node
+	TypeName() string
+}
+
+type SimpleType struct {
+	node
+	Name TypeIdent
+}
+
+func (t SimpleType) String() string {
+	return fmt.Sprintf("SimpleType %q", t.Name)
+}
+
+func (t SimpleType) TypeName() string {
+	return string(t.Name)
+}
+
 func (ty Ident) String() string {
 	return string(ty)
 }
 
 type Expression interface {
-	String() string
-	Id() NodeId
-	Span() token.Span
+	Node
 }
 
 type ReferenceExpression interface {
-	String() string
-	Id() NodeId
-	Span() token.Span
+	Expression
 	ReferenceExpressionMarker()
 }
 
-type TypeIdentExpression struct {
+type TypeExpression struct {
 	node
-	Ident TypeIdent
+	Type Type
 }
 
-func (expr *TypeIdentExpression) String() string {
-	return fmt.Sprintf("TypeIdentExpression %q", expr.Ident)
+func (expr TypeExpression) String() string {
+	return fmt.Sprintf("TypeExpression\n%s", base.Indent(expr.Type, 1))
 }
 
-func (expr *TypeIdentExpression) ReferenceExpressionMarker() {}
+func (expr *TypeExpression) ReferenceExpressionMarker() {}
 
 type IdentExpression struct {
 	node
@@ -257,7 +271,7 @@ func (m Module) String() string {
 
 type StructTypeField struct {
 	Name Ident
-	Type TypeIdent
+	Type Type
 	Span token.Span
 }
 
@@ -285,7 +299,7 @@ func (st *StructTypeDeclaration) FindField(name Ident) (*StructTypeField, error)
 
 type FunctionArg struct {
 	Name Ident
-	Type TypeIdent
+	Type Type
 	Span token.Span
 }
 
@@ -297,7 +311,7 @@ type FunctionDeclaration struct {
 	node
 	Name       Ident
 	Args       []FunctionArg
-	ReturnType TypeIdent
+	ReturnType Type
 }
 
 func (f FunctionDeclaration) String() string {
@@ -509,6 +523,25 @@ func (p *Parser) parseStructInitExpression(typeIdent TypeIdent, from token.Span)
 	return nil, errors.Errorf("unexpected end of file while parsing struct init")
 }
 
+func (p *Parser) parseType() (Type, error) {
+	t := p.peek()
+	switch t.Kind {
+	case token.TypeIdent:
+		p.consumeAny()
+		return &SimpleType{node: p.newNode(p.span()), Name: TypeIdent(t.Value)}, nil
+	}
+	return nil, errors.Errorf("%s: expected type, got %s", t.Span, t)
+}
+
+func (p *Parser) tryParseType(defaultValue Type) (Type, error) {
+	t := p.peek()
+	switch t.Kind {
+	case token.TypeIdent:
+		return p.parseType()
+	}
+	return defaultValue, nil
+}
+
 func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDeclaration, error) {
 	from := p.span()
 	if _, err := p.consume(token.Fn); err != nil {
@@ -533,11 +566,10 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 		argNameToken := p.consumeAny()
 		if argNameToken.Kind == token.Ident {
 			argName := Ident(argNameToken.Value)
-			argTypeToken, err := p.consume(token.TypeIdent)
+			argType, err := p.parseType()
 			if err != nil {
 				return nil, err
 			}
-			argType := TypeIdent(argTypeToken.Value)
 			arg := FunctionArg{Name: argName, Type: argType}
 			args = append(args, arg)
 		} else if argNameToken.Kind == token.Self {
@@ -547,7 +579,8 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 			if len(args) > 0 {
 				return nil, errors.Errorf("self parameter must be the first parameter")
 			}
-			arg := FunctionArg{Name: Ident("self"), Type: TypeIdent("Self"), Span: p.spanToHere(from)}
+			selfType := &SimpleType{node: p.newNode(from), Name: "Self"}
+			arg := FunctionArg{Name: Ident("self"), Type: selfType, Span: p.spanToHere(from)}
 			args = append(args, arg)
 		}
 		t = p.peek()
@@ -560,12 +593,9 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 		}
 		p.consumeAny()
 	}
-	t := p.peek()
-	returnType := TypeIdent("()")
-	if t.Kind == token.TypeIdent {
-		p.consumeAny()
-		returnType = TypeIdent(t.Value)
-
+	returnType, err := p.tryParseType(&SimpleType{node: p.newNode(from), Name: "()"})
+	if err != nil {
+		return nil, err
 	}
 	return &FunctionDeclaration{
 		node: p.newNode(from), Name: Ident(nameToken.Value), Args: args, ReturnType: returnType,
@@ -731,7 +761,7 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 		case token.LParen:
 			return p.parseStructInitExpression(ident, from)
 		}
-		expr := &TypeIdentExpression{node: p.newNode(from), Ident: ident}
+		expr := &TypeExpression{node: p.newNode(from), Type: &SimpleType{node: p.newNode(from), Name: ident}}
 		return expr, nil
 	case token.Self:
 		p.consumeAny()
@@ -797,11 +827,11 @@ func (p *Parser) parseStructDeclaration() (*StructTypeDeclaration, error) {
 			from := p.span()
 			p.consumeAny()
 			fieldName := t.Value
-			typeToken, err := p.consume(token.TypeIdent)
+			fieldType, err := p.parseType()
 			if err != nil {
 				return nil, err
 			}
-			field := StructTypeField{Name: Ident(fieldName), Type: TypeIdent(typeToken.Value), Span: p.spanToHere(from)}
+			field := StructTypeField{Name: Ident(fieldName), Type: fieldType, Span: p.spanToHere(from)}
 			fields = append(fields, field)
 		default:
 			return nil, errors.Errorf("unexpected token: %s", t)

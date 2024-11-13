@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
-	"strings"
 
+	"github.com/flunderpero/klar/bootstrap/base"
 	"github.com/flunderpero/klar/bootstrap/token"
 	"github.com/pkg/errors"
 )
@@ -33,7 +33,15 @@ func (n *node) Span() token.Span {
 
 type TypeIdent string
 
+func (ty TypeIdent) String() string {
+	return string(ty)
+}
+
 type Ident string
+
+func (ty Ident) String() string {
+	return string(ty)
+}
 
 type Expression interface {
 	String() string
@@ -54,7 +62,7 @@ type TypeIdentExpression struct {
 }
 
 func (expr *TypeIdentExpression) String() string {
-	return fmt.Sprintf("TypeIdentExpression(%s)", expr.Ident)
+	return fmt.Sprintf("TypeIdentExpression %q", expr.Ident)
 }
 
 func (expr *TypeIdentExpression) ReferenceExpressionMarker() {}
@@ -69,7 +77,7 @@ func NewIdentExpression(ident Ident, id NodeId, span token.Span) *IdentExpressio
 }
 
 func (expr *IdentExpression) String() string {
-	return fmt.Sprintf("IdentExpression(%s)", expr.Ident)
+	return fmt.Sprintf("IdentExpression %q", expr.Ident)
 }
 
 func (expr *IdentExpression) ReferenceExpressionMarker() {}
@@ -80,7 +88,7 @@ type StringLiteralExpression struct {
 }
 
 func (expr *StringLiteralExpression) String() string {
-	return fmt.Sprintf("StringLiteralExpression(%q)", expr.Value)
+	return fmt.Sprintf("StringLiteralExpression %q", expr.Value)
 }
 
 type IntLiteralExpression struct {
@@ -89,7 +97,7 @@ type IntLiteralExpression struct {
 }
 
 func (expr *IntLiteralExpression) String() string {
-	return fmt.Sprintf("IntLiteralExpression(%d)", expr.Value)
+	return fmt.Sprintf("IntLiteralExpression \"%d\"", expr.Value)
 }
 
 type BoolLiteralExpression struct {
@@ -98,7 +106,7 @@ type BoolLiteralExpression struct {
 }
 
 func (expr *BoolLiteralExpression) String() string {
-	return fmt.Sprintf("BoolLiteralExpression(%s)", strconv.FormatBool(expr.Value))
+	return fmt.Sprintf("BoolLiteralExpression \"%t\"", expr.Value)
 }
 
 type MemberExpression struct {
@@ -108,7 +116,7 @@ type MemberExpression struct {
 }
 
 func (expr *MemberExpression) String() string {
-	return fmt.Sprintf("MemberExpression(%s, %s)", expr.Target, expr.Field)
+	return fmt.Sprintf("MemberExpression\n%s\n%s", base.Indent(expr.Target, 1), base.Indent(expr.Field, 1))
 }
 
 type BinaryOperator string
@@ -118,6 +126,10 @@ const (
 	OpEquality BinaryOperator = "=="
 )
 
+func (op BinaryOperator) String() string {
+	return string(op)
+}
+
 type BinaryExpression struct {
 	node
 	Lhs Expression
@@ -126,7 +138,8 @@ type BinaryExpression struct {
 }
 
 func (expr *BinaryExpression) String() string {
-	return fmt.Sprintf("BinaryExpression(%s, %s, %s)", expr.Op, expr.Lhs, expr.Rhs)
+	return fmt.Sprintf(
+		"BinaryExpression\n%s\n%s\n%s", base.Indent(expr.Lhs, 1), base.Indent(expr.Op, 1), base.Indent(expr.Rhs, 1))
 }
 
 type StructInitField struct {
@@ -135,8 +148,8 @@ type StructInitField struct {
 	Span  token.Span
 }
 
-func (f *StructInitField) String() string {
-	return fmt.Sprintf("StructInitField(%s, %s)", f.Name, f.Value)
+func (f StructInitField) String() string {
+	return fmt.Sprintf("%s\n%s", f.Name, base.Indent(f.Value, 1))
 }
 
 type StructInitExpression struct {
@@ -146,12 +159,7 @@ type StructInitExpression struct {
 }
 
 func (s *StructInitExpression) String() string {
-	fields := ""
-	for _, field := range s.Fields {
-		fields += "\n    "
-		fields += strings.ReplaceAll(field.String(), "\n", "\n    ")
-	}
-	return fmt.Sprintf("StructInitExpression(\n    %s%s\n)", s.TypeIdent, fields)
+	return fmt.Sprintf("StructInitExpression\n%s%s", base.Indent(s.TypeIdent, 1), base.IndentSlice(s.Fields, 1))
 }
 
 type CallExpression struct {
@@ -161,7 +169,7 @@ type CallExpression struct {
 }
 
 func (expr *CallExpression) String() string {
-	return fmt.Sprintf("CallExpression(%s, %v)", expr.Callee, expr.Args)
+	return fmt.Sprintf("CallExpression\n%s%s", base.Indent(expr.Callee, 1), base.IndentSlice(expr.Args, 1))
 }
 
 type BlockExpression struct {
@@ -169,13 +177,8 @@ type BlockExpression struct {
 	Nodes []Node
 }
 
-func (expr *BlockExpression) String() string {
-	s := ""
-	for _, node := range expr.Nodes {
-		nodeStr := "\n    " + strings.ReplaceAll(node.String(), "\n", "\n    ")
-		s += nodeStr
-	}
-	return fmt.Sprintf("BlockExpression{%s\n}", s)
+func (expr BlockExpression) String() string {
+	return fmt.Sprintf("BlockExpression%s", base.IndentSlice(expr.Nodes, 1))
 }
 
 type IfExpression struct {
@@ -186,14 +189,14 @@ type IfExpression struct {
 }
 
 func (expr *IfExpression) String() string {
-	condition := strings.ReplaceAll(expr.Condition.String(), "\n", "\n    ")
-	trueBody := strings.ReplaceAll(expr.TrueBody.String(), "\n", "\n    ")
 	if expr.FalseBody != nil {
-		falseBody := strings.ReplaceAll(expr.FalseBody.String(), "\n", "\n    ")
-		return fmt.Sprintf("IfExpression(\n    %s\n    %s\n    %s\n)", condition, trueBody, falseBody)
-	} else {
-		return fmt.Sprintf("IfExpression(\n    %s\n    %s\n)", condition, trueBody)
+		return fmt.Sprintf(
+			"IfExpression\n%s\n%s\n%s",
+			base.Indent(expr.Condition, 1),
+			base.Indent(expr.TrueBody, 1),
+			base.Indent(expr.FalseBody, 1))
 	}
+	return fmt.Sprintf("IfExpression\n%s\n%s", base.Indent(expr.Condition, 1), base.Indent(expr.TrueBody, 1))
 
 }
 
@@ -203,7 +206,7 @@ type LoopStatement struct {
 }
 
 func (l *LoopStatement) String() string {
-	return fmt.Sprintf("LoopStatement(%s)", l.Body)
+	return fmt.Sprintf("LoopStatement\n%s", base.Indent(l.Body, 1))
 }
 
 type BreakStatement struct {
@@ -211,7 +214,7 @@ type BreakStatement struct {
 }
 
 func (b *BreakStatement) String() string {
-	return "BreakStatement()"
+	return "BreakStatement"
 }
 
 type ContinueStatement struct {
@@ -219,7 +222,7 @@ type ContinueStatement struct {
 }
 
 func (b *ContinueStatement) String() string {
-	return "ContinueStatement()"
+	return "ContinueStatement"
 }
 
 type AssignmentStatement struct {
@@ -232,9 +235,10 @@ type AssignmentStatement struct {
 
 func (a *AssignmentStatement) String() string {
 	if a.IsAssignToMember() {
-		return fmt.Sprintf("AssignmentStatement(%s, %s, %s)", a.Variable, *a.Field, a.Rhs)
+		return fmt.Sprintf(
+			"AssignmentStatement\n%s\n%s\n%s", base.Indent(a.Variable, 1), base.Indent(*a.Field, 1), base.Indent(a.Rhs, 1))
 	}
-	return fmt.Sprintf("AssignmentStatement(%s, %s)", a.Variable, a.Rhs)
+	return fmt.Sprintf("AssignmentStatement\n%s\n%s", base.Indent(a.Variable, 1), base.Indent(a.Rhs, 1))
 }
 
 func (a *AssignmentStatement) IsAssignToMember() bool {
@@ -247,13 +251,8 @@ type Module struct {
 	Nodes []Node
 }
 
-func (m *Module) String() string {
-	nodes := ""
-	for _, node := range m.Nodes {
-		nodes += "\n    "
-		nodes += strings.ReplaceAll(node.String(), "\n", "\n    ")
-	}
-	return fmt.Sprintf("Module(\n    %s%s\n)", m.Name, nodes)
+func (m Module) String() string {
+	return fmt.Sprintf("Module\n%s%s", base.Indent(m.Name, 1), base.IndentSlice(m.Nodes, 1))
 }
 
 type StructTypeField struct {
@@ -262,8 +261,8 @@ type StructTypeField struct {
 	Span token.Span
 }
 
-func (f *StructTypeField) String() string {
-	return fmt.Sprintf("StructTypeField(%s, %s)", f.Name, f.Type)
+func (f StructTypeField) String() string {
+	return fmt.Sprintf("%s\n%s", f.Name, base.Indent(f.Type, 1))
 }
 
 type StructTypeDeclaration struct {
@@ -272,13 +271,8 @@ type StructTypeDeclaration struct {
 	Fields []StructTypeField
 }
 
-func (st *StructTypeDeclaration) String() string {
-	fields := ""
-	for _, field := range st.Fields {
-		fields += "\n    "
-		fields += strings.ReplaceAll(field.String(), "\n", "\n    ")
-	}
-	return fmt.Sprintf("StructTypeDeclaration(\n    %s%s\n)", st.Name, fields)
+func (st StructTypeDeclaration) String() string {
+	return fmt.Sprintf("StructTypeDeclaration\n%s%s", base.Indent(st.Name, 1), base.IndentSlice(st.Fields, 1))
 }
 
 func (st *StructTypeDeclaration) FindField(name Ident) (*StructTypeField, error) {
@@ -295,8 +289,8 @@ type FunctionArg struct {
 	Span token.Span
 }
 
-func (f *FunctionArg) String() string {
-	return fmt.Sprintf("FunctionArg(%s, %s)", f.Name, f.Type)
+func (f FunctionArg) String() string {
+	return fmt.Sprintf("%s\n%s", f.Name, base.Indent(f.Type, 1))
 }
 
 type FunctionDeclaration struct {
@@ -306,15 +300,12 @@ type FunctionDeclaration struct {
 	ReturnType TypeIdent
 }
 
-func (f *FunctionDeclaration) String() string {
-	args := ""
-	for _, arg := range f.Args {
-		if args != "" {
-			args += ", "
-		}
-		args += arg.String()
-	}
-	return fmt.Sprintf("FunctionDeclaration(%s(%s) %s)", f.Name, args, f.ReturnType)
+func (f FunctionDeclaration) String() string {
+	return fmt.Sprintf(
+		"FunctionDeclaration\n%s%s\n%s",
+		base.Indent(f.Name, 1),
+		base.IndentSlice(f.Args, 1),
+		base.Indent(f.ReturnType, 1))
 }
 
 type FunctionDefinition struct {
@@ -324,8 +315,7 @@ type FunctionDefinition struct {
 }
 
 func (f *FunctionDefinition) String() string {
-	body := strings.ReplaceAll(f.Body.String(), "\n", "\n    ")
-	return fmt.Sprintf("FunctionDefinition(\n    %s\n    %s\n)", f.Decl, body)
+	return fmt.Sprintf("FunctionDefinition\n%s\n%s", base.Indent(f.Decl, 1), base.Indent(f.Body, 1))
 }
 
 type ImplDefinition struct {
@@ -339,17 +329,8 @@ func (impl *ImplDefinition) ImplementsTrait() bool {
 	return impl.Trait != ""
 }
 
-func (impl *ImplDefinition) String() string {
-	functions := ""
-	for _, function := range impl.Methods {
-		functions += "\n    "
-		functions += strings.ReplaceAll(function.String(), "\n", "\n    ")
-	}
-	target := string(impl.Target)
-	if impl.ImplementsTrait() {
-		target = fmt.Sprintf("%s for %s", impl.Trait, target)
-	}
-	return fmt.Sprintf("ImplDefinition(\n    %s    %s\n)", target, functions)
+func (impl ImplDefinition) String() string {
+	return fmt.Sprintf("ImplDefinition\n%s%s)", base.Indent(impl.Target, 1), base.IndentSlice(impl.Methods, 1))
 }
 
 type TraitDeclaration struct {
@@ -359,12 +340,7 @@ type TraitDeclaration struct {
 }
 
 func (trait *TraitDeclaration) String() string {
-	methods := ""
-	for _, decl := range trait.MethodDecls {
-		methods += "\n    "
-		methods += strings.ReplaceAll(decl.String(), "\n", "\n    ")
-	}
-	return fmt.Sprintf("TraitDeclaration(\n    %s    %s\n)", trait.Name, methods)
+	return fmt.Sprintf("TraitDeclaration\n%s%s)", base.Indent(trait.Name, 1), base.IndentSlice(trait.MethodDecls, 1))
 }
 
 type VariableDefinition struct {
@@ -375,8 +351,12 @@ type VariableDefinition struct {
 }
 
 func (v *VariableDefinition) String() string {
-	value := strings.ReplaceAll(v.Value.String(), "\n", "\n    ")
-	return fmt.Sprintf("VariableDefinition(\n    %s, \n    mutable=%t, \n    %s\n)", v.Name, v.Mutable, value)
+	mutable := "(immutable)"
+	if v.Mutable {
+		mutable = "(mutable)"
+	}
+	return fmt.Sprintf(
+		"VariableDefinition\n%s\n%s\n%s", base.IndentString(mutable, 1), base.Indent(v.Name, 1), base.Indent(v.Value, 1))
 }
 
 type Parser struct {

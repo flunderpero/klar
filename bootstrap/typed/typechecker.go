@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/flunderpero/klar/bootstrap/ast"
+	"github.com/flunderpero/klar/bootstrap/base"
 	"github.com/flunderpero/klar/bootstrap/token"
 	"github.com/pkg/errors"
 )
@@ -41,8 +42,8 @@ type strType struct {
 	traits []*TraitType
 }
 
-func (ty *strType) String() string {
-	return "StrType()"
+func (ty strType) String() string {
+	return "StrType"
 }
 
 func (ty *strType) Traits() *[]*TraitType {
@@ -57,8 +58,8 @@ func (ty *boolType) Traits() *[]*TraitType {
 	return &ty.traits
 }
 
-func (ty *boolType) String() string {
-	return "BoolType()"
+func (ty boolType) String() string {
+	return "BoolType"
 }
 
 type int64Type struct {
@@ -69,14 +70,14 @@ func (ty *int64Type) Traits() *[]*TraitType {
 	return &ty.traits
 }
 
-func (ty *int64Type) String() string {
-	return "Int64Type()"
+func (ty int64Type) String() string {
+	return "Int64Type"
 }
 
 type unitType struct{}
 
-func (ty *unitType) String() string {
-	return "UnitType()"
+func (ty unitType) String() string {
+	return "UnitType"
 }
 
 type StructField struct {
@@ -84,8 +85,8 @@ type StructField struct {
 	Type Type
 }
 
-func (f *StructField) String() string {
-	return fmt.Sprintf("%s = %s", f.Name, f.Type)
+func (f StructField) String() string {
+	return fmt.Sprintf("%s\n%s", f.Name, base.Indent(f.Type, 1))
 }
 
 type DeclaredType struct {
@@ -96,8 +97,8 @@ func (ty *DeclaredType) TypeName() string {
 	return ty.Type.String()
 }
 
-func (ty *DeclaredType) String() string {
-	return fmt.Sprintf("DeclaredType(%s)", ty.Type)
+func (ty DeclaredType) String() string {
+	return fmt.Sprintf("DeclaredType\n%s", base.Indent(ty.Type, 1))
 }
 
 type StructType struct {
@@ -115,20 +116,9 @@ func (ty *StructType) TypeName() string {
 	return string(ty.Name)
 }
 
-func (ty *StructType) String() string {
-	fields := ""
-	for _, field := range ty.Fields {
-		if fields != "" {
-			fields += ", "
-		}
-		fields += field.String()
-	}
-	methods := ""
-	for _, method := range ty.Methods {
-		methods += "\n    "
-		methods += method.String()
-	}
-	return fmt.Sprintf("StructType(\n    %s\n    %s%s\n)", ty.Name, fields, methods)
+func (ty StructType) String() string {
+	return fmt.Sprintf(
+		"StructType\n%s%s%s", base.Indent(ty.Name, 1), base.IndentSlice(ty.Fields, 1), base.IndentSlice(ty.Methods, 1))
 }
 
 func (ty *StructType) FindFieldIndex(name ast.Ident, span token.Span) (int, error) {
@@ -173,13 +163,8 @@ type TraitType struct {
 	Methods []*MethodType
 }
 
-func (ty *TraitType) String() string {
-	methods := ""
-	for _, method := range ty.Methods {
-		methods += "\n    "
-		methods += method.String()
-	}
-	return fmt.Sprintf("TraitType(\n    %s%s\n)", ty.Name, methods)
+func (ty TraitType) String() string {
+	return fmt.Sprintf("TraitType\n%s%s)", base.Indent(ty.Name, 1), base.IndentSlice(ty.Methods, 1))
 }
 
 func (ty *TraitType) TypeName() string {
@@ -199,13 +184,17 @@ type ImplType struct {
 	ReceiverType Type
 }
 
-func (ty *ImplType) String() string {
-	return fmt.Sprintf("ImplType(%s)", ty.ReceiverType)
+func (ty ImplType) String() string {
+	return fmt.Sprintf("ImplType\n%s", base.Indent(ty.ReceiverType, 1))
 }
 
 type FunctionArg struct {
 	Name ast.Ident
 	Type Type
+}
+
+func (arg FunctionArg) String() string {
+	return fmt.Sprintf("%s\n%s", arg.Name, base.Indent(arg.Type, 1))
 }
 
 type MethodType struct {
@@ -256,27 +245,22 @@ func (ty *MethodType) IsStatic() bool {
 	return len(ty.Args) == 0 || ty.Args[0].Name != "self"
 }
 
-func (ty *MethodType) String() string {
-	args := ""
-	for _, arg := range ty.Args {
-		if args != "" {
-			args += ", "
+func (ty MethodType) String() string {
+	typeToString := func(t Type) string {
+		if t == ty.ReceiverType.(Type) {
+			return "Self"
 		}
-		var argType string
-		if arg.Type == ty.ReceiverType.(Type) {
-			argType = "Self"
-		} else {
-			argType = arg.Type.String()
-		}
-		args += fmt.Sprintf("%s %s", arg.Name, argType)
+		return t.String()
 	}
-	var ret string
-	if ty.ReturnType == ty.ReceiverType.(Type) {
-		ret = "Self"
-	} else {
-		ret = ty.ReturnType.String()
+	argToString := func(arg *FunctionArg) string {
+		return fmt.Sprintf("%s\n%s", arg.Name, base.IndentString(typeToString(arg.Type), 1))
 	}
-	return fmt.Sprintf("FunctionType(%s, %s, %s)", ty.Name, args, ret)
+	args := base.Map(ty.Args, argToString)
+	return fmt.Sprintf(
+		"MethodType\n%s%s\n%s",
+		base.Indent(ty.Name, 1),
+		base.IndentStringSlice(args, 1),
+		base.IndentString(typeToString(ty.ReturnType), 1))
 }
 
 func (ty *MethodType) ArgTypesWithoutSelf() []*FunctionArg {
@@ -301,15 +285,9 @@ type FunctionType struct {
 	ReturnType Type
 }
 
-func (ty *FunctionType) String() string {
-	args := ""
-	for _, arg := range ty.Args {
-		if args != "" {
-			args += ", "
-		}
-		args += fmt.Sprintf("%s %s", arg.Name, arg.Type)
-	}
-	return fmt.Sprintf("FunctionType(%s, %s, %s)", ty.Name, args, ty.ReturnType)
+func (ty FunctionType) String() string {
+	return fmt.Sprintf(
+		"FunctionType\n%s%s\n%s", base.Indent(ty.Name, 1), base.IndentSlice(ty.Args, 1), base.Indent(ty.ReturnType, 1))
 }
 
 func (ty *FunctionType) TypeName() string {

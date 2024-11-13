@@ -50,9 +50,13 @@ func main() {
 		os.Exit(1)
 	}
 	if cmd == "tokens" {
-		for _, token := range tokens {
-			fmt.Println(token)
+		for i, token := range tokens {
+			if i > 0 {
+				fmt.Print(" ")
+			}
+			fmt.Print(token)
 		}
+		fmt.Println()
 		os.Exit(0)
 	}
 	fileParts := strings.Split(strings.Split(file, ".")[0], "/")

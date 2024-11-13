@@ -42,8 +42,8 @@ type Token struct {
 type TokenKind string
 
 const (
-	Ident       TokenKind = "ident"
-	TypeIdent   TokenKind = "typeident"
+	Ident       TokenKind = "Ident"
+	TypeIdent   TokenKind = "TypeIdent"
 	LParen      TokenKind = "("
 	RParen      TokenKind = ")"
 	LCurly      TokenKind = "{"
@@ -71,7 +71,7 @@ const (
 	For         TokenKind = "for"
 	Self        TokenKind = "self"
 	Minus       TokenKind = "-"
-	LineComment TokenKind = "line_comment"
+	LineComment TokenKind = "LineComment"
 	EOF         TokenKind = "EOF"
 )
 
@@ -79,11 +79,11 @@ func (t Token) String() string {
 	kind := string(t.Kind)
 	switch t.Kind {
 	case Str:
-		return fmt.Sprintf("%s(%q) at %s", kind, t.Value, t.Span)
-	case Ident, TypeIdent:
-		return fmt.Sprintf("%s(%s) at %s", kind, t.Value, t.Span)
+		return fmt.Sprintf("%q", t.Value)
+	case Ident, TypeIdent, LineComment:
+		return fmt.Sprintf("%s(%s)", kind, t.Value)
 	default:
-		return fmt.Sprintf("%s at %s", kind, t.Span)
+		return string(kind)
 	}
 }
 

@@ -3,8 +3,10 @@ package ir
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/flunderpero/klar/bootstrap/ast"
+	"github.com/flunderpero/klar/bootstrap/base"
 	"github.com/flunderpero/klar/bootstrap/typed"
 	"github.com/pkg/errors"
 )
@@ -17,7 +19,7 @@ type Type interface {
 type BuiltInType string
 
 const (
-	UnitType  BuiltInType = "unit"
+	VoidType  BuiltInType = "void"
 	BoolType  BuiltInType = "i1"
 	Int8Type  BuiltInType = "i8"
 	Int32Type BuiltInType = "i32"
@@ -30,7 +32,7 @@ func (t BuiltInType) String() string {
 
 func (t BuiltInType) Size() int {
 	switch t {
-	case UnitType:
+	case VoidType:
 		return 0
 	case BoolType:
 		return 1
@@ -63,6 +65,10 @@ type StructType struct {
 }
 
 func (t StructType) String() string {
+	return fmt.Sprintf("@%s", t.Name)
+}
+
+func (t StructType) DeclareString() string {
 	fields := ""
 	for _, field := range t.Fields {
 		if len(fields) > 0 {
@@ -70,7 +76,7 @@ func (t StructType) String() string {
 		}
 		fields += field.String()
 	}
-	return fmt.Sprintf("struct %s {%s}", t.Name, fields)
+	return fmt.Sprintf("declare struct @%s = { %s }", t.Name, fields)
 }
 
 func (t StructType) Size() int {
@@ -81,7 +87,7 @@ func (t StructType) Size() int {
 	return size
 }
 
-var StrType = &StructType{Name: "Str", Fields: []Type{Int64Type, &PointerType{Int8Type}}}
+var StrType = &StructType{Name: "str", Fields: []Type{Int64Type, &PointerType{Int8Type}}}
 
 type BlockId int
 
@@ -101,13 +107,13 @@ func (ir *Block) append(instruction Instruction) {
 	ir.Instructions = append(ir.Instructions, instruction)
 }
 
-func (ir *Block) String() string {
+func (ir Block) String() string {
 	s := ""
 	for _, inst := range ir.Instructions {
 		s += fmt.Sprintf("\n    %s", inst)
 	}
 	s += fmt.Sprintf("\n    %s", ir.Terminator)
-	return fmt.Sprintf("%s:%s\n    -- block_result = %s", ir.Id, s, ir.Result)
+	return fmt.Sprintf("%s:%s", ir.Id, s)
 }
 
 type Terminator interface {
@@ -119,7 +125,7 @@ type Jump struct {
 	Target *Block
 }
 
-func (ir *Jump) String() string {
+func (ir Jump) String() string {
 	return fmt.Sprintf("jmp %s", ir.Target.Id)
 }
 
@@ -133,8 +139,8 @@ type CondBranch struct {
 	FalseBlock *Block
 }
 
-func (ir *CondBranch) String() string {
-	return fmt.Sprintf("condbr i1 %s, %s, %s", ir.Condition, ir.TrueBlock.Id, ir.FalseBlock.Id)
+func (ir CondBranch) String() string {
+	return fmt.Sprintf("br i1 %s, %s, %s", ir.Condition, ir.TrueBlock.Id, ir.FalseBlock.Id)
 }
 
 func (ir *CondBranch) Targets() []*Block {
@@ -143,7 +149,7 @@ func (ir *CondBranch) Targets() []*Block {
 
 type Return struct{}
 
-func (ir *Return) String() string {
+func (ir Return) String() string {
 	return "ret"
 }
 
@@ -164,7 +170,7 @@ type Function struct {
 	RegisterConstraints RegisterConstraints
 }
 
-func (t *Function) String() string {
+func (t Function) String() string {
 	args := ""
 	for _, arg := range t.Args {
 		if len(args) > 0 {
@@ -172,13 +178,71 @@ func (t *Function) String() string {
 		}
 		args += fmt.Sprintf("%s %s", arg.Type, arg.Register)
 	}
-	return fmt.Sprintf("@declare %s %s(%s)", t.ReturnType, t.Name, args)
+	return fmt.Sprintf("declare fn %s %s(%s)", t.ReturnType, t.Name, args)
 }
 
 type Module struct {
 	Functions     []*Function
 	Constants     []*StrConst
 	DeclaredTypes *DeclaredTypes
+}
+
+func (m Module) String() string {
+	sb := strings.Builder{}
+	indent := 0
+	writeln := func(parts ...any) {
+		indentStr := base.IndentString("", indent)
+		s := indentStr
+		for _, part := range parts {
+			switch part := part.(type) {
+			case fmt.Stringer:
+				s += part.String()
+			case string:
+				s += part
+			}
+		}
+		sb.WriteString(strings.ReplaceAll(s, "\n", "\n"+indentStr))
+		sb.WriteByte('\n')
+	}
+	for _, constant := range m.Constants {
+		writeln(constant.DeclareString())
+	}
+	if len(m.Constants) > 0 {
+		writeln()
+	}
+	gotDeclaredType := false
+	for _, ty := range m.DeclaredTypes.Types {
+		switch ty := ty.(type) {
+		case BuiltInType:
+		case *StructType:
+			gotDeclaredType = true
+			writeln(ty.DeclareString())
+		default:
+		}
+	}
+	if gotDeclaredType {
+		writeln()
+	}
+	for i, function := range m.Functions {
+		if i > 0 {
+			writeln()
+		}
+		writeln(function, " {")
+		indent += 1
+		err := WalkBlock(function.Entry, func(block *Block) error {
+			writeln(block)
+			return nil
+		})
+		if err != nil {
+			panic(fmt.Sprintf("Failed to print the IR: %+v\n", err))
+		}
+		if !function.RegisterConstraints.IsEmpty() {
+			writeln(function.RegisterConstraints)
+		}
+		indent -= 1
+		writeln("}")
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }
 
 type Register string
@@ -188,14 +252,25 @@ func (r Register) String() string {
 }
 
 func (r Register) IsConstant() bool {
-	return string(r)[0] == '_'
+	return string(r)[0] == '#'
 }
 
-func (r Register) IsUnit() bool {
-	return string(r) == "()"
+func (r Register) IsVoid() bool {
+	return string(r) == "(void)"
 }
 
-const UnitRegister Register = "()"
+func (r Register) AsIdentifier() string {
+	if r.IsVoid() {
+		panic("cannot convert void register to identifier")
+	}
+	return string(r)[1:]
+}
+
+func newConstantRegister(id string) Register {
+	return Register("#" + id)
+}
+
+const VoidRegister Register = "(void)"
 
 type Instruction interface {
 	String() string
@@ -207,8 +282,8 @@ type StrConst struct {
 	Value    string
 }
 
-func (i *StrConst) String() string {
-	return fmt.Sprintf("%s = Str %q", i.register, i.Value)
+func (i StrConst) DeclareString() string {
+	return fmt.Sprintf("declare const %s = @str %q", i.register, i.Value)
 }
 
 func (i *StrConst) Register() Register {
@@ -220,7 +295,7 @@ type Int64Const struct {
 	Value    int64
 }
 
-func (i *Int64Const) String() string {
+func (i Int64Const) String() string {
 	return fmt.Sprintf("%s = i64 %d", i.register, i.Value)
 }
 
@@ -233,7 +308,7 @@ type Int32Const struct {
 	Value    int64
 }
 
-func (i *Int32Const) String() string {
+func (i Int32Const) String() string {
 	return fmt.Sprintf("%s = i32 %d", i.register, i.Value)
 }
 
@@ -246,7 +321,7 @@ type BoolConst struct {
 	Value    int
 }
 
-func (i *BoolConst) String() string {
+func (i BoolConst) String() string {
 	return fmt.Sprintf("%s = i1 %d", i.register, i.Value)
 }
 
@@ -261,7 +336,7 @@ type GetPointer struct {
 	FieldIndex int
 }
 
-func (i *GetPointer) String() string {
+func (i GetPointer) String() string {
 	return fmt.Sprintf("%s = getptr %s %s, %d", i.register, i.SourceType, i.Source, i.FieldIndex)
 }
 
@@ -279,7 +354,7 @@ func (i *Load) Register() Register {
 	return i.register
 }
 
-func (i *Load) String() string {
+func (i Load) String() string {
 	return fmt.Sprintf("%s = load %s %s", i.register, i.TargetType, i.Source)
 }
 
@@ -290,10 +365,10 @@ type Store struct {
 }
 
 func (s *Store) Register() Register {
-	return UnitRegister
+	return VoidRegister
 }
 
-func (s *Store) String() string {
+func (s Store) String() string {
 	return fmt.Sprintf("store %s %s, %s", s.ValueType, s.Value, s.Target)
 }
 
@@ -307,7 +382,7 @@ func (i *SignedInt64AddWithOverflow) Register() Register {
 	return i.register
 }
 
-func (i *SignedInt64AddWithOverflow) String() string {
+func (i SignedInt64AddWithOverflow) String() string {
 	return fmt.Sprintf("%s = iaddo i64 %s, i64 %s", i.register, i.Lhs, i.Rhs)
 }
 
@@ -328,7 +403,7 @@ func (i *Int64Compare) Register() Register {
 	return i.register
 }
 
-func (i *Int64Compare) String() string {
+func (i Int64Compare) String() string {
 	return fmt.Sprintf("%s = icmp %s i64 %s, %s", i.register, i.Op, i.Lhs, i.Rhs)
 }
 
@@ -338,7 +413,7 @@ type Call struct {
 	Args     []Register
 }
 
-func (inst *Call) String() string {
+func (inst Call) String() string {
 	args := ""
 	for i, reg := range inst.Args {
 		arg := inst.Function.Args[i]
@@ -347,7 +422,11 @@ func (inst *Call) String() string {
 		}
 		args += fmt.Sprintf("%s %s", arg.Type, reg)
 	}
-	return fmt.Sprintf("%s = call %s %s (%s)", inst.register, inst.Function.ReturnType, inst.Function.Name, args)
+	assign := ""
+	if !inst.register.IsVoid() {
+		assign = fmt.Sprintf("%s = ", inst.register)
+	}
+	return fmt.Sprintf("%scall %s %s(%s)", assign, inst.Function.ReturnType, inst.Function.Name, args)
 }
 
 func (inst *Call) Register() Register {
@@ -409,6 +488,10 @@ type RegisterConstraints struct {
 	constraints []*[]Register
 }
 
+func (r RegisterConstraints) IsEmpty() bool {
+	return len(r.constraints) == 0
+}
+
 func (r *RegisterConstraints) Lookup(reg Register) (*[]Register, bool) {
 	for _, constraint := range r.constraints {
 		for _, c := range *constraint {
@@ -420,20 +503,21 @@ func (r *RegisterConstraints) Lookup(reg Register) (*[]Register, bool) {
 	return nil, false
 }
 
-func (r *RegisterConstraints) String() string {
-	s := ""
-	for _, c := range r.constraints {
-		if len(s) > 0 {
-			s += ", "
+func (r RegisterConstraints) String() string {
+	if len(r.constraints) == 0 {
+		return ""
+	}
+	s := "@constraint "
+	for i, c := range r.constraints {
+		if i > 0 {
+			s += "\n@constraint "
 		}
-		s += "["
 		for i, reg := range *c {
 			if i > 0 {
 				s += ", "
 			}
 			s += reg.String()
 		}
-		s += "]"
 	}
 	return s
 }
@@ -579,7 +663,7 @@ func (g *generator) updateRegisterConstraints(symbolTableBefore map[ast.Ident]Re
 }
 
 func (g *generator) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
-	reg := Register(fmt.Sprintf("_const_%d", len(*g.globalConstants)))
+	reg := newConstantRegister(fmt.Sprintf("str%d", len(*g.globalConstants)))
 	*g.globalConstants = append(*g.globalConstants, &StrConst{register: reg, Value: expr.Value})
 	g.append(&GetPointer{
 		register:   g.nextRegister(),
@@ -638,8 +722,8 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 	for _, arg := range expr.Args {
 		args = append(args, g.lookupRegisterByNode(arg))
 	}
-	var reg Register = UnitRegister
-	if function.ReturnType != UnitType {
+	var reg Register = VoidRegister
+	if function.ReturnType != VoidType {
 		reg = g.nextRegister()
 	}
 	g.append(&Call{
@@ -684,7 +768,7 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) error {
 	condBlock := g.newBlock(g.currentBlock)
 	g.currentBlock.Terminator = &Jump{Target: condBlock}
-	g.currentBlock.Result = UnitRegister
+	g.currentBlock.Result = VoidRegister
 	g.currentBlock = condBlock
 	if err := w.WalkNode(expr.Condition); err != nil {
 		return err
@@ -726,7 +810,7 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) erro
 	}
 	g.currentBlock = mergeBlock
 	// We treat if _expressions_ as statements for now.
-	condBlock.Result = UnitRegister
+	condBlock.Result = VoidRegister
 	g.registerByNodeId[expr.Id()] = condBlock.Result
 	return nil
 }
@@ -779,7 +863,7 @@ func (g *generator) VisitBlockExpression(expr *ast.BlockExpression, w ast.Walker
 	lastExpr := expr.Nodes[len(expr.Nodes)-1]
 	reg, found := g.registerByNodeId[lastExpr.Id()]
 	if !found {
-		reg = UnitRegister
+		reg = VoidRegister
 	}
 	g.currentBlock.Result = reg
 	g.registerByNodeId[expr.Id()] = reg
@@ -872,7 +956,7 @@ func (g *generator) VisitLoopStatement(stmt *ast.LoopStatement, w ast.Walker) er
 	loopStartBlock := g.newBlock(g.currentBlock)
 	exitBlock := g.newBlock(loopStartBlock)
 	g.currentBlock.Terminator = &Jump{Target: loopStartBlock}
-	g.currentBlock.Result = UnitRegister
+	g.currentBlock.Result = VoidRegister
 	g.currentBlock = loopStartBlock
 	g.enterLoop(loopStartBlock, exitBlock)
 	// In order to add the register constraints we need to first take a snapshot
@@ -884,16 +968,16 @@ func (g *generator) VisitLoopStatement(stmt *ast.LoopStatement, w ast.Walker) er
 	g.updateRegisterConstraints(symbolTableBeforeBody)
 	g.exitLoop()
 	g.currentBlock.Terminator = &Jump{Target: loopStartBlock}
-	g.currentBlock.Result = UnitRegister
+	g.currentBlock.Result = VoidRegister
 	g.currentBlock = exitBlock
-	g.registerByNodeId[stmt.Id()] = UnitRegister
+	g.registerByNodeId[stmt.Id()] = VoidRegister
 	return nil
 }
 
 func (g *generator) VisitBreakStatement(stmt *ast.BreakStatement) error {
 	loopScope := g.loopScope()
 	g.currentBlock.Terminator = &Jump{Target: loopScope.exitBlock}
-	g.currentBlock.Result = UnitRegister
+	g.currentBlock.Result = VoidRegister
 	g.currentBlock = g.newBlock(nil)
 	return nil
 }
@@ -901,7 +985,7 @@ func (g *generator) VisitBreakStatement(stmt *ast.BreakStatement) error {
 func (g *generator) VisitContinueStatement(stmt *ast.ContinueStatement) error {
 	loopScope := g.loopScope()
 	g.currentBlock.Terminator = &Jump{Target: loopScope.loopBlock}
-	g.currentBlock.Result = UnitRegister
+	g.currentBlock.Result = VoidRegister
 	g.currentBlock = g.newBlock(nil)
 	return nil
 }
@@ -913,7 +997,7 @@ type DeclaredTypes struct {
 func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
 	switch ty {
 	case typed.UnitType:
-		return UnitType
+		return VoidType
 	case typed.StrType:
 		return StrType
 	case typed.Int64Type:
@@ -994,14 +1078,14 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 	// Declare builtin functions.
 	functionByName["print"] = &Function{
 		Name:       "print",
-		ReturnType: UnitType,
+		ReturnType: VoidType,
 		Args: []FunctionArg{
 			FunctionArg{PointerType{StrType}, Register("%1")},
 		},
 	}
 	functionByName["print_int"] = &Function{
 		Name:       "print_int",
-		ReturnType: UnitType,
+		ReturnType: VoidType,
 		Args: []FunctionArg{
 			FunctionArg{PointerType{Int8Type}, Register("%1")},
 			FunctionArg{Int64Type, Register("%2")},

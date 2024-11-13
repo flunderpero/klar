@@ -95,31 +95,7 @@ func main() {
 		os.Exit(1)
 	}
 	if cmd == "ir" {
-		for _, constant := range irModule.Constants {
-			fmt.Println(constant.String())
-		}
-		for _, ty := range irModule.DeclaredTypes.Types {
-			switch ty := ty.(type) {
-			case ir.BuiltInType:
-			default:
-				fmt.Println("@declare", ty)
-			}
-		}
-		fmt.Println()
-		for _, function := range irModule.Functions {
-			fmt.Println(function, "{")
-			err := ir.WalkBlock(function.Entry, func(block *ir.Block) error {
-				fmt.Println(block)
-				return nil
-			})
-			if err != nil {
-				fmt.Printf("Failed to print the IR: %+v\n", err)
-				os.Exit(1)
-			}
-			fmt.Println("}")
-			fmt.Println("RegisterConstraints:")
-			fmt.Println(function.RegisterConstraints.String())
-		}
+		fmt.Println(irModule)
 		os.Exit(0)
 	}
 	asm, err := codegen.GenerateDarwinArm64ASM(irModule)

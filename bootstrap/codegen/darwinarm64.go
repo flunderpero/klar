@@ -376,8 +376,8 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			}
 			if inst.Source.IsConstant() {
 				reg = c.registerAllocator.allocateScratchRegister(inst.Register())
-				c.emit("adrp %s, %s@PAGE", reg, inst.Source)
-				c.emit("add %s, %s, %s@PAGEOFF+%d", reg, reg, inst.Source, offset)
+				c.emit("adrp %s, %s@PAGE", reg, inst.Source.AsIdentifier())
+				c.emit("add %s, %s, %s@PAGEOFF+%d", reg, reg, inst.Source.AsIdentifier(), offset)
 			} else {
 				reg = c.mustLookupRegisterAllocation(inst.Source)
 				if offset > 0 {
@@ -426,7 +426,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			}
 			c.emit("bl _%s", inst.Function.Name)
 			c.registerAllocator.restoreCallerSavedRegisters(savedCallerRegisters)
-			if inst.Function.ReturnType != ir.UnitType {
+			if inst.Function.ReturnType != ir.VoidType {
 				allocation := c.registerAllocator.saveCallResultRegister(inst.Register())
 				c.values[inst.Register()] = allocation
 			}
@@ -434,7 +434,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			return errors.Errorf("unknown instruction: %T", inst)
 		}
 	}
-	if !block.Result.IsUnit() {
+	if !block.Result.IsVoid() {
 		// Move the value of the block expression to x0.
 		resultAllocation := c.mustLookupRegisterAllocation(block.Result)
 		c.registerAllocator.move(x0, resultAllocation)
@@ -580,15 +580,15 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
 	asm.emit(".data")
 	for _, constant := range irModule.Constants {
 		asm.emit(".align 3")
-		asm.emit("%s_bytes:", constant.Register())
+		asm.emit("%s_bytes:", constant.Register().AsIdentifier())
 		asm.incIndent()
 		asm.emit(".ascii %q", constant.Value)
 		asm.decIndent()
 		asm.emit(".align 3")
-		asm.emit("%s:", constant.Register())
+		asm.emit("%s:", constant.Register().AsIdentifier())
 		asm.incIndent()
 		asm.emit(".quad %d", len(constant.Value))
-		asm.emit(".quad %s_bytes", constant.Register())
+		asm.emit(".quad %s_bytes", constant.Register().AsIdentifier())
 		asm.decIndent()
 	}
 	// Needed for builtin functions.

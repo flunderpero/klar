@@ -11,34 +11,45 @@ import (
 	"github.com/pkg/errors"
 )
 
+type TypeId int
+
 type Type interface {
 	String() string
+	Id() TypeId
 }
 
 var builtInSpan = token.Span{File: new(string), Src: &[]byte{}, Start: 0, End: 0}
-var StrType = &strType{}
-var BoolType = &boolType{}
-var Int64Type = &int64Type{}
-var UnitType = &unitType{}
+var StrType = &strType{type_: type_{1}}
+var BoolType = &boolType{type_: type_{2}}
+var Int64Type = &int64Type{type_: type_{3}}
+var UnitType = &unitType{type_: type_{4}}
 
 type NamedType interface {
-	String() string
+	Type
 	TypeName() string
 }
 
 type CallableType interface {
-	String() string
-	TypeName() string
+	NamedType
 	CallArgTypes() []*FunctionArg
 	CallReturnType() Type
 }
 
 type TypeWithTraits interface {
-	String() string
+	Type
 	Traits() *[]*TraitType
 }
 
+type type_ struct {
+	id TypeId
+}
+
+func (ty type_) Id() TypeId {
+	return ty.id
+}
+
 type strType struct {
+	type_
 	traits []*TraitType
 }
 
@@ -51,6 +62,7 @@ func (ty *strType) Traits() *[]*TraitType {
 }
 
 type boolType struct {
+	type_
 	traits []*TraitType
 }
 
@@ -63,6 +75,7 @@ func (ty boolType) String() string {
 }
 
 type int64Type struct {
+	type_
 	traits []*TraitType
 }
 
@@ -74,7 +87,9 @@ func (ty int64Type) String() string {
 	return "Int64Type"
 }
 
-type unitType struct{}
+type unitType struct {
+	type_
+}
 
 func (ty unitType) String() string {
 	return "UnitType"
@@ -101,7 +116,12 @@ func (ty DeclaredType) String() string {
 	return fmt.Sprintf("DeclaredType\n%s", base.Indent(ty.Type, 1))
 }
 
+func (ty DeclaredType) Id() TypeId {
+	return ty.Type.Id()
+}
+
 type StructType struct {
+	type_
 	Name    ast.TypeIdent
 	Fields  []StructField
 	Methods []*MethodType
@@ -159,6 +179,7 @@ func (ty *StructType) FindMember(name ast.Ident, span token.Span) (Type, error) 
 }
 
 type TraitType struct {
+	type_
 	Name    ast.TypeIdent
 	Methods []*MethodType
 }
@@ -181,6 +202,7 @@ func (ty *TraitType) FindMethod(name ast.Ident, span token.Span) (*MethodType, e
 }
 
 type ImplType struct {
+	type_
 	ReceiverType Type
 }
 
@@ -198,6 +220,7 @@ func (arg FunctionArg) String() string {
 }
 
 type MethodType struct {
+	type_
 	Name         ast.Ident
 	Args         []*FunctionArg
 	ReturnType   Type
@@ -270,16 +293,8 @@ func (ty *MethodType) ArgTypesWithoutSelf() []*FunctionArg {
 	return ty.Args
 }
 
-func newMethodTypeFromFunctionType(functionType *FunctionType, receiverType NamedType) *MethodType {
-	return &MethodType{
-		Name:         functionType.Name,
-		Args:         functionType.Args,
-		ReturnType:   functionType.ReturnType,
-		ReceiverType: receiverType,
-	}
-}
-
 type FunctionType struct {
+	type_
 	Name       ast.Ident
 	Args       []*FunctionArg
 	ReturnType Type
@@ -411,9 +426,25 @@ func (m *TypeInfo) Set(node ast.Node, ty Type) {
 
 type typeChecker struct {
 	ast.DefaultVisitor
-	typeInfo  *TypeInfo
-	typeEnv   *typeEnvironment
-	loopDepth int
+	typeInfo   *TypeInfo
+	typeEnv    *typeEnvironment
+	loopDepth  int
+	nextTypeId int
+}
+
+func (tc *typeChecker) newType() type_ {
+	tc.nextTypeId += 1
+	return type_{TypeId(tc.nextTypeId)}
+}
+
+func (tc *typeChecker) newMethodTypeFromFunctionType(functionType *FunctionType, receiverType NamedType) *MethodType {
+	return &MethodType{
+		type_:        tc.newType(),
+		Name:         functionType.Name,
+		Args:         functionType.Args,
+		ReturnType:   functionType.ReturnType,
+		ReceiverType: receiverType,
+	}
 }
 
 func (tc *typeChecker) enterScope() {
@@ -623,6 +654,7 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 		return errors.Errorf("%s: type %s not found for return type of function %s", decl.Span(), decl.ReturnType, decl.Name)
 	}
 	funcType := &FunctionType{
+		type_:      tc.newType(),
 		Name:       decl.Name,
 		Args:       args,
 		ReturnType: returnType,
@@ -666,7 +698,7 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 
 func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.Walker) error {
 	// We need to forward declare the trait type so that we can set the `Self` type correctly.
-	traitType := &TraitType{Name: trait.Name}
+	traitType := &TraitType{type_: tc.newType(), Name: trait.Name}
 	if err := tc.typeEnv.declare(string(trait.Name), traitType, trait.Span()); err != nil {
 		return err
 	}
@@ -680,7 +712,7 @@ func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.
 	}
 	for _, methodDecl := range trait.MethodDecls {
 		functionType := tc.typeInfo.MustLookupDeclaredType(methodDecl).Type.(*FunctionType)
-		methodType := newMethodTypeFromFunctionType(functionType, traitType)
+		methodType := tc.newMethodTypeFromFunctionType(functionType, traitType)
 		traitType.Methods = append(traitType.Methods, methodType)
 	}
 	tc.typeInfo.Set(trait, traitType)
@@ -732,7 +764,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 		if !ok {
 			return errors.Errorf("%s: type is not a function type: %s", method.Span(), typeDecl)
 		}
-		methodType := newMethodTypeFromFunctionType(functionType, structType)
+		methodType := tc.newMethodTypeFromFunctionType(functionType, structType)
 		if traitType != nil {
 			traitMethodType, err := traitType.FindMethod(decl.Name, decl.Span())
 			if err != nil {
@@ -766,7 +798,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 			strings.Join(missingTraitMethods, ", "),
 		)
 	}
-	tc.typeInfo.Set(impl, &ImplType{ReceiverType: structType})
+	tc.typeInfo.Set(impl, &ImplType{type_: tc.newType(), ReceiverType: structType})
 	return nil
 }
 
@@ -847,7 +879,7 @@ func (tc *typeChecker) VisitStructTypeDeclaration(d *ast.StructTypeDeclaration) 
 		}
 		fields = append(fields, StructField{Name: field.Name, Type: fieldType})
 	}
-	structType := &StructType{Name: d.Name, Fields: fields}
+	structType := &StructType{type_: tc.newType(), Name: d.Name, Fields: fields}
 	if err := tc.typeEnv.declare(string(d.Name), structType, d.Span()); err != nil {
 		return err
 	}
@@ -883,7 +915,17 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 	if err := defaultTypeEnv.declare("()", UnitType, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare UnitType type"))
 	}
+	tc := &typeChecker{
+		DefaultVisitor: ast.DefaultVisitor{},
+		typeInfo: &TypeInfo{
+			types:        make(map[ast.NodeId]Type),
+			typeBindings: make(map[ast.ReferenceExpression]NamedType),
+		},
+		typeEnv:    defaultTypeEnv,
+		nextTypeId: 1000,
+	}
 	if err := defaultTypeEnv.declare("print", &FunctionType{
+		type_:      tc.newType(),
 		Name:       "print",
 		Args:       []*FunctionArg{&FunctionArg{Name: "s", Type: StrType}},
 		ReturnType: UnitType,
@@ -891,19 +933,12 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 		panic(errors.Wrap(err, "failed to declare print function"))
 	}
 	if err := defaultTypeEnv.declare("print_int", &FunctionType{
+		type_:      tc.newType(),
 		Name:       "print_int",
 		Args:       []*FunctionArg{&FunctionArg{Name: "i", Type: Int64Type}},
 		ReturnType: UnitType,
 	}, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare print_int function"))
-	}
-	tc := &typeChecker{
-		DefaultVisitor: ast.DefaultVisitor{},
-		typeInfo: &TypeInfo{
-			types:        make(map[ast.NodeId]Type),
-			typeBindings: make(map[ast.ReferenceExpression]NamedType),
-		},
-		typeEnv: defaultTypeEnv,
 	}
 	walker := &ast.DefaultWalker{Visitor: tc}
 	res, err := tc.check(node, walker)

@@ -991,7 +991,7 @@ func (g *generator) VisitContinueStatement(stmt *ast.ContinueStatement) error {
 }
 
 type DeclaredTypes struct {
-	Types map[ast.TypeIdent]Type
+	Types map[typed.TypeId]Type
 }
 
 func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
@@ -1005,7 +1005,7 @@ func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
 	}
 	switch ty := ty.(type) {
 	case *typed.StructType:
-		return dt.Types[ty.Name]
+		return dt.Types[ty.Id()]
 	default:
 		panic(fmt.Sprintf("type not found for %T", ty))
 	}
@@ -1028,7 +1028,7 @@ func (dt *DeclaredTypes) declare(ty typed.Type) {
 			fieldTypes = append(fieldTypes, fieldType)
 		}
 		structType := &StructType{Name: ty.Name, Fields: fieldTypes}
-		dt.Types[structType.Name] = structType
+		dt.Types[ty.Id()] = structType
 	default:
 		panic(fmt.Sprintf("cannot declare type %T", ty))
 	}
@@ -1036,7 +1036,7 @@ func (dt *DeclaredTypes) declare(ty typed.Type) {
 
 func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 	functionDefinitions := []*ast.FunctionDefinition{}
-	declaredTypes := &DeclaredTypes{Types: make(map[ast.TypeIdent]Type)}
+	declaredTypes := &DeclaredTypes{Types: make(map[typed.TypeId]Type)}
 	for _, node := range module.Nodes {
 		switch node := node.(type) {
 		case *ast.FunctionDefinition:

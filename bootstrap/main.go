@@ -56,8 +56,7 @@ func main() {
 		os.Exit(0)
 	}
 	fileParts := strings.Split(strings.Split(file, ".")[0], "/")
-	// todo: We don't want to allow hyphens in modules.
-	moduleName := strings.ReplaceAll(fileParts[len(fileParts)-1], "-", "_")
+	moduleName := fileParts[len(fileParts)-1]
 	module, err := ast.Parse(tokens, ast.Ident(moduleName))
 	if err != nil {
 		fmt.Printf("Failed to parse: %+v\n", err)

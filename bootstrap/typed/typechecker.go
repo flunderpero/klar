@@ -34,13 +34,13 @@ var UnitType = &unitType{BaseType: BaseType{4}}
 
 type CallableType interface {
 	Type
-	CallArgTypes() []*FunctionArg
+	CallArgTypes() []FunctionArg
 	CallReturnType() Type
 }
 
 type TypeWithTraits interface {
 	Type
-	Traits() *[]*TraitType
+	Traits() []*TraitType
 }
 
 type BaseType struct {
@@ -64,8 +64,8 @@ func (ty strType) String() string {
 	return "StrType"
 }
 
-func (ty *strType) Traits() *[]*TraitType {
-	return &ty.traits
+func (ty *strType) Traits() []*TraitType {
+	return ty.traits
 }
 
 type boolType struct {
@@ -73,8 +73,8 @@ type boolType struct {
 	traits []*TraitType
 }
 
-func (ty *boolType) Traits() *[]*TraitType {
-	return &ty.traits
+func (ty *boolType) Traits() []*TraitType {
+	return ty.traits
 }
 
 func (ty boolType) String() string {
@@ -86,8 +86,8 @@ type int64Type struct {
 	traits []*TraitType
 }
 
-func (ty *int64Type) Traits() *[]*TraitType {
-	return &ty.traits
+func (ty *int64Type) Traits() []*TraitType {
+	return ty.traits
 }
 
 func (ty int64Type) String() string {
@@ -127,12 +127,12 @@ type StructType struct {
 	BaseType
 	Name    ast.TypeIdent
 	Fields  []StructField
-	Methods []*MethodType
+	Methods []MethodType
 	traits  []*TraitType
 }
 
-func (ty *StructType) Traits() *[]*TraitType {
-	return &ty.traits
+func (ty *StructType) Traits() []*TraitType {
+	return ty.traits
 }
 
 func (ty StructType) String() string {
@@ -140,7 +140,7 @@ func (ty StructType) String() string {
 		"StructType\n%s%s%s", base.Indent(ty.Name, 1), base.IndentSlice(ty.Fields, 1), base.IndentSlice(ty.Methods, 1))
 }
 
-func (ty *StructType) FindFieldIndex(name ast.Ident, span token.Span) (int, error) {
+func (ty StructType) FindFieldIndex(name ast.Ident, span token.Span) (int, error) {
 	fieldIndex := slices.IndexFunc(ty.Fields, func(field StructField) bool { return field.Name == name })
 	if fieldIndex < 0 {
 		return -1, errors.Errorf("%s: field %q not found in struct type %q", span, name, ty)
@@ -148,7 +148,7 @@ func (ty *StructType) FindFieldIndex(name ast.Ident, span token.Span) (int, erro
 	return fieldIndex, nil
 }
 
-func (ty *StructType) FindField(name ast.Ident, span token.Span) (*StructField, error) {
+func (ty StructType) FindField(name ast.Ident, span token.Span) (*StructField, error) {
 	fieldIndex, err := ty.FindFieldIndex(name, span)
 	if err != nil {
 		return nil, err
@@ -156,16 +156,16 @@ func (ty *StructType) FindField(name ast.Ident, span token.Span) (*StructField, 
 	return &ty.Fields[fieldIndex], nil
 }
 
-func (ty *StructType) FindMethod(name ast.Ident, span token.Span) (*MethodType, error) {
+func (ty StructType) FindMethod(name ast.Ident, span token.Span) (*MethodType, error) {
 	for _, method := range ty.Methods {
 		if method.Name == name {
-			return method, nil
+			return &method, nil
 		}
 	}
 	return nil, errors.Errorf("%s: method %q not found in struct type %q", span, name, ty)
 }
 
-func (ty *StructType) FindMember(name ast.Ident, span token.Span) (Type, error) {
+func (ty StructType) FindMember(name ast.Ident, span token.Span) (Type, error) {
 	field, err := ty.FindField(name, span)
 	if err == nil {
 		return field.Type, nil
@@ -180,7 +180,7 @@ func (ty *StructType) FindMember(name ast.Ident, span token.Span) (Type, error) 
 type TraitType struct {
 	BaseType
 	Name    ast.TypeIdent
-	Methods []*MethodType
+	Methods []MethodType
 }
 
 func (ty TraitType) String() string {
@@ -190,7 +190,7 @@ func (ty TraitType) String() string {
 func (ty *TraitType) FindMethod(name ast.Ident, span token.Span) (*MethodType, error) {
 	for _, method := range ty.Methods {
 		if method.Name == name {
-			return method, nil
+			return &method, nil
 		}
 	}
 	return nil, errors.Errorf("%s: method %q not found in trait type %q", span, name, ty)
@@ -217,7 +217,7 @@ func (arg FunctionArg) String() string {
 type MethodType struct {
 	BaseType
 	Name         ast.Ident
-	Args         []*FunctionArg
+	Args         []FunctionArg
 	ReturnType   Type
 	ReceiverType Type
 }
@@ -226,11 +226,11 @@ func (ty MethodType) CallArgTypes() []FunctionArg {
 	return ty.Args
 }
 
-func (ty *MethodType) CallReturnType() Type {
+func (ty MethodType) CallReturnType() Type {
 	return ty.ReturnType
 }
 
-func (ty *MethodType) CheckSameSignatureIgnoringReceiverTypes(other *MethodType, span token.Span) error {
+func (ty MethodType) CheckSameSignatureIgnoringReceiverTypes(other *MethodType, span token.Span) error {
 	match := func(thisType Type, otherType Type) bool {
 		if otherType == other.ReceiverType {
 			return thisType == ty.ReceiverType
@@ -255,7 +255,7 @@ func (ty *MethodType) CheckSameSignatureIgnoringReceiverTypes(other *MethodType,
 	return nil
 }
 
-func (ty *MethodType) IsStatic() bool {
+func (ty MethodType) IsStatic() bool {
 	return len(ty.Args) == 0 || ty.Args[0].Name != "self"
 }
 
@@ -266,7 +266,7 @@ func (ty MethodType) String() string {
 		}
 		return t.String()
 	}
-	argToString := func(arg *FunctionArg) string {
+	argToString := func(arg FunctionArg) string {
 		return fmt.Sprintf("%s\n%s", arg.Name, base.IndentString(typeToString(arg.Type), 1))
 	}
 	args := base.Map(ty.Args, argToString)
@@ -277,7 +277,7 @@ func (ty MethodType) String() string {
 		base.IndentString(typeToString(ty.ReturnType), 1))
 }
 
-func (ty *MethodType) ArgTypesWithoutSelf() []*FunctionArg {
+func (ty MethodType) ArgTypesWithoutSelf() []FunctionArg {
 	if len(ty.Args) > 0 && ty.Args[0].Name == "self" {
 		return ty.Args[1:]
 	}
@@ -287,7 +287,7 @@ func (ty *MethodType) ArgTypesWithoutSelf() []*FunctionArg {
 type FunctionType struct {
 	BaseType
 	Name       ast.Ident
-	Args       []*FunctionArg
+	Args       []FunctionArg
 	ReturnType Type
 }
 
@@ -296,11 +296,11 @@ func (ty FunctionType) String() string {
 		"FunctionType\n%s%s\n%s", base.Indent(ty.Name, 1), base.IndentSlice(ty.Args, 1), base.Indent(ty.ReturnType, 1))
 }
 
-func (ty *FunctionType) CallArgTypes() []*FunctionArg {
+func (ty FunctionType) CallArgTypes() []FunctionArg {
 	return ty.Args
 }
 
-func (ty *FunctionType) CallReturnType() Type {
+func (ty FunctionType) CallReturnType() Type {
 	return ty.ReturnType
 }
 
@@ -424,8 +424,8 @@ func (tc *typeChecker) newType() BaseType {
 	return BaseType{TypeId(tc.nextTypeId)}
 }
 
-func (tc *typeChecker) newMethodTypeFromFunctionType(functionType *FunctionType, receiverType Type) *MethodType {
-	return &MethodType{
+func (tc *typeChecker) newMethodTypeFromFunctionType(functionType *FunctionType, receiverType Type) MethodType {
+	return MethodType{
 		BaseType:     tc.newType(),
 		Name:         functionType.Name,
 		Args:         functionType.Args,
@@ -529,7 +529,7 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 	if !ok {
 		return errors.Errorf("%s: callee %q is not a callable type", expr.Span(), calleeType)
 	}
-	var args []*FunctionArg
+	var args []FunctionArg
 	if method, ok := calleeType.(*MethodType); ok {
 		args = method.ArgTypesWithoutSelf()
 	} else {
@@ -626,13 +626,13 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 }
 
 func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) error {
-	args := []*FunctionArg{}
+	args := []FunctionArg{}
 	for _, arg := range decl.Args {
 		argType, found := tc.typeEnv.lookup(arg.Type.TypeName())
 		if !found {
 			return errors.Errorf("%s: type %s not found for argument %s", arg.Span, arg.Type, arg.Name)
 		}
-		args = append(args, &FunctionArg{Name: arg.Name, Type: argType})
+		args = append(args, FunctionArg{Name: arg.Name, Type: argType})
 	}
 	returnType, found := tc.typeEnv.lookup(decl.ReturnType.TypeName())
 	if !found {
@@ -733,7 +733,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 			return errors.Errorf("%s: type %q is not a trait type", impl.Span(), traitType_)
 		}
 		for _, method := range traitType.Methods {
-			unimplementedTraitMethods[method.Name] = method
+			unimplementedTraitMethods[method.Name] = &method
 		}
 	}
 	for _, method := range impl.Methods {
@@ -755,7 +755,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 			if err != nil {
 				return errors.Errorf("%s: method %q not found in trait %q", decl.Span(), decl.Name, traitType.Name)
 			}
-			if err := traitMethodType.CheckSameSignatureIgnoringReceiverTypes(methodType, decl.Span()); err != nil {
+			if err := traitMethodType.CheckSameSignatureIgnoringReceiverTypes(&methodType, decl.Span()); err != nil {
 				return errors.Wrapf(
 					err,
 					"%s: method %q in impl %q has different signature than in trait: %s",
@@ -912,7 +912,7 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 	if err := defaultTypeEnv.declare("print", &FunctionType{
 		BaseType:   BaseType{BuiltInPrintTypeId},
 		Name:       "print",
-		Args:       []*FunctionArg{&FunctionArg{Name: "s", Type: StrType}},
+		Args:       []FunctionArg{FunctionArg{Name: "s", Type: StrType}},
 		ReturnType: UnitType,
 	}, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare print function"))
@@ -920,7 +920,7 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 	if err := defaultTypeEnv.declare("print_int", &FunctionType{
 		BaseType:   BaseType{BuiltInPrintIntTypeId},
 		Name:       "print_int",
-		Args:       []*FunctionArg{&FunctionArg{Name: "i", Type: Int64Type}},
+		Args:       []FunctionArg{FunctionArg{Name: "i", Type: Int64Type}},
 		ReturnType: UnitType,
 	}, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare print_int function"))

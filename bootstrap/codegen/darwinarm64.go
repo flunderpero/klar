@@ -456,11 +456,11 @@ func (c *Code) generateBlock(block *ir.Block) error {
 	return nil
 }
 
-func generateFunction(function *ir.Function, stringConstants *[]*ir.StrConst, isMain bool) (Code, error) {
+func generateFunction(function *ir.Function, module *ir.Module, isMain bool) (Code, error) {
 	stackAllocator := &stackAllocator{size: 16}
 	c := Code{
 		function:        function,
-		stringConstants: stringConstants,
+		stringConstants: &module.Constants,
 		values:          make(map[ir.Register]*registerAllocation),
 		stackAllocator:  stackAllocator,
 	}
@@ -475,6 +475,8 @@ func generateFunction(function *ir.Function, stringConstants *[]*ir.StrConst, is
 	if isMain {
 		c.emit("_main:")
 	} else {
+		symbol := module.TypeInfo.MustLookupSymbol(function.Id)
+		c.emit("; Function: %s", symbol.Name)
 		c.emit("_%s:", function.Id)
 	}
 	// Remember the location where we will have to insert the correct stack frame setup.
@@ -583,7 +585,7 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
 	defineBuiltInPrintFunction(&asm)
 	defineBuiltInPrintIntFunction(&asm)
 	for _, function := range irModule.Functions {
-		code, err := generateFunction(function, &irModule.Constants, function == irModule.Main)
+		code, err := generateFunction(function, irModule, function == irModule.Main)
 		if err != nil {
 			return asm, err
 		}

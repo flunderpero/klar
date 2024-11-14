@@ -185,6 +185,7 @@ type Module struct {
 	Functions     []*Function
 	Constants     []*StrConst
 	DeclaredTypes *DeclaredTypes
+	TypeInfo      *typed.TypeInfo
 	Main          *Function
 }
 
@@ -832,13 +833,10 @@ func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.Walk
 	source := g.lookupRegisterByNode(expr.Target)
 	sourceType := g.lookupType(expr.Target).(*StructType)
 	irSourceType := g.typeInfo.MustLookup(expr.Target).(*typed.StructType)
-	fieldIndex := slices.IndexFunc(
-		irSourceType.Fields, func(field typed.StructField) bool { return field.Name == expr.Field },
-	)
-	if fieldIndex == -1 {
-		if _, err := irSourceType.FindMethod(expr.Field, expr.Span()); err == nil {
-			return nil
-		}
+	fieldIndex, found := irSourceType.FindFieldIndex(expr.Field, expr.Span())
+	if !found {
+		// Note: After lowering there will be no `ast.MemberExpression` that reference a
+		//       method. All of those have been replaced when lowering to plain function calls.
 		return errors.Errorf("field %q not found in struct %q", expr.Field, irSourceType)
 	}
 	fieldType := sourceType.Fields[fieldIndex]
@@ -935,11 +933,13 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 		sourceReg := g.symbolTable.lookup(stmt.Variable.Ident)
 		structType := g.typeInfo.MustLookup(stmt.Variable).(*typed.StructType)
 		sourceType := g.lookupType(stmt.Variable).(*StructType)
-		fieldIndex, err := structType.FindFieldIndex(*stmt.Field, stmt.Span())
-		fieldType := sourceType.Fields[fieldIndex]
-		if err != nil {
-			return err
+		fieldIndex, found := structType.FindFieldIndex(*stmt.Field, stmt.Span())
+		if !found {
+			structSymbol := g.typeInfo.MustLookupSymbol(structType.Id())
+			return errors.Errorf("field %q not found in struct %q", *stmt.Field, structSymbol.Name)
+
 		}
+		fieldType := sourceType.Fields[fieldIndex]
 		g.append(&GetPointer{
 			register:   getPtrReg,
 			Source:     sourceReg,
@@ -1139,7 +1139,9 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 		function.Entry = block
 		function.RegisterConstraints = gen.registerConstraints
 	}
-	return &Module{Functions: functions, Constants: constants, DeclaredTypes: declaredTypes, Main: main}, nil
+	return &Module{
+		Functions: functions, Constants: constants, DeclaredTypes: declaredTypes, Main: main, TypeInfo: typeInfo,
+	}, nil
 }
 
 // Walk the given block and call `visitor` for each block we discover in the graph

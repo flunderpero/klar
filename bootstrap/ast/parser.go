@@ -16,6 +16,8 @@ func (id NodeId) String() string {
 	return fmt.Sprintf("node%d", id)
 }
 
+func (id NodeId) IdMarker() {}
+
 type Node interface {
 	String() string
 	Id() NodeId

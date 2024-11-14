@@ -17,6 +17,13 @@ func (id TypeId) String() string {
 	return fmt.Sprintf("type%d", id)
 }
 
+func (id TypeId) IdMarker() {}
+
+type isId interface {
+	String() string
+	IdMarker()
+}
+
 type Type interface {
 	String() string
 	Id() TypeId
@@ -102,12 +109,12 @@ func (ty unitType) String() string {
 	return "UnitType"
 }
 
-type StructField struct {
+type TypeAndName[T Type] struct {
 	Name ast.Ident
-	Type Type
+	Type T
 }
 
-func (f StructField) String() string {
+func (f TypeAndName[T]) String() string {
 	return fmt.Sprintf("%s\n%s", f.Name, base.Indent(f.Type, 1))
 }
 
@@ -125,9 +132,8 @@ func (ty DeclaredType) Id() TypeId {
 
 type StructType struct {
 	BaseType
-	Name    ast.TypeIdent
-	Fields  []StructField
-	Methods []MethodType
+	Fields  []TypeAndName[Type]
+	Methods []TypeAndName[MethodType]
 	traits  []*TraitType
 }
 
@@ -136,61 +142,59 @@ func (ty *StructType) Traits() []*TraitType {
 }
 
 func (ty StructType) String() string {
-	return fmt.Sprintf(
-		"StructType\n%s%s%s", base.Indent(ty.Name, 1), base.IndentSlice(ty.Fields, 1), base.IndentSlice(ty.Methods, 1))
+	return fmt.Sprintf("StructType\n%s%s", base.IndentSlice(ty.Fields, 1), base.IndentSlice(ty.Methods, 1))
 }
 
-func (ty StructType) FindFieldIndex(name ast.Ident, span token.Span) (int, error) {
-	fieldIndex := slices.IndexFunc(ty.Fields, func(field StructField) bool { return field.Name == name })
+func (ty StructType) FindFieldIndex(name ast.Ident, span token.Span) (int, bool) {
+	fieldIndex := slices.IndexFunc(ty.Fields, func(field TypeAndName[Type]) bool { return field.Name == name })
 	if fieldIndex < 0 {
-		return -1, errors.Errorf("%s: field %q not found in struct type %q", span, name, ty)
+		return -1, false
 	}
-	return fieldIndex, nil
+	return fieldIndex, true
 }
 
-func (ty StructType) FindField(name ast.Ident, span token.Span) (*StructField, error) {
-	fieldIndex, err := ty.FindFieldIndex(name, span)
-	if err != nil {
-		return nil, err
+func (ty StructType) FindField(name ast.Ident, span token.Span) (*TypeAndName[Type], bool) {
+	fieldIndex, found := ty.FindFieldIndex(name, span)
+	if !found {
+		return nil, false
 	}
-	return &ty.Fields[fieldIndex], nil
+	return &ty.Fields[fieldIndex], true
 }
 
-func (ty StructType) FindMethod(name ast.Ident, span token.Span) (*MethodType, error) {
+func (ty StructType) FindMethod(name ast.Ident, span token.Span) (*MethodType, bool) {
 	for _, method := range ty.Methods {
 		if method.Name == name {
-			return &method, nil
+			return &method.Type, true
 		}
 	}
-	return nil, errors.Errorf("%s: method %q not found in struct type %q", span, name, ty)
+	return nil, false
 }
 
-func (ty StructType) FindMember(name ast.Ident, span token.Span) (Type, error) {
-	field, err := ty.FindField(name, span)
-	if err == nil {
-		return field.Type, nil
+func (ty StructType) FindMember(name ast.Ident, span token.Span) (Type, bool) {
+	field, found := ty.FindField(name, span)
+	if found {
+		return field.Type, true
 	}
-	method, err := ty.FindMethod(name, span)
-	if err == nil {
-		return method, nil
+	method, found := ty.FindMethod(name, span)
+	if found {
+		return method, true
 	}
-	return nil, errors.Errorf("%s: member %q not found in struct type %q", span, name, ty.Name)
+	return nil, false
 }
 
 type TraitType struct {
 	BaseType
-	Name    ast.TypeIdent
-	Methods []MethodType
+	Methods []TypeAndName[MethodType]
 }
 
 func (ty TraitType) String() string {
-	return fmt.Sprintf("TraitType\n%s%s)", base.Indent(ty.Name, 1), base.IndentSlice(ty.Methods, 1))
+	return fmt.Sprintf("TraitType%s", base.IndentSlice(ty.Methods, 1))
 }
 
 func (ty *TraitType) FindMethod(name ast.Ident, span token.Span) (*MethodType, error) {
 	for _, method := range ty.Methods {
 		if method.Name == name {
-			return &method, nil
+			return &method.Type, nil
 		}
 	}
 	return nil, errors.Errorf("%s: method %q not found in trait type %q", span, name, ty)
@@ -207,7 +211,6 @@ func (ty ImplType) String() string {
 
 type MethodType struct {
 	BaseType
-	Name         ast.Ident
 	ArgTypes     []Type
 	ReturnType   Type
 	ReceiverType Type
@@ -228,9 +231,6 @@ func (ty MethodType) CheckSameSignatureIgnoringReceiverTypes(other *MethodType, 
 			return thisType == ty.ReceiverType
 		}
 		return thisType == otherType
-	}
-	if ty.Name != other.Name {
-		return errors.Errorf("%s: method names do not match: %s != %s", span, ty.Name, other.Name)
 	}
 	if len(ty.ArgTypes) != len(other.ArgTypes) {
 		return errors.Errorf("%s: argument count does not match: %d != %d", span, len(ty.ArgTypes), len(other.ArgTypes))
@@ -256,10 +256,7 @@ func (ty MethodType) String() string {
 	}
 	args := base.Map(ty.ArgTypes, typeToString)
 	return fmt.Sprintf(
-		"MethodType\n%s%s\n%s",
-		base.Indent(ty.Name, 1),
-		base.IndentStringSlice(args, 1),
-		base.IndentString(typeToString(ty.ReturnType), 1))
+		"MethodType%s\n%s", base.IndentStringSlice(args, 1), base.IndentString(typeToString(ty.ReturnType), 1))
 }
 
 func (ty MethodType) ArgTypesWithoutSelf() []Type {
@@ -271,14 +268,13 @@ func (ty MethodType) ArgTypesWithoutSelf() []Type {
 
 type FunctionType struct {
 	BaseType
-	Name       ast.Ident
 	ArgTypes   []Type
 	ReturnType Type
 }
 
 func (ty FunctionType) String() string {
 	return fmt.Sprintf(
-		"FunctionType\n%s%s\n%s", base.Indent(ty.Name, 1), base.IndentSlice(ty.ArgTypes, 1), base.Indent(ty.ReturnType, 1))
+		"FunctionType%s\n%s", base.IndentSlice(ty.ArgTypes, 1), base.Indent(ty.ReturnType, 1))
 }
 
 func (ty FunctionType) CallArgTypes() []Type {
@@ -344,8 +340,21 @@ func (te *typeEnvironment) declareVariable(name string, ty Type, def *ast.Variab
 	return nil
 }
 
+type Symbol struct {
+	Name  string
+	Scope *Scope
+}
+
+type Scope struct {
+	Parent   *Scope
+	Children []*Scope
+	Node     ast.Node
+	Symbols  map[string]*Symbol
+}
+
 type TypeInfo struct {
-	types map[ast.NodeId]Type
+	types   map[ast.NodeId]Type
+	symbols map[string]*Symbol
 	// The type an `ReferenceExpression` points to if it does not refer to a variable.
 	typeBindings map[ast.ReferenceExpression]Type
 	Main         *FunctionType
@@ -396,6 +405,15 @@ func (m *TypeInfo) Set(node ast.Node, ty Type) {
 	m.types[node.Id()] = ty
 }
 
+func (m *TypeInfo) MustLookupSymbol(id isId) *Symbol {
+	keyString := id.String()
+	symbol, found := m.symbols[keyString]
+	if !found {
+		panic(fmt.Sprintf("symbol not found for key %q", keyString))
+	}
+	return symbol
+}
+
 type checkingMode int
 
 const (
@@ -410,6 +428,7 @@ type typeChecker struct {
 	loopDepth    int
 	nextTypeId   int
 	checkingMode checkingMode
+	scope        *Scope
 }
 
 func (tc *typeChecker) newType() BaseType {
@@ -417,12 +436,16 @@ func (tc *typeChecker) newType() BaseType {
 	return BaseType{TypeId(tc.nextTypeId)}
 }
 
-func (tc *typeChecker) enterScope() {
+func (tc *typeChecker) enterScope(node ast.Node) {
 	tc.typeEnv = newTypeEnvironment(tc.typeEnv)
+	scope := &Scope{Parent: tc.scope, Node: node, Symbols: make(map[string]*Symbol)}
+	tc.scope.Children = append(tc.scope.Children, scope)
+	tc.scope = scope
 }
 
 func (tc *typeChecker) exitScope() {
 	tc.typeEnv = tc.typeEnv.parent
+	tc.scope = tc.scope.Parent
 }
 
 func (tc *typeChecker) enterLoop() {
@@ -445,6 +468,16 @@ func (tc *typeChecker) exitCheckingMode() {
 		panic("unexpected checking mode 0 while trying to exit mode")
 	}
 	tc.checkingMode = defaultMode
+}
+
+func (tc *typeChecker) declareSymbol(key isId, name string) {
+	keyString := key.String()
+	symbol := &Symbol{Name: name, Scope: tc.scope}
+	if _, found := tc.scope.Symbols[keyString]; found {
+		panic(fmt.Sprintf("symbol already declared: %q", symbol.Name))
+	}
+	tc.scope.Symbols[keyString] = symbol
+	tc.typeInfo.symbols[keyString] = symbol
 }
 
 func (tc *typeChecker) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
@@ -554,15 +587,18 @@ func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.W
 	if !isType {
 		return errors.Errorf("%s: type %q is not a struct type", expr.Span(), structType_)
 	}
-	member, err := structType.FindMember(expr.Field, expr.Span())
-	if err != nil {
-		return err
+	member, found := structType.FindMember(expr.Field, expr.Span())
+	if !found {
+		structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
+		return errors.Errorf("%s: member %q not found in struct type %q", expr.Span(), expr.Field, structSymbol.Name)
 	}
 	tc.typeInfo.Set(expr, member)
 	return nil
 }
 
 func (tc *typeChecker) VisitBlockExpression(expr *ast.BlockExpression, w ast.Walker) error {
+	tc.enterScope(expr)
+	defer tc.exitScope()
 	if err := w.WalkBlockExpression(expr); err != nil {
 		return err
 	}
@@ -572,8 +608,6 @@ func (tc *typeChecker) VisitBlockExpression(expr *ast.BlockExpression, w ast.Wal
 }
 
 func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) error {
-	tc.enterScope()
-	defer tc.exitScope()
 	if err := w.WalkIfExpression(expr); err != nil {
 		return err
 	}
@@ -600,9 +634,11 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 		return errors.Errorf("%s: type %q is not a struct type", expr.Span(), expr.TypeIdent)
 	}
 	for _, initField := range expr.Fields {
-		structField, err := structType.FindField(initField.Name, initField.Span)
-		if err != nil {
-			return err
+		structField, found := structType.FindField(initField.Name, initField.Span)
+		if !found {
+			structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
+			return errors.Errorf(
+				"%s: field %q not found in struct type %q", initField.Span, initField.Name, structSymbol.Name)
 		}
 		fieldType := tc.typeInfo.MustLookup(initField.Value)
 		if structField.Type != fieldType {
@@ -639,7 +675,6 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 		isStatic := len(decl.Args) == 0 || decl.Args[0].Name != "self"
 		methodType := &MethodType{
 			BaseType:   tc.newType(),
-			Name:       decl.Name,
 			ArgTypes:   argTypes,
 			ReturnType: returnType,
 			IsStatic:   isStatic,
@@ -648,11 +683,10 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 	} else {
 		funcType := &FunctionType{
 			BaseType:   tc.newType(),
-			Name:       decl.Name,
 			ArgTypes:   argTypes,
 			ReturnType: returnType,
 		}
-		if funcType.Name == "main" {
+		if decl.Name == "main" {
 			if len(funcType.ArgTypes) > 0 {
 				return errors.Errorf("%s: main function must not have arguments", decl.Span())
 			}
@@ -675,8 +709,9 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 	}
 	declaredType := tc.typeInfo.MustLookup(fn.Decl).(*DeclaredType)
 	callableType := declaredType.Type.(CallableType)
+	tc.declareSymbol(callableType.Id(), fn.Decl.Name.String())
 	tc.typeInfo.Set(fn, declaredType)
-	tc.enterScope()
+	tc.enterScope(fn)
 	defer tc.exitScope()
 	argTypes := callableType.CallArgTypes()
 	for i, arg := range fn.Decl.Args {
@@ -693,11 +728,11 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 
 func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.Walker) error {
 	// We need to forward declare the trait type so that we can set the `Self` type correctly.
-	traitType := &TraitType{BaseType: tc.newType(), Name: trait.Name}
+	traitType := &TraitType{BaseType: tc.newType()}
 	if err := tc.typeEnv.declare(string(trait.Name), traitType, trait.Span()); err != nil {
 		return err
 	}
-	tc.enterScope()
+	tc.enterScope(trait)
 	defer tc.exitScope()
 	if err := tc.typeEnv.declare("Self", traitType, trait.Span()); err != nil {
 		return err
@@ -710,8 +745,10 @@ func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.
 	for _, methodDecl := range trait.MethodDecls {
 		methodType := tc.typeInfo.MustLookupDeclaredType(methodDecl).Type.(*MethodType)
 		methodType.ReceiverType = traitType
-		traitType.Methods = append(traitType.Methods, *methodType)
+		methodAndName := TypeAndName[MethodType]{Name: methodDecl.Name, Type: *methodType}
+		traitType.Methods = append(traitType.Methods, methodAndName)
 	}
+	tc.declareSymbol(traitType.Id(), trait.Name.String())
 	tc.typeInfo.Set(trait, traitType)
 	return nil
 }
@@ -725,7 +762,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 	if !ok {
 		return errors.Errorf("%s: type %q is not a struct type", impl.Span(), structType_)
 	}
-	tc.enterScope()
+	tc.enterScope(impl)
 	defer tc.exitScope()
 	if err := tc.typeEnv.declare("Self", structType, impl.Span()); err != nil {
 		return err
@@ -736,7 +773,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 		return err
 	}
 	var traitType *TraitType = nil
-	unimplementedTraitMethods := map[ast.Ident]*MethodType{}
+	unimplementedTraitMethods := map[ast.Ident]*TypeAndName[MethodType]{}
 	if impl.ImplementsTrait() {
 		traitType_, found := tc.typeEnv.lookup(string(impl.Trait))
 		if !found {
@@ -752,11 +789,15 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 	}
 	for _, method := range impl.Methods {
 		decl := method.Decl
-		if _, err := structType.FindField(decl.Name, decl.Span()); err == nil {
-			return errors.Errorf("%s: method name %q already used in struct type %q", decl.Span(), decl.Name, structType.Name)
+		if _, found := structType.FindField(decl.Name, decl.Span()); found {
+			structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
+			return errors.Errorf(
+				"%s: method name %q already used in struct type %q", decl.Span(), decl.Name, structSymbol.Name)
 		}
-		if _, err := structType.FindMethod(decl.Name, decl.Span()); err == nil {
-			return errors.Errorf("%s: method name %q already used in struct type %q", decl.Span(), decl.Name, structType.Name)
+		if _, found := structType.FindMethod(decl.Name, decl.Span()); found {
+			structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
+			return errors.Errorf(
+				"%s: method name %q already used in struct type %q", decl.Span(), decl.Name, structSymbol.Name)
 		}
 		typeDecl := tc.typeInfo.MustLookupDeclaredType(method)
 		methodType, ok := typeDecl.Type.(*MethodType)
@@ -767,21 +808,24 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 		if traitType != nil {
 			traitMethodType, err := traitType.FindMethod(decl.Name, decl.Span())
 			if err != nil {
-				return errors.Errorf("%s: method %q not found in trait %q", decl.Span(), decl.Name, traitType.Name)
+				traitSymbol := tc.typeInfo.MustLookupSymbol(traitType.Id())
+				return errors.Errorf("%s: method %q not found in trait %q", decl.Span(), decl.Name, traitSymbol.Name)
 			}
 			if err := traitMethodType.CheckSameSignatureIgnoringReceiverTypes(methodType, decl.Span()); err != nil {
+				structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
+				traitSymbol := tc.typeInfo.MustLookupSymbol(traitType.Id())
 				return errors.Wrapf(
 					err,
 					"%s: method %q in impl %q has different signature than in trait: %s",
 					decl.Span(),
 					decl.Name,
-					structType.Name,
-					traitType.Name,
+					structSymbol.Name,
+					traitSymbol.Name,
 				)
 			}
 			delete(unimplementedTraitMethods, decl.Name)
 		}
-		structType.Methods = append(structType.Methods, *methodType)
+		structType.Methods = append(structType.Methods, TypeAndName[MethodType]{Name: decl.Name, Type: *methodType})
 		tc.typeInfo.Set(method, &DeclaredType{Type: methodType})
 	}
 	if traitType != nil && len(unimplementedTraitMethods) > 0 {
@@ -789,11 +833,13 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 		for _, method := range unimplementedTraitMethods {
 			missingTraitMethods = append(missingTraitMethods, method.String())
 		}
+		structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
+		traitSymbol := tc.typeInfo.MustLookupSymbol(traitType.Id())
 		return errors.Errorf(
 			"%s: impl %q does not implement all methods of trait %q: %s",
 			impl.Span(),
-			structType.Name,
-			traitType.Name,
+			structSymbol.Name,
+			traitSymbol.Name,
 			strings.Join(missingTraitMethods, ", "),
 		)
 	}
@@ -833,9 +879,10 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 		if !ok {
 			return errors.Errorf("%s: variable %q is not a struct type", s.Span(), s.Variable.Ident)
 		}
-		field, err := structType.FindField(*s.Field, s.Span())
-		if err != nil {
-			return err
+		field, found := structType.FindField(*s.Field, s.Span())
+		if !found {
+			structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
+			return errors.Errorf("%s: field %q not found in struct type %q", s.Span(), s.Field, structSymbol.Name)
 		}
 		varType = field.Type
 	}
@@ -870,18 +917,19 @@ func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 }
 
 func (tc *typeChecker) VisitStructTypeDeclaration(d *ast.StructTypeDeclaration) error {
-	fields := []StructField{}
+	fields := []TypeAndName[Type]{}
 	for _, field := range d.Fields {
 		fieldType, found := tc.typeEnv.lookup(field.Type.TypeName())
 		if !found {
 			return errors.Errorf("%s: type %q not found for field %q", field.Span, field.Type, field.Name)
 		}
-		fields = append(fields, StructField{Name: field.Name, Type: fieldType})
+		fields = append(fields, TypeAndName[Type]{Name: field.Name, Type: fieldType})
 	}
 	structType := &StructType{BaseType: tc.newType(), Fields: fields}
 	if err := tc.typeEnv.declare(string(d.Name), structType, d.Span()); err != nil {
 		return err
 	}
+	tc.declareSymbol(structType.Id(), d.Name.String())
 	tc.typeInfo.Set(d, &DeclaredType{Type: structType})
 	return nil
 }
@@ -914,18 +962,20 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 	if err := defaultTypeEnv.declare("()", UnitType, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare UnitType type"))
 	}
+	rootScope := &Scope{Node: node, Symbols: make(map[string]*Symbol)}
 	tc := &typeChecker{
 		DefaultVisitor: ast.DefaultVisitor{},
 		typeInfo: &TypeInfo{
 			types:        make(map[ast.NodeId]Type),
+			symbols:      make(map[string]*Symbol),
 			typeBindings: make(map[ast.ReferenceExpression]Type),
 		},
 		typeEnv:    defaultTypeEnv,
 		nextTypeId: 1000,
+		scope:      rootScope,
 	}
 	if err := defaultTypeEnv.declare("print", &FunctionType{
 		BaseType:   BaseType{BuiltInPrintTypeId},
-		Name:       "print",
 		ArgTypes:   []Type{StrType},
 		ReturnType: UnitType,
 	}, builtInSpan); err != nil {
@@ -933,7 +983,6 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 	}
 	if err := defaultTypeEnv.declare("print_int", &FunctionType{
 		BaseType:   BaseType{BuiltInPrintIntTypeId},
-		Name:       "print_int",
 		ArgTypes:   []Type{Int64Type},
 		ReturnType: UnitType,
 	}, builtInSpan); err != nil {

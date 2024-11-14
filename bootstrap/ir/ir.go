@@ -1061,8 +1061,8 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 	for _, functionDef := range functionDefinitions {
 		funcType := typeInfo.MustLookupDeclaredType(functionDef).Type.(typed.CallableType)
 		args := []FunctionArg{}
-		for i, arg := range funcType.CallArgTypes() {
-			argType := declaredTypes.MustLookup(arg.Type)
+		for i, argType := range funcType.CallArgTypes() {
+			argType := declaredTypes.MustLookup(argType)
 			irArg := FunctionArg{
 				Type:     argType,
 				Register: Register(fmt.Sprintf("%%%d", (i + 1))),

@@ -29,7 +29,7 @@ func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker)
 	}
 	calleeType := l.typeInfo.MustLookup(expr.Callee)
 	if method, isMethod := calleeType.(*typed.MethodType); isMethod {
-		if !method.IsStatic() {
+		if !method.IsStatic {
 			obj := expr.Callee.(*ast.MemberExpression).Target
 			expr.Args = append([]ast.Expression{obj}, expr.Args...)
 		}
@@ -38,7 +38,7 @@ func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker)
 		if !found {
 			functionType = &typed.FunctionType{
 				BaseType:   typed.NewBaseType(method.Id()),
-				Args:       method.Args,
+				ArgTypes:   method.ArgTypes,
 				Name:       method.Name,
 				ReturnType: method.ReturnType,
 			}

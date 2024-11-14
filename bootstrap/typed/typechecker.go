@@ -34,7 +34,7 @@ var UnitType = &unitType{BaseType: BaseType{4}}
 
 type CallableType interface {
 	Type
-	CallArgTypes() []FunctionArg
+	CallArgTypes() []Type
 	CallReturnType() Type
 }
 
@@ -205,25 +205,17 @@ func (ty ImplType) String() string {
 	return fmt.Sprintf("ImplType\n%s", base.Indent(ty.ReceiverType, 1))
 }
 
-type FunctionArg struct {
-	Name ast.Ident
-	Type Type
-}
-
-func (arg FunctionArg) String() string {
-	return fmt.Sprintf("%s\n%s", arg.Name, base.Indent(arg.Type, 1))
-}
-
 type MethodType struct {
 	BaseType
 	Name         ast.Ident
-	Args         []FunctionArg
+	ArgTypes     []Type
 	ReturnType   Type
 	ReceiverType Type
+	IsStatic     bool
 }
 
-func (ty MethodType) CallArgTypes() []FunctionArg {
-	return ty.Args
+func (ty MethodType) CallArgTypes() []Type {
+	return ty.ArgTypes
 }
 
 func (ty MethodType) CallReturnType() Type {
@@ -240,23 +232,19 @@ func (ty MethodType) CheckSameSignatureIgnoringReceiverTypes(other *MethodType, 
 	if ty.Name != other.Name {
 		return errors.Errorf("%s: method names do not match: %s != %s", span, ty.Name, other.Name)
 	}
-	if len(ty.Args) != len(other.Args) {
-		return errors.Errorf("%s: argument count does not match: %d != %d", span, len(ty.Args), len(other.Args))
+	if len(ty.ArgTypes) != len(other.ArgTypes) {
+		return errors.Errorf("%s: argument count does not match: %d != %d", span, len(ty.ArgTypes), len(other.ArgTypes))
 	}
 	if !match(ty.ReturnType, other.ReturnType) {
 		return errors.Errorf("%s: return types do not match: %s != %s", span, ty.ReturnType, other.ReturnType)
 	}
-	for i, arg := range ty.Args {
-		otherArg := other.Args[i]
-		if !match(arg.Type, otherArg.Type) {
-			return errors.Errorf("%s: argument types do not match: %s != %s", span, arg.Type, otherArg.Type)
+	for i, argType := range ty.ArgTypes {
+		otherArgType := other.ArgTypes[i]
+		if !match(argType, otherArgType) {
+			return errors.Errorf("%s: argument types do not match: %s != %s", span, argType, otherArgType)
 		}
 	}
 	return nil
-}
-
-func (ty MethodType) IsStatic() bool {
-	return len(ty.Args) == 0 || ty.Args[0].Name != "self"
 }
 
 func (ty MethodType) String() string {
@@ -266,10 +254,7 @@ func (ty MethodType) String() string {
 		}
 		return t.String()
 	}
-	argToString := func(arg FunctionArg) string {
-		return fmt.Sprintf("%s\n%s", arg.Name, base.IndentString(typeToString(arg.Type), 1))
-	}
-	args := base.Map(ty.Args, argToString)
+	args := base.Map(ty.ArgTypes, typeToString)
 	return fmt.Sprintf(
 		"MethodType\n%s%s\n%s",
 		base.Indent(ty.Name, 1),
@@ -277,27 +262,27 @@ func (ty MethodType) String() string {
 		base.IndentString(typeToString(ty.ReturnType), 1))
 }
 
-func (ty MethodType) ArgTypesWithoutSelf() []FunctionArg {
-	if len(ty.Args) > 0 && ty.Args[0].Name == "self" {
-		return ty.Args[1:]
+func (ty MethodType) ArgTypesWithoutSelf() []Type {
+	if ty.IsStatic || len(ty.ArgTypes) == 0 {
+		return ty.ArgTypes
 	}
-	return ty.Args
+	return ty.ArgTypes[1:]
 }
 
 type FunctionType struct {
 	BaseType
 	Name       ast.Ident
-	Args       []FunctionArg
+	ArgTypes   []Type
 	ReturnType Type
 }
 
 func (ty FunctionType) String() string {
 	return fmt.Sprintf(
-		"FunctionType\n%s%s\n%s", base.Indent(ty.Name, 1), base.IndentSlice(ty.Args, 1), base.Indent(ty.ReturnType, 1))
+		"FunctionType\n%s%s\n%s", base.Indent(ty.Name, 1), base.IndentSlice(ty.ArgTypes, 1), base.Indent(ty.ReturnType, 1))
 }
 
-func (ty FunctionType) CallArgTypes() []FunctionArg {
-	return ty.Args
+func (ty FunctionType) CallArgTypes() []Type {
+	return ty.ArgTypes
 }
 
 func (ty FunctionType) CallReturnType() Type {
@@ -411,27 +396,25 @@ func (m *TypeInfo) Set(node ast.Node, ty Type) {
 	m.types[node.Id()] = ty
 }
 
+type checkingMode int
+
+const (
+	defaultMode           checkingMode = 0
+	insideTraitOrImplMode checkingMode = 1
+)
+
 type typeChecker struct {
 	ast.DefaultVisitor
-	typeInfo   *TypeInfo
-	typeEnv    *typeEnvironment
-	loopDepth  int
-	nextTypeId int
+	typeInfo     *TypeInfo
+	typeEnv      *typeEnvironment
+	loopDepth    int
+	nextTypeId   int
+	checkingMode checkingMode
 }
 
 func (tc *typeChecker) newType() BaseType {
 	tc.nextTypeId += 1
 	return BaseType{TypeId(tc.nextTypeId)}
-}
-
-func (tc *typeChecker) newMethodTypeFromFunctionType(functionType *FunctionType, receiverType Type) MethodType {
-	return MethodType{
-		BaseType:     tc.newType(),
-		Name:         functionType.Name,
-		Args:         functionType.Args,
-		ReturnType:   functionType.ReturnType,
-		ReceiverType: receiverType,
-	}
 }
 
 func (tc *typeChecker) enterScope() {
@@ -448,6 +431,20 @@ func (tc *typeChecker) enterLoop() {
 
 func (tc *typeChecker) exitLoop() {
 	tc.loopDepth -= 1
+}
+
+func (tc *typeChecker) enterCheckingMode(mode checkingMode) {
+	if tc.checkingMode != defaultMode {
+		panic(fmt.Sprintf("unexpected checking mode %d while trying to enter mode %d", tc.checkingMode, mode))
+	}
+	tc.checkingMode = mode
+}
+
+func (tc *typeChecker) exitCheckingMode() {
+	if tc.checkingMode == defaultMode {
+		panic("unexpected checking mode 0 while trying to exit mode")
+	}
+	tc.checkingMode = defaultMode
 }
 
 func (tc *typeChecker) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
@@ -529,19 +526,19 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 	if !ok {
 		return errors.Errorf("%s: callee %q is not a callable type", expr.Span(), calleeType)
 	}
-	var args []FunctionArg
-	if method, ok := calleeType.(*MethodType); ok {
-		args = method.ArgTypesWithoutSelf()
+	var argTypes []Type
+	if methodType, ok := calleeType.(*MethodType); ok {
+		argTypes = methodType.ArgTypesWithoutSelf()
 	} else {
-		args = calleeType.CallArgTypes()
+		argTypes = calleeType.CallArgTypes()
 	}
-	if len(args) != len(expr.Args) {
-		return errors.Errorf("%s: expected %d arguments, got %d for %s", expr.Span(), len(args), len(expr.Args), calleeType)
+	if len(argTypes) != len(expr.Args) {
+		return errors.Errorf("%s: expected %d arguments, got %d for %s", expr.Span(), len(argTypes), len(expr.Args), calleeType)
 	}
 	for i, arg := range expr.Args {
 		argType := tc.typeInfo.MustLookup(arg)
-		if argType != args[i].Type {
-			return errors.Errorf("%s: expected argument %d to be of type %q, got %q", arg.Span(), i, args[i].Type, argType)
+		if argType != argTypes[i] {
+			return errors.Errorf("%s: expected argument %d to be of type %q, got %q", arg.Span(), i, argTypes[i], argType)
 		}
 	}
 	tc.typeInfo.Set(expr, calleeType.CallReturnType())
@@ -626,36 +623,48 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 }
 
 func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) error {
-	args := []FunctionArg{}
-	for _, arg := range decl.Args {
+	argTypes := make([]Type, len(decl.Args))
+	for i, arg := range decl.Args {
 		argType, found := tc.typeEnv.lookup(arg.Type.TypeName())
 		if !found {
 			return errors.Errorf("%s: type %s not found for argument %s", arg.Span, arg.Type, arg.Name)
 		}
-		args = append(args, FunctionArg{Name: arg.Name, Type: argType})
+		argTypes[i] = argType
 	}
 	returnType, found := tc.typeEnv.lookup(decl.ReturnType.TypeName())
 	if !found {
 		return errors.Errorf("%s: type %s not found for return type of function %s", decl.Span(), decl.ReturnType, decl.Name)
 	}
-	funcType := &FunctionType{
-		BaseType:   tc.newType(),
-		Name:       decl.Name,
-		Args:       args,
-		ReturnType: returnType,
-	}
-	if funcType.Name == "main" {
-		if len(funcType.Args) > 0 {
-			return errors.Errorf("%s: main function must not have arguments", decl.Span())
+	if tc.checkingMode == insideTraitOrImplMode {
+		isStatic := len(decl.Args) == 0 || decl.Args[0].Name != "self"
+		methodType := &MethodType{
+			BaseType:   tc.newType(),
+			Name:       decl.Name,
+			ArgTypes:   argTypes,
+			ReturnType: returnType,
+			IsStatic:   isStatic,
 		}
-		if _, ok := funcType.ReturnType.(*unitType); !ok {
-			return errors.Errorf("%s: main function must return () (no return value)", decl.Span())
+		tc.typeInfo.Set(decl, &DeclaredType{Type: methodType})
+	} else {
+		funcType := &FunctionType{
+			BaseType:   tc.newType(),
+			Name:       decl.Name,
+			ArgTypes:   argTypes,
+			ReturnType: returnType,
 		}
-		tc.typeInfo.Main = funcType
-	}
-	tc.typeInfo.Set(decl, &DeclaredType{Type: funcType})
-	if err := tc.typeEnv.declare(string(decl.Name), funcType, decl.Span()); err != nil {
-		return err
+		if funcType.Name == "main" {
+			if len(funcType.ArgTypes) > 0 {
+				return errors.Errorf("%s: main function must not have arguments", decl.Span())
+			}
+			if _, ok := funcType.ReturnType.(*unitType); !ok {
+				return errors.Errorf("%s: main function must return () (no return value)", decl.Span())
+			}
+			tc.typeInfo.Main = funcType
+		}
+		if err := tc.typeEnv.declare(string(decl.Name), funcType, decl.Span()); err != nil {
+			return err
+		}
+		tc.typeInfo.Set(decl, &DeclaredType{Type: funcType})
 	}
 	return nil
 }
@@ -664,13 +673,14 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 	if err := tc.VisitFunctionDeclaration(fn.Decl); err != nil {
 		return err
 	}
-	funcDeclType := tc.typeInfo.MustLookup(fn.Decl).(*DeclaredType)
-	funcType := funcDeclType.Type.(*FunctionType)
-	tc.typeInfo.Set(fn, funcDeclType)
+	declaredType := tc.typeInfo.MustLookup(fn.Decl).(*DeclaredType)
+	callableType := declaredType.Type.(CallableType)
+	tc.typeInfo.Set(fn, declaredType)
 	tc.enterScope()
 	defer tc.exitScope()
+	argTypes := callableType.CallArgTypes()
 	for i, arg := range fn.Decl.Args {
-		argType := funcType.Args[i].Type
+		argType := argTypes[i]
 		if err := tc.typeEnv.declare(string(arg.Name), argType, arg.Span); err != nil {
 			return err
 		}
@@ -692,13 +702,15 @@ func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.
 	if err := tc.typeEnv.declare("Self", traitType, trait.Span()); err != nil {
 		return err
 	}
+	tc.enterCheckingMode(insideTraitOrImplMode)
+	defer tc.exitCheckingMode()
 	if err := w.WalkTraitDeclaration(trait); err != nil {
 		return err
 	}
 	for _, methodDecl := range trait.MethodDecls {
-		functionType := tc.typeInfo.MustLookupDeclaredType(methodDecl).Type.(*FunctionType)
-		methodType := tc.newMethodTypeFromFunctionType(functionType, traitType)
-		traitType.Methods = append(traitType.Methods, methodType)
+		methodType := tc.typeInfo.MustLookupDeclaredType(methodDecl).Type.(*MethodType)
+		methodType.ReceiverType = traitType
+		traitType.Methods = append(traitType.Methods, *methodType)
 	}
 	tc.typeInfo.Set(trait, traitType)
 	return nil
@@ -718,6 +730,8 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 	if err := tc.typeEnv.declare("Self", structType, impl.Span()); err != nil {
 		return err
 	}
+	tc.enterCheckingMode(insideTraitOrImplMode)
+	defer tc.exitCheckingMode()
 	if err := w.WalkImplDefinition(impl); err != nil {
 		return err
 	}
@@ -745,29 +759,29 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 			return errors.Errorf("%s: method name %q already used in struct type %q", decl.Span(), decl.Name, structType.Name)
 		}
 		typeDecl := tc.typeInfo.MustLookupDeclaredType(method)
-		functionType, ok := typeDecl.Type.(*FunctionType)
+		methodType, ok := typeDecl.Type.(*MethodType)
 		if !ok {
-			return errors.Errorf("%s: type is not a function type: %s", method.Span(), typeDecl)
+			return errors.Errorf("%s: type is not a method type: %s", method.Span(), typeDecl)
 		}
-		methodType := tc.newMethodTypeFromFunctionType(functionType, structType)
+		methodType.ReceiverType = structType
 		if traitType != nil {
 			traitMethodType, err := traitType.FindMethod(decl.Name, decl.Span())
 			if err != nil {
 				return errors.Errorf("%s: method %q not found in trait %q", decl.Span(), decl.Name, traitType.Name)
 			}
-			if err := traitMethodType.CheckSameSignatureIgnoringReceiverTypes(&methodType, decl.Span()); err != nil {
+			if err := traitMethodType.CheckSameSignatureIgnoringReceiverTypes(methodType, decl.Span()); err != nil {
 				return errors.Wrapf(
 					err,
 					"%s: method %q in impl %q has different signature than in trait: %s",
 					decl.Span(),
 					decl.Name,
 					structType.Name,
-					traitType,
+					traitType.Name,
 				)
 			}
 			delete(unimplementedTraitMethods, decl.Name)
 		}
-		structType.Methods = append(structType.Methods, methodType)
+		structType.Methods = append(structType.Methods, *methodType)
 		tc.typeInfo.Set(method, &DeclaredType{Type: methodType})
 	}
 	if traitType != nil && len(unimplementedTraitMethods) > 0 {
@@ -912,7 +926,7 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 	if err := defaultTypeEnv.declare("print", &FunctionType{
 		BaseType:   BaseType{BuiltInPrintTypeId},
 		Name:       "print",
-		Args:       []FunctionArg{FunctionArg{Name: "s", Type: StrType}},
+		ArgTypes:   []Type{StrType},
 		ReturnType: UnitType,
 	}, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare print function"))
@@ -920,7 +934,7 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 	if err := defaultTypeEnv.declare("print_int", &FunctionType{
 		BaseType:   BaseType{BuiltInPrintIntTypeId},
 		Name:       "print_int",
-		Args:       []FunctionArg{FunctionArg{Name: "i", Type: Int64Type}},
+		ArgTypes:   []Type{Int64Type},
 		ReturnType: UnitType,
 	}, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare print_int function"))

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/flunderpero/klar/bootstrap/ir"
+	"github.com/flunderpero/klar/bootstrap/typed"
 	"github.com/pkg/errors"
 )
 
@@ -292,7 +293,7 @@ func (c *Code) mustLookupRegisterAllocation(reg ir.Register) *registerAllocation
 }
 
 func (c *Code) blockLabel(block *ir.Block) string {
-	return fmt.Sprintf("%s_%s", c.function.Name, block.Id)
+	return fmt.Sprintf("%s_%s", c.function.Id, block.Id)
 }
 
 func (c *Code) prepareBinaryOperation(resReg ir.Register, lhsReg ir.Register, rhsReg ir.Register) (reg *registerAllocation, lhs register, rhs register) {
@@ -424,7 +425,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 				argReg := c.mustLookupRegisterAllocation(arg)
 				c.registerAllocator.move(callArgsRegisters[i], argReg)
 			}
-			c.emit("bl _%s", inst.Function.Name)
+			c.emit("bl _%s", inst.Function.Id)
 			c.registerAllocator.restoreCallerSavedRegisters(savedCallerRegisters)
 			if inst.Function.ReturnType != ir.VoidType {
 				allocation := c.registerAllocator.saveCallResultRegister(inst.Register())
@@ -455,7 +456,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 	return nil
 }
 
-func generateFunction(function *ir.Function, stringConstants *[]*ir.StrConst) (Code, error) {
+func generateFunction(function *ir.Function, stringConstants *[]*ir.StrConst, isMain bool) (Code, error) {
 	stackAllocator := &stackAllocator{size: 16}
 	c := Code{
 		function:        function,
@@ -471,7 +472,11 @@ func generateFunction(function *ir.Function, stringConstants *[]*ir.StrConst) (C
 	for i, args := range function.Args {
 		c.values[args.Register] = c.registerAllocator.allocateCallRegister(i)
 	}
-	c.emit("_%s:", function.Name)
+	if isMain {
+		c.emit("_main:")
+	} else {
+		c.emit("_%s:", function.Id)
+	}
 	// Remember the location where we will have to insert the correct stack frame setup.
 	// We don't know the size of the stack yet, so we have to come back later and insert
 	// the correct code.
@@ -504,7 +509,7 @@ func generateFunction(function *ir.Function, stringConstants *[]*ir.StrConst) (C
 		c.emit("ldp fp, lr, [sp]")
 		c.emit("add sp, sp, #%d", stackAllocator.size)
 	}
-	if c.function.Name == "main" {
+	if isMain {
 		// We have to implicitly return the status code (`0`) in `main`.
 		c.emit("mov x0, xzr")
 	}
@@ -515,7 +520,9 @@ func generateFunction(function *ir.Function, stringConstants *[]*ir.StrConst) (C
 
 func defineBuiltInPrintFunction(asm *ASMText) {
 	asm.emit(
-		`_print:
+		`
+; Function: print
+_%s:
     stp fp, lr, [sp, #-16]!
     mov fp, sp
     ldr x1, [x0, 8]
@@ -524,12 +531,14 @@ func defineBuiltInPrintFunction(asm *ASMText) {
     bl _write
     ldp fp, lr, [sp], #16
     mov x0, xzr
-    ret`)
+    ret`, typed.BuiltInPrintTypeId)
 }
 
 func defineBuiltInPrintIntFunction(asm *ASMText) {
 	asm.emit(
-		`_print_int:
+		`
+; Function: print_int
+_%s:
     stp fp, lr, [sp, #-32]!
     mov fp, sp
     str x0, [sp]
@@ -540,12 +549,14 @@ func defineBuiltInPrintIntFunction(asm *ASMText) {
     bl _fflush
     ldp fp, lr, [sp], #32
     mov x0, xzr
-    ret`)
+    ret`, typed.BuiltInPrintIntTypeId)
 }
 
 func defineBuiltInUnsafeMalloc(asm *ASMText) {
 	asm.emit(
-		`___unsafe_malloc:
+		`
+; Function: __unsafe_malloc
+_%s:
     stp fp, lr, [sp, #-16]!
     mov fp, sp
     bl _malloc
@@ -558,10 +569,13 @@ func defineBuiltInUnsafeMalloc(asm *ASMText) {
     bl _exit
 _success:
     ldp fp, lr, [sp], #16
-    ret`)
+    ret`, typed.BuiltInUnsafeMallocTypeId)
 }
 
 func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
+	if irModule.Main == nil {
+		panic("no main function found")
+	}
 	asm := ASMText{}
 	asm.emit(".global _main")
 	asm.emit(".text")
@@ -569,7 +583,7 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
 	defineBuiltInPrintFunction(&asm)
 	defineBuiltInPrintIntFunction(&asm)
 	for _, function := range irModule.Functions {
-		code, err := generateFunction(function, &irModule.Constants)
+		code, err := generateFunction(function, &irModule.Constants, function == irModule.Main)
 		if err != nil {
 			return asm, err
 		}

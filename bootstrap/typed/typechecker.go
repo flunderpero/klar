@@ -13,24 +13,27 @@ import (
 
 type TypeId int
 
+func (id TypeId) String() string {
+	return fmt.Sprintf("type%d", id)
+}
+
 type Type interface {
 	String() string
 	Id() TypeId
 }
 
-var builtInSpan = token.Span{File: new(string), Src: &[]byte{}, Start: 0, End: 0}
-var StrType = &strType{type_: type_{1}}
-var BoolType = &boolType{type_: type_{2}}
-var Int64Type = &int64Type{type_: type_{3}}
-var UnitType = &unitType{type_: type_{4}}
+var BuiltInPrintTypeId = TypeId(100)
+var BuiltInPrintIntTypeId = TypeId(101)
+var BuiltInUnsafeMallocTypeId = TypeId(102)
 
-type NamedType interface {
-	Type
-	TypeName() string
-}
+var builtInSpan = token.Span{File: new(string), Src: &[]byte{}, Start: 0, End: 0}
+var StrType = &strType{BaseType: BaseType{1}}
+var BoolType = &boolType{BaseType: BaseType{2}}
+var Int64Type = &int64Type{BaseType: BaseType{3}}
+var UnitType = &unitType{BaseType: BaseType{4}}
 
 type CallableType interface {
-	NamedType
+	Type
 	CallArgTypes() []*FunctionArg
 	CallReturnType() Type
 }
@@ -40,16 +43,20 @@ type TypeWithTraits interface {
 	Traits() *[]*TraitType
 }
 
-type type_ struct {
+type BaseType struct {
 	id TypeId
 }
 
-func (ty type_) Id() TypeId {
+func NewBaseType(id TypeId) BaseType {
+	return BaseType{id}
+}
+
+func (ty BaseType) Id() TypeId {
 	return ty.id
 }
 
 type strType struct {
-	type_
+	BaseType
 	traits []*TraitType
 }
 
@@ -62,7 +69,7 @@ func (ty *strType) Traits() *[]*TraitType {
 }
 
 type boolType struct {
-	type_
+	BaseType
 	traits []*TraitType
 }
 
@@ -75,7 +82,7 @@ func (ty boolType) String() string {
 }
 
 type int64Type struct {
-	type_
+	BaseType
 	traits []*TraitType
 }
 
@@ -88,7 +95,7 @@ func (ty int64Type) String() string {
 }
 
 type unitType struct {
-	type_
+	BaseType
 }
 
 func (ty unitType) String() string {
@@ -108,10 +115,6 @@ type DeclaredType struct {
 	Type Type
 }
 
-func (ty *DeclaredType) TypeName() string {
-	return ty.Type.String()
-}
-
 func (ty DeclaredType) String() string {
 	return fmt.Sprintf("DeclaredType\n%s", base.Indent(ty.Type, 1))
 }
@@ -121,7 +124,7 @@ func (ty DeclaredType) Id() TypeId {
 }
 
 type StructType struct {
-	type_
+	BaseType
 	Name    ast.TypeIdent
 	Fields  []StructField
 	Methods []*MethodType
@@ -130,10 +133,6 @@ type StructType struct {
 
 func (ty *StructType) Traits() *[]*TraitType {
 	return &ty.traits
-}
-
-func (ty *StructType) TypeName() string {
-	return string(ty.Name)
 }
 
 func (ty StructType) String() string {
@@ -179,17 +178,13 @@ func (ty *StructType) FindMember(name ast.Ident, span token.Span) (Type, error) 
 }
 
 type TraitType struct {
-	type_
+	BaseType
 	Name    ast.TypeIdent
 	Methods []*MethodType
 }
 
 func (ty TraitType) String() string {
 	return fmt.Sprintf("TraitType\n%s%s)", base.Indent(ty.Name, 1), base.IndentSlice(ty.Methods, 1))
-}
-
-func (ty *TraitType) TypeName() string {
-	return string(ty.Name)
 }
 
 func (ty *TraitType) FindMethod(name ast.Ident, span token.Span) (*MethodType, error) {
@@ -202,7 +197,7 @@ func (ty *TraitType) FindMethod(name ast.Ident, span token.Span) (*MethodType, e
 }
 
 type ImplType struct {
-	type_
+	BaseType
 	ReceiverType Type
 }
 
@@ -220,18 +215,14 @@ func (arg FunctionArg) String() string {
 }
 
 type MethodType struct {
-	type_
+	BaseType
 	Name         ast.Ident
 	Args         []*FunctionArg
 	ReturnType   Type
-	ReceiverType NamedType
+	ReceiverType Type
 }
 
-func (ty *MethodType) TypeName() string {
-	return string(ty.Name)
-}
-
-func (ty *MethodType) CallArgTypes() []*FunctionArg {
+func (ty MethodType) CallArgTypes() []FunctionArg {
 	return ty.Args
 }
 
@@ -270,7 +261,7 @@ func (ty *MethodType) IsStatic() bool {
 
 func (ty MethodType) String() string {
 	typeToString := func(t Type) string {
-		if t == ty.ReceiverType.(Type) {
+		if t == ty.ReceiverType {
 			return "Self"
 		}
 		return t.String()
@@ -294,7 +285,7 @@ func (ty *MethodType) ArgTypesWithoutSelf() []*FunctionArg {
 }
 
 type FunctionType struct {
-	type_
+	BaseType
 	Name       ast.Ident
 	Args       []*FunctionArg
 	ReturnType Type
@@ -303,10 +294,6 @@ type FunctionType struct {
 func (ty FunctionType) String() string {
 	return fmt.Sprintf(
 		"FunctionType\n%s%s\n%s", base.Indent(ty.Name, 1), base.IndentSlice(ty.Args, 1), base.Indent(ty.ReturnType, 1))
-}
-
-func (ty *FunctionType) TypeName() string {
-	return string(ty.Name)
 }
 
 func (ty *FunctionType) CallArgTypes() []*FunctionArg {
@@ -375,11 +362,11 @@ func (te *typeEnvironment) declareVariable(name string, ty Type, def *ast.Variab
 type TypeInfo struct {
 	types map[ast.NodeId]Type
 	// The type an `ReferenceExpression` points to if it does not refer to a variable.
-	typeBindings map[ast.ReferenceExpression]NamedType
+	typeBindings map[ast.ReferenceExpression]Type
 	Main         *FunctionType
 }
 
-func (m *TypeInfo) LookupTypeBinding(expr ast.ReferenceExpression) (NamedType, bool) {
+func (m *TypeInfo) LookupTypeBinding(expr ast.ReferenceExpression) (Type, bool) {
 	declaration, found := m.typeBindings[expr]
 	return declaration, found
 }
@@ -432,14 +419,14 @@ type typeChecker struct {
 	nextTypeId int
 }
 
-func (tc *typeChecker) newType() type_ {
+func (tc *typeChecker) newType() BaseType {
 	tc.nextTypeId += 1
-	return type_{TypeId(tc.nextTypeId)}
+	return BaseType{TypeId(tc.nextTypeId)}
 }
 
-func (tc *typeChecker) newMethodTypeFromFunctionType(functionType *FunctionType, receiverType NamedType) *MethodType {
+func (tc *typeChecker) newMethodTypeFromFunctionType(functionType *FunctionType, receiverType Type) *MethodType {
 	return &MethodType{
-		type_:        tc.newType(),
+		BaseType:     tc.newType(),
 		Name:         functionType.Name,
 		Args:         functionType.Args,
 		ReturnType:   functionType.ReturnType,
@@ -499,9 +486,7 @@ func (tc *typeChecker) VisitReferenceExpression(expr ast.ReferenceExpression) er
 	}
 	tc.typeInfo.Set(expr, ty)
 	if !tc.typeEnv.isVariable(refStr) {
-		if namedType, ok := ty.(NamedType); ok {
-			tc.typeInfo.typeBindings[expr] = namedType
-		}
+		tc.typeInfo.typeBindings[expr] = ty
 	}
 	return nil
 }
@@ -654,7 +639,7 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 		return errors.Errorf("%s: type %s not found for return type of function %s", decl.Span(), decl.ReturnType, decl.Name)
 	}
 	funcType := &FunctionType{
-		type_:      tc.newType(),
+		BaseType:   tc.newType(),
 		Name:       decl.Name,
 		Args:       args,
 		ReturnType: returnType,
@@ -690,7 +675,7 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 			return err
 		}
 	}
-	if err := w.WalkFunctionDefinition(fn); err != nil {
+	if err := tc.VisitBlockExpression(fn.Body, w); err != nil {
 		return err
 	}
 	return nil
@@ -698,7 +683,7 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 
 func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.Walker) error {
 	// We need to forward declare the trait type so that we can set the `Self` type correctly.
-	traitType := &TraitType{type_: tc.newType(), Name: trait.Name}
+	traitType := &TraitType{BaseType: tc.newType(), Name: trait.Name}
 	if err := tc.typeEnv.declare(string(trait.Name), traitType, trait.Span()); err != nil {
 		return err
 	}
@@ -798,7 +783,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 			strings.Join(missingTraitMethods, ", "),
 		)
 	}
-	tc.typeInfo.Set(impl, &ImplType{type_: tc.newType(), ReceiverType: structType})
+	tc.typeInfo.Set(impl, &ImplType{BaseType: tc.newType(), ReceiverType: structType})
 	return nil
 }
 
@@ -879,7 +864,7 @@ func (tc *typeChecker) VisitStructTypeDeclaration(d *ast.StructTypeDeclaration) 
 		}
 		fields = append(fields, StructField{Name: field.Name, Type: fieldType})
 	}
-	structType := &StructType{type_: tc.newType(), Name: d.Name, Fields: fields}
+	structType := &StructType{BaseType: tc.newType(), Fields: fields}
 	if err := tc.typeEnv.declare(string(d.Name), structType, d.Span()); err != nil {
 		return err
 	}
@@ -919,13 +904,13 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 		DefaultVisitor: ast.DefaultVisitor{},
 		typeInfo: &TypeInfo{
 			types:        make(map[ast.NodeId]Type),
-			typeBindings: make(map[ast.ReferenceExpression]NamedType),
+			typeBindings: make(map[ast.ReferenceExpression]Type),
 		},
 		typeEnv:    defaultTypeEnv,
 		nextTypeId: 1000,
 	}
 	if err := defaultTypeEnv.declare("print", &FunctionType{
-		type_:      tc.newType(),
+		BaseType:   BaseType{BuiltInPrintTypeId},
 		Name:       "print",
 		Args:       []*FunctionArg{&FunctionArg{Name: "s", Type: StrType}},
 		ReturnType: UnitType,
@@ -933,7 +918,7 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 		panic(errors.Wrap(err, "failed to declare print function"))
 	}
 	if err := defaultTypeEnv.declare("print_int", &FunctionType{
-		type_:      tc.newType(),
+		BaseType:   BaseType{BuiltInPrintIntTypeId},
 		Name:       "print_int",
 		Args:       []*FunctionArg{&FunctionArg{Name: "i", Type: Int64Type}},
 		ReturnType: UnitType,

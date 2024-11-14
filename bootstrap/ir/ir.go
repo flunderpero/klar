@@ -60,12 +60,12 @@ func (t PointerType) Size() int {
 }
 
 type StructType struct {
-	Name   ast.TypeIdent
+	Id     typed.TypeId
 	Fields []Type
 }
 
 func (t StructType) String() string {
-	return fmt.Sprintf("@%s", t.Name)
+	return fmt.Sprintf("@struct_%s", t.Id)
 }
 
 func (t StructType) DeclareString() string {
@@ -76,7 +76,7 @@ func (t StructType) DeclareString() string {
 		}
 		fields += field.String()
 	}
-	return fmt.Sprintf("declare struct @%s = { %s }", t.Name, fields)
+	return fmt.Sprintf("declare struct @%s = { %s }", t.Id, fields)
 }
 
 func (t StructType) Size() int {
@@ -87,7 +87,7 @@ func (t StructType) Size() int {
 	return size
 }
 
-var StrType = &StructType{Name: "str", Fields: []Type{Int64Type, &PointerType{Int8Type}}}
+var StrType = &StructType{Id: typed.StrType.Id(), Fields: []Type{Int64Type, &PointerType{Int8Type}}}
 
 type BlockId int
 
@@ -163,7 +163,7 @@ type FunctionArg struct {
 }
 
 type Function struct {
-	Name                ast.Ident
+	Id                  typed.TypeId
 	ReturnType          Type
 	Args                []FunctionArg
 	Entry               *Block
@@ -178,13 +178,14 @@ func (t Function) String() string {
 		}
 		args += fmt.Sprintf("%s %s", arg.Type, arg.Register)
 	}
-	return fmt.Sprintf("declare fn %s %s(%s)", t.ReturnType, t.Name, args)
+	return fmt.Sprintf("declare fn %s %s(%s)", t.ReturnType, t.Id, args)
 }
 
 type Module struct {
 	Functions     []*Function
 	Constants     []*StrConst
 	DeclaredTypes *DeclaredTypes
+	Main          *Function
 }
 
 func (m Module) String() string {
@@ -426,7 +427,7 @@ func (inst Call) String() string {
 	if !inst.register.IsVoid() {
 		assign = fmt.Sprintf("%s = ", inst.register)
 	}
-	return fmt.Sprintf("%scall %s %s(%s)", assign, inst.Function.ReturnType, inst.Function.Name, args)
+	return fmt.Sprintf("%scall %s %s(%s)", assign, inst.Function.ReturnType, inst.Function.Id, args)
 }
 
 func (inst *Call) Register() Register {
@@ -600,7 +601,7 @@ type generator struct {
 	globalConstants     *[]*StrConst
 	registerIndex       int
 	blockIndex          int
-	functions           map[ast.Ident]*Function
+	functions           map[typed.TypeId]*Function
 	declaredTypes       *DeclaredTypes
 	registerConstraints RegisterConstraints
 	loopScopes          []loopScope
@@ -697,8 +698,12 @@ func (g *generator) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) 
 func (g *generator) VisitReferenceExpression(expr ast.ReferenceExpression) error {
 	switch expr := expr.(type) {
 	case *ast.IdentExpression:
-		if _, found := g.functions[expr.Ident]; found {
-			return nil
+		ty := g.typeInfo.MustLookup(expr)
+		if _, isFunctionType := ty.(*typed.FunctionType); isFunctionType {
+			if _, found := g.functions[ty.Id()]; found {
+				return nil
+			}
+			panic(fmt.Sprintf("unknown function at #%s with type #%s: %s", expr.Id(), ty.Id(), ty))
 		}
 		reg := g.symbolTable.lookup(expr.Ident)
 		g.registerByNodeId[expr.Id()] = reg
@@ -714,9 +719,9 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		return err
 	}
 	funcType := g.typeInfo.MustLookup(expr.Callee).(*typed.FunctionType)
-	function, ok := g.functions[funcType.Name]
+	function, ok := g.functions[funcType.Id()]
 	if !ok {
-		panic(fmt.Sprintf("Unknown function: %s", funcType.Name))
+		panic(fmt.Sprintf("Unknown function: %s", funcType))
 	}
 	args := []Register{}
 	for _, arg := range expr.Args {
@@ -834,7 +839,7 @@ func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.Walk
 		if _, err := irSourceType.FindMethod(expr.Field, expr.Span()); err == nil {
 			return nil
 		}
-		return errors.Errorf("field %q not found in struct %q", expr.Field, irSourceType.Name)
+		return errors.Errorf("field %q not found in struct %q", expr.Field, irSourceType)
 	}
 	fieldType := sourceType.Fields[fieldIndex]
 	getPtrReg := g.nextRegister()
@@ -883,7 +888,7 @@ func (g *generator) VisitStructInitExpression(expr *ast.StructInitExpression, w 
 	}, nil)
 	g.append(&Call{
 		register: mallocReg,
-		Function: g.functions["__unsafe_malloc"],
+		Function: g.functions[typed.BuiltInUnsafeMallocTypeId],
 		Args:     []Register{sizeReg},
 	}, expr)
 	for i, astField := range expr.Fields {
@@ -1027,7 +1032,7 @@ func (dt *DeclaredTypes) declare(ty typed.Type) {
 			}
 			fieldTypes = append(fieldTypes, fieldType)
 		}
-		structType := &StructType{Name: ty.Name, Fields: fieldTypes}
+		structType := &StructType{Id: ty.Id(), Fields: fieldTypes}
 		dt.Types[ty.Id()] = structType
 	default:
 		panic(fmt.Sprintf("cannot declare type %T", ty))
@@ -1051,6 +1056,7 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 		}
 	}
 	functions := []*Function{}
+	var main *Function
 	// First forward declare all functions.
 	for _, functionDef := range functionDefinitions {
 		funcType := typeInfo.MustLookupDeclaredType(functionDef).Type.(typed.CallableType)
@@ -1064,35 +1070,38 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 			args = append(args, irArg)
 		}
 		returnType := declaredTypes.MustLookup(funcType.CallReturnType())
-		f := Function{
-			Name:       ast.Ident(funcType.TypeName()),
+		f := &Function{
+			Id:         funcType.Id(),
 			ReturnType: returnType,
 			Args:       args,
 		}
-		functions = append(functions, &f)
+		functions = append(functions, f)
+		if funcType == typeInfo.Main {
+			main = f
+		}
 	}
-	functionByName := make(map[ast.Ident]*Function)
+	functionByTypeId := make(map[typed.TypeId]*Function)
 	for _, f := range functions {
-		functionByName[f.Name] = f
+		functionByTypeId[f.Id] = f
 	}
 	// Declare builtin functions.
-	functionByName["print"] = &Function{
-		Name:       "print",
+	functionByTypeId[typed.BuiltInPrintTypeId] = &Function{
+		Id:         typed.BuiltInPrintTypeId,
 		ReturnType: VoidType,
 		Args: []FunctionArg{
 			FunctionArg{PointerType{StrType}, Register("%1")},
 		},
 	}
-	functionByName["print_int"] = &Function{
-		Name:       "print_int",
+	functionByTypeId[typed.BuiltInPrintIntTypeId] = &Function{
+		Id:         typed.BuiltInPrintIntTypeId,
 		ReturnType: VoidType,
 		Args: []FunctionArg{
 			FunctionArg{PointerType{Int8Type}, Register("%1")},
 			FunctionArg{Int64Type, Register("%2")},
 		},
 	}
-	functionByName["__unsafe_malloc"] = &Function{
-		Name:       "__unsafe_malloc",
+	functionByTypeId[typed.BuiltInUnsafeMallocTypeId] = &Function{
+		Id:         typed.BuiltInUnsafeMallocTypeId,
 		ReturnType: PointerType{Int8Type},
 		Args: []FunctionArg{
 			FunctionArg{Int64Type, Register("%1")},
@@ -1106,7 +1115,7 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 			DefaultVisitor:      ast.DefaultVisitor{},
 			typeInfo:            typeInfo,
 			registerByNodeId:    make(map[ast.NodeId]Register),
-			functions:           functionByName,
+			functions:           functionByTypeId,
 			symbolTable:         &symbolTable{symbols: make(map[ast.Ident]Register)},
 			globalConstants:     &constants,
 			declaredTypes:       declaredTypes,
@@ -1130,7 +1139,7 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 		function.Entry = block
 		function.RegisterConstraints = gen.registerConstraints
 	}
-	return &Module{Functions: functions, Constants: constants, DeclaredTypes: declaredTypes}, nil
+	return &Module{Functions: functions, Constants: constants, DeclaredTypes: declaredTypes, Main: main}, nil
 }
 
 // Walk the given block and call `visitor` for each block we discover in the graph

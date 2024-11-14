@@ -12,6 +12,10 @@ import (
 
 type NodeId int
 
+func (id NodeId) String() string {
+	return fmt.Sprintf("node%d", id)
+}
+
 type Node interface {
 	String() string
 	Id() NodeId

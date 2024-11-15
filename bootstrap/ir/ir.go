@@ -264,36 +264,37 @@ func (m Module) String() string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-type Register string
+type RegisterId string
+
+type Register struct {
+	Id   RegisterId
+	Type Type
+}
+
+// todo: We should find a better way to determine whether we are referring to a
+//
+//	constant string in codegen.
+func (r Register) IsConstant() bool {
+	return r.Id[0] == 'c'
+}
 
 func (r Register) String() string {
-	return string(r)
+	return string(r.Id)
 }
 
-func (r Register) IsConstant() bool {
-	return string(r)[0] == 'c'
-}
-
-func (r Register) IsVoid() bool {
-	return string(r) == "(void)"
-}
-
-func (r Register) AsIdentifier() string {
-	if r.IsVoid() {
-		panic("cannot convert void register to identifier")
-	}
-	return string(r)[1:]
+func newRegister(id int, ty Type) Register {
+	return Register{Id: RegisterId(fmt.Sprintf("%%%d", id)), Type: ty}
 }
 
 func newConstantRegister(id string) Register {
-	return Register("c_" + id)
+	return Register{Id: RegisterId(fmt.Sprintf("c_%s", id)), Type: StrType}
 }
 
-func newFunctionRegister(f typed.CallableType) Register {
-	return Register(fmt.Sprintf("f_%s", f.Id()))
+func newFunctionRegister(f typed.CallableType, ty Type) Register {
+	return Register{Id: RegisterId(fmt.Sprintf("f_%s", f.Id())), Type: ty}
 }
 
-const VoidRegister Register = "(void)"
+var VoidRegister = Register{Id: "void", Type: VoidType}
 
 type Instruction interface {
 	String() string
@@ -447,7 +448,7 @@ func (inst Call) String() string {
 		args += fmt.Sprintf("%s %s", arg.Type, reg)
 	}
 	assign := ""
-	if !inst.register.IsVoid() {
+	if inst.register.Type != VoidType {
 		assign = fmt.Sprintf("%s = ", inst.register)
 	}
 	return fmt.Sprintf("%scall %s %s(%s)", assign, inst.FunctionType.ReturnType, inst.Callee, args)
@@ -649,9 +650,9 @@ func (g *generator) exitLoop() {
 	g.loopScopes = g.loopScopes[:len(g.loopScopes)-1]
 }
 
-func (g *generator) nextRegister() Register {
+func (g *generator) nextRegister(ty Type) Register {
 	g.registerIndex++
-	return Register(fmt.Sprintf("%%%d", g.registerIndex))
+	return newRegister(g.registerIndex, ty)
 }
 
 func (g *generator) append(instruction Instruction, node ast.Node) {
@@ -679,7 +680,7 @@ func (g *generator) newBlock(predecessors ...*Block) *Block {
 func (g *generator) updateRegisterConstraints(symbolTableBefore map[ast.Ident]Register) {
 	for symbol, regBefore := range symbolTableBefore {
 		regNow := g.symbolTable.lookup(symbol)
-		if regNow != regBefore {
+		if regNow.Id != regBefore.Id {
 			g.registerConstraints.add(regNow, regBefore)
 		}
 	}
@@ -689,7 +690,7 @@ func (g *generator) VisitStringLiteralExpression(expr *ast.StringLiteralExpressi
 	reg := newConstantRegister(fmt.Sprintf("str%d", len(*g.globalConstants)))
 	*g.globalConstants = append(*g.globalConstants, &StrConst{register: reg, Value: expr.Value})
 	g.append(&GetPointer{
-		register:   g.nextRegister(),
+		register:   g.nextRegister(PointerType{StrType}),
 		Source:     reg,
 		SourceType: StrType,
 		FieldIndex: 0,
@@ -699,7 +700,7 @@ func (g *generator) VisitStringLiteralExpression(expr *ast.StringLiteralExpressi
 
 func (g *generator) VisitIntLiteralExpression(expr *ast.IntLiteralExpression) error {
 	g.append(&Int64Const{
-		register: g.nextRegister(),
+		register: g.nextRegister(Int64Type),
 		Value:    expr.Value,
 	}, expr)
 	return nil
@@ -711,7 +712,7 @@ func (g *generator) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) 
 		value = 1
 	}
 	g.append(&BoolConst{
-		register: g.nextRegister(),
+		register: g.nextRegister(BoolType),
 		Value:    value,
 	}, expr)
 	return nil
@@ -748,7 +749,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 	}
 	var reg Register = VoidRegister
 	if funcType.ReturnType != VoidType {
-		reg = g.nextRegister()
+		reg = g.nextRegister(funcType.ReturnType)
 	}
 	g.append(&Call{
 		register:     reg,
@@ -772,7 +773,7 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 			// For now we only support 64 bit integers.
 			return errors.Errorf("add expression must be of type Int64Type, got %s", ty)
 		}
-		g.append(&SignedInt64AddWithOverflow{register: g.nextRegister(), Lhs: lhs, Rhs: rhs}, expr)
+		g.append(&SignedInt64AddWithOverflow{register: g.nextRegister(Int64Type), Lhs: lhs, Rhs: rhs}, expr)
 	case ast.OpEquality:
 		// For now, we only know how to compare 64 bit integers.
 		lhsType := g.typeInfo.MustLookup(expr.Lhs)
@@ -783,7 +784,7 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 		if rhsType != typed.Int64Type {
 			return errors.Errorf("type of rhs is not Int64Type, but %s", rhsType)
 		}
-		g.append(&Int64Compare{register: g.nextRegister(), Op: Int64CompOpEQ, Lhs: lhs, Rhs: rhs}, expr)
+		g.append(&Int64Compare{register: g.nextRegister(BoolType), Op: Int64CompOpEQ, Lhs: lhs, Rhs: rhs}, expr)
 	default:
 		return errors.Errorf("unsupported binary operator: %s", expr.Op)
 	}
@@ -859,14 +860,14 @@ func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.Walk
 		return errors.Errorf("field %q not found in struct %q", expr.Field, irSourceType)
 	}
 	fieldType := sourceType.Fields[fieldIndex]
-	getPtrReg := g.nextRegister()
+	getPtrReg := g.nextRegister(PointerType{fieldType})
 	g.append(&GetPointer{
 		register:   getPtrReg,
 		Source:     source,
 		SourceType: sourceType,
 		FieldIndex: fieldIndex,
 	}, expr.Target)
-	reg := g.nextRegister()
+	reg := g.nextRegister(fieldType)
 	g.append(&Load{
 		register:   reg,
 		Source:     getPtrReg,
@@ -897,16 +898,17 @@ func (g *generator) VisitStructInitExpression(expr *ast.StructInitExpression, w 
 		return err
 	}
 	structType := g.lookupType(expr).(*StructType)
-	sizeReg := g.nextRegister()
-	mallocReg := g.nextRegister()
+	sizeReg := g.nextRegister(Int64Type)
+	mallocReg := g.nextRegister(Int64Type)
+	mallocFuncType := g.declaredTypes.MustLookup(typed.BuiltInUnsafeMallocFunction).(*FunctionType)
 	g.append(&Int64Const{
 		register: sizeReg,
 		Value:    int64(structType.Size()),
 	}, nil)
 	g.append(&Call{
 		register:     mallocReg,
-		Callee:       newFunctionRegister(typed.BuiltInUnsafeMallocFunction),
-		FunctionType: g.declaredTypes.MustLookup(typed.BuiltInUnsafeMallocFunction).(*FunctionType),
+		Callee:       newFunctionRegister(typed.BuiltInUnsafeMallocFunction, mallocFuncType),
+		FunctionType: mallocFuncType,
 		Args:         []Register{sizeReg},
 	}, expr)
 	for i, astField := range expr.Fields {
@@ -917,7 +919,7 @@ func (g *generator) VisitStructInitExpression(expr *ast.StructInitExpression, w 
 			return errors.Errorf("only BuiltInType and PointerType can be stored in struct fields, got %q", fieldType)
 		}
 		fieldValueReg := g.lookupRegisterByNode(astField.Value)
-		fieldPtrReg := g.nextRegister()
+		fieldPtrReg := g.nextRegister(PointerType{fieldType})
 		g.append(&GetPointer{
 			register:   fieldPtrReg,
 			Source:     mallocReg,
@@ -949,7 +951,6 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 	}
 	reg := g.lookupRegisterByNode(stmt.Rhs)
 	if stmt.IsAssignToMember() {
-		getPtrReg := g.nextRegister()
 		sourceReg := g.symbolTable.lookup(stmt.Variable.Ident)
 		structType := g.typeInfo.MustLookup(stmt.Variable).(*typed.StructType)
 		sourceType := g.lookupType(stmt.Variable).(*StructType)
@@ -960,6 +961,7 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 
 		}
 		fieldType := sourceType.Fields[fieldIndex]
+		getPtrReg := g.nextRegister(PointerType{fieldType})
 		g.append(&GetPointer{
 			register:   getPtrReg,
 			Source:     sourceReg,
@@ -1059,7 +1061,7 @@ func (dt *DeclaredTypes) declare(ty typed.Type) {
 		args := make([]FunctionArg, len(ty.CallArgTypes()))
 		for i, arg := range ty.CallArgTypes() {
 			argType := dt.MustLookup(arg)
-			args[i] = FunctionArg{Type: argType, Register: Register(fmt.Sprintf("%%%d", i+1))}
+			args[i] = FunctionArg{Type: argType, Register: newRegister(i+1, argType)}
 		}
 		returnType := dt.MustLookup(ty.CallReturnType())
 		funcType := &FunctionType{Args: args, ReturnType: returnType}
@@ -1096,7 +1098,7 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 			argType := declaredTypes.MustLookup(argType)
 			irArg := FunctionArg{
 				Type:     argType,
-				Register: Register(fmt.Sprintf("%%%d", (i + 1))),
+				Register: newRegister(i+1, argType),
 			}
 			args = append(args, irArg)
 		}
@@ -1110,18 +1112,21 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 			main = f
 		}
 		declaredTypes.declare(funcType)
-		rootSymbolTable.declare(lower.CallableIdent(funcType), newFunctionRegister(funcType))
+		rootSymbolTable.declare(lower.CallableIdent(funcType), newFunctionRegister(funcType, f.Type))
 	}
 	// Declare builtin functions.
 	declaredTypes.declare(typed.BuiltInPrintFunction)
 	rootSymbolTable.declare(
-		lower.CallableIdent(typed.BuiltInPrintFunction), newFunctionRegister(typed.BuiltInPrintFunction))
+		lower.CallableIdent(typed.BuiltInPrintFunction),
+		newFunctionRegister(typed.BuiltInPrintFunction, declaredTypes.MustLookup(typed.BuiltInPrintFunction)))
 	declaredTypes.declare(typed.BuiltInPrintIntFunction)
 	rootSymbolTable.declare(
-		lower.CallableIdent(typed.BuiltInPrintIntFunction), newFunctionRegister(typed.BuiltInPrintIntFunction))
+		lower.CallableIdent(typed.BuiltInPrintIntFunction),
+		newFunctionRegister(typed.BuiltInPrintIntFunction, declaredTypes.MustLookup(typed.BuiltInPrintIntFunction)))
 	declaredTypes.declare(typed.BuiltInUnsafeMallocFunction)
 	rootSymbolTable.declare(
-		lower.CallableIdent(typed.BuiltInUnsafeMallocFunction), newFunctionRegister(typed.BuiltInUnsafeMallocFunction))
+		lower.CallableIdent(typed.BuiltInUnsafeMallocFunction),
+		newFunctionRegister(typed.BuiltInUnsafeMallocFunction, declaredTypes.MustLookup(typed.BuiltInUnsafeMallocFunction)))
 	constants := []*StrConst{}
 	// Generate code for each function.
 	for i, function := range functions {
@@ -1137,8 +1142,9 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 			loopScopes:          []loopScope{},
 		}
 		// Make function arguments visible.
-		for _, arg := range definition.Decl.Args {
-			gen.symbolTable.declare(arg.Name, gen.nextRegister())
+		for a, arg := range definition.Decl.Args {
+			funcArg := function.Type.Args[a]
+			gen.symbolTable.declare(arg.Name, gen.nextRegister(funcArg.Type))
 		}
 		block := gen.newBlock()
 		gen.currentBlock = block

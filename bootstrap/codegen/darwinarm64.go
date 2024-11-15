@@ -270,7 +270,7 @@ type Code struct {
 	ASMText
 	function          *ir.FunctionDefinition
 	stringConstants   *[]*ir.StrConst
-	values            map[ir.Register]*registerAllocation
+	values            map[ir.RegisterId]*registerAllocation
 	registerAllocator registerAllocator
 	stackAllocator    *stackAllocator
 }
@@ -285,7 +285,7 @@ func (c *Code) emitAtOffset(offset int, s string, args ...any) *Code {
 }
 
 func (c *Code) mustLookupRegisterAllocation(reg ir.Register) *registerAllocation {
-	result, ok := c.values[reg]
+	result, ok := c.values[reg.Id]
 	if !ok {
 		panic(fmt.Sprintf("Value not found for IR register: %s", reg))
 	}
@@ -340,22 +340,22 @@ func (c *Code) generateBlock(block *ir.Block) error {
 		case *ir.BoolConst:
 			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
 			c.emit("mov %s, #%d", reg, inst.Value)
-			c.values[inst.Register()] = reg
+			c.values[inst.Register().Id] = reg
 		case *ir.Int32Const:
 			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
 			c.generateIntImmediate(reg.reg, inst.Value)
-			c.values[inst.Register()] = reg
+			c.values[inst.Register().Id] = reg
 		case *ir.Int64Const:
 			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
 			c.generateIntImmediate(reg.reg, inst.Value)
-			c.values[inst.Register()] = reg
+			c.values[inst.Register().Id] = reg
 		case *ir.SignedInt64AddWithOverflow:
 			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
 			c.emit("adds %s, %s, %s", reg, lhs, rhs)
-			c.values[inst.Register()] = reg
+			c.values[inst.Register().Id] = reg
 		case *ir.Int64Compare:
 			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
-			c.values[inst.Register()] = reg
+			c.values[inst.Register().Id] = reg
 			switch inst.Op {
 			case ir.Int64CompOpEQ:
 				c.emit("cmp %s, %s", lhs, rhs)
@@ -377,8 +377,8 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			}
 			if inst.Source.IsConstant() {
 				reg = c.registerAllocator.allocateScratchRegister(inst.Register())
-				c.emit("adrp %s, %s@PAGE", reg, inst.Source.AsIdentifier())
-				c.emit("add %s, %s, %s@PAGEOFF+%d", reg, reg, inst.Source.AsIdentifier(), offset)
+				c.emit("adrp %s, %s@PAGE", reg, inst.Source)
+				c.emit("add %s, %s, %s@PAGEOFF+%d", reg, reg, inst.Source, offset)
 			} else {
 				reg = c.mustLookupRegisterAllocation(inst.Source)
 				if offset > 0 {
@@ -387,7 +387,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 					c.emit("add %s, %s, #%d", reg, source, offset)
 				}
 			}
-			c.values[inst.Register()] = reg
+			c.values[inst.Register().Id] = reg
 		case *ir.Load:
 			source := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Source))
 			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
@@ -402,7 +402,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 				return errors.Errorf("invalid target type for load instruction: %T", ty)
 			}
 			c.emit("ldr %s, [%s] ; %s", reg, source, inst.Register())
-			c.values[inst.Register()] = reg
+			c.values[inst.Register().Id] = reg
 		case *ir.Store:
 			target := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Target))
 			value := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Value))
@@ -429,13 +429,13 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			c.registerAllocator.restoreCallerSavedRegisters(savedCallerRegisters)
 			if inst.FunctionType.ReturnType != ir.VoidType {
 				allocation := c.registerAllocator.saveCallResultRegister(inst.Register())
-				c.values[inst.Register()] = allocation
+				c.values[inst.Register().Id] = allocation
 			}
 		default:
 			return errors.Errorf("unknown instruction: %T", inst)
 		}
 	}
-	if !block.Result.IsVoid() {
+	if block.Result.Type != ir.VoidType {
 		// Move the value of the block expression to x0.
 		resultAllocation := c.mustLookupRegisterAllocation(block.Result)
 		c.registerAllocator.move(x0, resultAllocation)
@@ -461,7 +461,7 @@ func generateFunction(function *ir.FunctionDefinition, module *ir.Module, isMain
 	c := Code{
 		function:        function,
 		stringConstants: &module.Constants,
-		values:          make(map[ir.Register]*registerAllocation),
+		values:          make(map[ir.RegisterId]*registerAllocation),
 		stackAllocator:  stackAllocator,
 	}
 	c.registerAllocator = newRegisterAllocator(
@@ -470,7 +470,7 @@ func generateFunction(function *ir.FunctionDefinition, module *ir.Module, isMain
 		&c,
 	)
 	for i, args := range function.Type.Args {
-		c.values[args.Register] = c.registerAllocator.allocateCallRegister(i)
+		c.values[args.Register.Id] = c.registerAllocator.allocateCallRegister(i)
 	}
 	if isMain {
 		c.emit("_main:")
@@ -596,15 +596,15 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
 	asm.emit(".data")
 	for _, constant := range irModule.Constants {
 		asm.emit(".align 3")
-		asm.emit("%s_bytes:", constant.Register().AsIdentifier())
+		asm.emit("%s_bytes:", constant.Register())
 		asm.incIndent()
 		asm.emit(".ascii %q", constant.Value)
 		asm.decIndent()
 		asm.emit(".align 3")
-		asm.emit("%s:", constant.Register().AsIdentifier())
+		asm.emit("%s:", constant.Register())
 		asm.incIndent()
 		asm.emit(".quad %d", len(constant.Value))
-		asm.emit(".quad %s_bytes", constant.Register().AsIdentifier())
+		asm.emit(".quad %s_bytes", constant.Register())
 		asm.decIndent()
 	}
 	// Needed for builtin functions.

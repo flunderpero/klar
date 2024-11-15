@@ -1,6 +1,13 @@
 /*
-This is a lowering pass that mangles all identifiers and transforms call to methods to
-regular function call.
+This is a lowering pass:
+
+  - converts all calls to methods to regular function calls with the receiver
+    as the first argument if the method is not static.
+
+  - replaces the `ast.CallExpression.Callee` identifier with the type id of the
+    called function.
+
+- removes all trait declarations.
 */
 package lower
 
@@ -11,29 +18,27 @@ import (
 
 type lower struct {
 	DefaultTransformer
-	typeInfo             *typed.TypeInfo
-	loweredMethods       map[*typed.MethodType]*typed.FunctionType
-	referenceExpressions []ast.ReferenceExpression
+	typeInfo       *typed.TypeInfo
+	loweredMethods map[*typed.MethodType]*typed.FunctionType
 }
 
-func (l *lower) VisitReferenceExpression(expr ast.ReferenceExpression) (ast.ReferenceExpression, bool) {
-	l.referenceExpressions = append(l.referenceExpressions, expr)
-	return expr, true
+func CallableIdent(ty typed.CallableType) ast.Ident {
+	return ast.Ident(ty.Id().String())
 }
 
 // Convert `receiver.method(...)` call to `method(receiver, ...)` call.
+// Replace `expr.Callee` with the callee type id.
 func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker) (*ast.CallExpression, bool) {
 	expr, ok := w.WalkCallExpression(expr)
 	if !ok {
 		return nil, false
 	}
-	calleeType := l.typeInfo.MustLookup(expr.Callee)
+	calleeType := l.typeInfo.MustLookup(expr.Callee).(typed.CallableType)
 	if method, isMethod := calleeType.(*typed.MethodType); isMethod {
 		if !method.IsStatic {
 			obj := expr.Callee.(*ast.MemberExpression).Target
 			expr.Args = append([]ast.Expression{obj}, expr.Args...)
 		}
-		expr.Callee = ast.NewIdentExpression(ast.Ident(expr.Callee.Id().String()), expr.Callee.Id(), expr.Callee.Span())
 		functionType, found := l.loweredMethods[method]
 		if !found {
 			functionType = &typed.FunctionType{
@@ -44,8 +49,9 @@ func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker)
 			l.loweredMethods[method] = functionType
 		}
 		l.typeInfo.Set(expr.Callee, functionType)
-		return expr, true
 	}
+	// We don't want to call functions by their name anymore but by their type-id.
+	expr.Callee = ast.NewIdentExpression(CallableIdent(calleeType), expr.Callee.Id(), expr.Callee.Span())
 	return expr, true
 }
 

@@ -29,9 +29,21 @@ type Type interface {
 	Id() TypeId
 }
 
-var BuiltInPrintTypeId = TypeId(100)
-var BuiltInPrintIntTypeId = TypeId(101)
-var BuiltInUnsafeMallocTypeId = TypeId(102)
+var BuiltInPrintFunction = &FunctionType{
+	BaseType:   BaseType{TypeId(100)},
+	ArgTypes:   []Type{StrType},
+	ReturnType: UnitType,
+}
+var BuiltInPrintIntFunction = &FunctionType{
+	BaseType:   BaseType{TypeId(101)},
+	ArgTypes:   []Type{Int64Type},
+	ReturnType: UnitType,
+}
+var BuiltInUnsafeMallocFunction = &FunctionType{
+	BaseType:   BaseType{TypeId(102)},
+	ArgTypes:   []Type{Int64Type},
+	ReturnType: Int64Type,
+}
 
 var builtInSpan = token.Span{File: new(string), Src: &[]byte{}, Start: 0, End: 0}
 var StrType = &strType{BaseType: BaseType{1}}
@@ -974,18 +986,10 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 		nextTypeId: 1000,
 		scope:      rootScope,
 	}
-	if err := defaultTypeEnv.declare("print", &FunctionType{
-		BaseType:   BaseType{BuiltInPrintTypeId},
-		ArgTypes:   []Type{StrType},
-		ReturnType: UnitType,
-	}, builtInSpan); err != nil {
+	if err := defaultTypeEnv.declare("print", BuiltInPrintFunction, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare print function"))
 	}
-	if err := defaultTypeEnv.declare("print_int", &FunctionType{
-		BaseType:   BaseType{BuiltInPrintIntTypeId},
-		ArgTypes:   []Type{Int64Type},
-		ReturnType: UnitType,
-	}, builtInSpan); err != nil {
+	if err := defaultTypeEnv.declare("print_int", BuiltInPrintIntFunction, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare print_int function"))
 	}
 	walker := &ast.DefaultWalker{Visitor: tc}

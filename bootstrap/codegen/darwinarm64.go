@@ -268,7 +268,7 @@ func (c *ASMText) decIndent() *ASMText {
 
 type Code struct {
 	ASMText
-	function          *ir.Function
+	function          *ir.FunctionDefinition
 	stringConstants   *[]*ir.StrConst
 	values            map[ir.Register]*registerAllocation
 	registerAllocator registerAllocator
@@ -419,15 +419,15 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			}
 			c.emit("str %s, [%s]", value, target)
 		case *ir.Call:
-			c.registerAllocator.spillCallRegisters(len(c.function.Args))
+			c.registerAllocator.spillCallRegisters(len(c.function.Type.Args))
 			savedCallerRegisters := c.registerAllocator.spillCallerSavedRegisters()
 			for i, arg := range inst.Args {
 				argReg := c.mustLookupRegisterAllocation(arg)
 				c.registerAllocator.move(callArgsRegisters[i], argReg)
 			}
-			c.emit("bl _%s", inst.Function.Id)
+			c.emit("bl %s", inst.Callee)
 			c.registerAllocator.restoreCallerSavedRegisters(savedCallerRegisters)
-			if inst.Function.ReturnType != ir.VoidType {
+			if inst.FunctionType.ReturnType != ir.VoidType {
 				allocation := c.registerAllocator.saveCallResultRegister(inst.Register())
 				c.values[inst.Register()] = allocation
 			}
@@ -456,7 +456,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 	return nil
 }
 
-func generateFunction(function *ir.Function, module *ir.Module, isMain bool) (Code, error) {
+func generateFunction(function *ir.FunctionDefinition, module *ir.Module, isMain bool) (Code, error) {
 	stackAllocator := &stackAllocator{size: 16}
 	c := Code{
 		function:        function,
@@ -469,7 +469,7 @@ func generateFunction(function *ir.Function, module *ir.Module, isMain bool) (Co
 		function.RegisterConstraints,
 		&c,
 	)
-	for i, args := range function.Args {
+	for i, args := range function.Type.Args {
 		c.values[args.Register] = c.registerAllocator.allocateCallRegister(i)
 	}
 	if isMain {
@@ -477,7 +477,7 @@ func generateFunction(function *ir.Function, module *ir.Module, isMain bool) (Co
 	} else {
 		symbol := module.TypeInfo.MustLookupSymbol(function.Id)
 		c.emit("; Function: %s", symbol.Name)
-		c.emit("_%s:", function.Id)
+		c.emit("f_%s:", function.Id)
 	}
 	// Remember the location where we will have to insert the correct stack frame setup.
 	// We don't know the size of the stack yet, so we have to come back later and insert
@@ -524,7 +524,7 @@ func defineBuiltInPrintFunction(asm *ASMText) {
 	asm.emit(
 		`
 ; Function: print
-_%s:
+f_%s:
     stp fp, lr, [sp, #-16]!
     mov fp, sp
     ldr x1, [x0, 8]
@@ -533,14 +533,14 @@ _%s:
     bl _write
     ldp fp, lr, [sp], #16
     mov x0, xzr
-    ret`, typed.BuiltInPrintTypeId)
+    ret`, typed.BuiltInPrintFunction.Id())
 }
 
 func defineBuiltInPrintIntFunction(asm *ASMText) {
 	asm.emit(
 		`
 ; Function: print_int
-_%s:
+f_%s:
     stp fp, lr, [sp, #-32]!
     mov fp, sp
     str x0, [sp]
@@ -551,14 +551,14 @@ _%s:
     bl _fflush
     ldp fp, lr, [sp], #32
     mov x0, xzr
-    ret`, typed.BuiltInPrintIntTypeId)
+    ret`, typed.BuiltInPrintIntFunction.Id())
 }
 
 func defineBuiltInUnsafeMalloc(asm *ASMText) {
 	asm.emit(
 		`
 ; Function: __unsafe_malloc
-_%s:
+f_%s:
     stp fp, lr, [sp, #-16]!
     mov fp, sp
     bl _malloc
@@ -571,7 +571,7 @@ _%s:
     bl _exit
 _success:
     ldp fp, lr, [sp], #16
-    ret`, typed.BuiltInUnsafeMallocTypeId)
+    ret`, typed.BuiltInUnsafeMallocFunction.Id())
 }
 
 func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {

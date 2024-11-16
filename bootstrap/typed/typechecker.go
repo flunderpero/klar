@@ -27,6 +27,7 @@ type isId interface {
 type Type interface {
 	String() string
 	Id() TypeId
+	IsAssignableFrom(other Type) bool
 }
 
 var BuiltInPrintFunction = &FunctionType{
@@ -72,6 +73,10 @@ func NewBaseType(id TypeId) BaseType {
 
 func (ty BaseType) Id() TypeId {
 	return ty.id
+}
+
+func (ty BaseType) IsAssignableFrom(other Type) bool {
+	return ty.Id() == other.Id()
 }
 
 type strType struct {
@@ -140,6 +145,14 @@ func (ty DeclaredType) String() string {
 
 func (ty DeclaredType) Id() TypeId {
 	return ty.Type.Id()
+}
+
+func (ty DeclaredType) IsAssignableFrom(other_ Type) bool {
+	other := other_
+	if declaredType, isDeclaredType := other_.(*DeclaredType); isDeclaredType {
+		other = declaredType.Type
+	}
+	return ty.Type.IsAssignableFrom(other)
 }
 
 type StructType struct {
@@ -278,6 +291,24 @@ func (ty MethodType) ArgTypesWithoutSelf() []Type {
 	return ty.ArgTypes[1:]
 }
 
+func (ty MethodType) IsAssignableFrom(other Type) bool {
+	if other.Id() == ty.Id() {
+		return true
+	}
+	if other, ok := other.(MethodType); ok {
+		if len(ty.ArgTypes) != len(other.ArgTypes) {
+			return false
+		}
+		for i, argType := range ty.ArgTypes {
+			if !argType.IsAssignableFrom(other.ArgTypes[i]) {
+				return false
+			}
+		}
+		return ty.ReturnType.IsAssignableFrom(other.ReturnType)
+	}
+	return false
+}
+
 type FunctionType struct {
 	BaseType
 	ArgTypes   []Type
@@ -291,6 +322,25 @@ func (ty FunctionType) String() string {
 
 func (ty FunctionType) CallArgTypes() []Type {
 	return ty.ArgTypes
+}
+
+func (ty FunctionType) IsAssignableFrom(other Type) bool {
+	if other.Id() == ty.Id() {
+		return true
+	}
+	if other, ok := other.(CallableType); ok {
+		otherArgTypes := other.CallArgTypes()
+		if len(ty.ArgTypes) != len(otherArgTypes) {
+			return false
+		}
+		for i, argType := range ty.ArgTypes {
+			if !argType.IsAssignableFrom(otherArgTypes[i]) {
+				return false
+			}
+		}
+		return ty.ReturnType.IsAssignableFrom(other.CallReturnType())
+	}
+	return false
 }
 
 func (ty FunctionType) CallReturnType() Type {
@@ -581,9 +631,10 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 		return errors.Errorf("%s: expected %d arguments, got %d for %s", expr.Span(), len(argTypes), len(expr.Args), calleeType)
 	}
 	for i, arg := range expr.Args {
-		argType := tc.typeInfo.MustLookup(arg)
-		if argType != argTypes[i] {
-			return errors.Errorf("%s: expected argument %d to be of type %q, got %q", arg.Span(), i, argTypes[i], argType)
+		callArgType := tc.typeInfo.MustLookup(arg)
+		funcArgType := argTypes[i]
+		if !funcArgType.IsAssignableFrom(callArgType) {
+			return errors.Errorf("%s: expected argument %d to be of type %q, got %q", arg.Span(), i, funcArgType, callArgType)
 		}
 	}
 	tc.typeInfo.Set(expr, calleeType.CallReturnType())
@@ -898,8 +949,9 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 		}
 		varType = field.Type
 	}
-	if varType != rhsType {
-		return errors.Errorf("%s: lhs and rhs of assignment statement must have the same type, got %s and %s", s.Span(), varType, rhsType)
+	if !varType.IsAssignableFrom(rhsType) {
+		return errors.Errorf(
+			"%s: lhs and rhs of assignment statement must have the same type, got %s and %s", s.Span(), varType, rhsType)
 	}
 	tc.typeInfo.Set(s, UnitType)
 	return nil

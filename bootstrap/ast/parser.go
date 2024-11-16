@@ -440,14 +440,24 @@ func (p *Parser) consumeAny() token.Token {
 }
 
 func (p *Parser) peek() token.Token {
+	for p.tokens[p.index].Kind == token.LineComment {
+		p.index += 1
+	}
+	if p.index >= len(p.tokens) {
+		return token.Token{Kind: token.EOF}
+	}
 	return p.tokens[p.index]
 }
 
 func (p *Parser) peek1() token.Token {
-	if p.index+1 >= len(p.tokens) {
+	add := 1
+	for p.tokens[p.index+add].Kind == token.LineComment {
+		add += 1
+	}
+	if p.index+add >= len(p.tokens) {
 		return token.Token{Kind: token.EOF}
 	}
-	return p.tokens[p.index+1]
+	return p.tokens[p.index+add]
 }
 
 func (p *Parser) span() token.Span {
@@ -1029,8 +1039,6 @@ func (p *Parser) ParseNode() (Node, error) {
 			return p.parseImplDefinition()
 		case token.Trait:
 			return p.parseTraitDeclaration()
-		case token.LineComment:
-			p.consumeAny()
 		case token.Ident, token.TypeIdent, token.LCurly, token.If, token.True, token.False, token.Str, token.Int, token.Self:
 			expr, err := p.parseExpression()
 			if err != nil {

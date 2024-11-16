@@ -63,6 +63,10 @@ func (t SimpleType) TypeName() string {
 	return string(t.Name)
 }
 
+func NewSimpleType(name TypeIdent, id NodeId, span token.Span) *SimpleType {
+	return &SimpleType{node: node{id: id, span: span}, Name: name}
+}
+
 func (ty Ident) String() string {
 	return string(ty)
 }
@@ -86,6 +90,10 @@ func (expr TypeExpression) String() string {
 }
 
 func (expr *TypeExpression) ReferenceExpressionMarker() {}
+
+func NewTypeExpression(ty Type, id NodeId, span token.Span) *TypeExpression {
+	return &TypeExpression{node: node{id: id, span: span}, Type: ty}
+}
 
 type IdentExpression struct {
 	node

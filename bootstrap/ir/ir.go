@@ -7,7 +7,6 @@ import (
 
 	"github.com/flunderpero/klar/bootstrap/ast"
 	"github.com/flunderpero/klar/bootstrap/base"
-	"github.com/flunderpero/klar/bootstrap/lower"
 	"github.com/flunderpero/klar/bootstrap/typed"
 	"github.com/pkg/errors"
 )
@@ -61,15 +60,10 @@ func (t PointerType) Size() int {
 }
 
 type StructType struct {
-	Id     typed.TypeId
 	Fields []Type
 }
 
 func (t StructType) String() string {
-	return fmt.Sprintf("@struct_%s", t.Id)
-}
-
-func (t StructType) DeclareString() string {
 	fields := ""
 	for _, field := range t.Fields {
 		if len(fields) > 0 {
@@ -77,7 +71,7 @@ func (t StructType) DeclareString() string {
 		}
 		fields += field.String()
 	}
-	return fmt.Sprintf("declare struct @%s = { %s }", t.Id, fields)
+	return fmt.Sprintf("{ %s }", fields)
 }
 
 func (t StructType) Size() int {
@@ -117,7 +111,7 @@ func (t FunctionType) Size() int {
 	return 8
 }
 
-var StrType = &StructType{Id: typed.StrType.Id(), Fields: []Type{Int64Type, &PointerType{Int8Type}}}
+var StrType = &StructType{Fields: []Type{Int64Type, &PointerType{Int8Type}}}
 
 type BlockId int
 
@@ -229,19 +223,6 @@ func (m Module) String() string {
 	if len(m.Constants) > 0 {
 		writeln()
 	}
-	gotDeclaredType := false
-	for _, ty := range m.DeclaredTypes.Types {
-		switch ty := ty.(type) {
-		case BuiltInType:
-		case *StructType:
-			gotDeclaredType = true
-			writeln(ty.DeclareString())
-		default:
-		}
-	}
-	if gotDeclaredType {
-		writeln()
-	}
 	for i, function := range m.Functions {
 		if i > 0 {
 			writeln()
@@ -290,7 +271,7 @@ func newConstantRegister(id string) Register {
 	return Register{Id: RegisterId(fmt.Sprintf("c_%s", id)), Type: StrType}
 }
 
-func newFunctionRegister(f typed.CallableType, ty Type) Register {
+func newFunctionRegister(f typed.Type, ty Type) Register {
 	return Register{Id: RegisterId(fmt.Sprintf("f_%s", f.Id())), Type: ty}
 }
 
@@ -721,15 +702,16 @@ func (g *generator) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) 
 func (g *generator) VisitReferenceExpression(expr ast.ReferenceExpression) error {
 	switch expr := expr.(type) {
 	case *ast.IdentExpression:
-		ty := g.typeInfo.MustLookup(expr)
-		ident := expr.Ident
-		if callableType, ok := ty.(typed.CallableType); ok {
-			// During lowering we replaced all `expr.Callee.Ident` with the callable type id.
-			ident = lower.CallableIdent(callableType)
-		}
-		reg := g.symbolTable.lookup(ident)
+		reg := g.symbolTable.lookup(expr.Ident)
 		g.registerByNodeId[expr.Id()] = reg
 	case *ast.TypeExpression:
+		switch ty := expr.Type.(type) {
+		case *ast.SimpleType:
+			reg := g.symbolTable.lookup(ast.Ident(ty.Name))
+			g.registerByNodeId[expr.Id()] = reg
+		default:
+			panic(fmt.Sprintf("unknown type expression type: %T", expr.Type))
+		}
 	default:
 		panic(fmt.Sprintf("VisitReferenceExpression not implemented for expression type: %T", expr))
 	}
@@ -1055,7 +1037,7 @@ func (dt *DeclaredTypes) declare(ty typed.Type) {
 			}
 			fieldTypes = append(fieldTypes, fieldType)
 		}
-		structType := &StructType{Id: ty.Id(), Fields: fieldTypes}
+		structType := &StructType{Fields: fieldTypes}
 		dt.Types[ty.Id()] = structType
 	case typed.CallableType:
 		args := make([]FunctionArg, len(ty.CallArgTypes()))
@@ -1112,21 +1094,16 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 			main = f
 		}
 		declaredTypes.declare(funcType)
-		rootSymbolTable.declare(lower.CallableIdent(funcType), newFunctionRegister(funcType, f.Type))
+		rootSymbolTable.declare(functionDef.Decl.Name, newFunctionRegister(funcType, f.Type))
 	}
 	// Declare builtin functions.
-	declaredTypes.declare(typed.BuiltInPrintFunction)
-	rootSymbolTable.declare(
-		lower.CallableIdent(typed.BuiltInPrintFunction),
-		newFunctionRegister(typed.BuiltInPrintFunction, declaredTypes.MustLookup(typed.BuiltInPrintFunction)))
-	declaredTypes.declare(typed.BuiltInPrintIntFunction)
-	rootSymbolTable.declare(
-		lower.CallableIdent(typed.BuiltInPrintIntFunction),
-		newFunctionRegister(typed.BuiltInPrintIntFunction, declaredTypes.MustLookup(typed.BuiltInPrintIntFunction)))
-	declaredTypes.declare(typed.BuiltInUnsafeMallocFunction)
-	rootSymbolTable.declare(
-		lower.CallableIdent(typed.BuiltInUnsafeMallocFunction),
-		newFunctionRegister(typed.BuiltInUnsafeMallocFunction, declaredTypes.MustLookup(typed.BuiltInUnsafeMallocFunction)))
+	declareBuiltInFunction := func(f *typed.FunctionType) {
+		declaredTypes.declare(f)
+		rootSymbolTable.declare(ast.Ident(f.Id().String()), newFunctionRegister(f, declaredTypes.MustLookup(f)))
+	}
+	declareBuiltInFunction(typed.BuiltInPrintFunction)
+	declareBuiltInFunction(typed.BuiltInPrintIntFunction)
+	declareBuiltInFunction(typed.BuiltInUnsafeMallocFunction)
 	constants := []*StrConst{}
 	// Generate code for each function.
 	for i, function := range functions {

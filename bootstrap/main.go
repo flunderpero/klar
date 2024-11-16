@@ -158,6 +158,6 @@ func (v *printTypedASTWalker) VisitNode(node ast.Node, w ast.Walker) error {
 		return err
 	}
 	ty := v.typeInfo.MustLookup(node)
-	fmt.Printf("%s\n=> %s\n\n", node, ty)
+	fmt.Printf("%s\n=> %s (#%s)\n\n", node, ty, ty.Id())
 	return nil
 }

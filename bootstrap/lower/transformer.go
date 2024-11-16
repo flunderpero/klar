@@ -24,16 +24,16 @@ type Transformer interface {
 	VisitFunctionDefinition(fn *ast.FunctionDefinition, w TransformWalker) (*ast.FunctionDefinition, bool)
 	VisitVariableDefinition(variable *ast.VariableDefinition, w TransformWalker) (*ast.VariableDefinition, bool)
 	VisitExpression(expr ast.Expression, w TransformWalker) (ast.Expression, bool)
-	VisitBlockExpression(expr *ast.BlockExpression, w TransformWalker) (*ast.BlockExpression, bool)
-	VisitCallExpression(expr *ast.CallExpression, w TransformWalker) (*ast.CallExpression, bool)
-	VisitMemberExpression(expr *ast.MemberExpression, w TransformWalker) (*ast.MemberExpression, bool)
-	VisitStructInitExpression(expr *ast.StructInitExpression, w TransformWalker) (*ast.StructInitExpression, bool)
-	VisitIfExpression(expr *ast.IfExpression, w TransformWalker) (*ast.IfExpression, bool)
-	VisitBinaryExpression(expr *ast.BinaryExpression, w TransformWalker) (*ast.BinaryExpression, bool)
-	VisitReferenceExpression(expr ast.ReferenceExpression) (ast.ReferenceExpression, bool)
-	VisitStringLiteralExpression(expr *ast.StringLiteralExpression) (*ast.StringLiteralExpression, bool)
-	VisitIntLiteralExpression(expr *ast.IntLiteralExpression) (*ast.IntLiteralExpression, bool)
-	VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) (*ast.BoolLiteralExpression, bool)
+	VisitBlockExpression(expr *ast.BlockExpression, w TransformWalker) (ast.Expression, bool)
+	VisitCallExpression(expr *ast.CallExpression, w TransformWalker) (ast.Expression, bool)
+	VisitMemberExpression(expr *ast.MemberExpression, w TransformWalker) (ast.Expression, bool)
+	VisitStructInitExpression(expr *ast.StructInitExpression, w TransformWalker) (ast.Expression, bool)
+	VisitIfExpression(expr *ast.IfExpression, w TransformWalker) (ast.Expression, bool)
+	VisitBinaryExpression(expr *ast.BinaryExpression, w TransformWalker) (ast.Expression, bool)
+	VisitReferenceExpression(expr ast.ReferenceExpression) (ast.Expression, bool)
+	VisitStringLiteralExpression(expr *ast.StringLiteralExpression) (ast.Expression, bool)
+	VisitIntLiteralExpression(expr *ast.IntLiteralExpression) (ast.Expression, bool)
+	VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) (ast.Expression, bool)
 	VisitAssignmentStatement(stmt *ast.AssignmentStatement, w TransformWalker) (*ast.AssignmentStatement, bool)
 	VisitLoopStatement(stmt *ast.LoopStatement, w TransformWalker) (*ast.LoopStatement, bool)
 	VisitBreakStatement(stmt *ast.BreakStatement) (*ast.BreakStatement, bool)
@@ -48,12 +48,12 @@ type TransformWalker interface {
 	WalkImplDefinition(impl *ast.ImplDefinition) (*ast.ImplDefinition, bool)
 	WalkVariableDefinition(variable *ast.VariableDefinition) (*ast.VariableDefinition, bool)
 	WalkExpression(expr ast.Expression) (ast.Expression, bool)
-	WalkBlockExpression(expr *ast.BlockExpression) (*ast.BlockExpression, bool)
-	WalkCallExpression(expr *ast.CallExpression) (*ast.CallExpression, bool)
-	WalkMemberExpression(expr *ast.MemberExpression) (*ast.MemberExpression, bool)
-	WalkStructInitExpression(expr *ast.StructInitExpression) (*ast.StructInitExpression, bool)
-	WalkIfExpression(expr *ast.IfExpression) (*ast.IfExpression, bool)
-	WalkBinaryExpression(expr *ast.BinaryExpression) (*ast.BinaryExpression, bool)
+	WalkBlockExpression(expr *ast.BlockExpression) (ast.Expression, bool)
+	WalkCallExpression(expr *ast.CallExpression) (ast.Expression, bool)
+	WalkMemberExpression(expr *ast.MemberExpression) (ast.Expression, bool)
+	WalkStructInitExpression(expr *ast.StructInitExpression) (ast.Expression, bool)
+	WalkIfExpression(expr *ast.IfExpression) (ast.Expression, bool)
+	WalkBinaryExpression(expr *ast.BinaryExpression) (ast.Expression, bool)
 	WalkAssignmentStatement(stmt *ast.AssignmentStatement) (*ast.AssignmentStatement, bool)
 	WalkLoopStatement(stmt *ast.LoopStatement) (*ast.LoopStatement, bool)
 }
@@ -64,39 +64,39 @@ func (_ *DefaultTransformer) VisitReferenceExpression(expr ast.ReferenceExpressi
 	return expr, true
 }
 
-func (_ *DefaultTransformer) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) (*ast.StringLiteralExpression, bool) {
+func (_ *DefaultTransformer) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) (ast.Expression, bool) {
 	return expr, true
 }
 
-func (_ *DefaultTransformer) VisitIntLiteralExpression(expr *ast.IntLiteralExpression) (*ast.IntLiteralExpression, bool) {
+func (_ *DefaultTransformer) VisitIntLiteralExpression(expr *ast.IntLiteralExpression) (ast.Expression, bool) {
 	return expr, true
 }
 
-func (_ *DefaultTransformer) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) (*ast.BoolLiteralExpression, bool) {
+func (_ *DefaultTransformer) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) (ast.Expression, bool) {
 	return expr, true
 }
 
-func (_ *DefaultTransformer) VisitCallExpression(expr *ast.CallExpression, w TransformWalker) (*ast.CallExpression, bool) {
+func (_ *DefaultTransformer) VisitCallExpression(expr *ast.CallExpression, w TransformWalker) (ast.Expression, bool) {
 	return w.WalkCallExpression(expr)
 }
 
-func (_ *DefaultTransformer) VisitMemberExpression(expr *ast.MemberExpression, w TransformWalker) (*ast.MemberExpression, bool) {
+func (_ *DefaultTransformer) VisitMemberExpression(expr *ast.MemberExpression, w TransformWalker) (ast.Expression, bool) {
 	return w.WalkMemberExpression(expr)
 }
 
-func (_ *DefaultTransformer) VisitStructInitExpression(expr *ast.StructInitExpression, w TransformWalker) (*ast.StructInitExpression, bool) {
+func (_ *DefaultTransformer) VisitStructInitExpression(expr *ast.StructInitExpression, w TransformWalker) (ast.Expression, bool) {
 	return w.WalkStructInitExpression(expr)
 }
 
-func (_ *DefaultTransformer) VisitIfExpression(expr *ast.IfExpression, w TransformWalker) (*ast.IfExpression, bool) {
+func (_ *DefaultTransformer) VisitIfExpression(expr *ast.IfExpression, w TransformWalker) (ast.Expression, bool) {
 	return w.WalkIfExpression(expr)
 }
 
-func (_ *DefaultTransformer) VisitBinaryExpression(expr *ast.BinaryExpression, w TransformWalker) (*ast.BinaryExpression, bool) {
+func (_ *DefaultTransformer) VisitBinaryExpression(expr *ast.BinaryExpression, w TransformWalker) (ast.Expression, bool) {
 	return w.WalkBinaryExpression(expr)
 }
 
-func (_ *DefaultTransformer) VisitBlockExpression(expr *ast.BlockExpression, w TransformWalker) (*ast.BlockExpression, bool) {
+func (_ *DefaultTransformer) VisitBlockExpression(expr *ast.BlockExpression, w TransformWalker) (ast.Expression, bool) {
 	return w.WalkBlockExpression(expr)
 }
 
@@ -183,7 +183,7 @@ func (w *DefaultTransformWalker) WalkExpression(expr ast.Expression) (ast.Expres
 	}
 }
 
-func (w *DefaultTransformWalker) WalkBinaryExpression(expr *ast.BinaryExpression) (*ast.BinaryExpression, bool) {
+func (w *DefaultTransformWalker) WalkBinaryExpression(expr *ast.BinaryExpression) (ast.Expression, bool) {
 	lhs, lhsOk := w.Transformer.VisitExpression(expr.Lhs, w)
 	rhs, rhsOk := w.Transformer.VisitExpression(expr.Rhs, w)
 	if !lhsOk && !rhsOk {
@@ -197,7 +197,7 @@ func (w *DefaultTransformWalker) WalkBinaryExpression(expr *ast.BinaryExpression
 	return expr, true
 }
 
-func (w *DefaultTransformWalker) WalkCallExpression(expr *ast.CallExpression) (*ast.CallExpression, bool) {
+func (w *DefaultTransformWalker) WalkCallExpression(expr *ast.CallExpression) (ast.Expression, bool) {
 	callee, ok := w.Transformer.VisitExpression(expr.Callee, w)
 	if !ok {
 		return nil, false
@@ -214,7 +214,7 @@ func (w *DefaultTransformWalker) WalkCallExpression(expr *ast.CallExpression) (*
 	return expr, true
 }
 
-func (w *DefaultTransformWalker) WalkStructInitExpression(expr *ast.StructInitExpression) (*ast.StructInitExpression, bool) {
+func (w *DefaultTransformWalker) WalkStructInitExpression(expr *ast.StructInitExpression) (ast.Expression, bool) {
 	fields := []ast.StructInitField{}
 	for _, field := range expr.Fields {
 		value, ok := w.Transformer.VisitExpression(field.Value, w)
@@ -227,7 +227,7 @@ func (w *DefaultTransformWalker) WalkStructInitExpression(expr *ast.StructInitEx
 	return expr, true
 }
 
-func (w *DefaultTransformWalker) WalkIfExpression(expr *ast.IfExpression) (*ast.IfExpression, bool) {
+func (w *DefaultTransformWalker) WalkIfExpression(expr *ast.IfExpression) (ast.Expression, bool) {
 	condition, conditionOk := w.Transformer.VisitExpression(expr.Condition, w)
 	trueBody, trueBodyOk := w.Transformer.VisitBlockExpression(expr.TrueBody, w)
 	if expr.FalseBody != nil {
@@ -235,17 +235,17 @@ func (w *DefaultTransformWalker) WalkIfExpression(expr *ast.IfExpression) (*ast.
 		if falseBodyOk != conditionOk || falseBodyOk != trueBodyOk {
 			panic("either all or none of condition, trueBody and falseBody must be deleted")
 		}
-		expr.FalseBody = falseBody
+		expr.FalseBody = falseBody.(*ast.BlockExpression)
 	}
 	if conditionOk != trueBodyOk {
 		panic("either all or none of condition and trueBody must be deleted")
 	}
 	expr.Condition = condition
-	expr.TrueBody = trueBody
+	expr.TrueBody = trueBody.(*ast.BlockExpression)
 	return expr, true
 }
 
-func (w *DefaultTransformWalker) WalkBlockExpression(expr *ast.BlockExpression) (*ast.BlockExpression, bool) {
+func (w *DefaultTransformWalker) WalkBlockExpression(expr *ast.BlockExpression) (ast.Expression, bool) {
 	nodes := []ast.Node{}
 	for _, node := range expr.Nodes {
 		transformed, ok := w.Transformer.VisitNode(node, w)
@@ -257,7 +257,7 @@ func (w *DefaultTransformWalker) WalkBlockExpression(expr *ast.BlockExpression) 
 	return expr, true
 }
 
-func (w *DefaultTransformWalker) WalkMemberExpression(expr *ast.MemberExpression) (*ast.MemberExpression, bool) {
+func (w *DefaultTransformWalker) WalkMemberExpression(expr *ast.MemberExpression) (ast.Expression, bool) {
 	target, ok := w.Transformer.VisitExpression(expr.Target, w)
 	if !ok {
 		return nil, false
@@ -303,11 +303,16 @@ func (w *DefaultTransformWalker) WalkImplDefinition(impl *ast.ImplDefinition) (*
 }
 
 func (w *DefaultTransformWalker) WalkFunctionDefinition(fn *ast.FunctionDefinition) (*ast.FunctionDefinition, bool) {
+	decl, ok := w.Transformer.VisitFunctionDeclaration(fn.Decl)
+	if !ok {
+		return nil, false
+	}
 	body, ok := w.Transformer.VisitBlockExpression(fn.Body, w)
 	if !ok {
 		return nil, false
 	}
-	fn.Body = body
+	fn.Decl = decl
+	fn.Body = body.(*ast.BlockExpression)
 	return fn, true
 }
 
@@ -339,7 +344,7 @@ func (w *DefaultTransformWalker) WalkLoopStatement(stmt *ast.LoopStatement) (*as
 	if !ok {
 		return nil, false
 	}
-	stmt.Body = body
+	stmt.Body = body.(*ast.BlockExpression)
 	return stmt, true
 }
 

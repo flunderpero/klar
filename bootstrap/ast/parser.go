@@ -67,6 +67,27 @@ func NewSimpleType(name TypeIdent, id NodeId, span token.Span) *SimpleType {
 	return &SimpleType{node: node{id: id, span: span}, Name: name}
 }
 
+type FunctionType struct {
+	node
+	ArgTypes   []Type
+	ReturnType Type
+}
+
+func (t FunctionType) String() string {
+	return fmt.Sprintf("FunctionType%s\n%s", base.IndentSlice(t.ArgTypes, 1), base.Indent(t.ReturnType, 1))
+}
+
+func (t FunctionType) TypeName() string {
+	argTypes := ""
+	for i, argType := range t.ArgTypes {
+		if i > 0 {
+			argTypes += ","
+		}
+		argTypes += argType.TypeName()
+	}
+	return fmt.Sprintf("fn(%s)%s", argTypes, t.ReturnType.TypeName())
+}
+
 func (ty Ident) String() string {
 	return string(ty)
 }
@@ -422,6 +443,13 @@ func (p *Parser) peek() token.Token {
 	return p.tokens[p.index]
 }
 
+func (p *Parser) peek1() token.Token {
+	if p.index+1 >= len(p.tokens) {
+		return token.Token{Kind: token.EOF}
+	}
+	return p.tokens[p.index+1]
+}
+
 func (p *Parser) span() token.Span {
 	span := p.tokens[p.index].Span
 	return span
@@ -537,12 +565,49 @@ func (p *Parser) parseStructInitExpression(typeIdent TypeIdent, from token.Span)
 	return nil, errors.Errorf("unexpected end of file while parsing struct init")
 }
 
+func (p *Parser) parseFunctionType() (*FunctionType, error) {
+	from := p.span()
+	if _, err := p.consume(token.Fn); err != nil {
+		return nil, err
+	}
+	if _, err := p.consume(token.LParen); err != nil {
+		return nil, err
+	}
+	argTypes := []Type{}
+	for p.index < len(p.tokens) {
+		if p.peek().Kind == token.RParen {
+			break
+		}
+		argType, err := p.parseType()
+		if err != nil {
+			return nil, err
+		}
+		argTypes = append(argTypes, argType)
+		t := p.peek()
+		if t.Kind == token.RParen {
+			p.consumeAny()
+			break
+		}
+		if _, err := p.consume(token.Comma); err != nil {
+			return nil, err
+		}
+	}
+	returnTypeSpan := p.span()
+	returnType, err := p.tryParseType(&SimpleType{node: p.newNode(returnTypeSpan), Name: "()"})
+	if err != nil {
+		return nil, err
+	}
+	return &FunctionType{node: p.newNode(from), ArgTypes: argTypes, ReturnType: returnType}, nil
+}
+
 func (p *Parser) parseType() (Type, error) {
 	t := p.peek()
 	switch t.Kind {
 	case token.TypeIdent:
 		p.consumeAny()
 		return &SimpleType{node: p.newNode(p.span()), Name: TypeIdent(t.Value)}, nil
+	case token.Fn:
+		return p.parseFunctionType()
 	}
 	return nil, errors.Errorf("%s: expected type, got %s", t.Span, t)
 }
@@ -552,6 +617,10 @@ func (p *Parser) tryParseType(defaultValue Type) (Type, error) {
 	switch t.Kind {
 	case token.TypeIdent:
 		return p.parseType()
+	case token.Fn:
+		if p.peek1().Kind == token.LParen {
+			return p.parseType()
+		}
 	}
 	return defaultValue, nil
 }

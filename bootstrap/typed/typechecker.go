@@ -347,16 +347,23 @@ func (ty FunctionType) CallReturnType() Type {
 	return ty.ReturnType
 }
 
+type variableInfo struct {
+	type_         Type
+	isFunctionArg bool
+	mutable       bool
+	span          token.Span
+}
+
 type typeEnvironment struct {
 	types     map[string]Type
-	variables map[string]*ast.VariableDefinition
+	variables map[string]variableInfo
 	parent    *typeEnvironment
 }
 
 func newTypeEnvironment(parent *typeEnvironment) *typeEnvironment {
 	return &typeEnvironment{
 		types:     make(map[string]Type),
-		variables: make(map[string]*ast.VariableDefinition),
+		variables: make(map[string]variableInfo),
 		parent:    parent,
 	}
 }
@@ -369,21 +376,16 @@ func (te *typeEnvironment) lookup(name string) (Type, bool) {
 	return ty, found
 }
 
-func (te *typeEnvironment) lookupVariable(name ast.Ident) (Type, *ast.VariableDefinition, bool) {
+func (te *typeEnvironment) lookupVariable(name ast.Ident) (Type, *variableInfo, bool) {
 	ty, found := te.lookup(string(name))
 	if !found {
 		return nil, nil, false
 	}
-	def, found := te.variables[string(name)]
+	info, found := te.variables[string(name)]
 	if !found && te.parent != nil {
 		return te.parent.lookupVariable(name)
 	}
-	return ty, def, found
-}
-
-func (te *typeEnvironment) isVariable(name string) bool {
-	_, found := te.variables[name]
-	return found
+	return ty, &info, found
 }
 
 func (te *typeEnvironment) declare(name string, ty Type, span token.Span) error {
@@ -394,11 +396,11 @@ func (te *typeEnvironment) declare(name string, ty Type, span token.Span) error 
 	return nil
 }
 
-func (te *typeEnvironment) declareVariable(name string, ty Type, def *ast.VariableDefinition) error {
-	if err := te.declare(name, ty, def.Span()); err != nil {
+func (te *typeEnvironment) declareVariable(name string, info variableInfo) error {
+	if err := te.declare(name, info.type_, info.span); err != nil {
 		return err
 	}
-	te.variables[name] = def
+	te.variables[name] = info
 	return nil
 }
 
@@ -433,17 +435,6 @@ func (m *TypeInfo) Lookup(node ast.Node) (Type, error) {
 		return nil, errors.Errorf("%s: type not found for node #%d: %s", node.Span(), node.Id(), node)
 	}
 	return ty, nil
-}
-
-func (m *TypeInfo) LookupType(node ast.Node, ty Type) (Type, error) {
-	got, err := m.Lookup(node)
-	if err != nil {
-		return nil, err
-	}
-	if got != ty {
-		return nil, errors.Errorf("%s: expected type %s, got %s", node.Span(), ty, got)
-	}
-	return got, nil
 }
 
 func (m *TypeInfo) MustLookup(node ast.Node) Type {
@@ -485,12 +476,13 @@ const (
 
 type typeChecker struct {
 	ast.DefaultVisitor
-	typeInfo     *TypeInfo
-	typeEnv      *typeEnvironment
-	loopDepth    int
-	nextTypeId   int
-	checkingMode checkingMode
-	scope        *Scope
+	typeInfo      *TypeInfo
+	typeEnv       *typeEnvironment
+	loopDepth     int
+	nextTypeId    int
+	checkingMode  checkingMode
+	scope         *Scope
+	functionTypes map[string]FunctionType
 }
 
 func (tc *typeChecker) newType() BaseType {
@@ -542,6 +534,35 @@ func (tc *typeChecker) declareSymbol(key isId, name string) {
 	tc.typeInfo.symbols[keyString] = symbol
 }
 
+func (tc *typeChecker) lookupType(node ast.Type) (Type, error) {
+	switch node := node.(type) {
+	case *ast.FunctionType:
+		if res, found := tc.functionTypes[node.TypeName()]; found {
+			return &res, nil
+		}
+		argTypes := make([]Type, len(node.ArgTypes))
+		for i, arg := range node.ArgTypes {
+			argType, err := tc.lookupType(arg)
+			if err != nil {
+				return nil, err
+			}
+			argTypes[i] = argType
+		}
+		returnType, err := tc.lookupType(node.ReturnType)
+		if err != nil {
+			return nil, err
+		}
+		res := FunctionType{BaseType: tc.newType(), ArgTypes: argTypes, ReturnType: returnType}
+		tc.functionTypes[node.TypeName()] = res
+		return &res, nil
+	default:
+		if res, found := tc.typeEnv.lookup(node.TypeName()); found {
+			return res, nil
+		}
+		return nil, errors.Errorf("undefined type: %s", node.TypeName())
+	}
+}
+
 func (tc *typeChecker) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
 	tc.typeInfo.Set(expr, StrType)
 	return nil
@@ -577,7 +598,7 @@ func (tc *typeChecker) VisitReferenceExpression(expr ast.ReferenceExpression) er
 		return errors.Errorf("%s: type not found for identifier %s", expr.Span(), refStr)
 	}
 	tc.typeInfo.Set(expr, ty)
-	if !tc.typeEnv.isVariable(refStr) {
+	if _, _, ok := tc.typeEnv.lookupVariable(ast.Ident(refStr)); !ok {
 		tc.typeInfo.typeBindings[expr] = ty
 	}
 	return nil
@@ -724,15 +745,16 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) error {
 	argTypes := make([]Type, len(decl.Args))
 	for i, arg := range decl.Args {
-		argType, found := tc.typeEnv.lookup(arg.Type.TypeName())
-		if !found {
-			return errors.Errorf("%s: type %s not found for argument %s", arg.Span, arg.Type, arg.Name)
+		argType, err := tc.lookupType(arg.Type)
+		if err != nil {
+			return errors.Wrapf(err, "%s: type %s not found for argument %s", arg.Span, arg.Type, arg.Name)
 		}
 		argTypes[i] = argType
 	}
-	returnType, found := tc.typeEnv.lookup(decl.ReturnType.TypeName())
-	if !found {
-		return errors.Errorf("%s: type %s not found for return type of function %s", decl.Span(), decl.ReturnType, decl.Name)
+	returnType, err := tc.lookupType(decl.ReturnType)
+	if err != nil {
+		return errors.Wrapf(
+			err, "%s: type %s not found for return type of function %s", decl.Span(), decl.ReturnType, decl.Name)
 	}
 	if tc.checkingMode == insideTraitOrImplMode {
 		isStatic := len(decl.Args) == 0 || decl.Args[0].Name != "self"
@@ -779,7 +801,8 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 	argTypes := callableType.CallArgTypes()
 	for i, arg := range fn.Decl.Args {
 		argType := argTypes[i]
-		if err := tc.typeEnv.declare(string(arg.Name), argType, arg.Span); err != nil {
+		varInfo := variableInfo{type_: argType, isFunctionArg: true, mutable: false, span: arg.Span}
+		if err := tc.typeEnv.declareVariable(string(arg.Name), varInfo); err != nil {
 			return err
 		}
 	}
@@ -918,7 +941,8 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 	if valueType == UnitType {
 		return errors.Errorf("%s: variable %s must have a non-unit type", v.Span(), v.Name)
 	}
-	if err := tc.typeEnv.declareVariable(string(v.Name), valueType, v); err != nil {
+	varInfo := variableInfo{type_: valueType, mutable: true, span: v.Span()}
+	if err := tc.typeEnv.declareVariable(string(v.Name), varInfo); err != nil {
 		return err
 	}
 	tc.typeInfo.Set(v, UnitType)
@@ -930,11 +954,11 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 		return err
 	}
 	rhsType := tc.typeInfo.MustLookup(s.Rhs)
-	varType, varDefinition, ok := tc.typeEnv.lookupVariable(s.Variable.Ident)
+	varType, varInfo, ok := tc.typeEnv.lookupVariable(s.Variable.Ident)
 	if !ok {
 		return errors.Errorf("%s: unknown variable %q", s.Span(), s.Variable.Ident)
 	}
-	if !varDefinition.Mutable {
+	if !varInfo.mutable {
 		return errors.Errorf("%s: variable %q is not mutable", s.Span(), s.Variable.Ident)
 	}
 	if s.IsAssignToMember() {
@@ -1034,9 +1058,10 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 			symbols:      make(map[string]*Symbol),
 			typeBindings: make(map[ast.ReferenceExpression]Type),
 		},
-		typeEnv:    defaultTypeEnv,
-		nextTypeId: 1000,
-		scope:      rootScope,
+		typeEnv:       defaultTypeEnv,
+		nextTypeId:    1000,
+		scope:         rootScope,
+		functionTypes: make(map[string]FunctionType),
 	}
 	if err := defaultTypeEnv.declare("print", BuiltInPrintFunction, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare print function"))

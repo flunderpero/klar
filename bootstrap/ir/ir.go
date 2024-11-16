@@ -189,7 +189,7 @@ type FunctionDefinition struct {
 }
 
 func (t FunctionDefinition) String() string {
-	return fmt.Sprintf("declare %s", t.Type)
+	return fmt.Sprintf("declare %s %s", t.Id, t.Type)
 }
 
 type Module struct {
@@ -707,7 +707,14 @@ func (g *generator) VisitReferenceExpression(expr ast.ReferenceExpression) error
 	case *ast.TypeExpression:
 		switch ty := expr.Type.(type) {
 		case *ast.SimpleType:
-			reg := g.symbolTable.lookup(ast.Ident(ty.Name))
+			tyReg := g.symbolTable.lookup(ast.Ident(ty.Name))
+			reg := g.nextRegister(&PointerType{ElementType: tyReg.Type})
+			g.append(&GetPointer{
+				register:   reg,
+				Source:     tyReg,
+				SourceType: tyReg.Type,
+				FieldIndex: 0,
+			}, expr)
 			g.registerByNodeId[expr.Id()] = reg
 		default:
 			panic(fmt.Sprintf("unknown type expression type: %T", expr.Type))
@@ -837,7 +844,7 @@ func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.Walk
 	irSourceType := g.typeInfo.MustLookup(expr.Target).(*typed.StructType)
 	fieldIndex, found := irSourceType.FindFieldIndex(expr.Field, expr.Span())
 	if !found {
-		// Note: After lowering there will be no `ast.MemberExpression` that reference a
+		// Note: After lowering there will be no `ast.MemberExpression` that references a
 		//       method. All of those have been replaced when lowering to plain function calls.
 		return errors.Errorf("field %q not found in struct %q", expr.Field, irSourceType)
 	}
@@ -883,13 +890,21 @@ func (g *generator) VisitStructInitExpression(expr *ast.StructInitExpression, w 
 	sizeReg := g.nextRegister(Int64Type)
 	mallocReg := g.nextRegister(Int64Type)
 	mallocFuncType := g.declaredTypes.MustLookup(typed.BuiltInUnsafeMallocFunction).(*FunctionType)
+    // todo: We shouldn't need to make an indirect call here.
+	mallocCalleeReg := g.nextRegister(PointerType{ElementType: mallocFuncType})
+	g.append(&GetPointer{
+		register:   mallocCalleeReg,
+		Source:     newFunctionRegister(typed.BuiltInUnsafeMallocFunction, mallocFuncType),
+		SourceType: mallocFuncType,
+		FieldIndex: 0,
+	}, nil)
 	g.append(&Int64Const{
 		register: sizeReg,
 		Value:    int64(structType.Size()),
 	}, nil)
 	g.append(&Call{
 		register:     mallocReg,
-		Callee:       newFunctionRegister(typed.BuiltInUnsafeMallocFunction, mallocFuncType),
+		Callee:       mallocCalleeReg,
 		FunctionType: mallocFuncType,
 		Args:         []Register{sizeReg},
 	}, expr)
@@ -1017,7 +1032,8 @@ func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
 		if res, found := dt.Types[ty.Id()]; found {
 			return res
 		}
-		panic(fmt.Sprintf("type not found: %s (%T)", ty.Id(), ty))
+		dt.declare(ty)
+		return dt.Types[ty.Id()]
 	}
 	panic(fmt.Sprintf("type not found for %T", ty))
 }
@@ -1053,9 +1069,38 @@ func (dt *DeclaredTypes) declare(ty typed.Type) {
 	}
 }
 
+func declareFunction(
+	declaredTypes *DeclaredTypes,
+	rootSymbolTable *symbolTable,
+	functionType typed.CallableType,
+) *FunctionDefinition {
+	args := []FunctionArg{}
+	for i, argType := range functionType.CallArgTypes() {
+		if callArgFuncType, ok := argType.(*typed.FunctionType); ok {
+			declareFunction(declaredTypes, rootSymbolTable, callArgFuncType)
+		}
+		irArgType := declaredTypes.MustLookup(argType)
+		irArg := FunctionArg{
+			Type:     irArgType,
+			Register: newRegister(i+1, irArgType),
+		}
+		args = append(args, irArg)
+	}
+	returnType := declaredTypes.MustLookup(functionType.CallReturnType())
+	res := &FunctionDefinition{
+		Id:   functionType.Id(),
+		Type: FunctionType{Args: args, ReturnType: returnType},
+	}
+	declaredTypes.declare(functionType)
+	rootSymbolTable.declare(
+		ast.Ident(functionType.Id().String()), newFunctionRegister(functionType, &res.Type))
+	return res
+}
+
 func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 	functionDefinitions := []*ast.FunctionDefinition{}
 	declaredTypes := &DeclaredTypes{Types: make(map[typed.TypeId]Type)}
+	rootSymbolTable := symbolTable{symbols: make(map[ast.Ident]Register)}
 	for _, node := range module.Nodes {
 		switch node := node.(type) {
 		case *ast.FunctionDefinition:
@@ -1069,32 +1114,18 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 			return nil, errors.Errorf("cannot generate IR for node type: %T", node)
 		}
 	}
-	rootSymbolTable := symbolTable{symbols: make(map[ast.Ident]Register)}
 	functions := []*FunctionDefinition{}
 	var main *FunctionDefinition
 	// First forward declare all functions.
 	for _, functionDef := range functionDefinitions {
 		funcType := typeInfo.MustLookupDeclaredType(functionDef).Type.(typed.CallableType)
-		args := []FunctionArg{}
-		for i, argType := range funcType.CallArgTypes() {
-			argType := declaredTypes.MustLookup(argType)
-			irArg := FunctionArg{
-				Type:     argType,
-				Register: newRegister(i+1, argType),
-			}
-			args = append(args, irArg)
-		}
-		returnType := declaredTypes.MustLookup(funcType.CallReturnType())
-		f := &FunctionDefinition{
-			Id:   funcType.Id(),
-			Type: FunctionType{Args: args, ReturnType: returnType},
-		}
+		f := declareFunction(declaredTypes, &rootSymbolTable, funcType)
 		functions = append(functions, f)
 		if funcType == typeInfo.Main {
 			main = f
 		}
 		declaredTypes.declare(funcType)
-		rootSymbolTable.declare(functionDef.Decl.Name, newFunctionRegister(funcType, f.Type))
+		rootSymbolTable.declare(functionDef.Decl.Name, newFunctionRegister(funcType, &f.Type))
 	}
 	// Declare builtin functions.
 	declareBuiltInFunction := func(f *typed.FunctionType) {
@@ -1121,7 +1152,8 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 		// Make function arguments visible.
 		for a, arg := range definition.Decl.Args {
 			funcArg := function.Type.Args[a]
-			gen.symbolTable.declare(arg.Name, gen.nextRegister(funcArg.Type))
+			reg := gen.nextRegister(funcArg.Type)
+			gen.symbolTable.declare(arg.Name, reg)
 		}
 		block := gen.newBlock()
 		gen.currentBlock = block

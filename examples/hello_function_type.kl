@@ -1,0 +1,38 @@
+struct Foo {}
+
+impl Foo {
+    fn add3(a Int, b Int) Int {
+        a + a + a + b + b + b
+    }
+}
+
+fn add(a Int, b Int) Int {
+    a + b
+}
+
+fn add2(a Int, b Int) Int {
+    a + a + b + b
+}
+
+fn return_add() fn(Int, Int) Int {
+    add
+}
+
+fn do_math(a Int, b Int, f fn(Int, Int) Int) Int {
+    f(a, b)
+}
+
+fn main() {
+    print_int(do_math(1, 2, add))
+    print(", ")
+    print_int(do_math(1, 2, add2))
+    print(", ")
+    print_int(do_math(1, 2, Foo.add3))
+    print(", ")
+    print_int(do_math(1, 2, return_add()))
+    print(", ")
+    let adder = return_add()
+    let printer = print_int
+    let mather = do_math
+    printer(mather(100, 200, adder))
+}

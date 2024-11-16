@@ -375,7 +375,8 @@ func (c *Code) generateBlock(block *ir.Block) error {
 					offset += field.Size()
 				}
 			}
-			if inst.Source.IsConstant() {
+			_, isFuncType := inst.SourceType.(*ir.FunctionType)
+			if inst.Source.IsConstant() || isFuncType {
 				reg = c.registerAllocator.allocateScratchRegister(inst.Register())
 				c.emit("adrp %s, %s@PAGE", reg, inst.Source)
 				c.emit("add %s, %s, %s@PAGEOFF+%d", reg, reg, inst.Source, offset)
@@ -425,7 +426,8 @@ func (c *Code) generateBlock(block *ir.Block) error {
 				argReg := c.mustLookupRegisterAllocation(arg)
 				c.registerAllocator.move(callArgsRegisters[i], argReg)
 			}
-			c.emit("bl %s", inst.Callee)
+			reg := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Callee))
+			c.emit("blr %s", reg)
 			c.registerAllocator.restoreCallerSavedRegisters(savedCallerRegisters)
 			if inst.FunctionType.ReturnType != ir.VoidType {
 				allocation := c.registerAllocator.saveCallResultRegister(inst.Register())

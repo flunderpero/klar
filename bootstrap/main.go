@@ -158,6 +158,12 @@ func (v *printTypedASTWalker) VisitNode(node ast.Node, w ast.Walker) error {
 		return err
 	}
 	ty := v.typeInfo.MustLookup(node)
-	fmt.Printf("%s\n=> %s (#%s)\n\n", node, ty, ty.Id())
+	suffix := ""
+	if expr, ok := node.(ast.ReferenceExpression); ok {
+		if _, ok := v.typeInfo.LookupTypeBinding(expr); ok {
+			suffix = " !typebinding"
+		}
+	}
+	fmt.Printf("%s\n=> %s (#%s)%s\n\n", node, ty, ty.Id(), suffix)
 	return nil
 }

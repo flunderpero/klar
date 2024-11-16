@@ -31,6 +31,8 @@ fn main() {
     print(", ")
     print_int(do_math(1, 2, return_add()))
     print(", ")
+    print_int(return_add()(10, 20))
+    print(", ")
     let adder = return_add()
     let printer = print_int
     let mather = do_math

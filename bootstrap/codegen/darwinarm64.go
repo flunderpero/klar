@@ -426,8 +426,12 @@ func (c *Code) generateBlock(block *ir.Block) error {
 				argReg := c.mustLookupRegisterAllocation(arg)
 				c.registerAllocator.move(callArgsRegisters[i], argReg)
 			}
-			reg := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Callee))
-			c.emit("blr %s", reg)
+			if inst.IsIndirect {
+				reg := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Callee))
+				c.emit("blr %s", reg)
+			} else {
+				c.emit("bl %s", inst.Callee)
+			}
 			c.registerAllocator.restoreCallerSavedRegisters(savedCallerRegisters)
 			if inst.FunctionType.ReturnType != ir.VoidType {
 				allocation := c.registerAllocator.saveCallResultRegister(inst.Register())

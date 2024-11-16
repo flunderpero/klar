@@ -263,6 +263,10 @@ func (r Register) String() string {
 	return string(r.Id)
 }
 
+func (r Register) isDeclaredFunction() bool {
+	return r.Id[0] == 'f'
+}
+
 func newRegister(id int, ty Type) Register {
 	return Register{Id: RegisterId(fmt.Sprintf("%%%d", id)), Type: ty}
 }
@@ -271,7 +275,12 @@ func newConstantRegister(id string) Register {
 	return Register{Id: RegisterId(fmt.Sprintf("c_%s", id)), Type: StrType}
 }
 
-func newFunctionRegister(f typed.Type, ty Type) Register {
+// todo: Currently, we are relying on the fact that codegen uses the same label
+//
+//	as `newFunctionRegister(...).String()`. We should make it explicit in
+//	`GetPointer` and `Call` that we are dealing with a declared function
+//	of which the codegen knows the address.
+func newFunctionRegister(f typed.Type, ty *FunctionType) Register {
 	return Register{Id: RegisterId(fmt.Sprintf("f_%s", f.Id())), Type: ty}
 }
 
@@ -417,6 +426,7 @@ type Call struct {
 	Callee       Register
 	FunctionType *FunctionType
 	Args         []Register
+	IsIndirect   bool
 }
 
 func (inst Call) String() string {
@@ -432,7 +442,11 @@ func (inst Call) String() string {
 	if inst.register.Type != VoidType {
 		assign = fmt.Sprintf("%s = ", inst.register)
 	}
-	return fmt.Sprintf("%scall %s %s(%s)", assign, inst.FunctionType.ReturnType, inst.Callee, args)
+	prefix := ""
+	if inst.IsIndirect {
+		prefix = "i"
+	}
+	return fmt.Sprintf("%s%scall %s %s(%s)", assign, prefix, inst.FunctionType.ReturnType, inst.Callee, args)
 }
 
 func (inst *Call) Register() Register {
@@ -450,7 +464,6 @@ mut a = 1
 	if true {
 	    a = 2
 	} else {
-
 	    a = 3
 	}
 
@@ -458,7 +471,7 @@ _main:
 
 	%1 = i64 1          -- mut a = 1
 	%2 = i1 1           -- `true`
-	%3 = condbr i1 %2, true_block, else_block
+	%3 = br i1 %2, true_block, else_block
 
 true_block:
 
@@ -725,17 +738,46 @@ func (g *generator) VisitReferenceExpression(expr ast.ReferenceExpression) error
 	return nil
 }
 
-func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) error {
-	if err := w.WalkCallExpression(expr); err != nil {
-		return err
+func (g *generator) isDirectCall(callee ast.Expression) (Register, bool) {
+	switch expr := callee.(type) {
+	case *ast.TypeExpression:
+		switch ty := expr.Type.(type) {
+		case *ast.SimpleType:
+			reg := g.symbolTable.lookup(ast.Ident(ty.Name))
+			if reg.isDeclaredFunction() {
+				g.registerByNodeId[expr.Id()] = reg
+				return reg, true
+			}
+		}
 	}
-	typedFuncType := g.typeInfo.MustLookup(expr.Callee).(*typed.FunctionType)
-	funcType := g.declaredTypes.MustLookup(typedFuncType).(*FunctionType)
-	calleeReg := g.lookupRegisterByNode(expr.Callee)
+	return Register{}, false
+
+}
+
+func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) error {
+	var calleeReg Register
+	isIndirect := true
+	if functionReg, ok := g.isDirectCall(expr.Callee); ok {
+		// We need to walk the arguments ourselves since we are not using the default walker.
+		for _, arg := range expr.Args {
+			if err := g.VisitNode(arg, w); err != nil {
+				return err
+			}
+		}
+		calleeReg = functionReg
+		isIndirect = false
+	} else {
+		if err := w.WalkCallExpression(expr); err != nil {
+			return err
+		}
+		calleeReg = g.lookupRegisterByNode(expr.Callee)
+	}
 	args := []Register{}
 	for _, arg := range expr.Args {
 		args = append(args, g.lookupRegisterByNode(arg))
 	}
+	ty := g.typeInfo.MustLookup(expr.Callee)
+	funcType := g.declaredTypes.MustLookup(ty).(*FunctionType)
 	var reg Register = VoidRegister
 	if funcType.ReturnType != VoidType {
 		reg = g.nextRegister(funcType.ReturnType)
@@ -745,6 +787,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		Callee:       calleeReg,
 		FunctionType: funcType,
 		Args:         args,
+		IsIndirect:   isIndirect,
 	}, expr)
 	return nil
 }
@@ -808,7 +851,7 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) erro
 	}
 	// Before generating the true and false bodies, we take a snapshot of the symbol table
 	// so we can calculate the register constraints afterwards.
-	// Remember we need to constraint registers that point to the same symbol/value
+	// Remember: We need to constraint registers that point to the same symbol/value
 	// so that code generation can make sure they use the same hardware register or stack location.
 	symbolTableBeforeBodies := g.symbolTable.copy()
 	g.currentBlock = trueBlock
@@ -890,21 +933,13 @@ func (g *generator) VisitStructInitExpression(expr *ast.StructInitExpression, w 
 	sizeReg := g.nextRegister(Int64Type)
 	mallocReg := g.nextRegister(Int64Type)
 	mallocFuncType := g.declaredTypes.MustLookup(typed.BuiltInUnsafeMallocFunction).(*FunctionType)
-    // todo: We shouldn't need to make an indirect call here.
-	mallocCalleeReg := g.nextRegister(PointerType{ElementType: mallocFuncType})
-	g.append(&GetPointer{
-		register:   mallocCalleeReg,
-		Source:     newFunctionRegister(typed.BuiltInUnsafeMallocFunction, mallocFuncType),
-		SourceType: mallocFuncType,
-		FieldIndex: 0,
-	}, nil)
 	g.append(&Int64Const{
 		register: sizeReg,
 		Value:    int64(structType.Size()),
 	}, nil)
 	g.append(&Call{
 		register:     mallocReg,
-		Callee:       mallocCalleeReg,
+		Callee:       newFunctionRegister(typed.BuiltInUnsafeMallocFunction, mallocFuncType),
 		FunctionType: mallocFuncType,
 		Args:         []Register{sizeReg},
 	}, expr)
@@ -1091,9 +1126,6 @@ func declareFunction(
 		Id:   functionType.Id(),
 		Type: FunctionType{Args: args, ReturnType: returnType},
 	}
-	declaredTypes.declare(functionType)
-	rootSymbolTable.declare(
-		ast.Ident(functionType.Id().String()), newFunctionRegister(functionType, &res.Type))
 	return res
 }
 
@@ -1125,12 +1157,13 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 			main = f
 		}
 		declaredTypes.declare(funcType)
-		rootSymbolTable.declare(functionDef.Decl.Name, newFunctionRegister(funcType, &f.Type))
+		rootSymbolTable.declare(ast.Ident(f.Id.String()), newFunctionRegister(funcType, &f.Type))
 	}
 	// Declare builtin functions.
 	declareBuiltInFunction := func(f *typed.FunctionType) {
 		declaredTypes.declare(f)
-		rootSymbolTable.declare(ast.Ident(f.Id().String()), newFunctionRegister(f, declaredTypes.MustLookup(f)))
+		rootSymbolTable.declare(
+			ast.Ident(f.Id().String()), newFunctionRegister(f, declaredTypes.MustLookup(f).(*FunctionType)))
 	}
 	declareBuiltInFunction(typed.BuiltInPrintFunction)
 	declareBuiltInFunction(typed.BuiltInPrintIntFunction)

@@ -917,10 +917,13 @@ func (g *generator) VisitBlockExpression(expr *ast.BlockExpression, w ast.Walker
 	if err := w.WalkBlockExpression(expr); err != nil {
 		return err
 	}
-	lastExpr := expr.Nodes[len(expr.Nodes)-1]
-	reg, found := g.registerByNodeId[lastExpr.Id()]
-	if !found {
-		reg = NoneRegister
+	var reg = NoneRegister
+	if len(expr.Nodes) > 0 {
+		lastExpr := expr.Nodes[len(expr.Nodes)-1]
+		lastReg, found := g.registerByNodeId[lastExpr.Id()]
+		if found {
+			reg = lastReg
+		}
 	}
 	g.currentBlock.Result = reg
 	g.registerByNodeId[expr.Id()] = reg

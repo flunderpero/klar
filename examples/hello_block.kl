@@ -7,4 +7,6 @@ fn main() {
             }
         )
     } 
+    -- Empty block:
+    {}
 }

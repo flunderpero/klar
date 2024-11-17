@@ -686,7 +686,10 @@ func (tc *typeChecker) VisitBlockExpression(expr *ast.BlockExpression, w ast.Wal
 	if err := w.WalkBlockExpression(expr); err != nil {
 		return err
 	}
-	blockType := tc.typeInfo.MustLookup(expr.Nodes[len(expr.Nodes)-1])
+	var blockType Type = NoneType
+	if len(expr.Nodes) > 0 {
+		blockType = tc.typeInfo.MustLookup(expr.Nodes[len(expr.Nodes)-1])
+	}
 	tc.typeInfo.Set(expr, blockType)
 	return nil
 }

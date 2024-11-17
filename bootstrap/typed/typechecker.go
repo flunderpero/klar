@@ -33,12 +33,12 @@ type Type interface {
 var BuiltInPrintFunction = &FunctionType{
 	BaseType:   BaseType{TypeId(100)},
 	ArgTypes:   []Type{StrType},
-	ReturnType: UnitType,
+	ReturnType: NoneType,
 }
 var BuiltInPrintIntFunction = &FunctionType{
 	BaseType:   BaseType{TypeId(101)},
 	ArgTypes:   []Type{Int64Type},
-	ReturnType: UnitType,
+	ReturnType: NoneType,
 }
 var BuiltInUnsafeMallocFunction = &FunctionType{
 	BaseType:   BaseType{TypeId(102)},
@@ -50,7 +50,7 @@ var builtInSpan = token.Span{File: new(string), Src: &[]byte{}, Start: 0, End: 0
 var StrType = &strType{BaseType: BaseType{1}}
 var BoolType = &boolType{BaseType: BaseType{2}}
 var Int64Type = &int64Type{BaseType: BaseType{3}}
-var UnitType = &unitType{BaseType: BaseType{4}}
+var NoneType = &noneType{BaseType: BaseType{4}}
 
 type CallableType interface {
 	Type
@@ -118,12 +118,12 @@ func (ty int64Type) String() string {
 	return "Int64Type"
 }
 
-type unitType struct {
+type noneType struct {
 	BaseType
 }
 
-func (ty unitType) String() string {
-	return "UnitType"
+func (ty noneType) String() string {
+	return "NoneType"
 }
 
 type TypeAndName[T Type] struct {
@@ -699,9 +699,9 @@ func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) e
 	if tc.typeInfo.MustLookup(expr.Condition) != BoolType {
 		return errors.Errorf("%s: the condition of an if expression must be a boolean type, got: %s", expr.Condition.Span(), condType)
 	}
-	// Only an if expression with an else branch can have a type other than unit.
+	// Only an if expression with an else branch can have a type other than None.
 	// And currently we don't have else branches.
-	tc.typeInfo.Set(expr, UnitType)
+	tc.typeInfo.Set(expr, NoneType)
 	return nil
 }
 
@@ -775,7 +775,7 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 			if len(funcType.ArgTypes) > 0 {
 				return errors.Errorf("%s: main function must not have arguments", decl.Span())
 			}
-			if _, ok := funcType.ReturnType.(*unitType); !ok {
+			if _, ok := funcType.ReturnType.(*noneType); !ok {
 				return errors.Errorf("%s: main function must return () (no return value)", decl.Span())
 			}
 			tc.typeInfo.Main = funcType
@@ -938,14 +938,14 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 		return err
 	}
 	valueType := tc.typeInfo.MustLookup(v.Value)
-	if valueType == UnitType {
-		return errors.Errorf("%s: variable %s must have a non-unit type", v.Span(), v.Name)
+	if valueType == NoneType {
+		return errors.Errorf("%s: variable %s must have a type that is not None", v.Span(), v.Name)
 	}
 	varInfo := variableInfo{type_: valueType, mutable: true, span: v.Span()}
 	if err := tc.typeEnv.declareVariable(string(v.Name), varInfo); err != nil {
 		return err
 	}
-	tc.typeInfo.Set(v, UnitType)
+	tc.typeInfo.Set(v, NoneType)
 	return nil
 }
 
@@ -977,12 +977,12 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 		return errors.Errorf(
 			"%s: lhs and rhs of assignment statement must have the same type, got %s and %s", s.Span(), varType, rhsType)
 	}
-	tc.typeInfo.Set(s, UnitType)
+	tc.typeInfo.Set(s, NoneType)
 	return nil
 }
 
 func (tc *typeChecker) VisitLoopStatement(s *ast.LoopStatement, w ast.Walker) error {
-	tc.typeInfo.Set(s, UnitType)
+	tc.typeInfo.Set(s, NoneType)
 	tc.enterLoop()
 	defer tc.exitLoop()
 	return w.WalkLoopStatement(s)
@@ -992,7 +992,7 @@ func (tc *typeChecker) VisitContinueStatement(s *ast.ContinueStatement) error {
 	if tc.loopDepth == 0 {
 		return errors.Errorf("%s: continue statement outside of a loop", s.Span())
 	}
-	tc.typeInfo.Set(s, UnitType)
+	tc.typeInfo.Set(s, NoneType)
 	return nil
 }
 
@@ -1000,7 +1000,7 @@ func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 	if tc.loopDepth == 0 {
 		return errors.Errorf("%s: break statement outside of a loop", s.Span())
 	}
-	tc.typeInfo.Set(s, UnitType)
+	tc.typeInfo.Set(s, NoneType)
 	return nil
 }
 
@@ -1023,7 +1023,7 @@ func (tc *typeChecker) VisitStructTypeDeclaration(d *ast.StructTypeDeclaration) 
 }
 
 func (tc *typeChecker) VisitModule(module *ast.Module, w ast.Walker) error {
-	tc.typeInfo.Set(module, UnitType)
+	tc.typeInfo.Set(module, NoneType)
 	return w.WalkModule(module)
 }
 
@@ -1042,13 +1042,13 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 	defaultTypeEnv := newTypeEnvironment(nil)
 	// Declare builtin types.
 	if err := defaultTypeEnv.declare("Str", StrType, builtInSpan); err != nil {
-		panic(errors.Wrap(err, "failed to declare Str type"))
+		panic(errors.Wrap(err, "failed to declare StrType"))
 	}
 	if err := defaultTypeEnv.declare("Int", Int64Type, builtInSpan); err != nil {
-		panic(errors.Wrap(err, "failed to declare Int type"))
+		panic(errors.Wrap(err, "failed to declare IntType"))
 	}
-	if err := defaultTypeEnv.declare("()", UnitType, builtInSpan); err != nil {
-		panic(errors.Wrap(err, "failed to declare UnitType type"))
+	if err := defaultTypeEnv.declare("None", NoneType, builtInSpan); err != nil {
+		panic(errors.Wrap(err, "failed to declare NoneType"))
 	}
 	rootScope := &Scope{Node: node, Symbols: make(map[string]*Symbol)}
 	tc := &typeChecker{

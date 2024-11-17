@@ -442,7 +442,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 				panic(fmt.Sprintf("unknown callee type: %T", callee))
 			}
 			c.registerAllocator.restoreCallerSavedRegisters(savedCallerRegisters)
-			if inst.FunctionType.ReturnType != ir.VoidType {
+			if inst.FunctionType.ReturnType != ir.NoneType {
 				allocation := c.registerAllocator.saveCallResultRegister(inst.Register())
 				c.values[inst.Register().Id] = allocation
 			}
@@ -450,7 +450,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			return errors.Errorf("unknown instruction: %T", inst)
 		}
 	}
-	if block.Result.Type != ir.VoidType {
+	if block.Result.Type != ir.NoneType {
 		// Move the value of the block expression to x0.
 		resultAllocation := c.mustLookupRegisterAllocation(block.Result)
 		c.registerAllocator.move(x0, resultAllocation)

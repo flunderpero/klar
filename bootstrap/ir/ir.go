@@ -19,7 +19,7 @@ type Type interface {
 type BuiltInType string
 
 const (
-	VoidType  BuiltInType = "void"
+	NoneType  BuiltInType = "none"
 	BoolType  BuiltInType = "i1"
 	Int8Type  BuiltInType = "i8"
 	Int32Type BuiltInType = "i32"
@@ -32,7 +32,7 @@ func (t BuiltInType) String() string {
 
 func (t BuiltInType) Size() int {
 	switch t {
-	case VoidType:
+	case NoneType:
 		return 0
 	case BoolType:
 		return 1
@@ -264,7 +264,7 @@ func newRegister(id int, ty Type) Register {
 	return Register{Id: RegisterId(fmt.Sprintf("%%%d", id)), Type: ty}
 }
 
-var VoidRegister = Register{Id: "void", Type: VoidType}
+var NoneRegister = Register{Id: "none", Type: NoneType}
 
 type Instruction interface {
 	String() string
@@ -361,7 +361,7 @@ type Store struct {
 }
 
 func (s *Store) Register() Register {
-	return VoidRegister
+	return NoneRegister
 }
 
 func (s Store) String() string {
@@ -433,7 +433,7 @@ func (inst Call) String() string {
 		args += fmt.Sprintf("%s %s", arg.Type, reg)
 	}
 	assign := ""
-	if inst.register.Type != VoidType {
+	if inst.register.Type != NoneType {
 		assign = fmt.Sprintf("%s = ", inst.register)
 	}
 	prefix := ""
@@ -781,8 +781,8 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 	}
 	ty := g.typeInfo.MustLookup(expr.Callee)
 	funcType := g.declaredTypes.MustLookup(ty).(*FunctionType)
-	var reg Register = VoidRegister
-	if funcType.ReturnType != VoidType {
+	var reg Register = NoneRegister
+	if funcType.ReturnType != NoneType {
 		reg = g.nextRegister(funcType.ReturnType)
 	}
 	g.append(&Call{
@@ -828,7 +828,7 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) error {
 	condBlock := g.newBlock(g.currentBlock)
 	g.currentBlock.Terminator = &Jump{Target: condBlock}
-	g.currentBlock.Result = VoidRegister
+	g.currentBlock.Result = NoneRegister
 	g.currentBlock = condBlock
 	if err := w.WalkNode(expr.Condition); err != nil {
 		return err
@@ -870,7 +870,7 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) erro
 	}
 	g.currentBlock = mergeBlock
 	// We treat if _expressions_ as statements for now.
-	condBlock.Result = VoidRegister
+	condBlock.Result = NoneRegister
 	g.registerByNodeId[expr.Id()] = condBlock.Result
 	return nil
 }
@@ -920,7 +920,7 @@ func (g *generator) VisitBlockExpression(expr *ast.BlockExpression, w ast.Walker
 	lastExpr := expr.Nodes[len(expr.Nodes)-1]
 	reg, found := g.registerByNodeId[lastExpr.Id()]
 	if !found {
-		reg = VoidRegister
+		reg = NoneRegister
 	}
 	g.currentBlock.Result = reg
 	g.registerByNodeId[expr.Id()] = reg
@@ -1017,7 +1017,7 @@ func (g *generator) VisitLoopStatement(stmt *ast.LoopStatement, w ast.Walker) er
 	loopStartBlock := g.newBlock(g.currentBlock)
 	exitBlock := g.newBlock(loopStartBlock)
 	g.currentBlock.Terminator = &Jump{Target: loopStartBlock}
-	g.currentBlock.Result = VoidRegister
+	g.currentBlock.Result = NoneRegister
 	g.currentBlock = loopStartBlock
 	g.enterLoop(loopStartBlock, exitBlock)
 	// In order to add the register constraints we need to first take a snapshot
@@ -1029,16 +1029,16 @@ func (g *generator) VisitLoopStatement(stmt *ast.LoopStatement, w ast.Walker) er
 	g.updateRegisterConstraints(symbolTableBeforeBody)
 	g.exitLoop()
 	g.currentBlock.Terminator = &Jump{Target: loopStartBlock}
-	g.currentBlock.Result = VoidRegister
+	g.currentBlock.Result = NoneRegister
 	g.currentBlock = exitBlock
-	g.registerByNodeId[stmt.Id()] = VoidRegister
+	g.registerByNodeId[stmt.Id()] = NoneRegister
 	return nil
 }
 
 func (g *generator) VisitBreakStatement(stmt *ast.BreakStatement) error {
 	loopScope := g.loopScope()
 	g.currentBlock.Terminator = &Jump{Target: loopScope.exitBlock}
-	g.currentBlock.Result = VoidRegister
+	g.currentBlock.Result = NoneRegister
 	g.currentBlock = g.newBlock(nil)
 	return nil
 }
@@ -1046,7 +1046,7 @@ func (g *generator) VisitBreakStatement(stmt *ast.BreakStatement) error {
 func (g *generator) VisitContinueStatement(stmt *ast.ContinueStatement) error {
 	loopScope := g.loopScope()
 	g.currentBlock.Terminator = &Jump{Target: loopScope.loopBlock}
-	g.currentBlock.Result = VoidRegister
+	g.currentBlock.Result = NoneRegister
 	g.currentBlock = g.newBlock(nil)
 	return nil
 }
@@ -1057,8 +1057,8 @@ type DeclaredTypes struct {
 
 func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
 	switch ty {
-	case typed.UnitType:
-		return VoidType
+	case typed.NoneType:
+		return NoneType
 	case typed.StrType:
 		return StrType
 	case typed.Int64Type:

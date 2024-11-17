@@ -603,7 +603,7 @@ func (p *Parser) parseFunctionType() (*FunctionType, error) {
 		}
 	}
 	returnTypeSpan := p.span()
-	returnType, err := p.tryParseType(&SimpleType{node: p.newNode(returnTypeSpan), Name: "()"})
+	returnType, err := p.tryParseType(&SimpleType{node: p.newNode(returnTypeSpan), Name: "None"})
 	if err != nil {
 		return nil, err
 	}
@@ -686,7 +686,7 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 		}
 		p.consumeAny()
 	}
-	returnType, err := p.tryParseType(&SimpleType{node: p.newNode(from), Name: "()"})
+	returnType, err := p.tryParseType(&SimpleType{node: p.newNode(from), Name: "None"})
 	if err != nil {
 		return nil, err
 	}

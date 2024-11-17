@@ -375,18 +375,24 @@ func (c *Code) generateBlock(block *ir.Block) error {
 					offset += field.Size()
 				}
 			}
-			_, isFuncType := inst.SourceType.(*ir.FunctionType)
-			if inst.Source.IsConstant() || isFuncType {
+			switch source := inst.Source.(type) {
+			case *ir.StrConst:
 				reg = c.registerAllocator.allocateScratchRegister(inst.Register())
-				c.emit("adrp %s, %s@PAGE", reg, inst.Source)
-				c.emit("add %s, %s, %s@PAGEOFF+%d", reg, reg, inst.Source, offset)
-			} else {
-				reg = c.mustLookupRegisterAllocation(inst.Source)
+				c.emit("adrp %s, %s@PAGE", reg, source.Id)
+				c.emit("add %s, %s, %s@PAGEOFF+%d", reg, reg, source.Id, offset)
+			case ir.DefinedFunction:
+				reg = c.registerAllocator.allocateScratchRegister(inst.Register())
+				c.emit("adrp %s, %s@PAGE", reg, source.Id)
+				c.emit("add %s, %s, %s@PAGEOFF+%d", reg, reg, source.Id, offset)
+			case ir.Register:
+				reg = c.mustLookupRegisterAllocation(source)
 				if offset > 0 {
 					source := c.registerAllocator.ensureInRegister(reg)
 					reg = c.registerAllocator.allocateScratchRegister(inst.Register())
 					c.emit("add %s, %s, #%d", reg, source, offset)
 				}
+			default:
+				panic(fmt.Sprintf("unknown source type: %T", inst.Source))
 			}
 			c.values[inst.Register().Id] = reg
 		case *ir.Load:
@@ -426,11 +432,14 @@ func (c *Code) generateBlock(block *ir.Block) error {
 				argReg := c.mustLookupRegisterAllocation(arg)
 				c.registerAllocator.move(callArgsRegisters[i], argReg)
 			}
-			if inst.IsIndirect {
-				reg := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Callee))
+			switch callee := inst.Callee.(type) {
+			case ir.Register:
+				reg := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(callee))
 				c.emit("blr %s", reg)
-			} else {
-				c.emit("bl %s", inst.Callee)
+			case ir.DefinedFunction:
+				c.emit("bl %s", callee.Id)
+			default:
+				panic(fmt.Sprintf("unknown callee type: %T", callee))
 			}
 			c.registerAllocator.restoreCallerSavedRegisters(savedCallerRegisters)
 			if inst.FunctionType.ReturnType != ir.VoidType {
@@ -483,7 +492,7 @@ func generateFunction(function *ir.FunctionDefinition, module *ir.Module, isMain
 	} else {
 		symbol := module.TypeInfo.MustLookupSymbol(function.Id)
 		c.emit("; Function: %s", symbol.Name)
-		c.emit("f_%s:", function.Id)
+		c.emit("%s:", function.Id)
 	}
 	// Remember the location where we will have to insert the correct stack frame setup.
 	// We don't know the size of the stack yet, so we have to come back later and insert
@@ -530,7 +539,7 @@ func defineBuiltInPrintFunction(asm *ASMText) {
 	asm.emit(
 		`
 ; Function: print
-f_%s:
+%s:
     stp fp, lr, [sp, #-16]!
     mov fp, sp
     ldr x1, [x0, 8]
@@ -546,7 +555,7 @@ func defineBuiltInPrintIntFunction(asm *ASMText) {
 	asm.emit(
 		`
 ; Function: print_int
-f_%s:
+%s:
     stp fp, lr, [sp, #-32]!
     mov fp, sp
     str x0, [sp]
@@ -564,7 +573,7 @@ func defineBuiltInUnsafeMalloc(asm *ASMText) {
 	asm.emit(
 		`
 ; Function: __unsafe_malloc
-f_%s:
+%s:
     stp fp, lr, [sp, #-16]!
     mov fp, sp
     bl _malloc
@@ -602,15 +611,15 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
 	asm.emit(".data")
 	for _, constant := range irModule.Constants {
 		asm.emit(".align 3")
-		asm.emit("%s_bytes:", constant.Register())
+		asm.emit("%s_bytes:", constant.Id)
 		asm.incIndent()
 		asm.emit(".ascii %q", constant.Value)
 		asm.decIndent()
 		asm.emit(".align 3")
-		asm.emit("%s:", constant.Register())
+		asm.emit("%s:", constant.Id)
 		asm.incIndent()
 		asm.emit(".quad %d", len(constant.Value))
-		asm.emit(".quad %s_bytes", constant.Register())
+		asm.emit(".quad %s_bytes", constant.Id)
 		asm.decIndent()
 	}
 	// Needed for builtin functions.

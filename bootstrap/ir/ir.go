@@ -252,36 +252,16 @@ type Register struct {
 	Type Type
 }
 
-// todo: We should find a better way to determine whether we are referring to a
-//
-//	constant string in codegen.
-func (r Register) IsConstant() bool {
-	return r.Id[0] == 'c'
-}
+func (r Register) getPointerSourceMarker() {}
+
+func (r Register) calleeMarker() {}
 
 func (r Register) String() string {
 	return string(r.Id)
 }
 
-func (r Register) isDeclaredFunction() bool {
-	return r.Id[0] == 'f'
-}
-
 func newRegister(id int, ty Type) Register {
 	return Register{Id: RegisterId(fmt.Sprintf("%%%d", id)), Type: ty}
-}
-
-func newConstantRegister(id string) Register {
-	return Register{Id: RegisterId(fmt.Sprintf("c_%s", id)), Type: StrType}
-}
-
-// todo: Currently, we are relying on the fact that codegen uses the same label
-//
-//	as `newFunctionRegister(...).String()`. We should make it explicit in
-//	`GetPointer` and `Call` that we are dealing with a declared function
-//	of which the codegen knows the address.
-func newFunctionRegister(f typed.Type, ty *FunctionType) Register {
-	return Register{Id: RegisterId(fmt.Sprintf("f_%s", f.Id())), Type: ty}
 }
 
 var VoidRegister = Register{Id: "void", Type: VoidType}
@@ -292,17 +272,15 @@ type Instruction interface {
 }
 
 type StrConst struct {
-	register Register
-	Value    string
+	Id    string
+	Value string
 }
 
 func (i StrConst) DeclareString() string {
-	return fmt.Sprintf("declare const %s = @str %q", i.register, i.Value)
+	return fmt.Sprintf("declare const %s = @str %q", i.Id, i.Value)
 }
 
-func (i *StrConst) Register() Register {
-	return i.register
-}
+func (i StrConst) getPointerSourceMarker() {}
 
 type Int64Const struct {
 	register Register
@@ -343,9 +321,13 @@ func (i *BoolConst) Register() Register {
 	return i.register
 }
 
+type GetPointerSource interface {
+	getPointerSourceMarker()
+}
+
 type GetPointer struct {
 	register   Register
-	Source     Register
+	Source     GetPointerSource
 	SourceType Type
 	FieldIndex int
 }
@@ -421,9 +403,21 @@ func (i Int64Compare) String() string {
 	return fmt.Sprintf("%s = icmp %s i64 %s, %s", i.register, i.Op, i.Lhs, i.Rhs)
 }
 
+type Callee interface {
+	calleeMarker()
+}
+
+type DefinedFunction struct {
+	Id typed.TypeId
+}
+
+func (c DefinedFunction) calleeMarker() {}
+
+func (i DefinedFunction) getPointerSourceMarker() {}
+
 type Call struct {
 	register     Register
-	Callee       Register
+	Callee       Callee
 	FunctionType *FunctionType
 	Args         []Register
 	IsIndirect   bool
@@ -622,6 +616,7 @@ type generator struct {
 	declaredTypes       *DeclaredTypes
 	registerConstraints RegisterConstraints
 	loopScopes          []loopScope
+	definedFunctions    *map[typed.TypeId]DefinedFunction
 }
 
 func (g *generator) enterScope() {
@@ -680,12 +675,18 @@ func (g *generator) updateRegisterConstraints(symbolTableBefore map[ast.Ident]Re
 	}
 }
 
+func (g *generator) isDefinedFunction(id typed.TypeId) (DefinedFunction, bool) {
+	res, ok := (*g.definedFunctions)[id]
+	return res, ok
+}
+
 func (g *generator) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
-	reg := newConstantRegister(fmt.Sprintf("str%d", len(*g.globalConstants)))
-	*g.globalConstants = append(*g.globalConstants, &StrConst{register: reg, Value: expr.Value})
+	id := fmt.Sprintf("str%d", len(*g.globalConstants))
+	strConst := &StrConst{Id: id, Value: expr.Value}
+	*g.globalConstants = append(*g.globalConstants, strConst)
 	g.append(&GetPointer{
 		register:   g.nextRegister(PointerType{StrType}),
-		Source:     reg,
+		Source:     strConst,
 		SourceType: StrType,
 		FieldIndex: 0,
 	}, expr)
@@ -720,12 +721,19 @@ func (g *generator) VisitReferenceExpression(expr ast.ReferenceExpression) error
 	case *ast.TypeExpression:
 		switch ty := expr.Type.(type) {
 		case *ast.SimpleType:
-			tyReg := g.symbolTable.lookup(ast.Ident(ty.Name))
-			reg := g.nextRegister(&PointerType{ElementType: tyReg.Type})
+			typedTy := g.typeInfo.MustLookup(expr)
+			sourceType := g.declaredTypes.MustLookup(typedTy)
+			var source GetPointerSource
+			if definedFunc, ok := g.isDefinedFunction(typedTy.Id()); ok {
+				source = definedFunc
+			} else {
+				source = g.symbolTable.lookup(ast.Ident(ty.Name))
+			}
+			reg := g.nextRegister(&PointerType{ElementType: sourceType})
 			g.append(&GetPointer{
 				register:   reg,
-				Source:     tyReg,
-				SourceType: tyReg.Type,
+				Source:     source,
+				SourceType: sourceType,
 				FieldIndex: 0,
 			}, expr)
 			g.registerByNodeId[expr.Id()] = reg
@@ -738,39 +746,34 @@ func (g *generator) VisitReferenceExpression(expr ast.ReferenceExpression) error
 	return nil
 }
 
-func (g *generator) isDirectCall(callee ast.Expression) (Register, bool) {
+func (g *generator) isDirectCall(callee ast.Expression) (DefinedFunction, bool) {
 	switch expr := callee.(type) {
 	case *ast.TypeExpression:
-		switch ty := expr.Type.(type) {
+		switch expr.Type.(type) {
 		case *ast.SimpleType:
-			reg := g.symbolTable.lookup(ast.Ident(ty.Name))
-			if reg.isDeclaredFunction() {
-				g.registerByNodeId[expr.Id()] = reg
-				return reg, true
-			}
+			ty := g.typeInfo.MustLookup(expr)
+			return g.isDefinedFunction(ty.Id())
 		}
 	}
-	return Register{}, false
+	return DefinedFunction{}, false
 
 }
 
 func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) error {
-	var calleeReg Register
-	isIndirect := true
-	if functionReg, ok := g.isDirectCall(expr.Callee); ok {
+	var callee Callee
+	if definedFunc, ok := g.isDirectCall(expr.Callee); ok {
 		// We need to walk the arguments ourselves since we are not using the default walker.
 		for _, arg := range expr.Args {
 			if err := g.VisitNode(arg, w); err != nil {
 				return err
 			}
 		}
-		calleeReg = functionReg
-		isIndirect = false
+		callee = definedFunc
 	} else {
 		if err := w.WalkCallExpression(expr); err != nil {
 			return err
 		}
-		calleeReg = g.lookupRegisterByNode(expr.Callee)
+		callee = g.lookupRegisterByNode(expr.Callee)
 	}
 	args := []Register{}
 	for _, arg := range expr.Args {
@@ -784,10 +787,9 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 	}
 	g.append(&Call{
 		register:     reg,
-		Callee:       calleeReg,
+		Callee:       callee,
 		FunctionType: funcType,
 		Args:         args,
-		IsIndirect:   isIndirect,
 	}, expr)
 	return nil
 }
@@ -939,7 +941,7 @@ func (g *generator) VisitStructInitExpression(expr *ast.StructInitExpression, w 
 	}, nil)
 	g.append(&Call{
 		register:     mallocReg,
-		Callee:       newFunctionRegister(typed.BuiltInUnsafeMallocFunction, mallocFuncType),
+		Callee:       DefinedFunction{typed.BuiltInUnsafeMallocFunction.Id()},
 		FunctionType: mallocFuncType,
 		Args:         []Register{sizeReg},
 	}, expr)
@@ -1147,23 +1149,23 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 		}
 	}
 	functions := []*FunctionDefinition{}
+	definedFunctions := make(map[typed.TypeId]DefinedFunction)
 	var main *FunctionDefinition
 	// First forward declare all functions.
 	for _, functionDef := range functionDefinitions {
 		funcType := typeInfo.MustLookupDeclaredType(functionDef).Type.(typed.CallableType)
-		f := declareFunction(declaredTypes, &rootSymbolTable, funcType)
-		functions = append(functions, f)
+		funcDef := declareFunction(declaredTypes, &rootSymbolTable, funcType)
+		functions = append(functions, funcDef)
 		if funcType == typeInfo.Main {
-			main = f
+			main = funcDef
 		}
 		declaredTypes.declare(funcType)
-		rootSymbolTable.declare(ast.Ident(f.Id.String()), newFunctionRegister(funcType, &f.Type))
+		definedFunctions[funcDef.Id] = DefinedFunction{Id: funcDef.Id}
 	}
 	// Declare builtin functions.
 	declareBuiltInFunction := func(f *typed.FunctionType) {
 		declaredTypes.declare(f)
-		rootSymbolTable.declare(
-			ast.Ident(f.Id().String()), newFunctionRegister(f, declaredTypes.MustLookup(f).(*FunctionType)))
+		definedFunctions[f.Id()] = DefinedFunction{Id: f.Id()}
 	}
 	declareBuiltInFunction(typed.BuiltInPrintFunction)
 	declareBuiltInFunction(typed.BuiltInPrintIntFunction)
@@ -1181,6 +1183,7 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 			declaredTypes:       declaredTypes,
 			registerConstraints: RegisterConstraints{},
 			loopScopes:          []loopScope{},
+			definedFunctions:    &definedFunctions,
 		}
 		// Make function arguments visible.
 		for a, arg := range definition.Decl.Args {

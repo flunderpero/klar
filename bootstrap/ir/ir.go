@@ -7,6 +7,7 @@ import (
 
 	"github.com/flunderpero/klar/bootstrap/ast"
 	"github.com/flunderpero/klar/bootstrap/base"
+	"github.com/flunderpero/klar/bootstrap/lower"
 	"github.com/flunderpero/klar/bootstrap/typed"
 	"github.com/pkg/errors"
 )
@@ -1074,6 +1075,8 @@ func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
 		}
 		dt.declare(ty)
 		return dt.Types[ty.Id()]
+	case *typed.TypeParam:
+		return NoneType
 	}
 	panic(fmt.Sprintf("type not found for %T", ty))
 }
@@ -1134,31 +1137,25 @@ func declareFunction(
 	return res
 }
 
-func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
-	functionDefinitions := []*ast.FunctionDefinition{}
+func GenerateIR(lowered *lower.LoweredAST, typeInfo *typed.TypeInfo) (*Module, error) {
 	declaredTypes := &DeclaredTypes{Types: make(map[typed.TypeId]Type)}
 	rootSymbolTable := symbolTable{symbols: make(map[ast.Ident]Register)}
-	for _, node := range module.Nodes {
+	for _, node := range lowered.Module.Nodes {
 		switch node := node.(type) {
-		case *ast.FunctionDefinition:
-			functionDefinitions = append(functionDefinitions, node)
-		case *ast.ImplDefinition:
-			functionDefinitions = append(functionDefinitions, node.Methods...)
 		case *ast.StructTypeDeclaration:
 			ty := typeInfo.MustLookup(node)
 			declaredTypes.declare(ty)
-		default:
-			return nil, errors.Errorf("cannot generate IR for node type: %T", node)
 		}
 	}
-	functions := []*FunctionDefinition{}
+	funcSpecs := lowered.FunctionSpecializations
+	funcDefs := []*FunctionDefinition{}
 	definedFunctions := make(map[typed.TypeId]DefinedFunction)
 	var main *FunctionDefinition
 	// First forward declare all functions.
-	for _, functionDef := range functionDefinitions {
-		funcType := typeInfo.MustLookupDeclaredType(functionDef).Type.(typed.CallableType)
+	for _, funcSpec := range funcSpecs {
+		funcType := funcSpec.SpecializedType
 		funcDef := declareFunction(declaredTypes, &rootSymbolTable, funcType)
-		functions = append(functions, funcDef)
+		funcDefs = append(funcDefs, funcDef)
 		if funcType == typeInfo.Main {
 			main = funcDef
 		}
@@ -1174,9 +1171,9 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 	declareBuiltInFunction(typed.BuiltInPrintIntFunction)
 	declareBuiltInFunction(typed.BuiltInUnsafeMallocFunction)
 	constants := []*StrConst{}
-	// Generate code for each function.
-	for i, function := range functions {
-		definition := functionDefinitions[i]
+	// Generate code for each function specialization.
+	for i, funcDef := range funcDefs {
+		funcSpec := funcSpecs[i]
 		gen := &generator{
 			DefaultVisitor:      ast.DefaultVisitor{},
 			typeInfo:            typeInfo,
@@ -1189,26 +1186,27 @@ func GenerateIR(module *ast.Module, typeInfo *typed.TypeInfo) (*Module, error) {
 			definedFunctions:    &definedFunctions,
 		}
 		// Make function arguments visible.
-		for a, arg := range definition.Decl.Args {
-			funcArg := function.Type.Args[a]
-			reg := gen.nextRegister(funcArg.Type)
+		for a, arg := range funcSpec.FunctionDef.Decl.Args {
+			argType := funcSpec.SpecializedType.ArgTypes[a]
+			ty := declaredTypes.MustLookup(argType)
+			reg := gen.nextRegister(ty)
 			gen.symbolTable.declare(arg.Name, reg)
 		}
 		block := gen.newBlock()
 		gen.currentBlock = block
 		walker := &ast.DefaultWalker{Visitor: gen}
-		if err := walker.WalkNode(definition.Body); err != nil {
+		if err := walker.WalkNode(funcSpec.FunctionDef.Body); err != nil {
 			return nil, err
 		}
 		if gen.currentBlock.Terminator != nil {
 			return nil, errors.Errorf("expecting the last block to not have a terminator, but got: %s", block.Terminator)
 		}
 		gen.currentBlock.Terminator = &Return{}
-		function.Entry = block
-		function.RegisterConstraints = gen.registerConstraints
+		funcDef.Entry = block
+		funcDef.RegisterConstraints = gen.registerConstraints
 	}
 	return &Module{
-		Functions: functions, Constants: constants, DeclaredTypes: declaredTypes, Main: main, TypeInfo: typeInfo,
+		Functions: funcDefs, Constants: constants, DeclaredTypes: declaredTypes, Main: main, TypeInfo: typeInfo,
 	}, nil
 }
 

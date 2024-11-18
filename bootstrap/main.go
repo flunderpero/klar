@@ -80,11 +80,7 @@ func main() {
 		printTypedAST(module, typeInfo)
 		os.Exit(0)
 	}
-	lowered, err := lower.Lower(module, typeInfo)
-	if err != nil {
-		fmt.Printf("Failed to lower: %+v\n", err)
-		os.Exit(1)
-	}
+	lowered := lower.Lower(module, typeInfo)
 	if cmd == "lower" {
 		fmt.Println(lowered)
 		os.Exit(0)

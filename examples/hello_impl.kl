@@ -9,28 +9,28 @@ impl Planet {
         print(greetings)
     }
 
-    fn diameter(self) Int {
-        self.radius + self.radius
-    }
-
-    fn return_self(self) Self {
-        self
-    }
-
-    fn static() Str {
-        "I am static"
-    }
-
-    fn some_planet() Self {
-        Planet(name="Surprise", radius=4242)
-    }
+    -- fn diameter(self) Int {
+    --     self.radius + self.radius
+    -- }
+    --
+    -- fn return_self(self) Self {
+    --     self
+    -- }
+    --
+    -- fn static() Str {
+    --     "I am static"
+    -- }
+    --
+    -- fn some_planet() Self {
+    --     Planet(name="Surprise", radius=4242)
+    -- }
 }
 
 fn main() {
     let p = Planet(name="Earth", radius=6750)
     p.print_planet(" - nice to be on you!")
-    print_int(p.diameter())
-    p.return_self().return_self().print_planet(" - again?")
-    print(Planet.static())
-    Planet.some_planet().print_planet(" - wonderful")
+    -- print_int(p.diameter())
+    -- p.return_self().return_self().print_planet(" - again?")
+    -- print(Planet.static())
+    -- Planet.some_planet().print_planet(" - wonderful")
 }

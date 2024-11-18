@@ -46,6 +46,11 @@ var BuiltInUnsafeMallocFunction = &FunctionType{
 	ReturnType: Int64Type,
 }
 
+func IsBuiltInFunction(callable CallableType) bool {
+	id := callable.Id()
+	return id == BuiltInPrintFunction.Id() || id == BuiltInPrintIntFunction.Id() || id == BuiltInUnsafeMallocFunction.Id()
+}
+
 var builtInSpan = token.Span{File: new(string), Src: &[]byte{}, Start: 0, End: 0}
 var StrType = &strType{BaseType: BaseType{1}}
 var BoolType = &boolType{BaseType: BaseType{2}}
@@ -53,7 +58,7 @@ var Int64Type = &int64Type{BaseType: BaseType{3}}
 var NoneType = &noneType{BaseType: BaseType{4}}
 
 type CallableType interface {
-	Type
+	GenericType
 	CallArgTypes() []Type
 	CallReturnType() Type
 }
@@ -133,6 +138,34 @@ type TypeAndName[T Type] struct {
 
 func (f TypeAndName[T]) String() string {
 	return fmt.Sprintf("%s\n%s", f.Name, base.Indent(f.Type, 1))
+}
+
+type GenericType interface {
+	Type
+	TypeParams() []TypeParam
+}
+
+type TypeParam struct {
+	BaseType
+	GenericType GenericType
+	Name        ast.TypeIdent
+	Index       int
+}
+
+func (ty TypeParam) String() string {
+	return fmt.Sprintf("TypeParam %s %s[%d]", ty.Name, ty.GenericType.Id(), ty.Index)
+}
+
+func (t TypeParam) Equal(other TypeParam) bool {
+	return t.GenericType.Id() == other.GenericType.Id() && t.Index == other.Index
+}
+
+func typeParamsString(params []TypeParam) string {
+	s := ""
+	if len(params) > 0 {
+		s = fmt.Sprintf("\n(TypeParams)%s", base.IndentSlice(params, 1))
+	}
+	return s
 }
 
 type DeclaredType struct {
@@ -236,6 +269,7 @@ func (ty ImplType) String() string {
 
 type MethodType struct {
 	BaseType
+	typeParams   []TypeParam
 	ArgTypes     []Type
 	ReturnType   Type
 	ReceiverType Type
@@ -248,6 +282,10 @@ func (ty MethodType) CallArgTypes() []Type {
 
 func (ty MethodType) CallReturnType() Type {
 	return ty.ReturnType
+}
+
+func (ty MethodType) TypeParams() []TypeParam {
+	return ty.typeParams
 }
 
 func (ty MethodType) CheckSameSignatureIgnoringReceiverTypes(other *MethodType, span token.Span) error {
@@ -281,7 +319,10 @@ func (ty MethodType) String() string {
 	}
 	args := base.Map(ty.ArgTypes, typeToString)
 	return fmt.Sprintf(
-		"MethodType%s\n%s", base.IndentStringSlice(args, 1), base.IndentString(typeToString(ty.ReturnType), 1))
+		"MethodType%s%s\n%s",
+		base.IndentString(typeParamsString(ty.typeParams), 1),
+		base.IndentStringSlice(args, 1),
+		base.IndentString(typeToString(ty.ReturnType), 1))
 }
 
 func (ty MethodType) ArgTypesWithoutSelf() []Type {
@@ -311,13 +352,24 @@ func (ty MethodType) IsAssignableFrom(other Type) bool {
 
 type FunctionType struct {
 	BaseType
+	typeParams []TypeParam
 	ArgTypes   []Type
 	ReturnType Type
 }
 
+func NewFunctionType(id TypeId, typeParams []TypeParam, argTypes []Type, returnType Type) *FunctionType {
+	return &FunctionType{BaseType: BaseType{id}, typeParams: typeParams, ArgTypes: argTypes, ReturnType: returnType}
+}
+
 func (ty FunctionType) String() string {
 	return fmt.Sprintf(
-		"FunctionType%s\n%s", base.IndentSlice(ty.ArgTypes, 1), base.Indent(ty.ReturnType, 1))
+		"FunctionType%s%s\n%s",
+		base.IndentString(typeParamsString(ty.typeParams), 1),
+		base.IndentSlice(ty.ArgTypes, 1), base.Indent(ty.ReturnType, 1))
+}
+
+func (ty FunctionType) TypeParams() []TypeParam {
+	return ty.typeParams
 }
 
 func (ty FunctionType) CallArgTypes() []Type {
@@ -345,6 +397,41 @@ func (ty FunctionType) IsAssignableFrom(other Type) bool {
 
 func (ty FunctionType) CallReturnType() Type {
 	return ty.ReturnType
+}
+
+type Call struct {
+	Callee     CallableType
+	ArgTypes   []Type
+	ReturnType Type
+	TypeArgs   []Type
+}
+
+type genericScope struct {
+	typeParams map[string]*TypeParam
+	parent     *genericScope
+}
+
+func newGenericScope(parent *genericScope) *genericScope {
+	return &genericScope{
+		typeParams: make(map[string]*TypeParam),
+		parent:     parent,
+	}
+}
+
+func (self *genericScope) lookupTypeParam(name string) (*TypeParam, bool) {
+	ty, found := self.typeParams[name]
+	if !found && self.parent != nil {
+		return self.parent.lookupTypeParam(name)
+	}
+	return ty, found
+}
+
+func (self *genericScope) declareTypeParam(name string, param *TypeParam, span token.Span) error {
+	if _, found := self.typeParams[name]; found {
+		return errors.Errorf("%s: type parameter %q already declared", span, name)
+	}
+	self.typeParams[name] = param
+	return nil
 }
 
 type variableInfo struct {
@@ -390,7 +477,7 @@ func (te *typeScope) lookupVariable(name ast.Ident) (Type, *variableInfo, bool) 
 
 func (te *typeScope) declareType(name string, ty Type, span token.Span) error {
 	if _, found := te.types[name]; found {
-		return errors.Errorf("%s: type %s already declared", span, name)
+		return errors.Errorf("%s: type %q already declared", span, name)
 	}
 	te.types[name] = ty
 	return nil
@@ -416,12 +503,26 @@ type SymbolScope struct {
 	Symbols  map[string]*Symbol
 }
 
+func newSymbolScope(node ast.Node, parent *SymbolScope) *SymbolScope {
+	scope := &SymbolScope{
+		Parent:  parent,
+		Node:    node,
+		Symbols: make(map[string]*Symbol),
+	}
+	if parent != nil {
+		parent.Children = append(parent.Children, scope)
+	}
+	return scope
+}
+
 type TypeInfo struct {
 	types   map[ast.NodeId]Type
 	symbols map[string]*Symbol
 	// The type an `ReferenceExpression` points to if it does not refer to a variable.
 	typeBindings map[ast.ReferenceExpression]Type
-	Main         *FunctionType
+	// Record the concrete type of a function at call time.
+	calls map[*ast.CallExpression]Call
+	Main  *FunctionType
 }
 
 func (m *TypeInfo) LookupTypeBinding(expr ast.ReferenceExpression) (Type, bool) {
@@ -467,6 +568,22 @@ func (m *TypeInfo) MustLookupSymbol(id isId) *Symbol {
 	return symbol
 }
 
+func (m *TypeInfo) DeclareSymbol(id isId, symbol *Symbol) {
+	m.symbols[id.String()] = symbol
+}
+
+func (m *TypeInfo) recordCall(expr *ast.CallExpression, call Call) {
+	m.calls[expr] = call
+}
+
+func (m *TypeInfo) MustLookupCall(expr *ast.CallExpression) *Call {
+	call, found := m.calls[expr]
+	if !found {
+		panic(fmt.Sprintf("call not found for expression %q", expr))
+	}
+	return &call
+}
+
 type checkingMode int
 
 const (
@@ -478,10 +595,11 @@ type typeChecker struct {
 	ast.DefaultVisitor
 	typeInfo      *TypeInfo
 	typeScope     *typeScope
+	symbolScope   *SymbolScope
+	genericScope  *genericScope
 	loopDepth     int
 	nextTypeId    int
 	checkingMode  checkingMode
-	symbolScope   *SymbolScope
 	functionTypes map[string]FunctionType
 }
 
@@ -492,14 +610,21 @@ func (tc *typeChecker) newType() BaseType {
 
 func (tc *typeChecker) enterScope(node ast.Node) {
 	tc.typeScope = newTypeScope(tc.typeScope)
-	scope := &SymbolScope{Parent: tc.symbolScope, Node: node, Symbols: make(map[string]*Symbol)}
-	tc.symbolScope.Children = append(tc.symbolScope.Children, scope)
+	scope := newSymbolScope(node, tc.symbolScope)
 	tc.symbolScope = scope
 }
 
 func (tc *typeChecker) exitScope() {
 	tc.typeScope = tc.typeScope.parent
 	tc.symbolScope = tc.symbolScope.Parent
+}
+
+func (tc *typeChecker) enterGenericScope() {
+	tc.genericScope = newGenericScope(tc.genericScope)
+}
+
+func (tc *typeChecker) exitGenericScope() {
+	tc.genericScope = tc.genericScope.parent
 }
 
 func (tc *typeChecker) enterLoop() {
@@ -531,7 +656,7 @@ func (tc *typeChecker) declareSymbol(key isId, name string) {
 		panic(fmt.Sprintf("symbol already declared: %q", symbol.Name))
 	}
 	tc.symbolScope.Symbols[keyString] = symbol
-	tc.typeInfo.symbols[keyString] = symbol
+	tc.typeInfo.DeclareSymbol(key, symbol)
 }
 
 func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
@@ -555,8 +680,17 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 		res := FunctionType{BaseType: tc.newType(), ArgTypes: argTypes, ReturnType: returnType}
 		tc.functionTypes[node.TypeName()] = res
 		return &res, nil
+	case *ast.TypeParam:
+		res, found := tc.genericScope.lookupTypeParam(node.TypeName())
+		if !found {
+			return nil, errors.Errorf("undefined type parameter: %s", node.TypeName())
+		}
+		return res, nil
 	default:
 		if res, found := tc.typeScope.lookupType(node.TypeName()); found {
+			return res, nil
+		}
+		if res, found := tc.genericScope.lookupTypeParam(node.TypeName()); found {
 			return res, nil
 		}
 		return nil, errors.Errorf("undefined type: %s", node.TypeName())
@@ -579,28 +713,32 @@ func (tc *typeChecker) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpressio
 }
 
 func (tc *typeChecker) VisitReferenceExpression(expr ast.ReferenceExpression) error {
-	var refStr string
+	var ty Type
 	switch expr := expr.(type) {
 	case *ast.TypeExpression:
-		switch ty := expr.Type.(type) {
+		switch expr := expr.Type.(type) {
 		case *ast.SimpleType:
-			refStr = string(ty.Name)
+			simpleTy, err := tc.lookupTypeOfNode(expr)
+			if err != nil {
+				return err
+			}
+			ty = simpleTy
 		default:
 			return errors.Errorf("%s: unexpected type expression type: %T", expr.Span(), expr)
 		}
 	case *ast.IdentExpression:
-		refStr = string(expr.Ident)
+		identTy, found := tc.typeScope.lookupType(expr.Ident.String())
+		if !found {
+			return errors.Errorf("%s: type not found for identifier %s", expr.Span(), expr.Ident)
+		}
+		ty = identTy
+		if _, _, ok := tc.typeScope.lookupVariable(ast.Ident(expr.Ident.String())); !ok {
+			tc.typeInfo.typeBindings[expr] = ty
+		}
 	default:
 		panic(fmt.Sprintf("unexpected reference expression type: %T", expr))
 	}
-	ty, found := tc.typeScope.lookupType(refStr)
-	if !found {
-		return errors.Errorf("%s: type not found for identifier %s", expr.Span(), refStr)
-	}
 	tc.typeInfo.Set(expr, ty)
-	if _, _, ok := tc.typeScope.lookupVariable(ast.Ident(refStr)); !ok {
-		tc.typeInfo.typeBindings[expr] = ty
-	}
 	return nil
 }
 
@@ -634,6 +772,63 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 	return nil
 }
 
+func (tc *typeChecker) resolveCall(
+	calleeType CallableType, astArgs []ast.Expression, astTypeArgs []ast.Type, span token.Span) (*Call, error) {
+	var calleeArgTypes []Type
+	if methodType, ok := calleeType.(*MethodType); ok {
+		calleeArgTypes = methodType.ArgTypesWithoutSelf()
+	} else {
+		calleeArgTypes = calleeType.CallArgTypes()
+	}
+	if len(calleeArgTypes) != len(astArgs) {
+		return nil, errors.Errorf(
+			"%s: expected %d arguments, got %d for %s", span, len(calleeArgTypes), len(astArgs), calleeType)
+	}
+	typeParams := calleeType.TypeParams()
+	typeArgs := make([]Type, len(calleeType.TypeParams()))
+	if len(astTypeArgs) > 0 {
+		if len(astTypeArgs) != len(typeParams) {
+			return nil, errors.Errorf(
+				"%s: expected %d type arguments, got %d for %q", span, len(typeParams), len(astTypeArgs), calleeType)
+		}
+		for i, givenTypeArg := range astTypeArgs {
+			calleeTypeArg, err := tc.lookupTypeOfNode(givenTypeArg)
+			if err != nil {
+				return nil, err
+			}
+			typeArgs[i] = calleeTypeArg
+		}
+	}
+	argTypes := make([]Type, len(astArgs))
+	for i, arg := range astArgs {
+		argType := tc.typeInfo.MustLookup(arg)
+		argTypes[i] = argType
+	}
+	// todo: infer types
+	resolveTypeParam := func(ty Type) Type {
+		if typeParam, ok := ty.(*TypeParam); ok {
+			for i, param := range typeParams {
+				if param.Equal(*typeParam) {
+					return typeArgs[i]
+				}
+			}
+		}
+		return ty
+	}
+	calleeArgTypes = make([]Type, len(typeParams))
+	for i, ty := range calleeArgTypes {
+		calleeArgTypes[i] = resolveTypeParam(ty)
+	}
+	returnType := resolveTypeParam(calleeType.CallReturnType())
+	call := Call{
+		Callee:     calleeType,
+		ArgTypes:   argTypes,
+		ReturnType: returnType,
+		TypeArgs:   typeArgs,
+	}
+	return &call, nil
+}
+
 func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) error {
 	if err := w.WalkCallExpression(expr); err != nil {
 		return err
@@ -642,23 +837,13 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 	if !ok {
 		return errors.Errorf("%s: callee %q is not a callable type", expr.Span(), calleeType)
 	}
-	var argTypes []Type
-	if methodType, ok := calleeType.(*MethodType); ok {
-		argTypes = methodType.ArgTypesWithoutSelf()
-	} else {
-		argTypes = calleeType.CallArgTypes()
+	call, err := tc.resolveCall(calleeType, expr.Args, expr.TypeArgs, expr.Span())
+	if err != nil {
+		return err
 	}
-	if len(argTypes) != len(expr.Args) {
-		return errors.Errorf("%s: expected %d arguments, got %d for %s", expr.Span(), len(argTypes), len(expr.Args), calleeType)
-	}
-	for i, arg := range expr.Args {
-		callArgType := tc.typeInfo.MustLookup(arg)
-		funcArgType := argTypes[i]
-		if !funcArgType.IsAssignableFrom(callArgType) {
-			return errors.Errorf("%s: expected argument %d to be of type %q, got %q", arg.Span(), i, funcArgType, callArgType)
-		}
-	}
-	tc.typeInfo.Set(expr, calleeType.CallReturnType())
+	tc.typeInfo.Set(expr, call.ReturnType)
+	// Record the call so we can later on easily determine all the types.
+	tc.typeInfo.recordCall(expr, *call)
 	return nil
 }
 
@@ -745,35 +930,68 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 	return nil
 }
 
-func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) error {
-	argTypes := make([]Type, len(decl.Args))
-	for i, arg := range decl.Args {
+func (tc *typeChecker) resolveTypeParams(genericType GenericType, astParams []ast.TypeParam) ([]TypeParam, error) {
+	typeParams := make([]TypeParam, len(astParams))
+	for i, astParam := range astParams {
+		typeParam := TypeParam{BaseType: tc.newType(), GenericType: genericType, Name: astParam.Name, Index: i}
+		typeParams[i] = typeParam
+		if err := tc.genericScope.declareTypeParam(typeParam.Name.String(), &typeParam, astParams[i].Span()); err != nil {
+			return nil, err
+		}
+	}
+	return typeParams, nil
+}
+
+func (tc *typeChecker) resolveFunctionArgsAndReturnType(
+	astArgs []ast.FunctionArg, astReturnType ast.Type) (argTypes []Type, returnType Type, err error) {
+
+	argTypes = make([]Type, len(astArgs))
+	for i, arg := range astArgs {
 		argType, err := tc.lookupTypeOfNode(arg.Type)
 		if err != nil {
-			return errors.Wrapf(err, "%s: type %s not found for argument %s", arg.Span, arg.Type, arg.Name)
+			return nil, nil, errors.Wrapf(err, "%s: type %s not found for argument %s", arg.Span, arg.Type, arg.Name)
 		}
 		argTypes[i] = argType
 	}
-	returnType, err := tc.lookupTypeOfNode(decl.ReturnType)
+	returnType, err = tc.lookupTypeOfNode(astReturnType)
 	if err != nil {
-		return errors.Wrapf(
-			err, "%s: type %s not found for return type of function %s", decl.Span(), decl.ReturnType, decl.Name)
+		return nil, nil, errors.Wrapf(
+			err, "%s: type %s not found for return type", astReturnType.Span(), astReturnType)
 	}
+	return argTypes, returnType, nil
+}
+
+func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) error {
 	if tc.checkingMode == insideTraitOrImplMode {
+		tc.enterGenericScope()
+		defer tc.exitGenericScope()
 		isStatic := len(decl.Args) == 0 || decl.Args[0].Name != "self"
-		methodType := &MethodType{
-			BaseType:   tc.newType(),
-			ArgTypes:   argTypes,
-			ReturnType: returnType,
-			IsStatic:   isStatic,
+		methodType := &MethodType{BaseType: tc.newType(), IsStatic: isStatic}
+		typeParams, err := tc.resolveTypeParams(methodType, decl.TypeParams)
+		if err != nil {
+			return err
 		}
+		methodType.typeParams = typeParams
+		argTypes, returnType, err := tc.resolveFunctionArgsAndReturnType(decl.Args, decl.ReturnType)
+		if err != nil {
+			return err
+		}
+		methodType.ArgTypes = argTypes
+		methodType.ReturnType = returnType
 		tc.typeInfo.Set(decl, &DeclaredType{Type: methodType})
 	} else {
-		funcType := &FunctionType{
-			BaseType:   tc.newType(),
-			ArgTypes:   argTypes,
-			ReturnType: returnType,
+		funcType := &FunctionType{BaseType: tc.newType()}
+		typeParams, err := tc.resolveTypeParams(funcType, decl.TypeParams)
+		if err != nil {
+			return err
 		}
+		funcType.typeParams = typeParams
+		argTypes, returnType, err := tc.resolveFunctionArgsAndReturnType(decl.Args, decl.ReturnType)
+		if err != nil {
+			return err
+		}
+		funcType.ArgTypes = argTypes
+		funcType.ReturnType = returnType
 		if decl.Name == "main" {
 			if len(funcType.ArgTypes) > 0 {
 				return errors.Errorf("%s: main function must not have arguments", decl.Span())
@@ -792,6 +1010,8 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 }
 
 func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast.Walker) error {
+	tc.enterGenericScope()
+	defer tc.exitGenericScope()
 	if err := tc.VisitFunctionDeclaration(fn.Decl); err != nil {
 		return err
 	}
@@ -1010,8 +1230,8 @@ func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 func (tc *typeChecker) VisitStructTypeDeclaration(d *ast.StructTypeDeclaration) error {
 	fields := []TypeAndName[Type]{}
 	for _, field := range d.Fields {
-		fieldType, found := tc.typeScope.lookupType(field.Type.TypeName())
-		if !found {
+		fieldType, err := tc.lookupTypeOfNode(field.Type)
+		if err != nil {
 			return errors.Errorf("%s: type %q not found for field %q", field.Span, field.Type, field.Name)
 		}
 		fields = append(fields, TypeAndName[Type]{Name: field.Name, Type: fieldType})
@@ -1042,34 +1262,33 @@ func (tc *typeChecker) check(node ast.Node, w ast.Walker) (Type, error) {
 }
 
 func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
-	rootTypeScope := newTypeScope(nil)
-	// Declare builtin types.
-	if err := rootTypeScope.declareType("Str", StrType, builtInSpan); err != nil {
-		panic(errors.Wrap(err, "failed to declare StrType"))
-	}
-	if err := rootTypeScope.declareType("Int", Int64Type, builtInSpan); err != nil {
-		panic(errors.Wrap(err, "failed to declare IntType"))
-	}
-	if err := rootTypeScope.declareType("None", NoneType, builtInSpan); err != nil {
-		panic(errors.Wrap(err, "failed to declare NoneType"))
-	}
-	rootSymbolScope := &SymbolScope{Node: node, Symbols: make(map[string]*Symbol)}
 	tc := &typeChecker{
 		DefaultVisitor: ast.DefaultVisitor{},
 		typeInfo: &TypeInfo{
 			types:        make(map[ast.NodeId]Type),
 			symbols:      make(map[string]*Symbol),
 			typeBindings: make(map[ast.ReferenceExpression]Type),
-		},
-		typeScope:     rootTypeScope,
+			calls:        make(map[*ast.CallExpression]Call)},
+		typeScope:     newTypeScope(nil),
+		symbolScope:   newSymbolScope(node, nil),
+		genericScope:  newGenericScope(nil),
 		nextTypeId:    1000,
-		symbolScope:   rootSymbolScope,
 		functionTypes: make(map[string]FunctionType),
 	}
-	if err := rootTypeScope.declareType("print", BuiltInPrintFunction, builtInSpan); err != nil {
+	// Declare builtin types and functions.
+	if err := tc.typeScope.declareType("Str", StrType, builtInSpan); err != nil {
+		panic(errors.Wrap(err, "failed to declare StrType"))
+	}
+	if err := tc.typeScope.declareType("Int", Int64Type, builtInSpan); err != nil {
+		panic(errors.Wrap(err, "failed to declare IntType"))
+	}
+	if err := tc.typeScope.declareType("None", NoneType, builtInSpan); err != nil {
+		panic(errors.Wrap(err, "failed to declare NoneType"))
+	}
+	if err := tc.typeScope.declareType("print", BuiltInPrintFunction, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare print function"))
 	}
-	if err := rootTypeScope.declareType("print_int", BuiltInPrintIntFunction, builtInSpan); err != nil {
+	if err := tc.typeScope.declareType("print_int", BuiltInPrintIntFunction, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare print_int function"))
 	}
 	walker := &ast.DefaultWalker{Visitor: tc}

@@ -48,6 +48,8 @@ const (
 	RParen      TokenKind = ")"
 	LCurly      TokenKind = "{"
 	RCurly      TokenKind = "}"
+	LAngle      TokenKind = "<"
+	RAngle      TokenKind = ">"
 	Comma       TokenKind = ","
 	Dot         TokenKind = "."
 	Plus        TokenKind = "+"
@@ -109,6 +111,10 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			tokens = append(tokens, Token{Kind: LCurly, Value: "", Span: span})
 		} else if c == '}' {
 			tokens = append(tokens, Token{Kind: RCurly, Value: "", Span: span})
+		} else if c == '<' {
+			tokens = append(tokens, Token{Kind: LAngle, Value: "", Span: span})
+		} else if c == '>' {
+			tokens = append(tokens, Token{Kind: RAngle, Value: "", Span: span})
 		} else if c == ',' {
 			tokens = append(tokens, Token{Kind: Comma, Value: "", Span: span})
 		} else if c == '+' {

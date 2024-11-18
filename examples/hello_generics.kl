@@ -1,0 +1,41 @@
+fn return_it<T>(val T) T {
+    val
+}
+
+fn return_it_again<T>(val T) T {
+    return_it<T>(val)
+}
+
+fn return_first<K, V>(first K, second V) K {
+    first
+}
+
+fn return_second<K, V>(first K, second V) V {
+    second
+}
+
+struct Planet {
+    name Str
+}
+
+impl Planet {
+    fn static<T>(val T) T {
+        val
+    }
+
+    fn method<T>(self, val T) T {
+        val
+    }
+}
+
+fn main() {
+    print(return_it<Str>("Yes"))
+    print(return_it_again<Str>(" again "))
+    print_int(return_it<Int>(4))
+    print_int(return_it_again<Int>(2))
+    print(return_first<Str, Int>(" multiple ", 42))
+    print_int(return_second<Str, Int>(" multiple", 42))
+    print(Planet.static<Str>(" static"))
+    let p = Planet(name="Earth")
+    print(p.method<Str>(" and method"))
+}

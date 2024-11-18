@@ -45,6 +45,35 @@ func (ty TypeIdent) String() string {
 
 type Ident string
 
+type TypeParam struct {
+	node
+	Name TypeIdent
+}
+
+func (t TypeParam) String() string {
+	return fmt.Sprintf("TypeParam %q", t.Name)
+}
+
+func (t TypeParam) TypeName() string {
+	return string(t.Name)
+}
+
+func typeParamsString(params []TypeParam) string {
+	s := ""
+	if len(params) > 0 {
+		s = fmt.Sprintf("\n(TypeParams)%s", base.IndentSlice(params, 1))
+	}
+	return s
+}
+
+func typeArgsString(args []Type) string {
+	s := ""
+	if len(args) > 0 {
+		s = fmt.Sprintf("\n(TypeArgs)%s", base.IndentSlice(args, 1))
+	}
+	return s
+}
+
 type Type interface {
 	Node
 	TypeName() string
@@ -69,12 +98,15 @@ func NewSimpleType(name TypeIdent, id NodeId, span token.Span) *SimpleType {
 
 type FunctionType struct {
 	node
+	TypeParams []TypeParam
 	ArgTypes   []Type
 	ReturnType Type
 }
 
 func (t FunctionType) String() string {
-	return fmt.Sprintf("FunctionType%s\n%s", base.IndentSlice(t.ArgTypes, 1), base.Indent(t.ReturnType, 1))
+	return fmt.Sprintf(
+		"FunctionType\n%s%s\n%s",
+		base.IndentString(typeParamsString(t.TypeParams), 1), base.IndentSlice(t.ArgTypes, 1), base.Indent(t.ReturnType, 1))
 }
 
 func (t FunctionType) TypeName() string {
@@ -213,12 +245,15 @@ func (s *StructInitExpression) String() string {
 
 type CallExpression struct {
 	node
-	Callee Expression
-	Args   []Expression
+	TypeArgs []Type
+	Callee   Expression
+	Args     []Expression
 }
 
 func (expr *CallExpression) String() string {
-	return fmt.Sprintf("CallExpression\n%s%s", base.Indent(expr.Callee, 1), base.IndentSlice(expr.Args, 1))
+	return fmt.Sprintf(
+		"CallExpression\n%s%s%s",
+		base.Indent(expr.Callee, 1), base.IndentString(typeArgsString(expr.TypeArgs), 1), base.IndentSlice(expr.Args, 1))
 }
 
 type BlockExpression struct {
@@ -345,14 +380,16 @@ func (f FunctionArg) String() string {
 type FunctionDeclaration struct {
 	node
 	Name       Ident
+	TypeParams []TypeParam
 	Args       []FunctionArg
 	ReturnType Type
 }
 
 func (f FunctionDeclaration) String() string {
 	return fmt.Sprintf(
-		"FunctionDeclaration\n%s%s\n%s",
+		"FunctionDeclaration\n%s%s%s\n%s",
 		base.Indent(f.Name, 1),
+		base.IndentString(typeParamsString(f.TypeParams), 1),
 		base.IndentSlice(f.Args, 1),
 		base.Indent(f.ReturnType, 1))
 }
@@ -465,8 +502,37 @@ func (p *Parser) span() token.Span {
 	return span
 }
 
+func (p *Parser) parseTypeArgs() ([]Type, error) {
+	if p.peek().Kind != token.LAngle {
+		return nil, nil
+	}
+	p.consumeAny()
+	args := []Type{}
+	done := false
+	for p.index < len(p.tokens) && !done {
+		arg, err := p.parseType()
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, arg)
+		switch p.peek().Kind {
+		case token.Comma:
+			p.consumeAny()
+		case token.RAngle:
+			p.consumeAny()
+			done = true
+		default:
+			return nil, errors.Errorf("expected comma or close angle bracket, got %s", p.peek())
+		}
+	}
+	return args, nil
+}
+
 func (p *Parser) parseCallExpression(callee Expression) (*CallExpression, error) {
-	from := p.span()
+	typeArgs, err := p.parseTypeArgs()
+	if err != nil {
+		return nil, err
+	}
 	if _, err := p.consume(token.LParen); err != nil {
 		return nil, err
 	}
@@ -488,7 +554,7 @@ func (p *Parser) parseCallExpression(callee Expression) (*CallExpression, error)
 			args = append(args, arg)
 		}
 	}
-	return &CallExpression{node: p.newNode(from), Callee: callee, Args: args}, nil
+	return &CallExpression{node: p.newNode(callee.Span()), Callee: callee, TypeArgs: typeArgs, Args: args}, nil
 }
 
 func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
@@ -635,12 +701,43 @@ func (p *Parser) tryParseType(defaultValue Type) (Type, error) {
 	return defaultValue, nil
 }
 
+func (p *Parser) parseTypeParams() ([]TypeParam, error) {
+	if p.peek().Kind != token.LAngle {
+		return nil, nil
+	}
+	p.consumeAny()
+	params := []TypeParam{}
+	done := false
+	for p.index < len(p.tokens) && !done {
+		typeIdent, err := p.consume(token.TypeIdent)
+		if err != nil {
+			return nil, err
+		}
+		param := TypeParam{node: p.newNode(typeIdent.Span), Name: TypeIdent(typeIdent.Value)}
+		params = append(params, param)
+		switch p.peek().Kind {
+		case token.Comma:
+			p.consumeAny()
+		case token.RAngle:
+			p.consumeAny()
+			done = true
+		default:
+			return nil, errors.Errorf("expected comma or close angle bracket, got %s", p.peek())
+		}
+	}
+	return params, nil
+}
+
 func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDeclaration, error) {
 	from := p.span()
 	if _, err := p.consume(token.Fn); err != nil {
 		return nil, err
 	}
 	nameToken, err := p.consume(token.Ident)
+	if err != nil {
+		return nil, err
+	}
+	typeParams, err := p.parseTypeParams()
 	if err != nil {
 		return nil, err
 	}
@@ -691,7 +788,7 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 		return nil, err
 	}
 	return &FunctionDeclaration{
-		node: p.newNode(from), Name: Ident(nameToken.Value), Args: args, ReturnType: returnType,
+		node: p.newNode(from), TypeParams: typeParams, Name: Ident(nameToken.Value), Args: args, ReturnType: returnType,
 	}, nil
 }
 
@@ -825,7 +922,7 @@ func (p *Parser) parseExpressionWithPostfix() (Expression, error) {
 				return nil, errors.Errorf("expected identifier after '.', got %s", field)
 			}
 			expr = &MemberExpression{node: p.newNode(from), Target: expr, Field: Ident(field.Value)}
-		case token.LParen:
+		case token.LParen, token.LAngle:
 			if is_forbidden_expression {
 				return nil, errors.Errorf("block and if expressions cannot be called")
 			}

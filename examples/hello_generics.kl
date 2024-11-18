@@ -2,8 +2,8 @@ fn return_it<T>(val T) T {
     val
 }
 
-fn return_it_again<T>(val T) T {
-    return_it<T>(val)
+fn return_it_again<U>(val U) U {
+    return_it<U>(val)
 }
 
 fn return_first<K, V>(first K, second V) K {
@@ -38,4 +38,7 @@ fn main() {
     print(Planet.static<Str>(" static"))
     let p = Planet(name="Earth")
     print(p.method<Str>(" and method"))
+    -- Type inference
+    print(return_it(" inferred"))
+    print(return_second(42, " again"))
 }

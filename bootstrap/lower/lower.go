@@ -13,6 +13,8 @@ This lowering pass will:
     as the first argument if the method is not static.
 
   - remove all trait declarations.
+
+  - record all function specializations (for monomorphization)
 */
 package lower
 
@@ -74,7 +76,7 @@ func (l *lower) addFunctionSpecialization(declType *typed.FunctionType, call *ty
 				}
 			}
 			if typeArgsMatch {
-				return declType
+				return f.SpecializedType
 			}
 		}
 	}

@@ -160,6 +160,16 @@ func (t TypeParam) Equal(other TypeParam) bool {
 	return t.GenericType.Id() == other.GenericType.Id() && t.Index == other.Index
 }
 
+func (t TypeParam) IsAssignableFrom(other Type) bool {
+	if t.Id() == other.Id() {
+		return true
+	}
+	if other, ok := other.(TypeParam); ok {
+		return t.Equal(other)
+	}
+	return false
+}
+
 func typeParamsString(params []TypeParam) string {
 	s := ""
 	if len(params) > 0 {
@@ -784,6 +794,11 @@ func (tc *typeChecker) resolveCall(
 		return nil, errors.Errorf(
 			"%s: expected %d arguments, got %d for %s", span, len(calleeArgTypes), len(astArgs), calleeType)
 	}
+	argTypes := make([]Type, len(astArgs))
+	for i, arg := range astArgs {
+		argType := tc.typeInfo.MustLookup(arg)
+		argTypes[i] = argType
+	}
 	typeParams := calleeType.TypeParams()
 	typeArgs := make([]Type, len(calleeType.TypeParams()))
 	if len(astTypeArgs) > 0 {
@@ -791,20 +806,27 @@ func (tc *typeChecker) resolveCall(
 			return nil, errors.Errorf(
 				"%s: expected %d type arguments, got %d for %q", span, len(typeParams), len(astTypeArgs), calleeType)
 		}
-		for i, givenTypeArg := range astTypeArgs {
-			calleeTypeArg, err := tc.lookupTypeOfNode(givenTypeArg)
+		for i, astTypeArg := range astTypeArgs {
+			typeArg, err := tc.lookupTypeOfNode(astTypeArg)
 			if err != nil {
 				return nil, err
 			}
-			typeArgs[i] = calleeTypeArg
+			typeArgs[i] = typeArg
+		}
+	} else if len(typeParams) > 0 {
+		// Let's try to infer the type arguments.
+		for i, calleeArgType := range calleeArgTypes {
+			if typeParam, ok := calleeArgType.(*TypeParam); ok {
+				argType := argTypes[i]
+				previousTypeArg := typeArgs[i]
+				if previousTypeArg != nil && previousTypeArg != argType {
+					return nil, errors.Errorf(
+						"%s: type argument %q already inferred as %s, got %s", span, typeParam.Name, previousTypeArg, argType)
+				}
+				typeArgs[i] = argType
+			}
 		}
 	}
-	argTypes := make([]Type, len(astArgs))
-	for i, arg := range astArgs {
-		argType := tc.typeInfo.MustLookup(arg)
-		argTypes[i] = argType
-	}
-	// todo: infer types
 	resolveTypeParam := func(ty Type) Type {
 		if typeParam, ok := ty.(*TypeParam); ok {
 			for i, param := range typeParams {
@@ -815,11 +837,19 @@ func (tc *typeChecker) resolveCall(
 		}
 		return ty
 	}
-	calleeArgTypes = make([]Type, len(typeParams))
+	resolvedCalleeArgTypes := make([]Type, len(calleeArgTypes))
 	for i, ty := range calleeArgTypes {
-		calleeArgTypes[i] = resolveTypeParam(ty)
+		resolvedCalleeArgTypes[i] = resolveTypeParam(ty)
 	}
 	returnType := resolveTypeParam(calleeType.CallReturnType())
+	// Finally, verify argument and return types.
+	for i, argType := range argTypes {
+		calleeArgType := resolvedCalleeArgTypes[i]
+		if !calleeArgType.IsAssignableFrom(argType) {
+			return nil, errors.Errorf(
+				"%s: expected argument %d to be of type %s, got %s", span, i, calleeArgType, argType)
+		}
+	}
 	call := Call{
 		Callee:     calleeType,
 		ArgTypes:   argTypes,

@@ -354,21 +354,21 @@ type variableInfo struct {
 	span          token.Span
 }
 
-type typeEnvironment struct {
+type typeScope struct {
 	types     map[string]Type
 	variables map[string]variableInfo
-	parent    *typeEnvironment
+	parent    *typeScope
 }
 
-func newTypeEnvironment(parent *typeEnvironment) *typeEnvironment {
-	return &typeEnvironment{
+func newTypeScope(parent *typeScope) *typeScope {
+	return &typeScope{
 		types:     make(map[string]Type),
 		variables: make(map[string]variableInfo),
 		parent:    parent,
 	}
 }
 
-func (te *typeEnvironment) lookupType(name string) (Type, bool) {
+func (te *typeScope) lookupType(name string) (Type, bool) {
 	ty, found := te.types[name]
 	if !found && te.parent != nil {
 		return te.parent.lookupType(name)
@@ -376,7 +376,7 @@ func (te *typeEnvironment) lookupType(name string) (Type, bool) {
 	return ty, found
 }
 
-func (te *typeEnvironment) lookupVariable(name ast.Ident) (Type, *variableInfo, bool) {
+func (te *typeScope) lookupVariable(name ast.Ident) (Type, *variableInfo, bool) {
 	ty, found := te.lookupType(string(name))
 	if !found {
 		return nil, nil, false
@@ -388,7 +388,7 @@ func (te *typeEnvironment) lookupVariable(name ast.Ident) (Type, *variableInfo, 
 	return ty, &info, found
 }
 
-func (te *typeEnvironment) declareType(name string, ty Type, span token.Span) error {
+func (te *typeScope) declareType(name string, ty Type, span token.Span) error {
 	if _, found := te.types[name]; found {
 		return errors.Errorf("%s: type %s already declared", span, name)
 	}
@@ -396,7 +396,7 @@ func (te *typeEnvironment) declareType(name string, ty Type, span token.Span) er
 	return nil
 }
 
-func (te *typeEnvironment) declareVariable(name string, info variableInfo) error {
+func (te *typeScope) declareVariable(name string, info variableInfo) error {
 	if err := te.declareType(name, info.type_, info.span); err != nil {
 		return err
 	}
@@ -406,12 +406,12 @@ func (te *typeEnvironment) declareVariable(name string, info variableInfo) error
 
 type Symbol struct {
 	Name  string
-	Scope *Scope
+	Scope *SymbolScope
 }
 
-type Scope struct {
-	Parent   *Scope
-	Children []*Scope
+type SymbolScope struct {
+	Parent   *SymbolScope
+	Children []*SymbolScope
 	Node     ast.Node
 	Symbols  map[string]*Symbol
 }
@@ -477,11 +477,11 @@ const (
 type typeChecker struct {
 	ast.DefaultVisitor
 	typeInfo      *TypeInfo
-	typeEnv       *typeEnvironment
+	typeScope     *typeScope
 	loopDepth     int
 	nextTypeId    int
 	checkingMode  checkingMode
-	scope         *Scope
+	symbolScope   *SymbolScope
 	functionTypes map[string]FunctionType
 }
 
@@ -491,15 +491,15 @@ func (tc *typeChecker) newType() BaseType {
 }
 
 func (tc *typeChecker) enterScope(node ast.Node) {
-	tc.typeEnv = newTypeEnvironment(tc.typeEnv)
-	scope := &Scope{Parent: tc.scope, Node: node, Symbols: make(map[string]*Symbol)}
-	tc.scope.Children = append(tc.scope.Children, scope)
-	tc.scope = scope
+	tc.typeScope = newTypeScope(tc.typeScope)
+	scope := &SymbolScope{Parent: tc.symbolScope, Node: node, Symbols: make(map[string]*Symbol)}
+	tc.symbolScope.Children = append(tc.symbolScope.Children, scope)
+	tc.symbolScope = scope
 }
 
 func (tc *typeChecker) exitScope() {
-	tc.typeEnv = tc.typeEnv.parent
-	tc.scope = tc.scope.Parent
+	tc.typeScope = tc.typeScope.parent
+	tc.symbolScope = tc.symbolScope.Parent
 }
 
 func (tc *typeChecker) enterLoop() {
@@ -526,15 +526,15 @@ func (tc *typeChecker) exitCheckingMode() {
 
 func (tc *typeChecker) declareSymbol(key isId, name string) {
 	keyString := key.String()
-	symbol := &Symbol{Name: name, Scope: tc.scope}
-	if _, found := tc.scope.Symbols[keyString]; found {
+	symbol := &Symbol{Name: name, Scope: tc.symbolScope}
+	if _, found := tc.symbolScope.Symbols[keyString]; found {
 		panic(fmt.Sprintf("symbol already declared: %q", symbol.Name))
 	}
-	tc.scope.Symbols[keyString] = symbol
+	tc.symbolScope.Symbols[keyString] = symbol
 	tc.typeInfo.symbols[keyString] = symbol
 }
 
-func (tc *typeChecker) lookupType(node ast.Type) (Type, error) {
+func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 	switch node := node.(type) {
 	case *ast.FunctionType:
 		if res, found := tc.functionTypes[node.TypeName()]; found {
@@ -542,13 +542,13 @@ func (tc *typeChecker) lookupType(node ast.Type) (Type, error) {
 		}
 		argTypes := make([]Type, len(node.ArgTypes))
 		for i, arg := range node.ArgTypes {
-			argType, err := tc.lookupType(arg)
+			argType, err := tc.lookupTypeOfNode(arg)
 			if err != nil {
 				return nil, err
 			}
 			argTypes[i] = argType
 		}
-		returnType, err := tc.lookupType(node.ReturnType)
+		returnType, err := tc.lookupTypeOfNode(node.ReturnType)
 		if err != nil {
 			return nil, err
 		}
@@ -556,7 +556,7 @@ func (tc *typeChecker) lookupType(node ast.Type) (Type, error) {
 		tc.functionTypes[node.TypeName()] = res
 		return &res, nil
 	default:
-		if res, found := tc.typeEnv.lookupType(node.TypeName()); found {
+		if res, found := tc.typeScope.lookupType(node.TypeName()); found {
 			return res, nil
 		}
 		return nil, errors.Errorf("undefined type: %s", node.TypeName())
@@ -593,12 +593,12 @@ func (tc *typeChecker) VisitReferenceExpression(expr ast.ReferenceExpression) er
 	default:
 		panic(fmt.Sprintf("unexpected reference expression type: %T", expr))
 	}
-	ty, found := tc.typeEnv.lookupType(refStr)
+	ty, found := tc.typeScope.lookupType(refStr)
 	if !found {
 		return errors.Errorf("%s: type not found for identifier %s", expr.Span(), refStr)
 	}
 	tc.typeInfo.Set(expr, ty)
-	if _, _, ok := tc.typeEnv.lookupVariable(ast.Ident(refStr)); !ok {
+	if _, _, ok := tc.typeScope.lookupVariable(ast.Ident(refStr)); !ok {
 		tc.typeInfo.typeBindings[expr] = ty
 	}
 	return nil
@@ -712,7 +712,7 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 	if err := w.WalkStructInitExpression(expr); err != nil {
 		return err
 	}
-	structType_, found := tc.typeEnv.lookupType(string(expr.TypeIdent))
+	structType_, found := tc.typeScope.lookupType(string(expr.TypeIdent))
 	if !found {
 		return errors.Errorf("%s: type %q not found for struct init expression", expr.Span(), expr.TypeIdent)
 	}
@@ -748,13 +748,13 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) error {
 	argTypes := make([]Type, len(decl.Args))
 	for i, arg := range decl.Args {
-		argType, err := tc.lookupType(arg.Type)
+		argType, err := tc.lookupTypeOfNode(arg.Type)
 		if err != nil {
 			return errors.Wrapf(err, "%s: type %s not found for argument %s", arg.Span, arg.Type, arg.Name)
 		}
 		argTypes[i] = argType
 	}
-	returnType, err := tc.lookupType(decl.ReturnType)
+	returnType, err := tc.lookupTypeOfNode(decl.ReturnType)
 	if err != nil {
 		return errors.Wrapf(
 			err, "%s: type %s not found for return type of function %s", decl.Span(), decl.ReturnType, decl.Name)
@@ -783,7 +783,7 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 			}
 			tc.typeInfo.Main = funcType
 		}
-		if err := tc.typeEnv.declareType(string(decl.Name), funcType, decl.Span()); err != nil {
+		if err := tc.typeScope.declareType(string(decl.Name), funcType, decl.Span()); err != nil {
 			return err
 		}
 		tc.typeInfo.Set(decl, &DeclaredType{Type: funcType})
@@ -805,7 +805,7 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 	for i, arg := range fn.Decl.Args {
 		argType := argTypes[i]
 		varInfo := variableInfo{type_: argType, isFunctionArg: true, mutable: false, span: arg.Span}
-		if err := tc.typeEnv.declareVariable(string(arg.Name), varInfo); err != nil {
+		if err := tc.typeScope.declareVariable(string(arg.Name), varInfo); err != nil {
 			return err
 		}
 	}
@@ -818,12 +818,12 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.Walker) error {
 	// We need to forward declare the trait type so that we can set the `Self` type correctly.
 	traitType := &TraitType{BaseType: tc.newType()}
-	if err := tc.typeEnv.declareType(string(trait.Name), traitType, trait.Span()); err != nil {
+	if err := tc.typeScope.declareType(string(trait.Name), traitType, trait.Span()); err != nil {
 		return err
 	}
 	tc.enterScope(trait)
 	defer tc.exitScope()
-	if err := tc.typeEnv.declareType("Self", traitType, trait.Span()); err != nil {
+	if err := tc.typeScope.declareType("Self", traitType, trait.Span()); err != nil {
 		return err
 	}
 	tc.enterCheckingMode(insideTraitOrImplMode)
@@ -843,7 +843,7 @@ func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.
 }
 
 func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walker) error {
-	structType_, found := tc.typeEnv.lookupType(string(impl.Target))
+	structType_, found := tc.typeScope.lookupType(string(impl.Target))
 	if !found {
 		return errors.Errorf("%s: type %q not found for impl definition", impl.Span(), impl.Target)
 	}
@@ -853,7 +853,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 	}
 	tc.enterScope(impl)
 	defer tc.exitScope()
-	if err := tc.typeEnv.declareType("Self", structType, impl.Span()); err != nil {
+	if err := tc.typeScope.declareType("Self", structType, impl.Span()); err != nil {
 		return err
 	}
 	tc.enterCheckingMode(insideTraitOrImplMode)
@@ -864,7 +864,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 	var traitType *TraitType = nil
 	unimplementedTraitMethods := map[ast.Ident]*TypeAndName[MethodType]{}
 	if impl.ImplementsTrait() {
-		traitType_, found := tc.typeEnv.lookupType(string(impl.Trait))
+		traitType_, found := tc.typeScope.lookupType(string(impl.Trait))
 		if !found {
 			return errors.Errorf("%s: trait %q not found for impl definition", impl.Span(), impl.Trait)
 		}
@@ -945,7 +945,7 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 		return errors.Errorf("%s: variable %s must have a type that is not None", v.Span(), v.Name)
 	}
 	varInfo := variableInfo{type_: valueType, mutable: true, span: v.Span()}
-	if err := tc.typeEnv.declareVariable(string(v.Name), varInfo); err != nil {
+	if err := tc.typeScope.declareVariable(string(v.Name), varInfo); err != nil {
 		return err
 	}
 	tc.typeInfo.Set(v, NoneType)
@@ -957,7 +957,7 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 		return err
 	}
 	rhsType := tc.typeInfo.MustLookup(s.Rhs)
-	varType, varInfo, ok := tc.typeEnv.lookupVariable(s.Variable.Ident)
+	varType, varInfo, ok := tc.typeScope.lookupVariable(s.Variable.Ident)
 	if !ok {
 		return errors.Errorf("%s: unknown variable %q", s.Span(), s.Variable.Ident)
 	}
@@ -1010,14 +1010,14 @@ func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 func (tc *typeChecker) VisitStructTypeDeclaration(d *ast.StructTypeDeclaration) error {
 	fields := []TypeAndName[Type]{}
 	for _, field := range d.Fields {
-		fieldType, found := tc.typeEnv.lookupType(field.Type.TypeName())
+		fieldType, found := tc.typeScope.lookupType(field.Type.TypeName())
 		if !found {
 			return errors.Errorf("%s: type %q not found for field %q", field.Span, field.Type, field.Name)
 		}
 		fields = append(fields, TypeAndName[Type]{Name: field.Name, Type: fieldType})
 	}
 	structType := &StructType{BaseType: tc.newType(), Fields: fields}
-	if err := tc.typeEnv.declareType(string(d.Name), structType, d.Span()); err != nil {
+	if err := tc.typeScope.declareType(string(d.Name), structType, d.Span()); err != nil {
 		return err
 	}
 	tc.declareSymbol(structType.Id(), d.Name.String())
@@ -1042,18 +1042,18 @@ func (tc *typeChecker) check(node ast.Node, w ast.Walker) (Type, error) {
 }
 
 func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
-	defaultTypeEnv := newTypeEnvironment(nil)
+	rootTypeScope := newTypeScope(nil)
 	// Declare builtin types.
-	if err := defaultTypeEnv.declareType("Str", StrType, builtInSpan); err != nil {
+	if err := rootTypeScope.declareType("Str", StrType, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare StrType"))
 	}
-	if err := defaultTypeEnv.declareType("Int", Int64Type, builtInSpan); err != nil {
+	if err := rootTypeScope.declareType("Int", Int64Type, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare IntType"))
 	}
-	if err := defaultTypeEnv.declareType("None", NoneType, builtInSpan); err != nil {
+	if err := rootTypeScope.declareType("None", NoneType, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare NoneType"))
 	}
-	rootScope := &Scope{Node: node, Symbols: make(map[string]*Symbol)}
+	rootSymbolScope := &SymbolScope{Node: node, Symbols: make(map[string]*Symbol)}
 	tc := &typeChecker{
 		DefaultVisitor: ast.DefaultVisitor{},
 		typeInfo: &TypeInfo{
@@ -1061,15 +1061,15 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 			symbols:      make(map[string]*Symbol),
 			typeBindings: make(map[ast.ReferenceExpression]Type),
 		},
-		typeEnv:       defaultTypeEnv,
+		typeScope:     rootTypeScope,
 		nextTypeId:    1000,
-		scope:         rootScope,
+		symbolScope:   rootSymbolScope,
 		functionTypes: make(map[string]FunctionType),
 	}
-	if err := defaultTypeEnv.declareType("print", BuiltInPrintFunction, builtInSpan); err != nil {
+	if err := rootTypeScope.declareType("print", BuiltInPrintFunction, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare print function"))
 	}
-	if err := defaultTypeEnv.declareType("print_int", BuiltInPrintIntFunction, builtInSpan); err != nil {
+	if err := rootTypeScope.declareType("print_int", BuiltInPrintIntFunction, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare print_int function"))
 	}
 	walker := &ast.DefaultWalker{Visitor: tc}

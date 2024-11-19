@@ -37,6 +37,7 @@ fn main() {
     print_int(return_second<Str, Int>(" multiple", 42))
     print(Planet.static<Str>(" static"))
     let p = Planet(name="Earth")
+    print(return_it<Planet>(p).name)
     print(p.method<Str>(" and method"))
     -- Type inference
     print(return_it(" inferred"))

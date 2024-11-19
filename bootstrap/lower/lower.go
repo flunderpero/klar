@@ -1,4 +1,6 @@
 /*
+# Lowering
+
 This lowering pass will:
 
   - rename all types (functions, structs) to the the type id to make them globally
@@ -14,7 +16,22 @@ This lowering pass will:
 
   - remove all trait declarations.
 
-  - record all function specializations (for monomorphization)
+  - record all function specializations (for monomorphization).
+
+## Function Specialization (Monomorphization)
+
+Functions are specialized based on their type arguments, generating distinct
+implementations for each unique combination of types. However, since all
+non-primitive types in Klar are references, we can optimize this process.
+For generic functions without trait constraints, we can use a single implementation
+that treats type parameters as opaque pointers, since:
+
+ 1. We can only pass around these references without accessing their contents
+
+ 2. All references have the same size (pointer size)
+
+This eliminates the need for most specializations, as only functions using primitive
+types or trait constraints need unique implementations.
 */
 package lower
 
@@ -37,6 +54,16 @@ type FunctionSpecialization struct {
 	TypeArgs        []typed.Type
 }
 
+type OpaqueStructType struct {
+	typed.BaseType
+}
+
+func (t *OpaqueStructType) String() string {
+	return "OpaqueStructType"
+}
+
+var opaqueStructType = &OpaqueStructType{BaseType: typed.NewBaseType(lowerTypeIdStart)}
+
 func (f FunctionSpecialization) String() string {
 	name := fmt.Sprintf("%s from %s", f.SpecializedType.Id(), f.FunctionDefType.Id())
 	return fmt.Sprintf(
@@ -56,6 +83,18 @@ type lower struct {
 	nextTypeId              int
 }
 
+// Convert the given type to an `OpaqueStructType` if it is not a primitive type.
+func try_convert_to_opaque(t typed.Type) typed.Type {
+	if t == typed.StrType {
+		return opaqueStructType
+	}
+	switch t.(type) {
+	case *typed.StructType:
+		return opaqueStructType
+	}
+	return t
+}
+
 // `call` is optional. If not given `declType` must not be generic
 func (l *lower) addFunctionSpecialization(declType *typed.FunctionType, call *typed.Call) *typed.FunctionType {
 	if typed.IsBuiltInFunction(declType) {
@@ -66,11 +105,18 @@ func (l *lower) addFunctionSpecialization(declType *typed.FunctionType, call *ty
 		// We don't record the generic variant (i.e. the one without type args).
 		return declType
 	}
+	var callTypeArgs = []typed.Type{}
+	if call != nil && len(call.TypeArgs) > 0 {
+		for _, arg := range call.TypeArgs {
+			callTypeArgs = append(callTypeArgs, try_convert_to_opaque(arg))
+		}
+	}
 	for _, f := range l.functionSpecializations {
 		if f.FunctionDefType.Id() == declType.Id() {
 			typeArgsMatch := true
 			for i, arg := range f.TypeArgs {
-				if arg.Id() != call.TypeArgs[i].Id() {
+				callTypeArg := callTypeArgs[i]
+				if arg.Id() != callTypeArg.Id() {
 					typeArgsMatch = false
 					break
 				}
@@ -80,15 +126,15 @@ func (l *lower) addFunctionSpecialization(declType *typed.FunctionType, call *ty
 			}
 		}
 	}
-	var function FunctionSpecialization
+	var funcSpec FunctionSpecialization
 	if call == nil || len(call.TypeArgs) == 0 {
-		function = FunctionSpecialization{FunctionDefType: declType, SpecializedType: declType}
+		funcSpec = FunctionSpecialization{FunctionDefType: declType, SpecializedType: declType}
 	} else {
 		concreteType := typed.NewFunctionType(l.newTypeId(), declType.TypeParams(), call.ArgTypes, call.ReturnType)
-		function = FunctionSpecialization{FunctionDefType: declType, TypeArgs: call.TypeArgs, SpecializedType: concreteType}
+		funcSpec = FunctionSpecialization{FunctionDefType: declType, TypeArgs: callTypeArgs, SpecializedType: concreteType}
 	}
-	l.functionSpecializations = append(l.functionSpecializations, function)
-	return function.SpecializedType
+	l.functionSpecializations = append(l.functionSpecializations, funcSpec)
+	return funcSpec.SpecializedType
 }
 
 func (l *lower) newNodeId() ast.NodeId {
@@ -265,7 +311,7 @@ func Lower(module *ast.Module, typeInfo *typed.TypeInfo) *LoweredAST {
 		loweredMethods:     make(map[typed.TypeId]*typed.FunctionType),
 		functionDefs:       make(map[typed.TypeId]*ast.FunctionDefinition),
 		nextNodeId:         lowerNodeIdStart,
-		nextTypeId:         lowerTypeIdStart,
+		nextTypeId:         lowerTypeIdStart + 1,
 	}
 	walker := DefaultTransformWalker{Transformer: l}
 	module, ok := walker.Transformer.VisitModule(module, &walker)

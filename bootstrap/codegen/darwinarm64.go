@@ -78,30 +78,35 @@ func (ra *registerAllocation) String() string {
 }
 
 type registerAllocator struct {
-	registers            []register
-	usedScratchRegisters map[register]*registerAllocation
-	usedCallRegisters    map[register]*registerAllocation
-	allocations          map[ir.Register]*registerAllocation
-	constraints          ir.RegisterConstraints
-	code                 *Code
+	scratchRegisters         []register
+	nextScratchRegisterIndex int
+	usedScratchRegisters     []*registerAllocation
+	usedCallRegisters        map[register]*registerAllocation
+	allocations              map[ir.Register]*registerAllocation
+	constraints              ir.RegisterConstraints
+	code                     *Code
 }
 
 func newRegisterAllocator(registers []register, constraints ir.RegisterConstraints, code *Code) registerAllocator {
 	return registerAllocator{
-		registers:            registers,
-		usedScratchRegisters: make(map[register]*registerAllocation),
-		usedCallRegisters:    make(map[register]*registerAllocation),
-		allocations:          make(map[ir.Register]*registerAllocation),
-		constraints:          constraints,
-		code:                 code,
+		scratchRegisters:         registers,
+		nextScratchRegisterIndex: 0,
+		usedScratchRegisters:     make([]*registerAllocation, len(registers)),
+		usedCallRegisters:        make(map[register]*registerAllocation),
+		allocations:              make(map[ir.Register]*registerAllocation),
+		constraints:              constraints,
+		code:                     code,
 	}
 }
 
 func (r *registerAllocator) usedCalleeSavedRegisters() []register {
 	usedCalleeSaved := []register{}
-	for reg, _ := range r.usedScratchRegisters {
-		if slices.Contains(calleeSavedRegisters, reg) {
-			usedCalleeSaved = append(usedCalleeSaved, reg)
+	for _, allocation := range r.usedScratchRegisters {
+		if allocation == nil {
+			continue
+		}
+		if slices.Contains(calleeSavedRegisters, allocation.reg) {
+			usedCalleeSaved = append(usedCalleeSaved, allocation.reg)
 		}
 	}
 	slices.SortFunc(usedCalleeSaved, func(a register, b register) int {
@@ -124,25 +129,28 @@ func (r *registerAllocator) ensureInRegister(allocation *registerAllocation) reg
 	if allocation.isInRegister() {
 		return allocation.reg
 	}
-	var spillAllocation *registerAllocation
-	var freeReg register = ""
-	for _, reg := range r.registers {
-		usedAllocation := r.usedScratchRegisters[reg]
-		if usedAllocation == nil {
-			freeReg = reg
-			break
+	r.spillNextScratchRegisterIfNeeded()
+	reg := r.scratchRegisters[r.nextScratchRegisterIndex]
+	allocation.reg = reg
+	r.usedScratchRegisters[r.nextScratchRegisterIndex] = allocation
+	r.code.emit("ldr %s, [sp, #%d]", reg, allocation.stackOffset)
+	r.nextScratchRegisterIndex = (r.nextScratchRegisterIndex + 1) % len(r.scratchRegisters)
+	return reg
+}
+
+func (r *registerAllocator) spillNextScratchRegisterIfNeeded() {
+	allocation := r.usedScratchRegisters[r.nextScratchRegisterIndex]
+	if allocation != nil {
+		if allocation.reg != r.scratchRegisters[r.nextScratchRegisterIndex] {
+			panic(
+				fmt.Sprintf(
+					"expected register %s to be in use, but found %s",
+					r.scratchRegisters[r.nextScratchRegisterIndex],
+					allocation.reg))
 		}
-		spillAllocation = usedAllocation
+		r.spill(allocation)
+		r.usedScratchRegisters[r.nextScratchRegisterIndex] = nil
 	}
-	if freeReg == "" {
-		// No registers available, spill a random register to the stack.
-		freeReg = spillAllocation.reg
-		r.spill(spillAllocation)
-	}
-	allocation.reg = freeReg
-	r.usedScratchRegisters[freeReg] = allocation
-	r.code.emit("ldr %s, [sp, #%d]", freeReg, allocation.stackOffset)
-	return freeReg
 }
 
 func (r *registerAllocator) allocateScratchRegister(irReg ir.Register) *registerAllocation {
@@ -160,21 +168,8 @@ func (r *registerAllocator) allocateScratchRegister(irReg ir.Register) *register
 			}
 		}
 	}
-	var spillAllocation *registerAllocation
-	for _, reg := range r.registers {
-		allocation := r.usedScratchRegisters[reg]
-		if allocation == nil {
-			allocation := &registerAllocation{reg: reg, stackOffset: -1}
-			r.usedScratchRegisters[reg] = allocation
-			r.allocations[irReg] = allocation
-			return allocation
-		}
-		spillAllocation = allocation
-	}
-	// No registers available, spill a random register to the stack.
-	allocation := &registerAllocation{reg: spillAllocation.reg, stackOffset: -1}
-	r.spill(spillAllocation)
-	r.usedScratchRegisters[allocation.reg] = allocation
+	allocation := &registerAllocation{stackOffset: -1}
+	r.ensureInRegister(allocation)
 	r.allocations[irReg] = allocation
 	return allocation
 }
@@ -202,18 +197,20 @@ func (r *registerAllocator) spillCallRegisters(max int) {
 // Spill all caller saved registers in use.
 func (r *registerAllocator) spillCallerSavedRegisters() []*registerAllocation {
 	res := []*registerAllocation{}
-	for _, reg := range callerSavedRegisters {
-		usedAllocation, found := r.usedScratchRegisters[reg]
-		if !found {
+	for i, allocation := range r.usedScratchRegisters {
+		if allocation == nil {
 			continue
 		}
-		res = append(res, usedAllocation)
+		if !slices.Contains(callerSavedRegisters, allocation.reg) {
+			continue
+		}
+		res = append(res, allocation)
 		// We remember the register the allocation occupied so we can restore it
 		// in `restoreCallerSavedRegisters`.
-		reg := usedAllocation.reg
-		r.spill(usedAllocation)
-		usedAllocation.reg = reg
-		delete(r.usedScratchRegisters, reg)
+		reg := allocation.reg
+		r.spill(allocation)
+		allocation.reg = reg
+		r.usedScratchRegisters[i] = nil
 	}
 	return res
 }
@@ -222,7 +219,8 @@ func (r *registerAllocator) spillCallerSavedRegisters() []*registerAllocation {
 func (r *registerAllocator) restoreCallerSavedRegisters(allocations []*registerAllocation) {
 	for _, allocation := range allocations {
 		r.code.emit("ldr %s, [sp, #%d]", allocation.reg, allocation.stackOffset)
-		r.usedScratchRegisters[allocation.reg] = allocation
+		index := slices.Index(r.scratchRegisters, allocation.reg)
+		r.usedScratchRegisters[index] = allocation
 	}
 }
 

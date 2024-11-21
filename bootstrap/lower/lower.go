@@ -74,7 +74,6 @@ type lower struct {
 	DefaultTransformer
 	functionDefs            map[typed.TypeId]*ast.FunctionDefinition
 	typeInfo                *typed.TypeInfo
-	loweredMethods          map[typed.TypeId]*typed.FunctionType
 	functionSpecializations []FunctionSpecialization
 	nextNodeId              int
 	nextTypeId              int
@@ -139,16 +138,6 @@ func (l *lower) newTypeId() typed.TypeId {
 	return typed.TypeId(l.nextTypeId)
 }
 
-func (l *lower) convertMethodToFunction(method *typed.MethodType) *typed.FunctionType {
-	functionType, found := l.loweredMethods[method.Id()]
-	if found {
-		return functionType
-	}
-	functionType = typed.NewFunctionType(method.Id(), method.TypeParams(), method.ArgTypes, method.ReturnType)
-	l.loweredMethods[method.Id()] = functionType
-	return functionType
-}
-
 func (l *lower) convertToTypeIdIdentExpression(expr ast.Expression, ty typed.Type) *ast.IdentExpression {
 	return ast.NewIdentExpression(ast.Ident(ty.Id().String()), expr.Id(), expr.Span())
 }
@@ -167,7 +156,7 @@ func (l *lower) VisitIdentExpression(expr *ast.IdentExpression) (ast.Expression,
 	return expr, true
 }
 
-// Convert static methods to regular functions.
+// Convert the `MemberExpression` to an `IdentExpression` if it resolves to a static method.
 func (l *lower) VisitMemberExpression(expr *ast.MemberExpression, w TransformWalker) (ast.Expression, bool) {
 	newExpr, ok := w.WalkMemberExpression(expr)
 	if !ok {
@@ -177,11 +166,10 @@ func (l *lower) VisitMemberExpression(expr *ast.MemberExpression, w TransformWal
 	if !ok {
 		return newExpr, false
 	}
-	method, isMethod := l.typeInfo.MustLookup(expr).(*typed.MethodType)
-	if !isMethod || !method.IsStatic {
+	functionType, ok := l.typeInfo.MustLookup(expr).(*typed.FunctionType)
+	if !ok || !functionType.IsStaticMethod() {
 		return expr, true
 	}
-	functionType := l.convertMethodToFunction(method)
 	res := l.convertToTypeIdIdentExpression(expr, functionType)
 	l.typeInfo.Set(res, functionType)
 	// Since the function has been referenced, we need to generate code for it.
@@ -189,7 +177,7 @@ func (l *lower) VisitMemberExpression(expr *ast.MemberExpression, w TransformWal
 	return res, true
 }
 
-// Convert method calls to calls to the converted regular function.
+// Convert method calls to function calls with the receiver as first argument.
 func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker) (ast.Expression, bool) {
 	newExpr, ok := w.WalkCallExpression(expr)
 	if !ok {
@@ -199,26 +187,21 @@ func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker)
 	if !ok {
 		return newExpr, true
 	}
-	calleeType := l.typeInfo.MustLookup(expr.Callee)
-	switch calleeType := calleeType.(type) {
-	case *typed.FunctionType:
-		functionType := l.addFunctionSpecialization(calleeType, l.typeInfo.MustLookupCall(expr))
+	functionType := l.typeInfo.MustLookup(expr.Callee).(*typed.FunctionType)
+	if !functionType.IsMethod() || functionType.IsStaticMethod() {
+		functionType = l.addFunctionSpecialization(functionType, l.typeInfo.MustLookupCall(expr))
 		l.typeInfo.Set(expr.Callee, functionType)
 		return expr, true
-	case *typed.MethodType:
-		functionType := l.convertMethodToFunction(calleeType)
-		receiver := expr.Callee.(*ast.MemberExpression).Target
-		receiverType := l.typeInfo.MustLookup(receiver)
-		expr.Args = append([]ast.Expression{receiver}, expr.Args...)
-		expr.Callee = l.convertToTypeIdIdentExpression(expr.Callee, functionType)
-		call := l.typeInfo.MustLookupCall(expr)
-		call.ArgTypes = append([]typed.Type{receiverType}, call.ArgTypes...)
-		functionType = l.addFunctionSpecialization(functionType, call)
-		l.typeInfo.Set(expr.Callee, functionType)
-		return expr, true
-	default:
-		panic(fmt.Sprintf("expected function or method type, got %T", calleeType))
 	}
+	receiver := expr.Callee.(*ast.MemberExpression).Target
+	receiverType := l.typeInfo.MustLookup(receiver)
+	expr.Args = append([]ast.Expression{receiver}, expr.Args...)
+	expr.Callee = l.convertToTypeIdIdentExpression(expr.Callee, functionType)
+	call := l.typeInfo.MustLookupCall(expr)
+	call.ArgTypes = append([]typed.Type{receiverType}, call.ArgTypes...)
+	functionType = l.addFunctionSpecialization(functionType, call)
+	l.typeInfo.Set(expr.Callee, functionType)
+	return expr, true
 }
 
 // Replace the function name with its type id.
@@ -286,7 +269,6 @@ func Lower(module *ast.Module, typeInfo *typed.TypeInfo) *LoweredAST {
 	l := &lower{
 		DefaultTransformer: DefaultTransformer{},
 		typeInfo:           typeInfo,
-		loweredMethods:     make(map[typed.TypeId]*typed.FunctionType),
 		functionDefs:       make(map[typed.TypeId]*ast.FunctionDefinition),
 		nextNodeId:         lowerNodeIdStart,
 		nextTypeId:         lowerTypeIdStart + 1,

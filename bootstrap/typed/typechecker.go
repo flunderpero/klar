@@ -46,8 +46,8 @@ var BuiltInUnsafeMallocFunction = &FunctionType{
 	ReturnType: Int64Type,
 }
 
-func IsBuiltInFunction(callable CallableType) bool {
-	id := callable.Id()
+func IsBuiltInFunction(functionType *FunctionType) bool {
+	id := functionType.Id()
 	return id == BuiltInPrintFunction.Id() || id == BuiltInPrintIntFunction.Id() || id == BuiltInUnsafeMallocFunction.Id()
 }
 
@@ -56,12 +56,6 @@ var StrType = &strType{BaseType: BaseType{1}}
 var BoolType = &boolType{BaseType: BaseType{2}}
 var Int64Type = &int64Type{BaseType: BaseType{3}}
 var NoneType = &noneType{BaseType: BaseType{4}}
-
-type CallableType interface {
-	GenericType
-	CallArgTypes() []Type
-	CallReturnType() Type
-}
 
 type TypeWithTraits interface {
 	Type
@@ -201,7 +195,7 @@ func (ty DeclaredType) IsAssignableFrom(other_ Type) bool {
 type StructType struct {
 	BaseType
 	Fields  []TypeAndName[Type]
-	Methods []TypeAndName[MethodType]
+	Methods []TypeAndName[FunctionType]
 	traits  []*TraitType
 }
 
@@ -210,7 +204,8 @@ func (ty *StructType) Traits() []*TraitType {
 }
 
 func (ty StructType) String() string {
-	return fmt.Sprintf("StructType\n%s%s", base.IndentSlice(ty.Fields, 1), base.IndentSlice(ty.Methods, 1))
+	return fmt.Sprintf(
+		"StructType\n    (Fields)%s\n    (Methods)%s", base.IndentSlice(ty.Fields, 2), base.IndentSlice(ty.Methods, 2))
 }
 
 func (ty StructType) FindFieldIndex(name ast.Ident, span token.Span) (int, bool) {
@@ -229,7 +224,7 @@ func (ty StructType) FindField(name ast.Ident, span token.Span) (*TypeAndName[Ty
 	return &ty.Fields[fieldIndex], true
 }
 
-func (ty StructType) FindMethod(name ast.Ident, span token.Span) (*MethodType, bool) {
+func (ty StructType) FindMethod(name ast.Ident, span token.Span) (*FunctionType, bool) {
 	for _, method := range ty.Methods {
 		if method.Name == name {
 			return &method.Type, true
@@ -252,14 +247,14 @@ func (ty StructType) FindMember(name ast.Ident, span token.Span) (Type, bool) {
 
 type TraitType struct {
 	BaseType
-	Methods []TypeAndName[MethodType]
+	Methods []TypeAndName[FunctionType]
 }
 
 func (ty TraitType) String() string {
 	return fmt.Sprintf("TraitType%s", base.IndentSlice(ty.Methods, 1))
 }
 
-func (ty *TraitType) FindMethod(name ast.Ident, span token.Span) (*MethodType, error) {
+func (ty *TraitType) FindMethod(name ast.Ident, span token.Span) (*FunctionType, error) {
 	for _, method := range ty.Methods {
 		if method.Name == name {
 			return &method.Type, nil
@@ -277,28 +272,48 @@ func (ty ImplType) String() string {
 	return fmt.Sprintf("ImplType\n%s", base.Indent(ty.ReceiverType, 1))
 }
 
-type MethodType struct {
+type FunctionType struct {
 	BaseType
 	typeParams   []TypeParam
+	ReceiverType Type
 	ArgTypes     []Type
 	ReturnType   Type
-	ReceiverType Type
-	IsStatic     bool
 }
 
-func (ty MethodType) CallArgTypes() []Type {
-	return ty.ArgTypes
+func NewFunctionType(id TypeId, typeParams []TypeParam, argTypes []Type, returnType Type) *FunctionType {
+	return &FunctionType{BaseType: BaseType{id}, typeParams: typeParams, ArgTypes: argTypes, ReturnType: returnType}
 }
 
-func (ty MethodType) CallReturnType() Type {
-	return ty.ReturnType
+func (ty FunctionType) String() string {
+	typeToString := func(t Type) string {
+		if ty.ReceiverType != nil && t.Id() == ty.ReceiverType.Id() {
+			return "Self"
+		}
+		return t.Id().String()
+	}
+	receiverType := ""
+	if ty.ReceiverType != nil {
+		receiverType = fmt.Sprintf("\n    (ReceiverType)\n%s", base.Indent(ty.ReceiverType.Id(), 2))
+	}
+	args := base.Map(ty.ArgTypes, typeToString)
+	returnType := typeToString(ty.ReturnType)
+	return fmt.Sprintf(
+		"FunctionType%s%s\n    (Arguments)%s\n    (Return)\n%s",
+		receiverType,
+		base.IndentString(typeParamsString(ty.typeParams), 1),
+		base.IndentStringSlice(args, 2),
+		base.IndentString(returnType, 2))
 }
 
-func (ty MethodType) TypeParams() []TypeParam {
-	return ty.typeParams
+func (ty FunctionType) IsMethod() bool {
+	return ty.ReceiverType != nil
 }
 
-func (ty MethodType) CheckSameSignatureIgnoringReceiverTypes(other *MethodType, span token.Span) error {
+func (ty FunctionType) IsStaticMethod() bool {
+	return ty.ReceiverType != nil && (len(ty.ArgTypes) == 0 || ty.ArgTypes[0].Id() != ty.ReceiverType.Id())
+}
+
+func (ty FunctionType) CheckSameSignatureIgnoringReceiverTypes(other *FunctionType, span token.Span) error {
 	match := func(thisType Type, otherType Type) bool {
 		if otherType == other.ReceiverType {
 			return thisType == ty.ReceiverType
@@ -320,78 +335,16 @@ func (ty MethodType) CheckSameSignatureIgnoringReceiverTypes(other *MethodType, 
 	return nil
 }
 
-func (ty MethodType) String() string {
-	typeToString := func(t Type) string {
-		if t == ty.ReceiverType {
-			return "Self"
-		}
-		return t.String()
-	}
-	args := base.Map(ty.ArgTypes, typeToString)
-	return fmt.Sprintf(
-		"MethodType%s%s\n%s",
-		base.IndentString(typeParamsString(ty.typeParams), 1),
-		base.IndentStringSlice(args, 1),
-		base.IndentString(typeToString(ty.ReturnType), 1))
-}
-
-func (ty MethodType) ArgTypesWithoutSelf() []Type {
-	if ty.IsStatic || len(ty.ArgTypes) == 0 {
-		return ty.ArgTypes
-	}
-	return ty.ArgTypes[1:]
-}
-
-func (ty MethodType) IsAssignableFrom(other Type) bool {
-	if other.Id() == ty.Id() {
-		return true
-	}
-	if other, ok := other.(MethodType); ok {
-		if len(ty.ArgTypes) != len(other.ArgTypes) {
-			return false
-		}
-		for i, argType := range ty.ArgTypes {
-			if !argType.IsAssignableFrom(other.ArgTypes[i]) {
-				return false
-			}
-		}
-		return ty.ReturnType.IsAssignableFrom(other.ReturnType)
-	}
-	return false
-}
-
-type FunctionType struct {
-	BaseType
-	typeParams []TypeParam
-	ArgTypes   []Type
-	ReturnType Type
-}
-
-func NewFunctionType(id TypeId, typeParams []TypeParam, argTypes []Type, returnType Type) *FunctionType {
-	return &FunctionType{BaseType: BaseType{id}, typeParams: typeParams, ArgTypes: argTypes, ReturnType: returnType}
-}
-
-func (ty FunctionType) String() string {
-	return fmt.Sprintf(
-		"FunctionType%s%s\n%s",
-		base.IndentString(typeParamsString(ty.typeParams), 1),
-		base.IndentSlice(ty.ArgTypes, 1), base.Indent(ty.ReturnType, 1))
-}
-
 func (ty FunctionType) TypeParams() []TypeParam {
 	return ty.typeParams
-}
-
-func (ty FunctionType) CallArgTypes() []Type {
-	return ty.ArgTypes
 }
 
 func (ty FunctionType) IsAssignableFrom(other Type) bool {
 	if other.Id() == ty.Id() {
 		return true
 	}
-	if other, ok := other.(CallableType); ok {
-		otherArgTypes := other.CallArgTypes()
+	if other, ok := other.(*FunctionType); ok {
+		otherArgTypes := other.ArgTypes
 		if len(ty.ArgTypes) != len(otherArgTypes) {
 			return false
 		}
@@ -400,17 +353,13 @@ func (ty FunctionType) IsAssignableFrom(other Type) bool {
 				return false
 			}
 		}
-		return ty.ReturnType.IsAssignableFrom(other.CallReturnType())
+		return ty.ReturnType.IsAssignableFrom(other.ReturnType)
 	}
 	return false
 }
 
-func (ty FunctionType) CallReturnType() Type {
-	return ty.ReturnType
-}
-
 type Call struct {
-	Callee     CallableType
+	Callee     *FunctionType
 	ArgTypes   []Type
 	ReturnType Type
 	TypeArgs   []Type
@@ -765,12 +714,10 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 }
 
 func (tc *typeChecker) resolveCall(
-	calleeType CallableType, astArgs []ast.Expression, astTypeArgs []ast.Type, span token.Span) (*Call, error) {
-	var calleeArgTypes []Type
-	if methodType, ok := calleeType.(*MethodType); ok {
-		calleeArgTypes = methodType.ArgTypesWithoutSelf()
-	} else {
-		calleeArgTypes = calleeType.CallArgTypes()
+	calleeType *FunctionType, astArgs []ast.Expression, astTypeArgs []ast.Type, span token.Span) (*Call, error) {
+	calleeArgTypes := calleeType.ArgTypes
+	if calleeType.IsMethod() && !calleeType.IsStaticMethod() {
+		calleeArgTypes = calleeArgTypes[1:]
 	}
 	if len(calleeArgTypes) != len(astArgs) {
 		return nil, errors.Errorf(
@@ -781,8 +728,8 @@ func (tc *typeChecker) resolveCall(
 		argType := tc.typeInfo.MustLookup(arg)
 		argTypes[i] = argType
 	}
-	typeParams := calleeType.TypeParams()
-	typeArgs := make([]Type, len(calleeType.TypeParams()))
+	typeParams := calleeType.typeParams
+	typeArgs := make([]Type, len(calleeType.typeParams))
 	if len(astTypeArgs) > 0 {
 		if len(astTypeArgs) != len(typeParams) {
 			return nil, errors.Errorf(
@@ -823,7 +770,7 @@ func (tc *typeChecker) resolveCall(
 	for i, ty := range calleeArgTypes {
 		resolvedCalleeArgTypes[i] = resolveTypeParam(ty)
 	}
-	returnType := resolveTypeParam(calleeType.CallReturnType())
+	returnType := resolveTypeParam(calleeType.ReturnType)
 	// Finally, verify argument and return types.
 	for i, argType := range argTypes {
 		calleeArgType := resolvedCalleeArgTypes[i]
@@ -845,9 +792,9 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 	if err := w.WalkCallExpression(expr); err != nil {
 		return err
 	}
-	calleeType, ok := tc.typeInfo.MustLookup(expr.Callee).(CallableType)
+	calleeType, ok := tc.typeInfo.MustLookup(expr.Callee).(*FunctionType)
 	if !ok {
-		return errors.Errorf("%s: callee %q is not a callable type", expr.Span(), calleeType)
+		return errors.Errorf("%s: callee %q is not a function type", expr.Span(), calleeType)
 	}
 	call, err := tc.resolveCall(calleeType, expr.Args, expr.TypeArgs, expr.Span())
 	if err != nil {
@@ -977,33 +924,20 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 	if tc.checkingMode == insideTraitOrImplMode {
 		tc.enterGenericScope()
 		defer tc.exitGenericScope()
-		isStatic := len(decl.Args) == 0 || decl.Args[0].Name != "self"
-		methodType := &MethodType{BaseType: tc.newType(), IsStatic: isStatic}
-		typeParams, err := tc.resolveTypeParams(methodType, decl.TypeParams)
-		if err != nil {
-			return err
-		}
-		methodType.typeParams = typeParams
-		argTypes, returnType, err := tc.resolveFunctionArgsAndReturnType(decl.Args, decl.ReturnType)
-		if err != nil {
-			return err
-		}
-		methodType.ArgTypes = argTypes
-		methodType.ReturnType = returnType
-		tc.typeInfo.Set(decl, &DeclaredType{Type: methodType})
-	} else {
-		funcType := &FunctionType{BaseType: tc.newType()}
-		typeParams, err := tc.resolveTypeParams(funcType, decl.TypeParams)
-		if err != nil {
-			return err
-		}
-		funcType.typeParams = typeParams
-		argTypes, returnType, err := tc.resolveFunctionArgsAndReturnType(decl.Args, decl.ReturnType)
-		if err != nil {
-			return err
-		}
-		funcType.ArgTypes = argTypes
-		funcType.ReturnType = returnType
+	}
+	funcType := &FunctionType{BaseType: tc.newType()}
+	typeParams, err := tc.resolveTypeParams(funcType, decl.TypeParams)
+	if err != nil {
+		return err
+	}
+	funcType.typeParams = typeParams
+	argTypes, returnType, err := tc.resolveFunctionArgsAndReturnType(decl.Args, decl.ReturnType)
+	if err != nil {
+		return err
+	}
+	funcType.ArgTypes = argTypes
+	funcType.ReturnType = returnType
+	if tc.checkingMode != insideTraitOrImplMode {
 		if decl.Name == "main" {
 			if len(funcType.ArgTypes) > 0 {
 				return errors.Errorf("%s: main function must not have arguments", decl.Span())
@@ -1016,8 +950,8 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 		if err := tc.typeScope.declareType(string(decl.Name), funcType, decl.Span()); err != nil {
 			return err
 		}
-		tc.typeInfo.Set(decl, &DeclaredType{Type: funcType})
 	}
+	tc.typeInfo.Set(decl, &DeclaredType{Type: funcType})
 	return nil
 }
 
@@ -1028,12 +962,12 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 		return err
 	}
 	declaredType := tc.typeInfo.MustLookup(fn.Decl).(*DeclaredType)
-	callableType := declaredType.Type.(CallableType)
-	tc.declareSymbol(callableType.Id(), fn.Decl.Name.String())
+	functionType := declaredType.Type.(*FunctionType)
+	tc.declareSymbol(functionType.Id(), fn.Decl.Name.String())
 	tc.typeInfo.Set(fn, declaredType)
 	tc.enterScope(fn)
 	defer tc.exitScope()
-	argTypes := callableType.CallArgTypes()
+	argTypes := functionType.ArgTypes
 	for i, arg := range fn.Decl.Args {
 		argType := argTypes[i]
 		varInfo := variableInfo{type_: argType, isFunctionArg: true, mutable: false, span: arg.Span}
@@ -1064,9 +998,9 @@ func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.
 		return err
 	}
 	for _, methodDecl := range trait.MethodDecls {
-		methodType := tc.typeInfo.MustLookupDeclaredType(methodDecl).Type.(*MethodType)
+		methodType := tc.typeInfo.MustLookupDeclaredType(methodDecl).Type.(*FunctionType)
 		methodType.ReceiverType = traitType
-		methodAndName := TypeAndName[MethodType]{Name: methodDecl.Name, Type: *methodType}
+		methodAndName := TypeAndName[FunctionType]{Name: methodDecl.Name, Type: *methodType}
 		traitType.Methods = append(traitType.Methods, methodAndName)
 	}
 	tc.declareSymbol(traitType.Id(), trait.Name.String())
@@ -1094,7 +1028,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 		return err
 	}
 	var traitType *TraitType = nil
-	unimplementedTraitMethods := map[ast.Ident]*TypeAndName[MethodType]{}
+	unimplementedTraitMethods := map[ast.Ident]*TypeAndName[FunctionType]{}
 	if impl.ImplementsTrait() {
 		traitType_, found := tc.typeScope.lookupType(string(impl.Trait))
 		if !found {
@@ -1121,9 +1055,9 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 				"%s: method name %q already used in struct type %q", decl.Span(), decl.Name, structSymbol.Name)
 		}
 		typeDecl := tc.typeInfo.MustLookupDeclaredType(method)
-		methodType, ok := typeDecl.Type.(*MethodType)
+		methodType, ok := typeDecl.Type.(*FunctionType)
 		if !ok {
-			return errors.Errorf("%s: type is not a method type: %s", method.Span(), typeDecl)
+			return errors.Errorf("%s: type is not a function type: %s", method.Span(), typeDecl)
 		}
 		methodType.ReceiverType = structType
 		if traitType != nil {
@@ -1146,7 +1080,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 			}
 			delete(unimplementedTraitMethods, decl.Name)
 		}
-		structType.Methods = append(structType.Methods, TypeAndName[MethodType]{Name: decl.Name, Type: *methodType})
+		structType.Methods = append(structType.Methods, TypeAndName[FunctionType]{Name: decl.Name, Type: *methodType})
 		tc.typeInfo.Set(method, &DeclaredType{Type: methodType})
 	}
 	if traitType != nil && len(unimplementedTraitMethods) > 0 {

@@ -37,4 +37,7 @@ fn main() {
     let printer = print_int
     let mather = do_math
     printer(mather(100, 200, adder))
+    print(", ")
+    let foo_add3 = Foo.add3
+    print_int(do_math(1000, 1000, foo_add3))
 }

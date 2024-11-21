@@ -1083,13 +1083,13 @@ func (dt *DeclaredTypes) declare(ty typed.Type) {
 		}
 		structType := &StructType{Fields: fieldTypes}
 		dt.Types[ty.Id()] = structType
-	case typed.CallableType:
-		args := make([]FunctionArg, len(ty.CallArgTypes()))
-		for i, arg := range ty.CallArgTypes() {
+	case *typed.FunctionType:
+		args := make([]FunctionArg, len(ty.ArgTypes))
+		for i, arg := range ty.ArgTypes {
 			argType := dt.MustLookup(arg)
 			args[i] = FunctionArg{Type: argType, Register: newRegister(i+1, argType)}
 		}
-		returnType := dt.MustLookup(ty.CallReturnType())
+		returnType := dt.MustLookup(ty.ReturnType)
 		funcType := &FunctionType{Args: args, ReturnType: returnType}
 		dt.Types[ty.Id()] = funcType
 	default:
@@ -1100,10 +1100,10 @@ func (dt *DeclaredTypes) declare(ty typed.Type) {
 func declareFunction(
 	declaredTypes *DeclaredTypes,
 	rootSymbolTable *symbolTable,
-	functionType typed.CallableType,
+	functionType *typed.FunctionType,
 ) *FunctionDefinition {
 	args := []FunctionArg{}
-	for i, argType := range functionType.CallArgTypes() {
+	for i, argType := range functionType.ArgTypes {
 		if callArgFuncType, ok := argType.(*typed.FunctionType); ok {
 			declareFunction(declaredTypes, rootSymbolTable, callArgFuncType)
 		}
@@ -1114,7 +1114,7 @@ func declareFunction(
 		}
 		args = append(args, irArg)
 	}
-	returnType := declaredTypes.MustLookup(functionType.CallReturnType())
+	returnType := declaredTypes.MustLookup(functionType.ReturnType)
 	res := &FunctionDefinition{
 		Id:   functionType.Id(),
 		Type: FunctionType{Args: args, ReturnType: returnType},

@@ -869,7 +869,7 @@ func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 
 // Parse an expression and then look at the next token to determine whether it's a
 // member expression or call expression.
-// Even though syntactically possible we forbid some expressions from being callable
+// Even though syntactically possible, we forbid some expressions from being callable
 // or the lhs of a member expression like the if expression. You would have to use
 // parenthesis around those expressions to call them or use them as a member expression.
 func (p *Parser) parseExpressionWithPostfix() (Expression, error) {

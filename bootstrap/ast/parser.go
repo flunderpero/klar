@@ -37,17 +37,11 @@ func (n *node) Span() token.Span {
 	return n.span
 }
 
-type TypeIdent string
-
-func (ty TypeIdent) String() string {
-	return string(ty)
-}
-
 type Ident string
 
 type TypeParam struct {
 	node
-	Name TypeIdent
+	Name Ident
 }
 
 func (t TypeParam) String() string {
@@ -81,7 +75,7 @@ type Type interface {
 
 type SimpleType struct {
 	node
-	Name TypeIdent
+	Name Ident
 }
 
 func (t SimpleType) String() string {
@@ -92,7 +86,7 @@ func (t SimpleType) TypeName() string {
 	return string(t.Name)
 }
 
-func NewSimpleType(name TypeIdent, id NodeId, span token.Span) *SimpleType {
+func NewSimpleType(name Ident, id NodeId, span token.Span) *SimpleType {
 	return &SimpleType{node: node{id: id, span: span}, Name: name}
 }
 
@@ -235,12 +229,12 @@ func (f StructInitField) String() string {
 
 type StructInitExpression struct {
 	node
-	TypeIdent TypeIdent
-	Fields    []StructInitField
+	Ident  Ident
+	Fields []StructInitField
 }
 
 func (s *StructInitExpression) String() string {
-	return fmt.Sprintf("StructInitExpression\n%s%s", base.Indent(s.TypeIdent, 1), base.IndentSlice(s.Fields, 1))
+	return fmt.Sprintf("StructInitExpression\n%s%s", base.Indent(s.Ident, 1), base.IndentSlice(s.Fields, 1))
 }
 
 type CallExpression struct {
@@ -351,7 +345,7 @@ func (f StructTypeField) String() string {
 
 type StructTypeDeclaration struct {
 	node
-	Name   TypeIdent
+	Name   Ident
 	Fields []StructTypeField
 }
 
@@ -406,9 +400,9 @@ func (f *FunctionDefinition) String() string {
 
 type ImplDefinition struct {
 	node
-	Target  TypeIdent
+	Target  Ident
 	Methods []*FunctionDefinition
-	Trait   TypeIdent // optional
+	Trait   Ident // optional
 }
 
 func (impl *ImplDefinition) ImplementsTrait() bool {
@@ -421,7 +415,7 @@ func (impl ImplDefinition) String() string {
 
 type TraitDeclaration struct {
 	node
-	Name        TypeIdent
+	Name        Ident
 	MethodDecls []*FunctionDeclaration
 }
 
@@ -602,7 +596,7 @@ func (p *Parser) parseIfExpression() (*IfExpression, error) {
 	return &IfExpression{node: p.newNode(from), Condition: condition, TrueBody: trueBody, FalseBody: falseBody}, nil
 }
 
-func (p *Parser) parseStructInitExpression(typeIdent TypeIdent, from token.Span) (*StructInitExpression, error) {
+func (p *Parser) parseStructInitExpression(typeIdent Ident, from token.Span) (*StructInitExpression, error) {
 	if _, err := p.consume(token.LParen); err != nil {
 		return nil, err
 	}
@@ -613,7 +607,7 @@ func (p *Parser) parseStructInitExpression(typeIdent TypeIdent, from token.Span)
 		switch t.Kind {
 		case token.RParen:
 			p.consumeAny()
-			return &StructInitExpression{node: p.newNode(from), TypeIdent: typeIdent, Fields: fields}, nil
+			return &StructInitExpression{node: p.newNode(from), Ident: typeIdent, Fields: fields}, nil
 		case token.Comma:
 			if !expectComma {
 				return nil, errors.Errorf("unexpected token: %s", t)
@@ -681,7 +675,7 @@ func (p *Parser) parseType() (Type, error) {
 	switch t.Kind {
 	case token.TypeIdent:
 		p.consumeAny()
-		return &SimpleType{node: p.newNode(p.span()), Name: TypeIdent(t.Value)}, nil
+		return &SimpleType{node: p.newNode(p.span()), Name: Ident(t.Value)}, nil
 	case token.Fn:
 		return p.parseFunctionType()
 	}
@@ -713,7 +707,7 @@ func (p *Parser) parseTypeParams() ([]TypeParam, error) {
 		if err != nil {
 			return nil, err
 		}
-		param := TypeParam{node: p.newNode(typeIdent.Span), Name: TypeIdent(typeIdent.Value)}
+		param := TypeParam{node: p.newNode(typeIdent.Span), Name: Ident(typeIdent.Value)}
 		params = append(params, param)
 		switch p.peek().Kind {
 		case token.Comma:
@@ -946,7 +940,7 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 		return &IdentExpression{node: p.newNode(from), Ident: Ident(t.Value)}, nil
 	case token.TypeIdent:
 		p.consumeAny()
-		ident := TypeIdent(t.Value)
+		ident := Ident(t.Value)
 		switch p.peek().Kind {
 		case token.LParen:
 			return p.parseStructInitExpression(ident, from)
@@ -1012,7 +1006,7 @@ func (p *Parser) parseStructDeclaration() (*StructTypeDeclaration, error) {
 		switch t.Kind {
 		case token.RCurly:
 			p.consumeAny()
-			return &StructTypeDeclaration{node: p.newNode(from), Name: TypeIdent(identToken.Value), Fields: fields}, nil
+			return &StructTypeDeclaration{node: p.newNode(from), Name: Ident(identToken.Value), Fields: fields}, nil
 		case token.Ident:
 			from := p.span()
 			p.consumeAny()
@@ -1039,8 +1033,8 @@ func (p *Parser) parseImplDefinition() (*ImplDefinition, error) {
 	if err != nil {
 		return nil, err
 	}
-	target := TypeIdent(targetIdentToken.Value)
-	var trait TypeIdent = ""
+	target := Ident(targetIdentToken.Value)
+	var trait Ident = ""
 	if p.peek().Kind == token.For {
 		p.consumeAny()
 		traitIdentToken, err := p.consume(token.TypeIdent)
@@ -1048,7 +1042,7 @@ func (p *Parser) parseImplDefinition() (*ImplDefinition, error) {
 			return nil, err
 		}
 		trait = target
-		target = TypeIdent(traitIdentToken.Value)
+		target = Ident(traitIdentToken.Value)
 	}
 	if _, err = p.consume(token.LCurly); err != nil {
 		return nil, err
@@ -1093,7 +1087,7 @@ func (p *Parser) parseTraitDeclaration() (*TraitDeclaration, error) {
 			p.consumeAny()
 			return &TraitDeclaration{
 				node:        p.newNode(from),
-				Name:        TypeIdent(typeIdentToken.Value),
+				Name:        Ident(typeIdentToken.Value),
 				MethodDecls: methodDecls,
 			}, nil
 		case token.Fn:

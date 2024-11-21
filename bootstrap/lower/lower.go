@@ -158,7 +158,7 @@ func (l *lower) convertMethodToFunction(method *typed.MethodType) *typed.Functio
 }
 
 func (l *lower) convertToTypeExpression(expr ast.Expression, ty typed.Type) *ast.TypeExpression {
-	simpleType := ast.NewSimpleType(ast.TypeIdent(ty.Id().String()), l.newNodeId(), expr.Span())
+	simpleType := ast.NewSimpleType(ast.Ident(ty.Id().String()), l.newNodeId(), expr.Span())
 	return ast.NewTypeExpression(simpleType, expr.Id(), expr.Span())
 
 }
@@ -181,7 +181,7 @@ func (l *lower) VisitReferenceExpression(expr ast.ReferenceExpression) (ast.Expr
 			l.addFunctionSpecialization(functionType, nil)
 		}
 	case *ast.TypeExpression:
-		simpleType := ast.NewSimpleType(ast.TypeIdent(ty.Id().String()), exprKind.Type.Id(), expr.Span())
+		simpleType := ast.NewSimpleType(ast.Ident(ty.Id().String()), exprKind.Type.Id(), expr.Span())
 		exprKind.Type = simpleType
 	default:
 		panic(fmt.Sprintf("unexpected type reference: %T", expr))
@@ -264,7 +264,7 @@ func (l *lower) VisitFunctionDefinition(def *ast.FunctionDefinition, w Transform
 // Replace the struct name with its type id.
 func (l *lower) VisitStructTypeDeclaration(decl *ast.StructTypeDeclaration) (*ast.StructTypeDeclaration, bool) {
 	ty := l.typeInfo.MustLookup(decl).(*typed.DeclaredType).Type
-	decl.Name = ast.TypeIdent(ty.Id().String())
+	decl.Name = ast.Ident(ty.Id().String())
 	return decl, true
 }
 

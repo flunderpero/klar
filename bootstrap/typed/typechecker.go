@@ -148,7 +148,7 @@ type GenericType interface {
 type TypeParam struct {
 	BaseType
 	GenericType GenericType
-	Name        ast.TypeIdent
+	Name        ast.Ident
 	Index       int
 }
 
@@ -927,13 +927,13 @@ func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression,
 	if err := w.WalkStructInitExpression(expr); err != nil {
 		return err
 	}
-	structType_, found := tc.typeScope.lookupType(string(expr.TypeIdent))
+	structType_, found := tc.typeScope.lookupType(string(expr.Ident))
 	if !found {
-		return errors.Errorf("%s: type %q not found for struct init expression", expr.Span(), expr.TypeIdent)
+		return errors.Errorf("%s: type %q not found for struct init expression", expr.Span(), expr.Ident)
 	}
 	structType, isType := structType_.(*StructType)
 	if !isType {
-		return errors.Errorf("%s: type %q is not a struct type", expr.Span(), expr.TypeIdent)
+		return errors.Errorf("%s: type %q is not a struct type", expr.Span(), expr.Ident)
 	}
 	for _, initField := range expr.Fields {
 		structField, found := structType.FindField(initField.Name, initField.Span)

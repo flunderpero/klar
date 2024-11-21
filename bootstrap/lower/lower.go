@@ -3,13 +3,10 @@
 
 This lowering pass will:
 
-  - rename all types (functions, structs) to the the type id to make them globally
-    unique and adapt all `ReferenceExpression` accordingly.
+  - rename all types (functions, structs) to their type id to make them globally
+    unique and adapt all `IdentExpression` accordingly.
 
-  - change the type of a `ReferenceExpression` that references a function with
-    `IdentExpression` to the correct `TypeExpression`.
-
-  - convert `MemberExpression` to `TypeExpression` if it points to a static method.
+  - convert `MemberExpression` to `IdentExpression` if it points to a static method.
 
   - convert all calls to methods to regular function calls with the receiver
     as the first argument if the method is not static.
@@ -137,11 +134,6 @@ func (l *lower) addFunctionSpecialization(declType *typed.FunctionType, call *ty
 	return funcSpec.SpecializedType
 }
 
-func (l *lower) newNodeId() ast.NodeId {
-	l.nextNodeId++
-	return ast.NodeId(l.nextNodeId)
-}
-
 func (l *lower) newTypeId() typed.TypeId {
 	l.nextTypeId++
 	return typed.TypeId(l.nextTypeId)
@@ -157,34 +149,20 @@ func (l *lower) convertMethodToFunction(method *typed.MethodType) *typed.Functio
 	return functionType
 }
 
-func (l *lower) convertToTypeExpression(expr ast.Expression, ty typed.Type) *ast.TypeExpression {
-	simpleType := ast.NewSimpleType(ast.Ident(ty.Id().String()), l.newNodeId(), expr.Span())
-	return ast.NewTypeExpression(simpleType, expr.Id(), expr.Span())
-
+func (l *lower) convertToTypeIdIdentExpression(expr ast.Expression, ty typed.Type) *ast.IdentExpression {
+	return ast.NewIdentExpression(ast.Ident(ty.Id().String()), expr.Id(), expr.Span())
 }
 
 // Convert and `IdentExpression` to a `TypeExpression` if it points to a function type.
-func (l *lower) VisitReferenceExpression(expr ast.ReferenceExpression) (ast.Expression, bool) {
+func (l *lower) VisitIdentExpression(expr *ast.IdentExpression) (ast.Expression, bool) {
 	ty, isTypeReference := l.typeInfo.LookupTypeBinding(expr)
 	if !isTypeReference {
 		return expr, true
 	}
-	switch exprKind := expr.(type) {
-	case *ast.IdentExpression:
-		if functionType, isFunction := ty.(*typed.FunctionType); isFunction {
-			// Functions could not be determined as TypeExpressions during parsing because the
-			// parser can only identify TypeIdent as a TypeExpression. Now that typechecking
-			// has confirmed the type, we can convert the expression from an `IdentExpression`
-			// to the proper `TypeExpression`.
-			expr = l.convertToTypeExpression(expr, ty)
-			// Since the function has been referenced, we need to generate code for it.
-			l.addFunctionSpecialization(functionType, nil)
-		}
-	case *ast.TypeExpression:
-		simpleType := ast.NewSimpleType(ast.Ident(ty.Id().String()), exprKind.Type.Id(), expr.Span())
-		exprKind.Type = simpleType
-	default:
-		panic(fmt.Sprintf("unexpected type reference: %T", expr))
+	if functionType, isFunction := ty.(*typed.FunctionType); isFunction {
+		expr = l.convertToTypeIdIdentExpression(expr, ty)
+		// Since the function has been referenced, we need to generate code for it.
+		l.addFunctionSpecialization(functionType, nil)
 	}
 	return expr, true
 }
@@ -204,7 +182,7 @@ func (l *lower) VisitMemberExpression(expr *ast.MemberExpression, w TransformWal
 		return expr, true
 	}
 	functionType := l.convertMethodToFunction(method)
-	res := l.convertToTypeExpression(expr, functionType)
+	res := l.convertToTypeIdIdentExpression(expr, functionType)
 	l.typeInfo.Set(res, functionType)
 	// Since the function has been referenced, we need to generate code for it.
 	l.addFunctionSpecialization(functionType, nil)
@@ -232,7 +210,7 @@ func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker)
 		receiver := expr.Callee.(*ast.MemberExpression).Target
 		receiverType := l.typeInfo.MustLookup(receiver)
 		expr.Args = append([]ast.Expression{receiver}, expr.Args...)
-		expr.Callee = l.convertToTypeExpression(expr.Callee, functionType)
+		expr.Callee = l.convertToTypeIdIdentExpression(expr.Callee, functionType)
 		call := l.typeInfo.MustLookupCall(expr)
 		call.ArgTypes = append([]typed.Type{receiverType}, call.ArgTypes...)
 		functionType = l.addFunctionSpecialization(functionType, call)

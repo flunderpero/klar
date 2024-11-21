@@ -559,15 +559,22 @@ type symbolTable struct {
 	parent  *symbolTable
 }
 
-func (s *symbolTable) lookup(name ast.Ident) Register {
+func (s *symbolTable) mustLookup(name ast.Ident) Register {
+	if reg, found := s.lookup(name); found {
+		return reg
+	}
+	panic(fmt.Sprintf("undeclared symbol: %s", name))
+}
+
+func (s *symbolTable) lookup(name ast.Ident) (Register, bool) {
 	table := s
 	for table != nil {
 		if reg, found := table.symbols[name]; found {
-			return reg
+			return reg, true
 		}
 		table = table.parent
 	}
-	panic(fmt.Sprintf("undeclared symbol: %s", name))
+	return Register{}, false
 }
 
 func (s *symbolTable) declare(name ast.Ident, reg Register) {
@@ -669,7 +676,7 @@ func (g *generator) newBlock(predecessors ...*Block) *Block {
 
 func (g *generator) updateRegisterConstraints(symbolTableBefore map[ast.Ident]Register) {
 	for symbol, regBefore := range symbolTableBefore {
-		regNow := g.symbolTable.lookup(symbol)
+		regNow := g.symbolTable.mustLookup(symbol)
 		if regNow.Id != regBefore.Id {
 			g.registerConstraints.add(regNow, regBefore)
 		}
@@ -714,55 +721,33 @@ func (g *generator) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) 
 	return nil
 }
 
-func (g *generator) VisitReferenceExpression(expr ast.ReferenceExpression) error {
-	switch expr := expr.(type) {
-	case *ast.IdentExpression:
-		reg := g.symbolTable.lookup(expr.Ident)
+func (g *generator) VisitIdentExpression(expr *ast.IdentExpression) error {
+	if reg, found := g.symbolTable.lookup(expr.Ident); found {
 		g.registerByNodeId[expr.Id()] = reg
-	case *ast.TypeExpression:
-		switch ty := expr.Type.(type) {
-		case *ast.SimpleType:
-			typedTy := g.typeInfo.MustLookup(expr)
-			sourceType := g.declaredTypes.MustLookup(typedTy)
-			var source GetPointerSource
-			if definedFunc, ok := g.isDefinedFunction(typedTy.Id()); ok {
-				source = definedFunc
-			} else {
-				source = g.symbolTable.lookup(ast.Ident(ty.Name))
-			}
-			reg := g.nextRegister(&PointerType{ElementType: sourceType})
-			g.append(&GetPointer{
-				register:   reg,
-				Source:     source,
-				SourceType: sourceType,
-				FieldIndex: 0,
-			}, expr)
-			g.registerByNodeId[expr.Id()] = reg
-		default:
-			panic(fmt.Sprintf("unknown type expression type: %T", expr.Type))
-		}
-	default:
-		panic(fmt.Sprintf("VisitReferenceExpression not implemented for expression type: %T", expr))
+		return nil
 	}
+	typedTy := g.typeInfo.MustLookup(expr)
+	sourceType := g.declaredTypes.MustLookup(typedTy)
+	var source GetPointerSource
+	if definedFunc, ok := g.isDefinedFunction(typedTy.Id()); ok {
+		source = definedFunc
+	} else {
+		source = g.symbolTable.mustLookup(expr.Ident)
+	}
+	reg := g.nextRegister(&PointerType{ElementType: sourceType})
+	g.append(&GetPointer{
+		register:   reg,
+		Source:     source,
+		SourceType: sourceType,
+		FieldIndex: 0,
+	}, expr)
+	g.registerByNodeId[expr.Id()] = reg
 	return nil
-}
-
-func (g *generator) isDirectCall(callee ast.Expression) (DefinedFunction, bool) {
-	switch expr := callee.(type) {
-	case *ast.TypeExpression:
-		switch expr.Type.(type) {
-		case *ast.SimpleType:
-			ty := g.typeInfo.MustLookup(expr)
-			return g.isDefinedFunction(ty.Id())
-		}
-	}
-	return DefinedFunction{}, false
-
 }
 
 func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) error {
 	var callee Callee
-	if definedFunc, ok := g.isDirectCall(expr.Callee); ok {
+	if definedFunc, ok := g.isDefinedFunction(g.typeInfo.MustLookup(expr.Callee).Id()); ok {
 		// We need to walk the arguments ourselves since we are not using the default walker.
 		for _, arg := range expr.Args {
 			if err := g.VisitNode(arg, w); err != nil {
@@ -989,7 +974,7 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 	}
 	reg := g.lookupRegisterByNode(stmt.Rhs)
 	if stmt.IsAssignToMember() {
-		sourceReg := g.symbolTable.lookup(stmt.Variable.Ident)
+		sourceReg := g.symbolTable.mustLookup(stmt.Variable.Ident)
 		structType := g.typeInfo.MustLookup(stmt.Variable).(*typed.StructType)
 		sourceType := g.lookupType(stmt.Variable).(*StructType)
 		fieldIndex, found := structType.FindFieldIndex(*stmt.Field, stmt.Span())

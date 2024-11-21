@@ -528,14 +528,14 @@ func newSymbolScope(node ast.Node, parent *SymbolScope) *SymbolScope {
 type TypeInfo struct {
 	types   map[ast.NodeId]Type
 	symbols map[string]*Symbol
-	// The type an `ReferenceExpression` points to if it does not refer to a variable.
-	typeBindings map[ast.ReferenceExpression]Type
+	// The type an `IdentExpression` points to if it does not refer to a variable.
+	typeBindings map[*ast.IdentExpression]Type
 	// Record the concrete type of a function at call time.
 	calls map[*ast.CallExpression]Call
 	Main  *FunctionType
 }
 
-func (m *TypeInfo) LookupTypeBinding(expr ast.ReferenceExpression) (Type, bool) {
+func (m *TypeInfo) LookupTypeBinding(expr *ast.IdentExpression) (Type, bool) {
 	declaration, found := m.typeBindings[expr]
 	return declaration, found
 }
@@ -722,31 +722,13 @@ func (tc *typeChecker) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpressio
 	return nil
 }
 
-func (tc *typeChecker) VisitReferenceExpression(expr ast.ReferenceExpression) error {
-	var ty Type
-	switch expr := expr.(type) {
-	case *ast.TypeExpression:
-		switch expr := expr.Type.(type) {
-		case *ast.SimpleType:
-			simpleTy, err := tc.lookupTypeOfNode(expr)
-			if err != nil {
-				return err
-			}
-			ty = simpleTy
-		default:
-			return errors.Errorf("%s: unexpected type expression type: %T", expr.Span(), expr)
-		}
-	case *ast.IdentExpression:
-		identTy, found := tc.typeScope.lookupType(expr.Ident.String())
-		if !found {
-			return errors.Errorf("%s: type not found for identifier %s", expr.Span(), expr.Ident)
-		}
-		ty = identTy
-		if _, _, ok := tc.typeScope.lookupVariable(ast.Ident(expr.Ident.String())); !ok {
-			tc.typeInfo.typeBindings[expr] = ty
-		}
-	default:
-		panic(fmt.Sprintf("unexpected reference expression type: %T", expr))
+func (tc *typeChecker) VisitIdentExpression(expr *ast.IdentExpression) error {
+	ty, found := tc.typeScope.lookupType(expr.Ident.String())
+	if !found {
+		return errors.Errorf("%s: type not found for identifier %s", expr.Span(), expr.Ident)
+	}
+	if _, _, ok := tc.typeScope.lookupVariable(expr.Ident); !ok {
+		tc.typeInfo.typeBindings[expr] = ty
 	}
 	tc.typeInfo.Set(expr, ty)
 	return nil
@@ -1297,7 +1279,7 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 		typeInfo: &TypeInfo{
 			types:        make(map[ast.NodeId]Type),
 			symbols:      make(map[string]*Symbol),
-			typeBindings: make(map[ast.ReferenceExpression]Type),
+			typeBindings: make(map[*ast.IdentExpression]Type),
 			calls:        make(map[*ast.CallExpression]Call)},
 		typeScope:     newTypeScope(nil),
 		symbolScope:   newSymbolScope(node, nil),

@@ -30,7 +30,7 @@ type Transformer interface {
 	VisitStructInitExpression(expr *ast.StructInitExpression, w TransformWalker) (ast.Expression, bool)
 	VisitIfExpression(expr *ast.IfExpression, w TransformWalker) (ast.Expression, bool)
 	VisitBinaryExpression(expr *ast.BinaryExpression, w TransformWalker) (ast.Expression, bool)
-	VisitReferenceExpression(expr ast.ReferenceExpression) (ast.Expression, bool)
+	VisitIdentExpression(expr *ast.IdentExpression) (ast.Expression, bool)
 	VisitStringLiteralExpression(expr *ast.StringLiteralExpression) (ast.Expression, bool)
 	VisitIntLiteralExpression(expr *ast.IntLiteralExpression) (ast.Expression, bool)
 	VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) (ast.Expression, bool)
@@ -60,7 +60,7 @@ type TransformWalker interface {
 
 type DefaultTransformer struct{}
 
-func (_ *DefaultTransformer) VisitReferenceExpression(expr ast.ReferenceExpression) (ast.ReferenceExpression, bool) {
+func (_ *DefaultTransformer) VisitIdentExpression(expr *ast.IdentExpression) (ast.Expression, bool) {
 	return expr, true
 }
 
@@ -158,8 +158,8 @@ type DefaultTransformWalker struct {
 
 func (w *DefaultTransformWalker) WalkExpression(expr ast.Expression) (ast.Expression, bool) {
 	switch expr := expr.(type) {
-	case ast.ReferenceExpression:
-		return w.Transformer.VisitReferenceExpression(expr)
+	case *ast.IdentExpression:
+		return w.Transformer.VisitIdentExpression(expr)
 	case *ast.StringLiteralExpression:
 		return w.Transformer.VisitStringLiteralExpression(expr)
 	case *ast.IntLiteralExpression:
@@ -326,7 +326,7 @@ func (w *DefaultTransformWalker) WalkVariableDefinition(variable *ast.VariableDe
 }
 
 func (w *DefaultTransformWalker) WalkAssignmentStatement(stmt *ast.AssignmentStatement) (*ast.AssignmentStatement, bool) {
-	variable, variableOk := w.Transformer.VisitReferenceExpression(stmt.Variable)
+	variable, variableOk := w.Transformer.VisitIdentExpression(stmt.Variable)
 	rhs, rhsOk := w.Transformer.VisitExpression(stmt.Rhs, w)
 	if variableOk != rhsOk {
 		panic("either both or none of variable and rhs can be deleted")

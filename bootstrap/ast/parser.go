@@ -122,26 +122,6 @@ type Expression interface {
 	Node
 }
 
-type ReferenceExpression interface {
-	Expression
-	ReferenceExpressionMarker()
-}
-
-type TypeExpression struct {
-	node
-	Type Type
-}
-
-func (expr TypeExpression) String() string {
-	return fmt.Sprintf("TypeExpression\n%s", base.Indent(expr.Type, 1))
-}
-
-func (expr *TypeExpression) ReferenceExpressionMarker() {}
-
-func NewTypeExpression(ty Type, id NodeId, span token.Span) *TypeExpression {
-	return &TypeExpression{node: node{id: id, span: span}, Type: ty}
-}
-
 type IdentExpression struct {
 	node
 	Ident Ident
@@ -154,8 +134,6 @@ func NewIdentExpression(ident Ident, id NodeId, span token.Span) *IdentExpressio
 func (expr *IdentExpression) String() string {
 	return fmt.Sprintf("IdentExpression %q", expr.Ident)
 }
-
-func (expr *IdentExpression) ReferenceExpressionMarker() {}
 
 type StringLiteralExpression struct {
 	node
@@ -945,8 +923,7 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 		case token.LParen:
 			return p.parseStructInitExpression(ident, from)
 		}
-		expr := &TypeExpression{node: p.newNode(from), Type: &SimpleType{node: p.newNode(from), Name: ident}}
-		return expr, nil
+		return &IdentExpression{node: p.newNode(from), Ident: ident}, nil
 	case token.Self:
 		p.consumeAny()
 		return &IdentExpression{node: p.newNode(from), Ident: Ident("self")}, nil

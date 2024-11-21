@@ -155,7 +155,7 @@ func (v *printTypedASTWalker) VisitNode(node ast.Node, w ast.Walker) error {
 	}
 	ty := v.typeInfo.MustLookup(node)
 	suffix := ""
-	if expr, ok := node.(ast.ReferenceExpression); ok {
+	if expr, ok := node.(*ast.IdentExpression); ok {
 		if _, ok := v.typeInfo.LookupTypeBinding(expr); ok {
 			suffix = " !typebinding"
 		}

@@ -203,11 +203,13 @@ func (w *DefaultTransformWalker) WalkCallExpression(expr *ast.CallExpression) (a
 		return nil, false
 	}
 	expr.Callee = callee
-	args := []ast.Expression{}
+	args := []ast.CallArg{}
 	for _, arg := range expr.Args {
-		transformed, ok := w.Transformer.VisitExpression(arg, w)
+		transformed, ok := w.Transformer.VisitExpression(arg.Value, w)
 		if ok {
-			args = append(args, transformed)
+			callArg := arg
+			callArg.Value = transformed
+			args = append(args, callArg)
 		}
 	}
 	expr.Args = args

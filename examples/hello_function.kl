@@ -32,4 +32,7 @@ fn main() {
     print_two_ints_and_a_string(42, " <<< an int on both sides >>> ", 24)
     print(return_string())
     print_int(return_int())
+    print(" ")
+    -- Named arguments
+    print_two_ints_and_a_string(42, second_int=24, string=" named arguments ")
 }

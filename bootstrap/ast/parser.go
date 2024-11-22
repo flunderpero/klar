@@ -217,10 +217,25 @@ func (s *StructInitExpression) String() string {
 	return fmt.Sprintf("StructInitExpression\n%s%s", base.Indent(s.Ident, 1), base.IndentSlice(s.Fields, 1))
 }
 
+type CallArg struct {
+	// Optional, maybe set to "".
+	Name  Ident
+	Value Expression
+	Span  token.Span
+}
+
+func (f CallArg) String() string {
+	name := ""
+	if f.Name != "" {
+		name = fmt.Sprintf("%s\n", f.Name)
+	}
+	return fmt.Sprintf("%s%s", name, base.Indent(f.Value, 1))
+}
+
 type CallExpression struct {
 	node
 	Callee Expression
-	Args   []Expression
+	Args   []CallArg
 }
 
 func (expr *CallExpression) String() string {
@@ -503,8 +518,9 @@ func (p *Parser) parseCallExpression(callee Expression) (*CallExpression, error)
 	if _, err := p.consume(token.LParen); err != nil {
 		return nil, err
 	}
-	args := []Expression{}
+	args := []CallArg{}
 	done := false
+	hasNamedArgs := false
 	for p.index < len(p.tokens) && !done {
 		t := p.peek()
 		switch t.Kind {
@@ -514,10 +530,23 @@ func (p *Parser) parseCallExpression(callee Expression) (*CallExpression, error)
 		case token.Comma:
 			p.consumeAny()
 		default:
-			arg, err := p.parseExpression()
-			if err != nil {
-				return nil, errors.Errorf("failed to parse call argument: %v", err)
+			var name Ident = ""
+			if t.Kind == token.Ident && p.peek1().Kind == token.Equal {
+				name = Ident(t.Value)
+				p.consumeAny()
+				p.consumeAny()
+				hasNamedArgs = true
+				if slices.ContainsFunc(args, func(arg CallArg) bool { return arg.Name == name }) {
+					return nil, errors.Errorf("%s: duplicate argument name %q", t.Span, name)
+				}
+			} else if hasNamedArgs {
+				return nil, errors.Errorf("%s: positional argument after named argument", t.Span)
 			}
+			value, err := p.parseExpression()
+			if err != nil {
+				return nil, errors.Wrapf(err, "%s: failed to parse call argument", t.Span)
+			}
+			arg := CallArg{Name: name, Value: value, Span: p.spanToHere(t.Span)}
 			args = append(args, arg)
 		}
 	}

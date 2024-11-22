@@ -185,7 +185,7 @@ func (w *DefaultWalker) WalkCallExpression(expr *CallExpression) error {
 		return err
 	}
 	for _, arg := range expr.Args {
-		if err := w.Visitor.VisitNode(arg, w); err != nil {
+		if err := w.Visitor.VisitNode(arg.Value, w); err != nil {
 			return err
 		}
 	}

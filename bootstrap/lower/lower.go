@@ -11,6 +11,8 @@ This lowering pass will:
   - convert all calls to methods to regular function calls with the receiver
     as the first argument if the method is not static.
 
+  - re-order the arguments in a `CallExpression` to be in the order of the function parameters.
+
   - remove all trait declarations.
 
   - record all function specializations (for monomorphization).
@@ -177,13 +179,31 @@ func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker)
 		return newExpr, true
 	}
 	functionType := l.typeInfo.MustLookup(expr.Callee).(*typed.FunctionType)
+	// Re-order the call arguments to be in the order of the function parameters.
+	callArgs := make([]ast.CallArg, len(expr.Args))
+	positionalArgIndex := 0
+	for _, callArg := range expr.Args {
+		if callArg.Name == "" {
+			callArgs[positionalArgIndex] = callArg
+			positionalArgIndex += 1
+			continue
+		}
+		for i, param := range functionType.Params {
+			if param.Name == callArg.Name {
+				callArgs[i] = callArg
+				break
+			}
+		}
+	}
+	expr.Args = callArgs
 	if !functionType.IsMethod() || functionType.IsStaticMethod() {
 		functionType = l.addFunctionSpecialization(functionType)
 		l.typeInfo.Set(expr.Callee, functionType)
 		return expr, true
 	}
 	receiver := expr.Callee.(*ast.MemberExpression).Target
-	expr.Args = append([]ast.Expression{receiver}, expr.Args...)
+	receiverCallArg := ast.CallArg{Name: "self", Value: receiver, Span: expr.Span()}
+	expr.Args = append([]ast.CallArg{receiverCallArg}, expr.Args...)
 	expr.Callee = l.convertToTypeIdIdentExpression(expr.Callee, functionType)
 	functionType = l.addFunctionSpecialization(functionType)
 	l.typeInfo.Set(expr.Callee, functionType)

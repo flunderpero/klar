@@ -32,17 +32,17 @@ type Type interface {
 
 var BuiltInPrintFunction = &FunctionType{
 	BaseType: BaseType{TypeId(100)},
-	Params:   []Type{StrType},
+	Params:   []FunctionParam{{Name: "value", Type: StrType}},
 	Result:   NoneType,
 }
 var BuiltInPrintIntFunction = &FunctionType{
 	BaseType: BaseType{TypeId(101)},
-	Params:   []Type{Int64Type},
+	Params:   []FunctionParam{{Name: "value", Type: Int64Type}},
 	Result:   NoneType,
 }
 var BuiltInUnsafeMallocFunction = &FunctionType{
 	BaseType: BaseType{TypeId(102)},
-	Params:   []Type{Int64Type},
+	Params:   []FunctionParam{{Name: "size", Type: Int64Type}},
 	Result:   Int64Type,
 }
 
@@ -284,36 +284,39 @@ type FunctionParam = TypeAndName[Type]
 
 type FunctionType struct {
 	BaseType
-	typeParams   []TypeParam
-	TypeArgs     []Type
-	ReceiverType Type
-	Params       []Type
-	Result       Type
+	typeParams []TypeParam
+	TypeArgs   []Type
+	Receiver   Type
+	Params     []FunctionParam
+	Result     Type
 }
 
 func (ty FunctionType) CloneWith(id TypeId, typeArgs []Type) *FunctionType {
 	return &FunctionType{
-		BaseType:     BaseType{id},
-		typeParams:   ty.typeParams,
-		TypeArgs:     typeArgs,
-		ReceiverType: ty.ReceiverType,
-		Params:       ty.Params,
-		Result:       ty.Result,
+		BaseType:   BaseType{id},
+		typeParams: ty.typeParams,
+		TypeArgs:   typeArgs,
+		Receiver:   ty.Receiver,
+		Params:     ty.Params,
+		Result:     ty.Result,
 	}
 }
 
 func (ty FunctionType) String() string {
 	typeToString := func(t Type) string {
-		if ty.ReceiverType != nil && t.Id() == ty.ReceiverType.Id() {
+		if ty.Receiver != nil && t.Id() == ty.Receiver.Id() {
 			return "Self"
 		}
 		return t.Id().String()
 	}
 	receiverType := ""
-	if ty.ReceiverType != nil {
-		receiverType = fmt.Sprintf("\n    (ReceiverType)\n%s", base.Indent(ty.ReceiverType.Id(), 2))
+	if ty.Receiver != nil {
+		receiverType = fmt.Sprintf("\n    (Receiver\n%s", base.Indent(ty.Receiver.Id(), 2))
 	}
-	params := base.Map(ty.Params, typeToString)
+	params := make([]string, len(ty.Params))
+	for i, param := range ty.Params {
+		params[i] = fmt.Sprintf("%s\n%s", param.Name, base.IndentString(typeToString(param.Type), 1))
+	}
 	result := typeToString(ty.Result)
 	return fmt.Sprintf(
 		"FunctionType%s%s%s\n    (Parameters)%s\n    (Result)\n%s",
@@ -329,17 +332,17 @@ func (ty FunctionType) IsGeneric() bool {
 }
 
 func (ty FunctionType) IsMethod() bool {
-	return ty.ReceiverType != nil
+	return ty.Receiver != nil
 }
 
 func (ty FunctionType) IsStaticMethod() bool {
-	return ty.IsMethod() && (len(ty.Params) == 0 || ty.Params[0].Id() != ty.ReceiverType.Id())
+	return ty.IsMethod() && (len(ty.Params) == 0 || ty.Params[0].Type.Id() != ty.Receiver.Id())
 }
 
 func (ty FunctionType) CheckSameSignatureIgnoringReceiverTypes(other *FunctionType, span token.Span) error {
 	match := func(thisType Type, otherType Type) bool {
-		if otherType == other.ReceiverType {
-			return thisType == ty.ReceiverType
+		if otherType == other.Receiver {
+			return thisType == ty.Receiver
 		}
 		return thisType == otherType
 	}
@@ -347,11 +350,11 @@ func (ty FunctionType) CheckSameSignatureIgnoringReceiverTypes(other *FunctionTy
 		return errors.Errorf("%s: parameter count does not match: %d != %d", span, len(ty.Params), len(other.Params))
 	}
 	if !match(ty.Result, other.Result) {
-		return errors.Errorf("%s: return types do not match: %s != %s", span, ty.Result, other.Result)
+		return errors.Errorf("%s: result types do not match: %s != %s", span, ty.Result, other.Result)
 	}
 	for i, param := range ty.Params {
 		otherParam := other.Params[i]
-		if !match(param, otherParam) {
+		if !match(param.Type, otherParam.Type) {
 			return errors.Errorf("%s: parameter types do not match: %s != %s", span, param, otherParam)
 		}
 	}
@@ -372,7 +375,7 @@ func (ty FunctionType) IsAssignableFrom(other Type) bool {
 			return false
 		}
 		for i, param := range ty.Params {
-			if !param.IsAssignableFrom(otherParams[i]) {
+			if !param.Type.IsAssignableFrom(otherParams[i].Type) {
 				return false
 			}
 		}
@@ -626,13 +629,15 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 		if res, found := tc.functionTypes[node.TypeName()]; found {
 			return &res, nil
 		}
-		params := make([]Type, len(node.Params))
+		params := make([]TypeAndName[Type], len(node.Params))
 		for i, astParam := range node.Params {
-			param, err := tc.lookupTypeOfNode(astParam)
+			argType, err := tc.lookupTypeOfNode(astParam)
 			if err != nil {
 				return nil, err
 			}
-			params[i] = param
+			// todo: `ast.functionType` does not include a name. Do we want to be able to include a
+			//       name?
+			params[i] = TypeAndName[Type]{Type: argType, Name: ""}
 		}
 		result, err := tc.lookupTypeOfNode(node.Result)
 		if err != nil {
@@ -683,18 +688,20 @@ func resolveTypeArgs(ty Type, typeParams []TypeParam, typeArgs []Type) Type {
 		for i, typeArg := range ty.TypeArgs {
 			funcTypeArgs[i] = resolveTypeArgs(typeArg, typeParams, typeArgs)
 		}
-		params := make([]Type, len(ty.Params))
+		params := make([]TypeAndName[Type], len(ty.Params))
 		for i, param := range ty.Params {
-			params[i] = resolveTypeArgs(param, typeParams, typeArgs)
+			param := param // Make a copy.
+			param.Type = resolveTypeArgs(param.Type, typeParams, typeArgs)
+			params[i] = param
 		}
 		result := resolveTypeArgs(ty.Result, typeParams, typeArgs)
 		return &FunctionType{
-			BaseType:     ty.BaseType,
-			typeParams:   ty.typeParams,
-			TypeArgs:     funcTypeArgs,
-			Params:       params,
-			Result:       result,
-			ReceiverType: ty.ReceiverType,
+			BaseType:   ty.BaseType,
+			typeParams: ty.typeParams,
+			TypeArgs:   funcTypeArgs,
+			Params:     params,
+			Result:     result,
+			Receiver:   ty.Receiver,
 		}
 	default:
 		for i, typeParam := range typeParams {
@@ -780,25 +787,32 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 	if !ok {
 		return errors.Errorf("%s: callee %q is not a function type", expr.Span(), functionType)
 	}
-	functionArgTypes := functionType.Params
+	funcParams := functionType.Params
 	if functionType.IsMethod() && !functionType.IsStaticMethod() {
-		functionArgTypes = functionArgTypes[1:]
+		funcParams = funcParams[1:]
 	}
-	if len(functionArgTypes) != len(expr.Args) {
+	if len(funcParams) != len(expr.Args) {
 		return errors.Errorf(
-			"%s: expected %d arguments, got %d for %s", expr.Span(), len(functionArgTypes), len(expr.Args), functionType)
+			"%s: expected %d arguments, got %d for %s", expr.Span(), len(funcParams), len(expr.Args), functionType)
 	}
-	argTypes := make([]Type, len(expr.Args))
+	seenParamIndexes := []int{}
 	for i, arg := range expr.Args {
-		argType := tc.typeInfo.MustLookup(arg)
-		argTypes[i] = argType
-	}
-	// Finally, verify argument and return types.
-	for i, argType := range argTypes {
-		functionArgType := functionArgTypes[i]
-		if !functionArgType.IsAssignableFrom(argType) {
+		argType := tc.typeInfo.MustLookup(arg.Value)
+		var paramIndex = i
+		if arg.Name != "" {
+			paramIndex = slices.IndexFunc(funcParams, func(p TypeAndName[Type]) bool { return p.Name == arg.Name })
+		}
+		if paramIndex < 0 {
+			return errors.Errorf("%s: parameter %q not found in function type %s", arg.Span, arg.Name, functionType)
+		}
+		if slices.Contains(seenParamIndexes, paramIndex) {
+			return errors.Errorf("%s: parameter %q is already assigned", arg.Span, arg.Name)
+		}
+		seenParamIndexes = append(seenParamIndexes, paramIndex)
+		param := funcParams[paramIndex]
+		if !param.Type.IsAssignableFrom(argType) {
 			return errors.Errorf(
-				"%s: expected argument %d to be of type %s, got %s", expr.Span(), i, functionArgType, argType)
+				"%s: expected argument %d to be of type %s, got %s", expr.Span(), paramIndex, param.Type, argType)
 		}
 	}
 	tc.typeInfo.Set(expr, functionType.Result)
@@ -907,16 +921,16 @@ func (tc *typeChecker) resolveTypeParams(genericType GenericType, astParams []as
 	return typeParams, nil
 }
 
-func (tc *typeChecker) resolveFunctionParamsAndResultTypes(
-	astParams []ast.FunctionParam, astResult ast.Type) (params []Type, result Type, err error) {
+func (tc *typeChecker) resolveFunctionParamsAndResult(
+	astParams []ast.FunctionParam, astResult ast.Type) (params []TypeAndName[Type], result Type, err error) {
 
-	params = make([]Type, len(astParams))
-	for i, astParam := range astParams {
-		param, err := tc.lookupTypeOfNode(astParam.Type)
+	params = make([]TypeAndName[Type], len(astParams))
+	for i, arg := range astParams {
+		argType, err := tc.lookupTypeOfNode(arg.Type)
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "%s: type %s not found for parameter %s", astParam.Span, astParam.Type, astParam.Name)
+			return nil, nil, errors.Wrapf(err, "%s: type %s not found for parameter %s", arg.Span, arg.Type, arg.Name)
 		}
-		params[i] = param
+		params[i] = TypeAndName[Type]{Type: argType, Name: arg.Name}
 	}
 	result, err = tc.lookupTypeOfNode(astResult)
 	if err != nil {
@@ -944,7 +958,7 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 	for i, typeParam := range typeParams {
 		funcType.TypeArgs[i] = typeParam
 	}
-	params, result, err := tc.resolveFunctionParamsAndResultTypes(decl.Params, decl.Result)
+	params, result, err := tc.resolveFunctionParamsAndResult(decl.Params, decl.Result)
 	if err != nil {
 		return err
 	}
@@ -983,8 +997,8 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 	params := functionType.Params
 	for i, astParam := range fn.Decl.Params {
 		param := params[i]
-		varInfo := variableInfo{type_: param, isFunctionParam: true, mutable: false, span: astParam.Span}
-		if err := tc.typeScope.declareVariable(string(astParam.Name), varInfo); err != nil {
+		varInfo := variableInfo{type_: param.Type, isFunctionParam: true, mutable: false, span: astParam.Span}
+		if err := tc.typeScope.declareVariable(string(param.Name), varInfo); err != nil {
 			return err
 		}
 	}
@@ -1012,7 +1026,7 @@ func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.
 	}
 	for _, methodDecl := range trait.MethodDecls {
 		methodType := tc.typeInfo.MustLookupDeclaredType(methodDecl).Type.(*FunctionType)
-		methodType.ReceiverType = traitType
+		methodType.Receiver = traitType
 		methodAndName := TypeAndName[FunctionType]{Name: methodDecl.Name, Type: *methodType}
 		traitType.Methods = append(traitType.Methods, methodAndName)
 	}
@@ -1072,7 +1086,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 		if !ok {
 			return errors.Errorf("%s: type is not a function type: %s", method.Span(), typeDecl)
 		}
-		methodType.ReceiverType = structType
+		methodType.Receiver = structType
 		if traitType != nil {
 			traitMethodType, err := traitType.FindMethod(decl.Name, decl.Span())
 			if err != nil {

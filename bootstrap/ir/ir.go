@@ -750,7 +750,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 	if definedFunc, ok := g.isDefinedFunction(g.typeInfo.MustLookup(expr.Callee).Id()); ok {
 		// We need to walk the arguments ourselves since we are not using the default walker.
 		for _, arg := range expr.Args {
-			if err := g.VisitNode(arg, w); err != nil {
+			if err := g.VisitNode(arg.Value, w); err != nil {
 				return err
 			}
 		}
@@ -763,7 +763,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 	}
 	args := []Register{}
 	for _, arg := range expr.Args {
-		args = append(args, g.lookupRegisterByNode(arg))
+		args = append(args, g.lookupRegisterByNode(arg.Value))
 	}
 	ty := g.typeInfo.MustLookup(expr.Callee)
 	funcType := g.declaredTypes.MustLookup(ty).(*FunctionType)
@@ -1086,7 +1086,7 @@ func (dt *DeclaredTypes) declare(ty typed.Type) {
 	case *typed.FunctionType:
 		params := make([]FunctionParam, len(ty.Params))
 		for i, tyParam := range ty.Params {
-			paramType := dt.MustLookup(tyParam)
+			paramType := dt.MustLookup(tyParam.Type)
 			params[i] = FunctionParam{Type: paramType, Register: newRegister(i+1, paramType)}
 		}
 		result := dt.MustLookup(ty.Result)
@@ -1104,10 +1104,10 @@ func declareFunction(
 ) *FunctionDefinition {
 	params := []FunctionParam{}
 	for i, tyParam := range functionType.Params {
-		if callArgFuncType, ok := tyParam.(*typed.FunctionType); ok {
+		if callArgFuncType, ok := tyParam.Type.(*typed.FunctionType); ok {
 			declareFunction(declaredTypes, rootSymbolTable, callArgFuncType)
 		}
-		paramType := declaredTypes.MustLookup(tyParam)
+		paramType := declaredTypes.MustLookup(tyParam.Type)
 		param := FunctionParam{
 			Type:     paramType,
 			Register: newRegister(i+1, paramType),
@@ -1171,9 +1171,8 @@ func GenerateIR(lowered *lower.LoweredAST, typeInfo *typed.TypeInfo) (*Module, e
 			definedFunctions:    &definedFunctions,
 		}
 		// Make function parameters visible.
-		for a, param := range funcSpec.FunctionDef.Decl.Params {
-			paramType := funcSpec.Specialized.Params[a]
-			ty := declaredTypes.MustLookup(paramType)
+		for _, param := range funcSpec.Specialized.Params {
+			ty := declaredTypes.MustLookup(param.Type)
 			reg := gen.nextRegister(ty)
 			gen.symbolTable.declare(param.Name, reg)
 		}

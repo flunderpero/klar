@@ -31,19 +31,19 @@ type Type interface {
 }
 
 var BuiltInPrintFunction = &FunctionType{
-	BaseType:   BaseType{TypeId(100)},
-	ArgTypes:   []Type{StrType},
-	ReturnType: NoneType,
+	BaseType: BaseType{TypeId(100)},
+	Params:   []Type{StrType},
+	Result:   NoneType,
 }
 var BuiltInPrintIntFunction = &FunctionType{
-	BaseType:   BaseType{TypeId(101)},
-	ArgTypes:   []Type{Int64Type},
-	ReturnType: NoneType,
+	BaseType: BaseType{TypeId(101)},
+	Params:   []Type{Int64Type},
+	Result:   NoneType,
 }
 var BuiltInUnsafeMallocFunction = &FunctionType{
-	BaseType:   BaseType{TypeId(102)},
-	ArgTypes:   []Type{Int64Type},
-	ReturnType: Int64Type,
+	BaseType: BaseType{TypeId(102)},
+	Params:   []Type{Int64Type},
+	Result:   Int64Type,
 }
 
 func IsBuiltInFunction(functionType *FunctionType) bool {
@@ -280,13 +280,15 @@ func (ty ImplType) String() string {
 	return fmt.Sprintf("ImplType\n%s", base.Indent(ty.ReceiverType, 1))
 }
 
+type FunctionParam = TypeAndName[Type]
+
 type FunctionType struct {
 	BaseType
 	typeParams   []TypeParam
 	TypeArgs     []Type
 	ReceiverType Type
-	ArgTypes     []Type
-	ReturnType   Type
+	Params       []Type
+	Result       Type
 }
 
 func (ty FunctionType) CloneWith(id TypeId, typeArgs []Type) *FunctionType {
@@ -295,8 +297,8 @@ func (ty FunctionType) CloneWith(id TypeId, typeArgs []Type) *FunctionType {
 		typeParams:   ty.typeParams,
 		TypeArgs:     typeArgs,
 		ReceiverType: ty.ReceiverType,
-		ArgTypes:     ty.ArgTypes,
-		ReturnType:   ty.ReturnType,
+		Params:       ty.Params,
+		Result:       ty.Result,
 	}
 }
 
@@ -311,15 +313,15 @@ func (ty FunctionType) String() string {
 	if ty.ReceiverType != nil {
 		receiverType = fmt.Sprintf("\n    (ReceiverType)\n%s", base.Indent(ty.ReceiverType.Id(), 2))
 	}
-	args := base.Map(ty.ArgTypes, typeToString)
-	returnType := typeToString(ty.ReturnType)
+	params := base.Map(ty.Params, typeToString)
+	result := typeToString(ty.Result)
 	return fmt.Sprintf(
-		"FunctionType%s%s%s\n    (Arguments)%s\n    (Return)\n%s",
+		"FunctionType%s%s%s\n    (Parameters)%s\n    (Result)\n%s",
 		receiverType,
 		base.IndentString(typeParamsString(ty.typeParams), 1),
 		base.IndentString(typeArgsString(ty.TypeArgs), 1),
-		base.IndentStringSlice(args, 2),
-		base.IndentString(returnType, 2))
+		base.IndentStringSlice(params, 2),
+		base.IndentString(result, 2))
 }
 
 func (ty FunctionType) IsGeneric() bool {
@@ -331,7 +333,7 @@ func (ty FunctionType) IsMethod() bool {
 }
 
 func (ty FunctionType) IsStaticMethod() bool {
-	return ty.IsMethod() && (len(ty.ArgTypes) == 0 || ty.ArgTypes[0].Id() != ty.ReceiverType.Id())
+	return ty.IsMethod() && (len(ty.Params) == 0 || ty.Params[0].Id() != ty.ReceiverType.Id())
 }
 
 func (ty FunctionType) CheckSameSignatureIgnoringReceiverTypes(other *FunctionType, span token.Span) error {
@@ -341,16 +343,16 @@ func (ty FunctionType) CheckSameSignatureIgnoringReceiverTypes(other *FunctionTy
 		}
 		return thisType == otherType
 	}
-	if len(ty.ArgTypes) != len(other.ArgTypes) {
-		return errors.Errorf("%s: argument count does not match: %d != %d", span, len(ty.ArgTypes), len(other.ArgTypes))
+	if len(ty.Params) != len(other.Params) {
+		return errors.Errorf("%s: parameter count does not match: %d != %d", span, len(ty.Params), len(other.Params))
 	}
-	if !match(ty.ReturnType, other.ReturnType) {
-		return errors.Errorf("%s: return types do not match: %s != %s", span, ty.ReturnType, other.ReturnType)
+	if !match(ty.Result, other.Result) {
+		return errors.Errorf("%s: return types do not match: %s != %s", span, ty.Result, other.Result)
 	}
-	for i, argType := range ty.ArgTypes {
-		otherArgType := other.ArgTypes[i]
-		if !match(argType, otherArgType) {
-			return errors.Errorf("%s: argument types do not match: %s != %s", span, argType, otherArgType)
+	for i, param := range ty.Params {
+		otherParam := other.Params[i]
+		if !match(param, otherParam) {
+			return errors.Errorf("%s: parameter types do not match: %s != %s", span, param, otherParam)
 		}
 	}
 	return nil
@@ -365,16 +367,16 @@ func (ty FunctionType) IsAssignableFrom(other Type) bool {
 		return true
 	}
 	if other, ok := other.(*FunctionType); ok {
-		otherArgTypes := other.ArgTypes
-		if len(ty.ArgTypes) != len(otherArgTypes) {
+		otherParams := other.Params
+		if len(ty.Params) != len(otherParams) {
 			return false
 		}
-		for i, argType := range ty.ArgTypes {
-			if !argType.IsAssignableFrom(otherArgTypes[i]) {
+		for i, param := range ty.Params {
+			if !param.IsAssignableFrom(otherParams[i]) {
 				return false
 			}
 		}
-		return ty.ReturnType.IsAssignableFrom(other.ReturnType)
+		return ty.Result.IsAssignableFrom(other.Result)
 	}
 	return false
 }
@@ -408,10 +410,10 @@ func (self *genericScope) declareTypeParam(name string, param *TypeParam, span t
 }
 
 type variableInfo struct {
-	type_         Type
-	isFunctionArg bool
-	mutable       bool
-	span          token.Span
+	type_           Type
+	isFunctionParam bool
+	mutable         bool
+	span            token.Span
 }
 
 type typeScope struct {
@@ -624,19 +626,19 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 		if res, found := tc.functionTypes[node.TypeName()]; found {
 			return &res, nil
 		}
-		argTypes := make([]Type, len(node.ArgTypes))
-		for i, arg := range node.ArgTypes {
-			argType, err := tc.lookupTypeOfNode(arg)
+		params := make([]Type, len(node.Params))
+		for i, astParam := range node.Params {
+			param, err := tc.lookupTypeOfNode(astParam)
 			if err != nil {
 				return nil, err
 			}
-			argTypes[i] = argType
+			params[i] = param
 		}
-		returnType, err := tc.lookupTypeOfNode(node.ReturnType)
+		result, err := tc.lookupTypeOfNode(node.Result)
 		if err != nil {
 			return nil, err
 		}
-		res := FunctionType{BaseType: tc.newType(), ArgTypes: argTypes, ReturnType: returnType}
+		res := FunctionType{BaseType: tc.newType(), Params: params, Result: result}
 		tc.functionTypes[node.TypeName()] = res
 		return &res, nil
 	case *ast.TypeParam:
@@ -681,17 +683,17 @@ func resolveTypeArgs(ty Type, typeParams []TypeParam, typeArgs []Type) Type {
 		for i, typeArg := range ty.TypeArgs {
 			funcTypeArgs[i] = resolveTypeArgs(typeArg, typeParams, typeArgs)
 		}
-		argTypes := make([]Type, len(ty.ArgTypes))
-		for i, argType := range ty.ArgTypes {
-			argTypes[i] = resolveTypeArgs(argType, typeParams, typeArgs)
+		params := make([]Type, len(ty.Params))
+		for i, param := range ty.Params {
+			params[i] = resolveTypeArgs(param, typeParams, typeArgs)
 		}
-		returnType := resolveTypeArgs(ty.ReturnType, typeParams, typeArgs)
+		result := resolveTypeArgs(ty.Result, typeParams, typeArgs)
 		return &FunctionType{
 			BaseType:     ty.BaseType,
 			typeParams:   ty.typeParams,
 			TypeArgs:     funcTypeArgs,
-			ArgTypes:     argTypes,
-			ReturnType:   returnType,
+			Params:       params,
+			Result:       result,
 			ReceiverType: ty.ReceiverType,
 		}
 	default:
@@ -778,7 +780,7 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 	if !ok {
 		return errors.Errorf("%s: callee %q is not a function type", expr.Span(), functionType)
 	}
-	functionArgTypes := functionType.ArgTypes
+	functionArgTypes := functionType.Params
 	if functionType.IsMethod() && !functionType.IsStaticMethod() {
 		functionArgTypes = functionArgTypes[1:]
 	}
@@ -799,7 +801,7 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 				"%s: expected argument %d to be of type %s, got %s", expr.Span(), i, functionArgType, argType)
 		}
 	}
-	tc.typeInfo.Set(expr, functionType.ReturnType)
+	tc.typeInfo.Set(expr, functionType.Result)
 	return nil
 }
 
@@ -905,23 +907,23 @@ func (tc *typeChecker) resolveTypeParams(genericType GenericType, astParams []as
 	return typeParams, nil
 }
 
-func (tc *typeChecker) resolveFunctionArgsAndReturnType(
-	astArgs []ast.FunctionArg, astReturnType ast.Type) (argTypes []Type, returnType Type, err error) {
+func (tc *typeChecker) resolveFunctionParamsAndResultTypes(
+	astParams []ast.FunctionParam, astResult ast.Type) (params []Type, result Type, err error) {
 
-	argTypes = make([]Type, len(astArgs))
-	for i, arg := range astArgs {
-		argType, err := tc.lookupTypeOfNode(arg.Type)
+	params = make([]Type, len(astParams))
+	for i, astParam := range astParams {
+		param, err := tc.lookupTypeOfNode(astParam.Type)
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "%s: type %s not found for argument %s", arg.Span, arg.Type, arg.Name)
+			return nil, nil, errors.Wrapf(err, "%s: type %s not found for parameter %s", astParam.Span, astParam.Type, astParam.Name)
 		}
-		argTypes[i] = argType
+		params[i] = param
 	}
-	returnType, err = tc.lookupTypeOfNode(astReturnType)
+	result, err = tc.lookupTypeOfNode(astResult)
 	if err != nil {
 		return nil, nil, errors.Wrapf(
-			err, "%s: type %s not found for return type", astReturnType.Span(), astReturnType)
+			err, "%s: type %s not found for return type", astResult.Span(), astResult)
 	}
-	return argTypes, returnType, nil
+	return params, result, nil
 }
 
 func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) error {
@@ -942,18 +944,18 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 	for i, typeParam := range typeParams {
 		funcType.TypeArgs[i] = typeParam
 	}
-	argTypes, returnType, err := tc.resolveFunctionArgsAndReturnType(decl.Args, decl.ReturnType)
+	params, result, err := tc.resolveFunctionParamsAndResultTypes(decl.Params, decl.Result)
 	if err != nil {
 		return err
 	}
-	funcType.ArgTypes = argTypes
-	funcType.ReturnType = returnType
+	funcType.Params = params
+	funcType.Result = result
 	if tc.checkingMode != insideTraitOrImplMode {
 		if decl.Name == "main" {
-			if len(funcType.ArgTypes) > 0 {
+			if len(funcType.Params) > 0 {
 				return errors.Errorf("%s: main function must not have arguments", decl.Span())
 			}
-			if _, ok := funcType.ReturnType.(*noneType); !ok {
+			if _, ok := funcType.Result.(*noneType); !ok {
 				return errors.Errorf("%s: main function must return () (no return value)", decl.Span())
 			}
 			tc.typeInfo.Main = funcType
@@ -978,11 +980,11 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 	tc.typeInfo.Set(fn, declaredType)
 	tc.enterScope(fn)
 	defer tc.exitScope()
-	argTypes := functionType.ArgTypes
-	for i, arg := range fn.Decl.Args {
-		argType := argTypes[i]
-		varInfo := variableInfo{type_: argType, isFunctionArg: true, mutable: false, span: arg.Span}
-		if err := tc.typeScope.declareVariable(string(arg.Name), varInfo); err != nil {
+	params := functionType.Params
+	for i, astParam := range fn.Decl.Params {
+		param := params[i]
+		varInfo := variableInfo{type_: param, isFunctionParam: true, mutable: false, span: astParam.Span}
+		if err := tc.typeScope.declareVariable(string(astParam.Name), varInfo); err != nil {
 			return err
 		}
 	}

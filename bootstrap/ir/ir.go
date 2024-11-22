@@ -83,29 +83,29 @@ func (t StructType) Size() int {
 	return size
 }
 
-type FunctionArg struct {
+type FunctionParam struct {
 	Type     Type
 	Register Register
 }
 
-func (fa FunctionArg) String() string {
+func (fa FunctionParam) String() string {
 	return fmt.Sprintf("%s %s", fa.Type, fa.Register)
 }
 
 type FunctionType struct {
-	Args       []FunctionArg
-	ReturnType Type
+	Params []FunctionParam
+	Result Type
 }
 
 func (t FunctionType) String() string {
-	args := ""
-	for i, arg := range t.Args {
+	params := ""
+	for i, param := range t.Params {
 		if i > 0 {
-			args += ", "
+			params += ", "
 		}
-		args += arg.String()
+		params += param.String()
 	}
-	return fmt.Sprintf("%s (%s)", t.ReturnType, args)
+	return fmt.Sprintf("%s (%s)", t.Result, params)
 }
 
 func (t FunctionType) Size() int {
@@ -427,7 +427,7 @@ type Call struct {
 func (inst Call) String() string {
 	args := ""
 	for i, reg := range inst.Args {
-		arg := inst.FunctionType.Args[i]
+		arg := inst.FunctionType.Params[i]
 		if len(args) > 0 {
 			args += ", "
 		}
@@ -441,7 +441,7 @@ func (inst Call) String() string {
 	if inst.IsIndirect {
 		prefix = "i"
 	}
-	return fmt.Sprintf("%s%scall %s %s(%s)", assign, prefix, inst.FunctionType.ReturnType, inst.Callee, args)
+	return fmt.Sprintf("%s%scall %s %s(%s)", assign, prefix, inst.FunctionType.Result, inst.Callee, args)
 }
 
 func (inst *Call) Register() Register {
@@ -768,8 +768,8 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 	ty := g.typeInfo.MustLookup(expr.Callee)
 	funcType := g.declaredTypes.MustLookup(ty).(*FunctionType)
 	var reg Register = NoneRegister
-	if funcType.ReturnType != NoneType {
-		reg = g.nextRegister(funcType.ReturnType)
+	if funcType.Result != NoneType {
+		reg = g.nextRegister(funcType.Result)
 	}
 	g.append(&Call{
 		register:     reg,
@@ -1084,13 +1084,13 @@ func (dt *DeclaredTypes) declare(ty typed.Type) {
 		structType := &StructType{Fields: fieldTypes}
 		dt.Types[ty.Id()] = structType
 	case *typed.FunctionType:
-		args := make([]FunctionArg, len(ty.ArgTypes))
-		for i, arg := range ty.ArgTypes {
-			argType := dt.MustLookup(arg)
-			args[i] = FunctionArg{Type: argType, Register: newRegister(i+1, argType)}
+		params := make([]FunctionParam, len(ty.Params))
+		for i, tyParam := range ty.Params {
+			paramType := dt.MustLookup(tyParam)
+			params[i] = FunctionParam{Type: paramType, Register: newRegister(i+1, paramType)}
 		}
-		returnType := dt.MustLookup(ty.ReturnType)
-		funcType := &FunctionType{Args: args, ReturnType: returnType}
+		result := dt.MustLookup(ty.Result)
+		funcType := &FunctionType{Params: params, Result: result}
 		dt.Types[ty.Id()] = funcType
 	default:
 		panic(fmt.Sprintf("cannot declare type %T", ty))
@@ -1102,22 +1102,22 @@ func declareFunction(
 	rootSymbolTable *symbolTable,
 	functionType *typed.FunctionType,
 ) *FunctionDefinition {
-	args := []FunctionArg{}
-	for i, argType := range functionType.ArgTypes {
-		if callArgFuncType, ok := argType.(*typed.FunctionType); ok {
+	params := []FunctionParam{}
+	for i, tyParam := range functionType.Params {
+		if callArgFuncType, ok := tyParam.(*typed.FunctionType); ok {
 			declareFunction(declaredTypes, rootSymbolTable, callArgFuncType)
 		}
-		irArgType := declaredTypes.MustLookup(argType)
-		irArg := FunctionArg{
-			Type:     irArgType,
-			Register: newRegister(i+1, irArgType),
+		paramType := declaredTypes.MustLookup(tyParam)
+		param := FunctionParam{
+			Type:     paramType,
+			Register: newRegister(i+1, paramType),
 		}
-		args = append(args, irArg)
+		params = append(params, param)
 	}
-	returnType := declaredTypes.MustLookup(functionType.ReturnType)
+	result := declaredTypes.MustLookup(functionType.Result)
 	res := &FunctionDefinition{
 		Id:   functionType.Id(),
-		Type: FunctionType{Args: args, ReturnType: returnType},
+		Type: FunctionType{Params: params, Result: result},
 	}
 	return res
 }
@@ -1170,12 +1170,12 @@ func GenerateIR(lowered *lower.LoweredAST, typeInfo *typed.TypeInfo) (*Module, e
 			loopScopes:          []loopScope{},
 			definedFunctions:    &definedFunctions,
 		}
-		// Make function arguments visible.
-		for a, arg := range funcSpec.FunctionDef.Decl.Args {
-			argType := funcSpec.Specialized.ArgTypes[a]
-			ty := declaredTypes.MustLookup(argType)
+		// Make function parameters visible.
+		for a, param := range funcSpec.FunctionDef.Decl.Params {
+			paramType := funcSpec.Specialized.Params[a]
+			ty := declaredTypes.MustLookup(paramType)
 			reg := gen.nextRegister(ty)
-			gen.symbolTable.declare(arg.Name, reg)
+			gen.symbolTable.declare(param.Name, reg)
 		}
 		block := gen.newBlock()
 		gen.currentBlock = block

@@ -93,25 +93,25 @@ func NewSimpleType(name Ident, id NodeId, span token.Span) *SimpleType {
 type FunctionType struct {
 	node
 	TypeParams []TypeParam
-	ArgTypes   []Type
-	ReturnType Type
+	Params     []Type
+	Result     Type
 }
 
 func (t FunctionType) String() string {
 	return fmt.Sprintf(
 		"FunctionType\n%s%s\n%s",
-		base.IndentString(typeParamsString(t.TypeParams), 1), base.IndentSlice(t.ArgTypes, 1), base.Indent(t.ReturnType, 1))
+		base.IndentString(typeParamsString(t.TypeParams), 1), base.IndentSlice(t.Params, 1), base.Indent(t.Result, 1))
 }
 
 func (t FunctionType) TypeName() string {
-	argTypes := ""
-	for i, argType := range t.ArgTypes {
+	params := ""
+	for i, param := range t.Params {
 		if i > 0 {
-			argTypes += ","
+			params += ","
 		}
-		argTypes += argType.TypeName()
+		params += param.TypeName()
 	}
-	return fmt.Sprintf("fn(%s)%s", argTypes, t.ReturnType.TypeName())
+	return fmt.Sprintf("fn(%s)%s", params, t.Result.TypeName())
 }
 
 func (ty Ident) String() string {
@@ -338,13 +338,13 @@ func (st *StructTypeDeclaration) FindField(name Ident) (*StructTypeField, error)
 	return &st.Fields[index], nil
 }
 
-type FunctionArg struct {
+type FunctionParam struct {
 	Name Ident
 	Type Type
 	Span token.Span
 }
 
-func (f FunctionArg) String() string {
+func (f FunctionParam) String() string {
 	return fmt.Sprintf("%s\n%s", f.Name, base.Indent(f.Type, 1))
 }
 
@@ -352,8 +352,8 @@ type FunctionDeclaration struct {
 	node
 	Name       Ident
 	TypeParams []TypeParam
-	Args       []FunctionArg
-	ReturnType Type
+	Params     []FunctionParam
+	Result     Type
 }
 
 func (f FunctionDeclaration) String() string {
@@ -361,8 +361,8 @@ func (f FunctionDeclaration) String() string {
 		"FunctionDeclaration\n%s%s%s\n%s",
 		base.Indent(f.Name, 1),
 		base.IndentString(typeParamsString(f.TypeParams), 1),
-		base.IndentSlice(f.Args, 1),
-		base.Indent(f.ReturnType, 1))
+		base.IndentSlice(f.Params, 1),
+		base.Indent(f.Result, 1))
 }
 
 type FunctionDefinition struct {
@@ -616,16 +616,16 @@ func (p *Parser) parseFunctionType() (*FunctionType, error) {
 	if _, err := p.consume(token.LParen); err != nil {
 		return nil, err
 	}
-	argTypes := []Type{}
+	params := []Type{}
 	for p.index < len(p.tokens) {
 		if p.peek().Kind == token.RParen {
 			break
 		}
-		argType, err := p.parseType()
+		param, err := p.parseType()
 		if err != nil {
 			return nil, err
 		}
-		argTypes = append(argTypes, argType)
+		params = append(params, param)
 		t := p.peek()
 		if t.Kind == token.RParen {
 			p.consumeAny()
@@ -635,12 +635,12 @@ func (p *Parser) parseFunctionType() (*FunctionType, error) {
 			return nil, err
 		}
 	}
-	returnTypeSpan := p.span()
-	returnType, err := p.tryParseType(&SimpleType{node: p.newNode(returnTypeSpan), Name: "None"})
+	resultSpan := p.span()
+	result, err := p.tryParseType(&SimpleType{node: p.newNode(resultSpan), Name: "None"})
 	if err != nil {
 		return nil, err
 	}
-	return &FunctionType{node: p.newNode(from), ArgTypes: argTypes, ReturnType: returnType}, nil
+	return &FunctionType{node: p.newNode(from), Params: params, Result: result}, nil
 }
 
 func (p *Parser) parseType() (Type, error) {
@@ -712,7 +712,7 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 	if err != nil {
 		return nil, err
 	}
-	args := []FunctionArg{}
+	params := []FunctionParam{}
 	for p.index < len(p.tokens) {
 		t := p.peek()
 		if t.Kind == token.RParen {
@@ -720,25 +720,25 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 			break
 		}
 		from := p.span()
-		argNameToken := p.consumeAny()
-		if argNameToken.Kind == token.Ident {
-			argName := Ident(argNameToken.Value)
-			argType, err := p.parseType()
+		paramNameToken := p.consumeAny()
+		if paramNameToken.Kind == token.Ident {
+			paramName := Ident(paramNameToken.Value)
+			paramType, err := p.parseType()
 			if err != nil {
 				return nil, err
 			}
-			arg := FunctionArg{Name: argName, Type: argType}
-			args = append(args, arg)
-		} else if argNameToken.Kind == token.Self {
+			param := FunctionParam{Name: paramName, Type: paramType}
+			params = append(params, param)
+		} else if paramNameToken.Kind == token.Self {
 			if !acceptSelfParameter {
 				return nil, errors.Errorf("self parameter not allowed here")
 			}
-			if len(args) > 0 {
+			if len(params) > 0 {
 				return nil, errors.Errorf("self parameter must be the first parameter")
 			}
 			selfType := &SimpleType{node: p.newNode(from), Name: "Self"}
-			arg := FunctionArg{Name: Ident("self"), Type: selfType, Span: p.spanToHere(from)}
-			args = append(args, arg)
+			param := FunctionParam{Name: Ident("self"), Type: selfType, Span: p.spanToHere(from)}
+			params = append(params, param)
 		}
 		t = p.peek()
 		if t.Kind == token.RParen {
@@ -750,12 +750,12 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 		}
 		p.consumeAny()
 	}
-	returnType, err := p.tryParseType(&SimpleType{node: p.newNode(from), Name: "None"})
+	result, err := p.tryParseType(&SimpleType{node: p.newNode(from), Name: "None"})
 	if err != nil {
 		return nil, err
 	}
 	return &FunctionDeclaration{
-		node: p.newNode(from), TypeParams: typeParams, Name: Ident(nameToken.Value), Args: args, ReturnType: returnType,
+		node: p.newNode(from), TypeParams: typeParams, Name: Ident(nameToken.Value), Params: params, Result: result,
 	}, nil
 }
 

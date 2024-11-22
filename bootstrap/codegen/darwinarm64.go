@@ -424,7 +424,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			}
 			c.emit("str %s, [%s]", value, target)
 		case *ir.Call:
-			c.registerAllocator.spillCallRegisters(len(c.function.Type.Args))
+			c.registerAllocator.spillCallRegisters(len(c.function.Type.Params))
 			savedCallerRegisters := c.registerAllocator.spillCallerSavedRegisters()
 			for i, arg := range inst.Args {
 				argReg := c.mustLookupRegisterAllocation(arg)
@@ -440,7 +440,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 				panic(fmt.Sprintf("unknown callee type: %T", callee))
 			}
 			c.registerAllocator.restoreCallerSavedRegisters(savedCallerRegisters)
-			if inst.FunctionType.ReturnType != ir.NoneType {
+			if inst.FunctionType.Result != ir.NoneType {
 				allocation := c.registerAllocator.saveCallResultRegister(inst.Register())
 				c.values[inst.Register().Id] = allocation
 			}
@@ -482,8 +482,8 @@ func generateFunction(function *ir.FunctionDefinition, module *ir.Module, isMain
 		function.RegisterConstraints,
 		&c,
 	)
-	for i, args := range function.Type.Args {
-		c.values[args.Register.Id] = c.registerAllocator.allocateCallRegister(i)
+	for i, param := range function.Type.Params {
+		c.values[param.Register.Id] = c.registerAllocator.allocateCallRegister(i)
 	}
 	if isMain {
 		c.emit("_main:")

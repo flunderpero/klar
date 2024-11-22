@@ -100,9 +100,9 @@ func (l *lower) addFunctionSpecialization(funcType *typed.FunctionType) *typed.F
 		}
 		if f.Base.Id() == funcType.Id() {
 			typeArgsMatch := true
-			for i, arg := range f.Specialized.TypeArgs {
+			for i, typeArg := range f.Specialized.TypeArgs {
 				funcTypeArg := funcTypeArgs[i]
-				if arg.Id() != funcTypeArg.Id() {
+				if typeArg.Id() != funcTypeArg.Id() {
 					typeArgsMatch = false
 					break
 				}
@@ -232,11 +232,11 @@ func (l *lower) finalizeFunctionSpecializations() []FunctionSpecialization {
 		funcSpecs = append(funcSpecs, function)
 		symbol := *l.typeInfo.MustLookupSymbol(function.Base.Id())
 		typeArgs := ""
-		for i, arg := range function.Specialized.TypeArgs {
+		for i, typeArg := range function.Specialized.TypeArgs {
 			if i > 0 {
 				typeArgs += ","
 			}
-			typeArgs += arg.Id().String()
+			typeArgs += typeArg.Id().String()
 		}
 		symbol.Name = fmt.Sprintf("%s<%s>", symbol.Name, typeArgs)
 		l.typeInfo.DeclareSymbol(function.Specialized.Id(), &symbol)

@@ -178,7 +178,8 @@ func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker)
 	if !ok {
 		return newExpr, true
 	}
-	functionType := l.typeInfo.MustLookup(expr.Callee).(*typed.FunctionType)
+	calleeType := l.typeInfo.MustLookup(expr.Callee).(typed.CallableType)
+	params := calleeType.CallParams()
 	// Re-order the call arguments to be in the order of the function parameters.
 	callArgs := make([]ast.CallArg, len(expr.Args))
 	positionalArgIndex := 0
@@ -188,7 +189,7 @@ func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker)
 			positionalArgIndex += 1
 			continue
 		}
-		for i, param := range functionType.Params {
+		for i, param := range params {
 			if param.Name == callArg.Name {
 				callArgs[i] = callArg
 				break
@@ -196,6 +197,10 @@ func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker)
 		}
 	}
 	expr.Args = callArgs
+	functionType, ok := calleeType.(*typed.FunctionType)
+	if !ok {
+		return expr, true
+	}
 	if !functionType.IsMethod() || functionType.IsStaticMethod() {
 		functionType = l.addFunctionSpecialization(functionType)
 		l.typeInfo.Set(expr.Callee, functionType)

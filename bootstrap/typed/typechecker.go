@@ -62,6 +62,12 @@ type TypeWithTraits interface {
 	Traits() []*TraitType
 }
 
+type CallableType interface {
+	Type
+	CallParams() []TypeAndName[Type]
+	CallResult() Type
+}
+
 type BaseType struct {
 	id TypeId
 }
@@ -253,6 +259,14 @@ func (ty StructType) FindMember(name ast.Ident, span token.Span) (Type, bool) {
 	return nil, false
 }
 
+func (ty StructType) CallParams() []FunctionParam {
+	return ty.Fields
+}
+
+func (ty StructType) CallResult() Type {
+	return &ty
+}
+
 type TraitType struct {
 	BaseType
 	Methods []TypeAndName[FunctionType]
@@ -382,6 +396,14 @@ func (ty FunctionType) IsAssignableFrom(other Type) bool {
 		return ty.Result.IsAssignableFrom(other.Result)
 	}
 	return false
+}
+
+func (ty FunctionType) CallParams() []FunctionParam {
+	return ty.Params
+}
+
+func (ty FunctionType) CallResult() Type {
+	return ty.Result
 }
 
 type genericScope struct {
@@ -783,39 +805,42 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 	if err := w.WalkCallExpression(expr); err != nil {
 		return err
 	}
-	functionType, ok := tc.typeInfo.MustLookup(expr.Callee).(*FunctionType)
+	calleeType, ok := tc.typeInfo.MustLookup(expr.Callee).(CallableType)
 	if !ok {
-		return errors.Errorf("%s: callee %q is not a function type", expr.Span(), functionType)
+		return errors.Errorf("%s: callee %q is not a callable type", expr.Span(), calleeType)
 	}
-	funcParams := functionType.Params
-	if functionType.IsMethod() && !functionType.IsStaticMethod() {
-		funcParams = funcParams[1:]
+	params := calleeType.CallParams()
+	result := calleeType.CallResult()
+	if funcType, ok := calleeType.(*FunctionType); ok {
+		if funcType.IsMethod() && !funcType.IsStaticMethod() {
+			params = params[1:]
+		}
 	}
-	if len(funcParams) != len(expr.Args) {
+	if len(params) != len(expr.Args) {
 		return errors.Errorf(
-			"%s: expected %d arguments, got %d for %s", expr.Span(), len(funcParams), len(expr.Args), functionType)
+			"%s: expected %d arguments, got %d for %s", expr.Span(), len(params), len(expr.Args), calleeType)
 	}
 	seenParamIndexes := []int{}
 	for i, arg := range expr.Args {
 		argType := tc.typeInfo.MustLookup(arg.Value)
 		var paramIndex = i
 		if arg.Name != "" {
-			paramIndex = slices.IndexFunc(funcParams, func(p TypeAndName[Type]) bool { return p.Name == arg.Name })
+			paramIndex = slices.IndexFunc(params, func(p TypeAndName[Type]) bool { return p.Name == arg.Name })
 		}
 		if paramIndex < 0 {
-			return errors.Errorf("%s: parameter %q not found in function type %s", arg.Span, arg.Name, functionType)
+			return errors.Errorf("%s: parameter %q not found in callee type %s", arg.Span, arg.Name, calleeType)
 		}
 		if slices.Contains(seenParamIndexes, paramIndex) {
 			return errors.Errorf("%s: parameter %q is already assigned", arg.Span, arg.Name)
 		}
 		seenParamIndexes = append(seenParamIndexes, paramIndex)
-		param := funcParams[paramIndex]
+		param := params[paramIndex]
 		if !param.Type.IsAssignableFrom(argType) {
 			return errors.Errorf(
 				"%s: expected argument %d to be of type %s, got %s", expr.Span(), paramIndex, param.Type, argType)
 		}
 	}
-	tc.typeInfo.Set(expr, functionType.Result)
+	tc.typeInfo.Set(expr, result)
 	return nil
 }
 
@@ -869,43 +894,6 @@ func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) e
 	// Only an if expression with an else branch can have a type other than None.
 	// And currently we don't have else branches.
 	tc.typeInfo.Set(expr, NoneType)
-	return nil
-}
-
-func (tc *typeChecker) VisitStructInitExpression(expr *ast.StructInitExpression, w ast.Walker) error {
-	if err := w.WalkStructInitExpression(expr); err != nil {
-		return err
-	}
-	structType_, found := tc.typeScope.lookupType(string(expr.Ident))
-	if !found {
-		return errors.Errorf("%s: type %q not found for struct init expression", expr.Span(), expr.Ident)
-	}
-	structType, isType := structType_.(*StructType)
-	if !isType {
-		return errors.Errorf("%s: type %q is not a struct type", expr.Span(), expr.Ident)
-	}
-	for _, initField := range expr.Fields {
-		structField, found := structType.FindField(initField.Name, initField.Span)
-		if !found {
-			structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
-			return errors.Errorf(
-				"%s: field %q not found in struct type %q", initField.Span, initField.Name, structSymbol.Name)
-		}
-		fieldType := tc.typeInfo.MustLookup(initField.Value)
-		if structField.Type != fieldType {
-			return errors.Errorf(
-				"%s: struct init: expected field %q to be of type %q, got %q",
-				initField.Span,
-				initField.Name,
-				structField.Type,
-				fieldType,
-			)
-		}
-	}
-	if len(expr.Fields) != len(structType.Fields) {
-		return errors.Errorf("%s: expected %d fields, got %d", expr.Span(), len(structType.Fields), len(expr.Fields))
-	}
-	tc.typeInfo.Set(expr, structType)
 	return nil
 }
 

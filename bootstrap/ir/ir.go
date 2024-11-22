@@ -746,37 +746,85 @@ func (g *generator) VisitIdentExpression(expr *ast.IdentExpression) error {
 }
 
 func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) error {
-	var callee Callee
-	if definedFunc, ok := g.isDefinedFunction(g.typeInfo.MustLookup(expr.Callee).Id()); ok {
-		// We need to walk the arguments ourselves since we are not using the default walker.
+	calleeType := g.typeInfo.MustLookup(expr.Callee)
+	switch calleeType := calleeType.(type) {
+	case *typed.StructType:
 		for _, arg := range expr.Args {
 			if err := g.VisitNode(arg.Value, w); err != nil {
 				return err
 			}
 		}
-		callee = definedFunc
-	} else {
-		if err := w.WalkCallExpression(expr); err != nil {
-			return err
+		structType := g.lookupType(expr).(*StructType)
+		sizeReg := g.nextRegister(Int64Type)
+		mallocReg := g.nextRegister(Int64Type)
+		mallocFuncType := g.declaredTypes.MustLookup(typed.BuiltInUnsafeMallocFunction).(*FunctionType)
+		g.append(&Int64Const{
+			register: sizeReg,
+			Value:    int64(structType.Size()),
+		}, nil)
+		g.append(&Call{
+			register:     mallocReg,
+			Callee:       DefinedFunction{typed.BuiltInUnsafeMallocFunction.Id()},
+			FunctionType: mallocFuncType,
+			Args:         []Register{sizeReg},
+		}, expr)
+		for i, callArg := range expr.Args {
+			fieldType := structType.Fields[i]
+			switch fieldType.(type) {
+			case BuiltInType, *PointerType:
+			default:
+				return errors.Errorf("only BuiltInType and PointerType can be stored in struct fields, got %q", fieldType)
+			}
+			fieldValueReg := g.lookupRegisterByNode(callArg.Value)
+			fieldPtrReg := g.nextRegister(PointerType{fieldType})
+			g.append(&GetPointer{
+				register:   fieldPtrReg,
+				Source:     mallocReg,
+				FieldIndex: i,
+				SourceType: structType,
+			}, nil)
+			g.append(&Store{
+				Target:    fieldPtrReg,
+				Value:     fieldValueReg,
+				ValueType: fieldType,
+			}, nil)
 		}
-		callee = g.lookupRegisterByNode(expr.Callee)
+		g.registerByNodeId[expr.Id()] = mallocReg
+	case *typed.FunctionType:
+		var callee Callee
+		if definedFunc, ok := g.isDefinedFunction(calleeType.Id()); ok {
+			// We need to walk the arguments ourselves since we are not using the default walker.
+			for _, arg := range expr.Args {
+				if err := g.VisitNode(arg.Value, w); err != nil {
+					return err
+				}
+			}
+			callee = definedFunc
+		} else {
+			if err := w.WalkCallExpression(expr); err != nil {
+				return err
+			}
+			callee = g.lookupRegisterByNode(expr.Callee)
+		}
+		args := []Register{}
+		for _, arg := range expr.Args {
+			args = append(args, g.lookupRegisterByNode(arg.Value))
+		}
+		ty := g.typeInfo.MustLookup(expr.Callee)
+		funcType := g.declaredTypes.MustLookup(ty).(*FunctionType)
+		var reg Register = NoneRegister
+		if funcType.Result != NoneType {
+			reg = g.nextRegister(funcType.Result)
+		}
+		g.append(&Call{
+			register:     reg,
+			Callee:       callee,
+			FunctionType: funcType,
+			Args:         args,
+		}, expr)
+	default:
+		panic(fmt.Sprintf("unknown callee type: %T", calleeType))
 	}
-	args := []Register{}
-	for _, arg := range expr.Args {
-		args = append(args, g.lookupRegisterByNode(arg.Value))
-	}
-	ty := g.typeInfo.MustLookup(expr.Callee)
-	funcType := g.declaredTypes.MustLookup(ty).(*FunctionType)
-	var reg Register = NoneRegister
-	if funcType.Result != NoneType {
-		reg = g.nextRegister(funcType.Result)
-	}
-	g.append(&Call{
-		register:     reg,
-		Callee:       callee,
-		FunctionType: funcType,
-		Args:         args,
-	}, expr)
 	return nil
 }
 
@@ -913,49 +961,6 @@ func (g *generator) VisitBlockExpression(expr *ast.BlockExpression, w ast.Walker
 	}
 	g.currentBlock.Result = reg
 	g.registerByNodeId[expr.Id()] = reg
-	return nil
-}
-
-func (g *generator) VisitStructInitExpression(expr *ast.StructInitExpression, w ast.Walker) error {
-	if err := w.WalkStructInitExpression(expr); err != nil {
-		return err
-	}
-	structType := g.lookupType(expr).(*StructType)
-	sizeReg := g.nextRegister(Int64Type)
-	mallocReg := g.nextRegister(Int64Type)
-	mallocFuncType := g.declaredTypes.MustLookup(typed.BuiltInUnsafeMallocFunction).(*FunctionType)
-	g.append(&Int64Const{
-		register: sizeReg,
-		Value:    int64(structType.Size()),
-	}, nil)
-	g.append(&Call{
-		register:     mallocReg,
-		Callee:       DefinedFunction{typed.BuiltInUnsafeMallocFunction.Id()},
-		FunctionType: mallocFuncType,
-		Args:         []Register{sizeReg},
-	}, expr)
-	for i, astField := range expr.Fields {
-		fieldType := structType.Fields[i]
-		switch fieldType.(type) {
-		case BuiltInType, *PointerType:
-		default:
-			return errors.Errorf("only BuiltInType and PointerType can be stored in struct fields, got %q", fieldType)
-		}
-		fieldValueReg := g.lookupRegisterByNode(astField.Value)
-		fieldPtrReg := g.nextRegister(PointerType{fieldType})
-		g.append(&GetPointer{
-			register:   fieldPtrReg,
-			Source:     mallocReg,
-			FieldIndex: i,
-			SourceType: structType,
-		}, nil)
-		g.append(&Store{
-			Target:    fieldPtrReg,
-			Value:     fieldValueReg,
-			ValueType: fieldType,
-		}, nil)
-	}
-	g.registerByNodeId[expr.Id()] = mallocReg
 	return nil
 }
 

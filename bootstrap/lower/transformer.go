@@ -27,7 +27,6 @@ type Transformer interface {
 	VisitBlockExpression(expr *ast.BlockExpression, w TransformWalker) (ast.Expression, bool)
 	VisitCallExpression(expr *ast.CallExpression, w TransformWalker) (ast.Expression, bool)
 	VisitMemberExpression(expr *ast.MemberExpression, w TransformWalker) (ast.Expression, bool)
-	VisitStructInitExpression(expr *ast.StructInitExpression, w TransformWalker) (ast.Expression, bool)
 	VisitIfExpression(expr *ast.IfExpression, w TransformWalker) (ast.Expression, bool)
 	VisitBinaryExpression(expr *ast.BinaryExpression, w TransformWalker) (ast.Expression, bool)
 	VisitIdentExpression(expr *ast.IdentExpression) (ast.Expression, bool)
@@ -51,7 +50,6 @@ type TransformWalker interface {
 	WalkBlockExpression(expr *ast.BlockExpression) (ast.Expression, bool)
 	WalkCallExpression(expr *ast.CallExpression) (ast.Expression, bool)
 	WalkMemberExpression(expr *ast.MemberExpression) (ast.Expression, bool)
-	WalkStructInitExpression(expr *ast.StructInitExpression) (ast.Expression, bool)
 	WalkIfExpression(expr *ast.IfExpression) (ast.Expression, bool)
 	WalkBinaryExpression(expr *ast.BinaryExpression) (ast.Expression, bool)
 	WalkAssignmentStatement(stmt *ast.AssignmentStatement) (*ast.AssignmentStatement, bool)
@@ -82,10 +80,6 @@ func (_ *DefaultTransformer) VisitCallExpression(expr *ast.CallExpression, w Tra
 
 func (_ *DefaultTransformer) VisitMemberExpression(expr *ast.MemberExpression, w TransformWalker) (ast.Expression, bool) {
 	return w.WalkMemberExpression(expr)
-}
-
-func (_ *DefaultTransformer) VisitStructInitExpression(expr *ast.StructInitExpression, w TransformWalker) (ast.Expression, bool) {
-	return w.WalkStructInitExpression(expr)
 }
 
 func (_ *DefaultTransformer) VisitIfExpression(expr *ast.IfExpression, w TransformWalker) (ast.Expression, bool) {
@@ -176,8 +170,6 @@ func (w *DefaultTransformWalker) WalkExpression(expr ast.Expression) (ast.Expres
 		return w.Transformer.VisitIfExpression(expr, w)
 	case *ast.BlockExpression:
 		return w.Transformer.VisitBlockExpression(expr, w)
-	case *ast.StructInitExpression:
-		return w.Transformer.VisitStructInitExpression(expr, w)
 	default:
 		panic(fmt.Sprintf("VisitExpression not implemented for expression type: %T", expr))
 	}
@@ -213,19 +205,6 @@ func (w *DefaultTransformWalker) WalkCallExpression(expr *ast.CallExpression) (a
 		}
 	}
 	expr.Args = args
-	return expr, true
-}
-
-func (w *DefaultTransformWalker) WalkStructInitExpression(expr *ast.StructInitExpression) (ast.Expression, bool) {
-	fields := []ast.StructInitField{}
-	for _, field := range expr.Fields {
-		value, ok := w.Transformer.VisitExpression(field.Value, w)
-		if ok {
-			field.Value = value
-			fields = append(fields, field)
-		}
-	}
-	expr.Fields = fields
 	return expr, true
 }
 

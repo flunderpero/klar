@@ -12,8 +12,11 @@ fn main() {
     mut moon = Moon(name = "The Moon")
     mut planet = Planet(name = "Earth", radius = 6378, moon = moon)
     print(planet.name)
+    print(", ")
     print_int(planet.radius)
+    print(", ")
     planet.name = "Pluto?"
     print(planet.name)
+    print(", ")
     print(planet.moon.name)
 }

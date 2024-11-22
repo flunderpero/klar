@@ -197,26 +197,6 @@ func (expr *BinaryExpression) String() string {
 		"BinaryExpression\n%s\n%s\n%s", base.Indent(expr.Lhs, 1), base.Indent(expr.Op, 1), base.Indent(expr.Rhs, 1))
 }
 
-type StructInitField struct {
-	Name  Ident
-	Value Expression
-	Span  token.Span
-}
-
-func (f StructInitField) String() string {
-	return fmt.Sprintf("%s\n%s", f.Name, base.Indent(f.Value, 1))
-}
-
-type StructInitExpression struct {
-	node
-	Ident  Ident
-	Fields []StructInitField
-}
-
-func (s *StructInitExpression) String() string {
-	return fmt.Sprintf("StructInitExpression\n%s%s", base.Indent(s.Ident, 1), base.IndentSlice(s.Fields, 1))
-}
-
 type CallArg struct {
 	// Optional, maybe set to "".
 	Name  Ident
@@ -598,45 +578,6 @@ func (p *Parser) parseIfExpression() (*IfExpression, error) {
 	return &IfExpression{node: p.newNode(from), Condition: condition, TrueBody: trueBody, FalseBody: falseBody}, nil
 }
 
-func (p *Parser) parseStructInitExpression(typeIdent Ident, from token.Span) (*StructInitExpression, error) {
-	if _, err := p.consume(token.LParen); err != nil {
-		return nil, err
-	}
-	fields := []StructInitField{}
-	expectComma := false
-	for p.index < len(p.tokens) {
-		t := p.peek()
-		switch t.Kind {
-		case token.RParen:
-			p.consumeAny()
-			return &StructInitExpression{node: p.newNode(from), Ident: typeIdent, Fields: fields}, nil
-		case token.Comma:
-			if !expectComma {
-				return nil, errors.Errorf("unexpected token: %s", t)
-			}
-			p.consumeAny()
-			expectComma = false
-		case token.Ident:
-			from := p.span()
-			p.consumeAny()
-			fieldName := Ident(t.Value)
-			if _, err := p.consume(token.Equal); err != nil {
-				return nil, err
-			}
-			fieldValue, err := p.parseExpression()
-			if err != nil {
-				return nil, err
-			}
-			expectComma = true
-			field := StructInitField{Name: fieldName, Value: fieldValue, Span: p.spanToHere(from)}
-			fields = append(fields, field)
-		default:
-			return nil, errors.Errorf("unexpected token: %s", t)
-		}
-	}
-	return nil, errors.Errorf("unexpected end of file while parsing struct init")
-}
-
 func (p *Parser) parseFunctionType() (*FunctionType, error) {
 	from := p.span()
 	if _, err := p.consume(token.Fn); err != nil {
@@ -949,16 +890,8 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 	from := p.span()
 	t := p.peek()
 	switch t.Kind {
-	case token.Ident:
+	case token.Ident, token.TypeIdent:
 		p.consumeAny()
-		return p.parseIdentExpression(t)
-	case token.TypeIdent:
-		p.consumeAny()
-		ident := Ident(t.Value)
-		switch p.peek().Kind {
-		case token.LParen:
-			return p.parseStructInitExpression(ident, from)
-		}
 		return p.parseIdentExpression(t)
 	case token.Self:
 		p.consumeAny()

@@ -13,7 +13,6 @@ type Visitor interface {
 	VisitBlockExpression(expr *BlockExpression, w Walker) error
 	VisitCallExpression(expr *CallExpression, w Walker) error
 	VisitMemberExpression(expr *MemberExpression, w Walker) error
-	VisitStructInitExpression(expr *StructInitExpression, w Walker) error
 	VisitIfExpression(expr *IfExpression, w Walker) error
 	VisitBinaryExpression(expr *BinaryExpression, w Walker) error
 	VisitTraitDeclaration(impl *TraitDeclaration, w Walker) error
@@ -39,7 +38,6 @@ type Walker interface {
 	WalkBlockExpression(expr *BlockExpression) error
 	WalkCallExpression(expr *CallExpression) error
 	WalkMemberExpression(expr *MemberExpression) error
-	WalkStructInitExpression(expr *StructInitExpression) error
 	WalkIfExpression(expr *IfExpression) error
 	WalkBinaryExpression(expr *BinaryExpression) error
 	WalkAssignmentStatement(stmt *AssignmentStatement) error
@@ -70,10 +68,6 @@ func (_ *DefaultVisitor) VisitCallExpression(expr *CallExpression, w Walker) err
 
 func (_ *DefaultVisitor) VisitMemberExpression(expr *MemberExpression, w Walker) error {
 	return w.WalkMemberExpression(expr)
-}
-
-func (_ *DefaultVisitor) VisitStructInitExpression(expr *StructInitExpression, w Walker) error {
-	return w.WalkStructInitExpression(expr)
 }
 
 func (_ *DefaultVisitor) VisitIfExpression(expr *IfExpression, w Walker) error {
@@ -165,8 +159,6 @@ func (w *DefaultWalker) WalkExpression(expr Expression) error {
 		err = w.Visitor.VisitIfExpression(expr, w)
 	case *BlockExpression:
 		err = w.Visitor.VisitBlockExpression(expr, w)
-	case *StructInitExpression:
-		err = w.Visitor.VisitStructInitExpression(expr, w)
 	default:
 		return errors.Errorf("VisitExpression not implemented for expression type: %T", expr)
 	}
@@ -186,15 +178,6 @@ func (w *DefaultWalker) WalkCallExpression(expr *CallExpression) error {
 	}
 	for _, arg := range expr.Args {
 		if err := w.Visitor.VisitNode(arg.Value, w); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (w *DefaultWalker) WalkStructInitExpression(expr *StructInitExpression) error {
-	for _, field := range expr.Fields {
-		if err := w.Visitor.VisitNode(field.Value, w); err != nil {
 			return err
 		}
 	}

@@ -164,6 +164,14 @@ func (t TypeParam) IsAssignableFrom(other Type) bool {
 	return false
 }
 
+func typeArgsString(args []Type) string {
+	s := ""
+	if len(args) > 0 {
+		s = fmt.Sprintf("\n(TypeArgs)%s", base.IndentSlice(args, 1))
+	}
+	return s
+}
+
 func typeParamsString(params []TypeParam) string {
 	s := ""
 	if len(params) > 0 {
@@ -275,13 +283,21 @@ func (ty ImplType) String() string {
 type FunctionType struct {
 	BaseType
 	typeParams   []TypeParam
+	TypeArgs     []Type
 	ReceiverType Type
 	ArgTypes     []Type
 	ReturnType   Type
 }
 
-func NewFunctionType(id TypeId, typeParams []TypeParam, argTypes []Type, returnType Type) *FunctionType {
-	return &FunctionType{BaseType: BaseType{id}, typeParams: typeParams, ArgTypes: argTypes, ReturnType: returnType}
+func (ty FunctionType) CloneWith(id TypeId, typeArgs []Type) *FunctionType {
+	return &FunctionType{
+		BaseType:     BaseType{id},
+		typeParams:   ty.typeParams,
+		TypeArgs:     typeArgs,
+		ReceiverType: ty.ReceiverType,
+		ArgTypes:     ty.ArgTypes,
+		ReturnType:   ty.ReturnType,
+	}
 }
 
 func (ty FunctionType) String() string {
@@ -298,11 +314,16 @@ func (ty FunctionType) String() string {
 	args := base.Map(ty.ArgTypes, typeToString)
 	returnType := typeToString(ty.ReturnType)
 	return fmt.Sprintf(
-		"FunctionType%s%s\n    (Arguments)%s\n    (Return)\n%s",
+		"FunctionType%s%s%s\n    (Arguments)%s\n    (Return)\n%s",
 		receiverType,
 		base.IndentString(typeParamsString(ty.typeParams), 1),
+		base.IndentString(typeArgsString(ty.TypeArgs), 1),
 		base.IndentStringSlice(args, 2),
 		base.IndentString(returnType, 2))
+}
+
+func (ty FunctionType) IsGeneric() bool {
+	return len(ty.typeParams) > 0
 }
 
 func (ty FunctionType) IsMethod() bool {
@@ -310,7 +331,7 @@ func (ty FunctionType) IsMethod() bool {
 }
 
 func (ty FunctionType) IsStaticMethod() bool {
-	return ty.ReceiverType != nil && (len(ty.ArgTypes) == 0 || ty.ArgTypes[0].Id() != ty.ReceiverType.Id())
+	return ty.IsMethod() && (len(ty.ArgTypes) == 0 || ty.ArgTypes[0].Id() != ty.ReceiverType.Id())
 }
 
 func (ty FunctionType) CheckSameSignatureIgnoringReceiverTypes(other *FunctionType, span token.Span) error {
@@ -356,13 +377,6 @@ func (ty FunctionType) IsAssignableFrom(other Type) bool {
 		return ty.ReturnType.IsAssignableFrom(other.ReturnType)
 	}
 	return false
-}
-
-type Call struct {
-	Callee     *FunctionType
-	ArgTypes   []Type
-	ReturnType Type
-	TypeArgs   []Type
 }
 
 type genericScope struct {
@@ -479,9 +493,7 @@ type TypeInfo struct {
 	symbols map[string]*Symbol
 	// The type an `IdentExpression` points to if it does not refer to a variable.
 	typeBindings map[*ast.IdentExpression]Type
-	// Record the concrete type of a function at call time.
-	calls map[*ast.CallExpression]Call
-	Main  *FunctionType
+	Main         *FunctionType
 }
 
 func (m *TypeInfo) LookupTypeBinding(expr *ast.IdentExpression) (Type, bool) {
@@ -529,18 +541,6 @@ func (m *TypeInfo) MustLookupSymbol(id isId) *Symbol {
 
 func (m *TypeInfo) DeclareSymbol(id isId, symbol *Symbol) {
 	m.symbols[id.String()] = symbol
-}
-
-func (m *TypeInfo) recordCall(expr *ast.CallExpression, call Call) {
-	m.calls[expr] = call
-}
-
-func (m *TypeInfo) MustLookupCall(expr *ast.CallExpression) *Call {
-	call, found := m.calls[expr]
-	if !found {
-		panic(fmt.Sprintf("call not found for expression %q", expr))
-	}
-	return &call
 }
 
 type checkingMode int
@@ -671,10 +671,67 @@ func (tc *typeChecker) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpressio
 	return nil
 }
 
+func resolveTypeArgs(ty Type, typeParams []TypeParam, typeArgs []Type) Type {
+	switch ty := ty.(type) {
+	case *FunctionType:
+		if !ty.IsGeneric() {
+			return ty
+		}
+		funcTypeArgs := make([]Type, len(ty.TypeArgs))
+		for i, typeArg := range ty.TypeArgs {
+			funcTypeArgs[i] = resolveTypeArgs(typeArg, typeParams, typeArgs)
+		}
+		argTypes := make([]Type, len(ty.ArgTypes))
+		for i, argType := range ty.ArgTypes {
+			argTypes[i] = resolveTypeArgs(argType, typeParams, typeArgs)
+		}
+		returnType := resolveTypeArgs(ty.ReturnType, typeParams, typeArgs)
+		return &FunctionType{
+			BaseType:     ty.BaseType,
+			typeParams:   ty.typeParams,
+			TypeArgs:     funcTypeArgs,
+			ArgTypes:     argTypes,
+			ReturnType:   returnType,
+			ReceiverType: ty.ReceiverType,
+		}
+	default:
+		for i, typeParam := range typeParams {
+			if ty.Id() == typeParam.Id() {
+				return typeArgs[i]
+			}
+		}
+		return ty
+	}
+}
+
+func (tc *typeChecker) resolveGenericType(ty GenericType, astTypeArgs []ast.Type, span token.Span) (Type, error) {
+	typeParams := ty.TypeParams()
+	if len(astTypeArgs) != len(typeParams) {
+		return nil, errors.Errorf(
+			"%s: expected %d type arguments, got %d for %q", span, len(typeParams), len(astTypeArgs), ty)
+	}
+	typeArgs := make([]Type, len(astTypeArgs))
+	for i, astTypeArg := range astTypeArgs {
+		argType, err := tc.lookupTypeOfNode(astTypeArg)
+		if err != nil {
+			return nil, err
+		}
+		typeArgs[i] = argType
+	}
+	return resolveTypeArgs(ty, typeParams, typeArgs), nil
+}
+
 func (tc *typeChecker) VisitIdentExpression(expr *ast.IdentExpression) error {
 	ty, found := tc.typeScope.lookupType(expr.Ident.String())
 	if !found {
 		return errors.Errorf("%s: type not found for identifier %s", expr.Span(), expr.Ident)
+	}
+	if genericType, ok := ty.(GenericType); ok && len(expr.TypeArgs) > 0 {
+		resolvedType, err := tc.resolveGenericType(genericType, expr.TypeArgs, expr.Span())
+		if err != nil {
+			return err
+		}
+		ty = resolvedType
 	}
 	if _, _, ok := tc.typeScope.lookupVariable(expr.Ident); !ok {
 		tc.typeInfo.typeBindings[expr] = ty
@@ -713,96 +770,36 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 	return nil
 }
 
-func (tc *typeChecker) resolveCall(
-	calleeType *FunctionType, astArgs []ast.Expression, astTypeArgs []ast.Type, span token.Span) (*Call, error) {
-	calleeArgTypes := calleeType.ArgTypes
-	if calleeType.IsMethod() && !calleeType.IsStaticMethod() {
-		calleeArgTypes = calleeArgTypes[1:]
-	}
-	if len(calleeArgTypes) != len(astArgs) {
-		return nil, errors.Errorf(
-			"%s: expected %d arguments, got %d for %s", span, len(calleeArgTypes), len(astArgs), calleeType)
-	}
-	argTypes := make([]Type, len(astArgs))
-	for i, arg := range astArgs {
-		argType := tc.typeInfo.MustLookup(arg)
-		argTypes[i] = argType
-	}
-	typeParams := calleeType.typeParams
-	typeArgs := make([]Type, len(calleeType.typeParams))
-	if len(astTypeArgs) > 0 {
-		if len(astTypeArgs) != len(typeParams) {
-			return nil, errors.Errorf(
-				"%s: expected %d type arguments, got %d for %q", span, len(typeParams), len(astTypeArgs), calleeType)
-		}
-		for i, astTypeArg := range astTypeArgs {
-			typeArg, err := tc.lookupTypeOfNode(astTypeArg)
-			if err != nil {
-				return nil, err
-			}
-			typeArgs[i] = typeArg
-		}
-	} else if len(typeParams) > 0 {
-		// Let's try to infer the type arguments.
-		for i, calleeArgType := range calleeArgTypes {
-			if typeParam, ok := calleeArgType.(*TypeParam); ok {
-				argType := argTypes[i]
-				previousTypeArg := typeArgs[i]
-				if previousTypeArg != nil && previousTypeArg != argType {
-					return nil, errors.Errorf(
-						"%s: type argument %q already inferred as %s, got %s", span, typeParam.Name, previousTypeArg, argType)
-				}
-				typeArgs[i] = argType
-			}
-		}
-	}
-	resolveTypeParam := func(ty Type) Type {
-		if typeParam, ok := ty.(*TypeParam); ok {
-			for i, param := range typeParams {
-				if param.Equal(*typeParam) {
-					return typeArgs[i]
-				}
-			}
-		}
-		return ty
-	}
-	resolvedCalleeArgTypes := make([]Type, len(calleeArgTypes))
-	for i, ty := range calleeArgTypes {
-		resolvedCalleeArgTypes[i] = resolveTypeParam(ty)
-	}
-	returnType := resolveTypeParam(calleeType.ReturnType)
-	// Finally, verify argument and return types.
-	for i, argType := range argTypes {
-		calleeArgType := resolvedCalleeArgTypes[i]
-		if !calleeArgType.IsAssignableFrom(argType) {
-			return nil, errors.Errorf(
-				"%s: expected argument %d to be of type %s, got %s", span, i, calleeArgType, argType)
-		}
-	}
-	call := Call{
-		Callee:     calleeType,
-		ArgTypes:   argTypes,
-		ReturnType: returnType,
-		TypeArgs:   typeArgs,
-	}
-	return &call, nil
-}
-
 func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) error {
 	if err := w.WalkCallExpression(expr); err != nil {
 		return err
 	}
-	calleeType, ok := tc.typeInfo.MustLookup(expr.Callee).(*FunctionType)
+	functionType, ok := tc.typeInfo.MustLookup(expr.Callee).(*FunctionType)
 	if !ok {
-		return errors.Errorf("%s: callee %q is not a function type", expr.Span(), calleeType)
+		return errors.Errorf("%s: callee %q is not a function type", expr.Span(), functionType)
 	}
-	call, err := tc.resolveCall(calleeType, expr.Args, expr.TypeArgs, expr.Span())
-	if err != nil {
-		return err
+	functionArgTypes := functionType.ArgTypes
+	if functionType.IsMethod() && !functionType.IsStaticMethod() {
+		functionArgTypes = functionArgTypes[1:]
 	}
-	tc.typeInfo.Set(expr, call.ReturnType)
-	// Record the call so we can later on easily determine all the types.
-	tc.typeInfo.recordCall(expr, *call)
+	if len(functionArgTypes) != len(expr.Args) {
+		return errors.Errorf(
+			"%s: expected %d arguments, got %d for %s", expr.Span(), len(functionArgTypes), len(expr.Args), functionType)
+	}
+	argTypes := make([]Type, len(expr.Args))
+	for i, arg := range expr.Args {
+		argType := tc.typeInfo.MustLookup(arg)
+		argTypes[i] = argType
+	}
+	// Finally, verify argument and return types.
+	for i, argType := range argTypes {
+		functionArgType := functionArgTypes[i]
+		if !functionArgType.IsAssignableFrom(argType) {
+			return errors.Errorf(
+				"%s: expected argument %d to be of type %s, got %s", expr.Span(), i, functionArgType, argType)
+		}
+	}
+	tc.typeInfo.Set(expr, functionType.ReturnType)
 	return nil
 }
 
@@ -815,12 +812,19 @@ func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.W
 	if !isType {
 		return errors.Errorf("%s: type %q is not a struct type", expr.Span(), structType_)
 	}
-	member, found := structType.FindMember(expr.Field, expr.Span())
+	memberType, found := structType.FindMember(expr.Field, expr.Span())
 	if !found {
 		structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
 		return errors.Errorf("%s: member %q not found in struct type %q", expr.Span(), expr.Field, structSymbol.Name)
 	}
-	tc.typeInfo.Set(expr, member)
+	if genericType, ok := memberType.(GenericType); ok && len(expr.TypeArgs) > 0 {
+		resolvedType, err := tc.resolveGenericType(genericType, expr.TypeArgs, expr.Span())
+		if err != nil {
+			return err
+		}
+		memberType = resolvedType
+	}
+	tc.typeInfo.Set(expr, memberType)
 	return nil
 }
 
@@ -931,6 +935,13 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 		return err
 	}
 	funcType.typeParams = typeParams
+	// The declared function type will have the type parameters as its type arguments. This way
+	// we don't have to distinguish between a type with type arguments set and one without type
+	// arguments.
+	funcType.TypeArgs = make([]Type, len(typeParams))
+	for i, typeParam := range typeParams {
+		funcType.TypeArgs[i] = typeParam
+	}
 	argTypes, returnType, err := tc.resolveFunctionArgsAndReturnType(decl.Args, decl.ReturnType)
 	if err != nil {
 		return err
@@ -1214,7 +1225,7 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 			types:        make(map[ast.NodeId]Type),
 			symbols:      make(map[string]*Symbol),
 			typeBindings: make(map[*ast.IdentExpression]Type),
-			calls:        make(map[*ast.CallExpression]Call)},
+		},
 		typeScope:     newTypeScope(nil),
 		symbolScope:   newSymbolScope(node, nil),
 		genericScope:  newGenericScope(nil),

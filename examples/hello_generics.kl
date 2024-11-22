@@ -35,11 +35,15 @@ fn main() {
     print_int(return_it_again<Int>(2))
     print(return_first<Str, Int>(" multiple ", 42))
     print_int(return_second<Str, Int>(" multiple", 42))
-    print(Planet.static<Str>(" static"))
+    print(Planet.static<Str>(" static "))
     let p = Planet(name="Earth")
     print(return_it<Planet>(p).name)
     print(p.method<Str>(" and method"))
+    let var_without_type_args = return_it
+    print(var_without_type_args<Str>(" from variable without type args "))
+    let var_with_type_args = return_it<Str>
+    print(var_with_type_args("from variable with type args "))
     -- Type inference
-    print(return_it(" inferred"))
-    print(return_second(42, " again"))
+    -- print(return_it(" inferred"))
+    -- print(return_second(42, " again"))
 }

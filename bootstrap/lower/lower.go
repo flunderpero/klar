@@ -45,10 +45,14 @@ const lowerNodeIdStart = 1_000_000_000
 const lowerTypeIdStart = 1_000_000_000
 
 type FunctionSpecialization struct {
-	FunctionDef     *ast.FunctionDefinition
-	FunctionDefType *typed.FunctionType
-	SpecializedType *typed.FunctionType
-	TypeArgs        []typed.Type
+	FunctionDef *ast.FunctionDefinition
+	Specialized *typed.FunctionType
+	Base        *typed.FunctionType
+}
+
+func (f FunctionSpecialization) String() string {
+	name := fmt.Sprintf("%s from %s", f.Specialized.Id(), f.Base.Id())
+	return fmt.Sprintf("FunctionSpecialization\n%s\n%s", base.IndentString(name, 1), base.Indent(f.Specialized, 1))
 }
 
 type OpaqueStructType struct {
@@ -60,15 +64,6 @@ func (t *OpaqueStructType) String() string {
 }
 
 var opaqueStructType = &OpaqueStructType{BaseType: typed.NewBaseType(lowerTypeIdStart)}
-
-func (f FunctionSpecialization) String() string {
-	name := fmt.Sprintf("%s from %s", f.SpecializedType.Id(), f.FunctionDefType.Id())
-	return fmt.Sprintf(
-		"FunctionSpecialization\n%s\n%s\n    (TypeArgs)%s",
-		base.IndentString(name, 1),
-		base.Indent(f.SpecializedType, 1),
-		base.IndentSlice(f.TypeArgs, 2))
-}
 
 type lower struct {
 	DefaultTransformer
@@ -91,46 +86,39 @@ func try_convert_to_opaque(t typed.Type) typed.Type {
 	return t
 }
 
-// `call` is optional. If not given `declType` must not be generic
-func (l *lower) addFunctionSpecialization(declType *typed.FunctionType, call *typed.Call) *typed.FunctionType {
-	if typed.IsBuiltInFunction(declType) {
-		return declType
+func (l *lower) addFunctionSpecialization(funcType *typed.FunctionType) *typed.FunctionType {
+	if typed.IsBuiltInFunction(funcType) {
+		return funcType
 	}
-	hasTypeParams := len(declType.TypeParams()) > 0
-	if hasTypeParams && (call == nil || len(call.TypeArgs) == 0) {
-		// We don't record the generic variant (i.e. the one without type args).
-		return declType
-	}
-	var callTypeArgs = []typed.Type{}
-	if call != nil && len(call.TypeArgs) > 0 {
-		for _, arg := range call.TypeArgs {
-			callTypeArgs = append(callTypeArgs, try_convert_to_opaque(arg))
-		}
+	funcTypeArgs := make([]typed.Type, len(funcType.TypeArgs))
+	for i, arg := range funcType.TypeArgs {
+		funcTypeArgs[i] = try_convert_to_opaque(arg)
 	}
 	for _, f := range l.functionSpecializations {
-		if f.FunctionDefType.Id() == declType.Id() {
+		if f.Specialized.Id() == funcType.Id() {
+			return funcType
+		}
+		if f.Base.Id() == funcType.Id() {
 			typeArgsMatch := true
-			for i, arg := range f.TypeArgs {
-				callTypeArg := callTypeArgs[i]
-				if arg.Id() != callTypeArg.Id() {
+			for i, arg := range f.Specialized.TypeArgs {
+				funcTypeArg := funcTypeArgs[i]
+				if arg.Id() != funcTypeArg.Id() {
 					typeArgsMatch = false
 					break
 				}
 			}
 			if typeArgsMatch {
-				return f.SpecializedType
+				return f.Specialized
 			}
 		}
 	}
-	var funcSpec FunctionSpecialization
-	if call == nil || len(call.TypeArgs) == 0 {
-		funcSpec = FunctionSpecialization{FunctionDefType: declType, SpecializedType: declType}
-	} else {
-		concreteType := typed.NewFunctionType(l.newTypeId(), declType.TypeParams(), call.ArgTypes, call.ReturnType)
-		funcSpec = FunctionSpecialization{FunctionDefType: declType, TypeArgs: callTypeArgs, SpecializedType: concreteType}
+	base := funcType
+	if funcType.IsGeneric() {
+		funcType = funcType.CloneWith(l.newTypeId(), funcTypeArgs)
 	}
+	funcSpec := FunctionSpecialization{Specialized: funcType, Base: base}
 	l.functionSpecializations = append(l.functionSpecializations, funcSpec)
-	return funcSpec.SpecializedType
+	return funcType
 }
 
 func (l *lower) newTypeId() typed.TypeId {
@@ -139,7 +127,9 @@ func (l *lower) newTypeId() typed.TypeId {
 }
 
 func (l *lower) convertToTypeIdIdentExpression(expr ast.Expression, ty typed.Type) *ast.IdentExpression {
-	return ast.NewIdentExpression(ast.Ident(ty.Id().String()), expr.Id(), expr.Span())
+	res := ast.NewIdentExpression(ast.Ident(ty.Id().String()), expr.Id(), expr.Span())
+	l.typeInfo.Set(res, ty)
+	return res
 }
 
 // Convert and `IdentExpression` to a `TypeExpression` if it points to a function type.
@@ -149,9 +139,9 @@ func (l *lower) VisitIdentExpression(expr *ast.IdentExpression) (ast.Expression,
 		return expr, true
 	}
 	if functionType, isFunction := ty.(*typed.FunctionType); isFunction {
-		expr = l.convertToTypeIdIdentExpression(expr, ty)
 		// Since the function has been referenced, we need to generate code for it.
-		l.addFunctionSpecialization(functionType, nil)
+		ty = l.addFunctionSpecialization(functionType)
+		expr = l.convertToTypeIdIdentExpression(expr, ty)
 	}
 	return expr, true
 }
@@ -170,10 +160,9 @@ func (l *lower) VisitMemberExpression(expr *ast.MemberExpression, w TransformWal
 	if !ok || !functionType.IsStaticMethod() {
 		return expr, true
 	}
-	res := l.convertToTypeIdIdentExpression(expr, functionType)
-	l.typeInfo.Set(res, functionType)
 	// Since the function has been referenced, we need to generate code for it.
-	l.addFunctionSpecialization(functionType, nil)
+	functionType = l.addFunctionSpecialization(functionType)
+	res := l.convertToTypeIdIdentExpression(expr, functionType)
 	return res, true
 }
 
@@ -189,17 +178,14 @@ func (l *lower) VisitCallExpression(expr *ast.CallExpression, w TransformWalker)
 	}
 	functionType := l.typeInfo.MustLookup(expr.Callee).(*typed.FunctionType)
 	if !functionType.IsMethod() || functionType.IsStaticMethod() {
-		functionType = l.addFunctionSpecialization(functionType, l.typeInfo.MustLookupCall(expr))
+		functionType = l.addFunctionSpecialization(functionType)
 		l.typeInfo.Set(expr.Callee, functionType)
 		return expr, true
 	}
 	receiver := expr.Callee.(*ast.MemberExpression).Target
-	receiverType := l.typeInfo.MustLookup(receiver)
 	expr.Args = append([]ast.Expression{receiver}, expr.Args...)
 	expr.Callee = l.convertToTypeIdIdentExpression(expr.Callee, functionType)
-	call := l.typeInfo.MustLookupCall(expr)
-	call.ArgTypes = append([]typed.Type{receiverType}, call.ArgTypes...)
-	functionType = l.addFunctionSpecialization(functionType, call)
+	functionType = l.addFunctionSpecialization(functionType)
 	l.typeInfo.Set(expr.Callee, functionType)
 	return expr, true
 }
@@ -236,7 +222,7 @@ func (l *lower) VisitTraitDeclaration(trait *ast.TraitDeclaration, w TransformWa
 func (l *lower) finalizeFunctionSpecializations() []FunctionSpecialization {
 	funcSpecs := []FunctionSpecialization{}
 	for i, function := range l.functionSpecializations {
-		def, ok := l.functionDefs[function.FunctionDefType.Id()]
+		def, ok := l.functionDefs[function.Base.Id()]
 		if !ok {
 			// This function specialization originates from a type binding and not a function definition.
 			continue
@@ -244,13 +230,16 @@ func (l *lower) finalizeFunctionSpecializations() []FunctionSpecialization {
 		function.FunctionDef = def
 		l.functionSpecializations[i] = function
 		funcSpecs = append(funcSpecs, function)
-		symbol := *l.typeInfo.MustLookupSymbol(function.FunctionDefType.Id())
+		symbol := *l.typeInfo.MustLookupSymbol(function.Base.Id())
 		typeArgs := ""
-		for _, arg := range function.TypeArgs {
-			typeArgs += arg.Id().String() + ","
+		for i, arg := range function.Specialized.TypeArgs {
+			if i > 0 {
+				typeArgs += ","
+			}
+			typeArgs += arg.Id().String()
 		}
-		symbol.Name = symbol.Name + typeArgs
-		l.typeInfo.DeclareSymbol(function.SpecializedType.Id(), &symbol)
+		symbol.Name = fmt.Sprintf("%s<%s>", symbol.Name, typeArgs)
+		l.typeInfo.DeclareSymbol(function.Specialized.Id(), &symbol)
 	}
 	return funcSpecs
 }
@@ -280,7 +269,7 @@ func Lower(module *ast.Module, typeInfo *typed.TypeInfo) *LoweredAST {
 	}
 	if typeInfo.Main != nil {
 		// We need to add a specialization for `main` or no code will be generated.
-		l.addFunctionSpecialization(typeInfo.Main, nil)
+		l.addFunctionSpecialization(typeInfo.Main)
 	}
 	return &LoweredAST{Module: module, FunctionSpecializations: l.finalizeFunctionSpecializations()}
 }

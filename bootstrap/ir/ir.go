@@ -1138,7 +1138,7 @@ func GenerateIR(lowered *lower.LoweredAST, typeInfo *typed.TypeInfo) (*Module, e
 	var main *FunctionDefinition
 	// First forward declare all functions.
 	for _, funcSpec := range funcSpecs {
-		funcType := funcSpec.SpecializedType
+		funcType := funcSpec.Specialized
 		funcDef := declareFunction(declaredTypes, &rootSymbolTable, funcType)
 		funcDefs = append(funcDefs, funcDef)
 		if funcType == typeInfo.Main {
@@ -1172,7 +1172,7 @@ func GenerateIR(lowered *lower.LoweredAST, typeInfo *typed.TypeInfo) (*Module, e
 		}
 		// Make function arguments visible.
 		for a, arg := range funcSpec.FunctionDef.Decl.Args {
-			argType := funcSpec.SpecializedType.ArgTypes[a]
+			argType := funcSpec.Specialized.ArgTypes[a]
 			ty := declaredTypes.MustLookup(argType)
 			reg := gen.nextRegister(ty)
 			gen.symbolTable.declare(arg.Name, reg)

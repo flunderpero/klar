@@ -124,7 +124,8 @@ type Expression interface {
 
 type IdentExpression struct {
 	node
-	Ident Ident
+	Ident    Ident
+	TypeArgs []Type
 }
 
 func NewIdentExpression(ident Ident, id NodeId, span token.Span) *IdentExpression {
@@ -132,7 +133,7 @@ func NewIdentExpression(ident Ident, id NodeId, span token.Span) *IdentExpressio
 }
 
 func (expr *IdentExpression) String() string {
-	return fmt.Sprintf("IdentExpression %q", expr.Ident)
+	return fmt.Sprintf("IdentExpression %q%s", expr.Ident, base.IndentString(typeArgsString(expr.TypeArgs), 1))
 }
 
 type StringLiteralExpression struct {
@@ -164,12 +165,13 @@ func (expr *BoolLiteralExpression) String() string {
 
 type MemberExpression struct {
 	node
-	Target Expression
-	Field  Ident
+	Target   Expression
+	Field    Ident
+	TypeArgs []Type
 }
 
 func (expr *MemberExpression) String() string {
-	return fmt.Sprintf("MemberExpression\n%s\n%s", base.Indent(expr.Target, 1), base.Indent(expr.Field, 1))
+	return fmt.Sprintf("MemberExpression\n%s\n%s%s", base.Indent(expr.Target, 1), base.Indent(expr.Field, 1), base.IndentString(typeArgsString(expr.TypeArgs), 1))
 }
 
 type BinaryOperator string
@@ -217,15 +219,12 @@ func (s *StructInitExpression) String() string {
 
 type CallExpression struct {
 	node
-	TypeArgs []Type
-	Callee   Expression
-	Args     []Expression
+	Callee Expression
+	Args   []Expression
 }
 
 func (expr *CallExpression) String() string {
-	return fmt.Sprintf(
-		"CallExpression\n%s%s%s",
-		base.Indent(expr.Callee, 1), base.IndentString(typeArgsString(expr.TypeArgs), 1), base.IndentSlice(expr.Args, 1))
+	return fmt.Sprintf("CallExpression\n%s%s", base.Indent(expr.Callee, 1), base.IndentSlice(expr.Args, 1))
 }
 
 type BlockExpression struct {
@@ -501,10 +500,6 @@ func (p *Parser) parseTypeArgs() ([]Type, error) {
 }
 
 func (p *Parser) parseCallExpression(callee Expression) (*CallExpression, error) {
-	typeArgs, err := p.parseTypeArgs()
-	if err != nil {
-		return nil, err
-	}
 	if _, err := p.consume(token.LParen); err != nil {
 		return nil, err
 	}
@@ -526,7 +521,7 @@ func (p *Parser) parseCallExpression(callee Expression) (*CallExpression, error)
 			args = append(args, arg)
 		}
 	}
-	return &CallExpression{node: p.newNode(callee.Span()), Callee: callee, TypeArgs: typeArgs, Args: args}, nil
+	return &CallExpression{node: p.newNode(callee.Span()), Callee: callee, Args: args}, nil
 }
 
 func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
@@ -889,11 +884,15 @@ func (p *Parser) parseExpressionWithPostfix() (Expression, error) {
 				return nil, errors.Errorf("block and if expressions cannot be used as member expressions")
 			}
 			p.consumeAny()
-			field := p.consumeAny()
-			if field.Kind != token.Ident {
-				return nil, errors.Errorf("expected identifier after '.', got %s", field)
+			field, err := p.consume(token.Ident)
+			if err != nil {
+				return nil, err
 			}
-			expr = &MemberExpression{node: p.newNode(from), Target: expr, Field: Ident(field.Value)}
+			typeArgs, err := p.parseTypeArgs()
+			if err != nil {
+				return nil, err
+			}
+			expr = &MemberExpression{node: p.newNode(from), Target: expr, Field: Ident(field.Value), TypeArgs: typeArgs}
 		case token.LParen, token.LAngle:
 			if is_forbidden_expression {
 				return nil, errors.Errorf("block and if expressions cannot be called")
@@ -909,13 +908,21 @@ func (p *Parser) parseExpressionWithPostfix() (Expression, error) {
 	panic("unreachable")
 }
 
+func (p *Parser) parseIdentExpression(token token.Token) (*IdentExpression, error) {
+	typeArgs, err := p.parseTypeArgs()
+	if err != nil {
+		return nil, err
+	}
+	return &IdentExpression{node: p.newNode(token.Span), Ident: Ident(token.Value), TypeArgs: typeArgs}, nil
+}
+
 func (p *Parser) parsePrimaryExpression() (Expression, error) {
 	from := p.span()
 	t := p.peek()
 	switch t.Kind {
 	case token.Ident:
 		p.consumeAny()
-		return &IdentExpression{node: p.newNode(from), Ident: Ident(t.Value)}, nil
+		return p.parseIdentExpression(t)
 	case token.TypeIdent:
 		p.consumeAny()
 		ident := Ident(t.Value)
@@ -923,7 +930,7 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 		case token.LParen:
 			return p.parseStructInitExpression(ident, from)
 		}
-		return &IdentExpression{node: p.newNode(from), Ident: ident}, nil
+		return p.parseIdentExpression(t)
 	case token.Self:
 		p.consumeAny()
 		return &IdentExpression{node: p.newNode(from), Ident: Ident("self")}, nil

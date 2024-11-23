@@ -16,6 +16,7 @@ fn main() {
     print(", ")
 
     let p = Planet(earth_like=true, name="Earth")
-    -- print_bool(p.earth_like)
+    print_bool(p.earth_like)
+    print(", ")
     print(p.name)
 }

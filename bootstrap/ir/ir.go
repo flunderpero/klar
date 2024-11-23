@@ -14,7 +14,6 @@ import (
 
 type Type interface {
 	String() string
-	Size() int
 }
 
 type BuiltInType string
@@ -31,33 +30,12 @@ func (t BuiltInType) String() string {
 	return string(t)
 }
 
-func (t BuiltInType) Size() int {
-	switch t {
-	case NoneType:
-		return 0
-	case Int1Type:
-		return 1
-	case Int8Type:
-		return 1
-	case Int32Type:
-		return 4
-	case Int64Type:
-		return 8
-	default:
-		panic(fmt.Sprintf("Unknown basic type: %s", t))
-	}
-}
-
 type PointerType struct {
 	ElementType Type
 }
 
 func (t PointerType) String() string {
 	return fmt.Sprintf("%s*", t.ElementType)
-}
-
-func (t PointerType) Size() int {
-	return 8
 }
 
 type StructType struct {
@@ -73,14 +51,6 @@ func (t StructType) String() string {
 		fields += field.String()
 	}
 	return fmt.Sprintf("{ %s }", fields)
-}
-
-func (t StructType) Size() int {
-	size := 0
-	for _, field := range t.Fields {
-		size += field.Size()
-	}
-	return size
 }
 
 type FunctionParam struct {
@@ -108,11 +78,13 @@ func (t FunctionType) String() string {
 	return fmt.Sprintf("%s (%s)", t.Result, params)
 }
 
-func (t FunctionType) Size() int {
-	return 8
-}
-
 var StrType = &StructType{Fields: []Type{Int64Type, &PointerType{Int8Type}}}
+
+type DataLayout interface {
+	SizeOf(ty Type) int
+	Alignment(ty Type) int
+	FieldOffset(ty *StructType, index int) int
+}
 
 type BlockId int
 
@@ -194,6 +166,7 @@ func (t FunctionDefinition) String() string {
 }
 
 type Module struct {
+	DataLayout    DataLayout
 	Functions     []*FunctionDefinition
 	Constants     []*StrConst
 	DeclaredTypes *DeclaredTypes
@@ -626,6 +599,7 @@ type generator struct {
 	registerConstraints RegisterConstraints
 	loopScopes          []loopScope
 	definedFunctions    *map[typed.TypeId]DefinedFunction
+	dataLayout          DataLayout
 }
 
 func (g *generator) enterScope() {
@@ -761,7 +735,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		mallocFuncType := g.declaredTypes.MustLookup(typed.BuiltInUnsafeMallocFunction).(*FunctionType)
 		g.append(&Int64Const{
 			register: sizeReg,
-			Value:    int64(structType.Size()),
+			Value:    int64(g.dataLayout.SizeOf(structType)),
 		}, nil)
 		g.append(&Call{
 			register:     mallocReg,
@@ -1126,7 +1100,7 @@ func declareFunction(
 	return res
 }
 
-func GenerateIR(lowered *lower.LoweredAST, typeInfo *typed.TypeInfo) (*Module, error) {
+func GenerateIR(lowered *lower.LoweredAST, typeInfo *typed.TypeInfo, dataLayout DataLayout) (*Module, error) {
 	declaredTypes := &DeclaredTypes{Types: make(map[typed.TypeId]Type)}
 	rootSymbolTable := symbolTable{symbols: make(map[ast.Ident]Register)}
 	for _, specializedStruct := range lowered.StructSpecializations {
@@ -1170,6 +1144,7 @@ func GenerateIR(lowered *lower.LoweredAST, typeInfo *typed.TypeInfo) (*Module, e
 			registerConstraints: RegisterConstraints{},
 			loopScopes:          []loopScope{},
 			definedFunctions:    &definedFunctions,
+			dataLayout:          dataLayout,
 		}
 		// Make function parameters visible.
 		for _, param := range funcSpec.Specialized.Params {
@@ -1191,7 +1166,12 @@ func GenerateIR(lowered *lower.LoweredAST, typeInfo *typed.TypeInfo) (*Module, e
 		funcDef.RegisterConstraints = gen.registerConstraints
 	}
 	return &Module{
-		Functions: funcDefs, Constants: constants, DeclaredTypes: declaredTypes, Main: main, TypeInfo: typeInfo,
+		DataLayout:    dataLayout,
+		Functions:     funcDefs,
+		Constants:     constants,
+		DeclaredTypes: declaredTypes,
+		Main:          main,
+		TypeInfo:      typeInfo,
 	}, nil
 }
 

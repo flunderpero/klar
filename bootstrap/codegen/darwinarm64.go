@@ -10,6 +10,58 @@ import (
 	"github.com/pkg/errors"
 )
 
+type DataLayout struct{}
+
+func (self DataLayout) SizeOf(ty ir.Type) int {
+	switch ty := ty.(type) {
+	case ir.BuiltInType:
+		switch ty {
+		case ir.NoneType:
+			return 0
+		case ir.Int1Type:
+			return 1
+		case ir.Int8Type:
+			return 1
+		case ir.Int32Type:
+			return 4
+		case ir.Int64Type:
+			return 8
+		default:
+			panic(fmt.Sprintf("Unknown basic type: %s", ty))
+		}
+	case *ir.PointerType:
+		return 8
+	case *ir.StructType:
+		if len(ty.Fields) == 0 {
+			return 0
+		}
+		size := self.FieldOffset(ty, len(ty.Fields)-1)
+		lastField := ty.Fields[len(ty.Fields)-1]
+		size += self.SizeOf(lastField)
+		size = (size + 8 - 1) &^ (8 - 1)
+		return size
+	}
+	panic(fmt.Sprintf("Unknown type: %T", ty))
+}
+
+func (self DataLayout) Alignment(ty ir.Type) int {
+	switch ty := ty.(type) {
+	case ir.BuiltInType, *ir.PointerType:
+		return self.SizeOf(ty)
+	}
+	panic(fmt.Sprintf("Unknown type: %T", ty))
+}
+
+func (self DataLayout) FieldOffset(ty *ir.StructType, index int) int {
+	offset := 0
+	for i := 0; i < index; i++ {
+		offset += self.SizeOf(ty.Fields[i])
+		alignment := self.Alignment(ty.Fields[i]) - 1
+		offset = (offset + alignment) &^ (alignment)
+	}
+	return offset
+}
+
 type register string
 
 const (
@@ -275,6 +327,7 @@ type Code struct {
 	values            map[ir.RegisterId]*registerAllocation
 	registerAllocator registerAllocator
 	stackAllocator    *stackAllocator
+	dataLayout        ir.DataLayout
 }
 
 func (c *Code) offset() int {
@@ -373,9 +426,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 				if !ok {
 					return errors.Errorf("expected a struct type, got: %T", inst.SourceType)
 				}
-				for _, field := range structType.Fields[:inst.FieldIndex] {
-					offset += field.Size()
-				}
+				offset = c.dataLayout.FieldOffset(structType, inst.FieldIndex)
 			}
 			switch source := inst.Source.(type) {
 			case *ir.StrConst:
@@ -487,6 +538,7 @@ func generateFunction(function *ir.FunctionDefinition, module *ir.Module, isMain
 		stringConstants: &module.Constants,
 		values:          make(map[ir.RegisterId]*registerAllocation),
 		stackAllocator:  stackAllocator,
+		dataLayout:      module.DataLayout,
 	}
 	c.registerAllocator = newRegisterAllocator(
 		slices.Concat(callerSavedRegisters, calleeSavedRegisters),

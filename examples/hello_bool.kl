@@ -1,0 +1,21 @@
+fn is_true(b Bool) Bool => b == true
+
+struct Planet {
+    earth_like Bool
+    name Str
+}
+
+fn main() {
+    print_bool(is_true(true))
+    print(", ")
+    print_bool(is_true(false))
+    print(", ")
+    print_bool(is_true(42 == 42))
+    print(", ")
+    print_bool(is_true(42 == 24))
+    print(", ")
+
+    let p = Planet(earth_like=true, name="Earth")
+    -- print_bool(p.earth_like)
+    print(p.name)
+}

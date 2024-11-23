@@ -40,15 +40,20 @@ var BuiltInPrintIntFunction = &FunctionType{
 	Params:   []FunctionParam{{Name: "value", Type: Int64Type}},
 	Result:   NoneType,
 }
-var BuiltInUnsafeMallocFunction = &FunctionType{
+var BuiltInPrintBoolFunction = &FunctionType{
 	BaseType: BaseType{TypeId(102)},
+	Params:   []FunctionParam{{Name: "value", Type: BoolType}},
+	Result:   NoneType,
+}
+var BuiltInUnsafeMallocFunction = &FunctionType{
+	BaseType: BaseType{TypeId(103)},
 	Params:   []FunctionParam{{Name: "size", Type: Int64Type}},
 	Result:   Int64Type,
 }
 
 func IsBuiltInFunction(functionType *FunctionType) bool {
 	id := functionType.Id()
-	return id == BuiltInPrintFunction.Id() || id == BuiltInPrintIntFunction.Id() || id == BuiltInUnsafeMallocFunction.Id()
+	return id == BuiltInPrintFunction.Id() || id == BuiltInPrintIntFunction.Id() || id == BuiltInUnsafeMallocFunction.Id() || id == BuiltInPrintBoolFunction.Id()
 }
 
 var builtInSpan = token.Span{File: new(string), Src: &[]byte{}, Start: 0, End: 0}
@@ -864,12 +869,12 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 		}
 		tc.typeInfo.Set(expr, Int64Type)
 	case ast.OpEquality:
-		// For now, we only support equality of numbers.
-		if lhs != Int64Type {
+		// For now, we only support equality of Int (alias for Int64) and Bool.
+		if lhs != Int64Type && lhs != BoolType {
 			return errors.Errorf("%s: lhs of equality expression must be of type Int64Type, got %s", expr.Span(), lhs)
 		}
-		if rhs != Int64Type {
-			return errors.Errorf("%s: rhs of equality expression must be of type Int64Type, got %s", expr.Span(), rhs)
+		if rhs != lhs {
+			return errors.Errorf("%s: rhs of equality expression must match lhs, expected %q got %q", expr.Span(), lhs, rhs)
 		}
 		tc.typeInfo.Set(expr, BoolType)
 	default:
@@ -1338,20 +1343,26 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 		functionTypes: make(map[string]FunctionType),
 	}
 	// Declare builtin types and functions.
+	if err := tc.typeScope.declareType("None", NoneType, builtInSpan); err != nil {
+		panic(errors.Wrap(err, "failed to declare NoneType"))
+	}
 	if err := tc.typeScope.declareType("Str", StrType, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare StrType"))
 	}
+	if err := tc.typeScope.declareType("Bool", BoolType, builtInSpan); err != nil {
+		panic(errors.Wrap(err, "failed to declare BoolType"))
+	}
 	if err := tc.typeScope.declareType("Int", Int64Type, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare IntType"))
-	}
-	if err := tc.typeScope.declareType("None", NoneType, builtInSpan); err != nil {
-		panic(errors.Wrap(err, "failed to declare NoneType"))
 	}
 	if err := tc.typeScope.declareType("print", BuiltInPrintFunction, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare print function"))
 	}
 	if err := tc.typeScope.declareType("print_int", BuiltInPrintIntFunction, builtInSpan); err != nil {
 		panic(errors.Wrap(err, "failed to declare print_int function"))
+	}
+	if err := tc.typeScope.declareType("print_bool", BuiltInPrintBoolFunction, builtInSpan); err != nil {
+		panic(errors.Wrap(err, "failed to declare print_bool function"))
 	}
 	walker := &ast.DefaultWalker{Visitor: tc}
 	res, err := tc.check(node, walker)

@@ -46,6 +46,10 @@ const (
 	x28 register = "x28"
 )
 
+func (r register) to32bit() register {
+	return register(strings.Replace(string(r), "x", "w", 1))
+}
+
 var calleeSavedRegisters = []register{x19, x20, x21, x22, x23, x24, x25, x26, x27, x28}
 var callerSavedRegisters = []register{x9, x10, x11, x12, x13, x14, x15}
 var callArgsRegisters = []register{x0, x1, x2, x3, x4, x5, x6, x7, x8}
@@ -351,11 +355,11 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
 			c.emit("adds %s, %s, %s", reg, lhs, rhs)
 			c.values[inst.Register().Id] = reg
-		case *ir.Int64Compare:
+		case *ir.IntCompare:
 			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
 			c.values[inst.Register().Id] = reg
 			switch inst.Op {
-			case ir.Int64CompOpEQ:
+			case ir.IntCompOpEQ:
 				c.emit("cmp %s, %s", lhs, rhs)
 				c.emit("cset %s, eq", reg)
 			default:
@@ -398,31 +402,38 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
 			switch ty := inst.TargetType.(type) {
 			case ir.BuiltInType:
-				if ty != ir.Int64Type {
-					// We need `wx` registers to load other types.
-					return errors.Errorf("we don't know how to load a value of type %d yet", inst.TargetType)
+				switch ty {
+				case ir.Int1Type, ir.Int8Type:
+					c.emit("ldrb %s, [%s] ; %s", reg.reg.to32bit(), source, inst.Register())
+				case ir.Int64Type:
+					c.emit("ldr %s, [%s] ; %s", reg, source, inst.Register())
+				default:
+					return errors.Errorf("we don't know how to load a value of type %q yet", inst.TargetType)
 				}
 			case *ir.PointerType:
+				c.emit("ldr %s, [%s] ; %s", reg, source, inst.Register())
 			default:
 				return errors.Errorf("invalid target type for load instruction: %T", ty)
 			}
-			c.emit("ldr %s, [%s] ; %s", reg, source, inst.Register())
 			c.values[inst.Register().Id] = reg
 		case *ir.Store:
 			target := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Target))
 			value := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Value))
 			switch ty := inst.ValueType.(type) {
 			case ir.BuiltInType:
-				if ty != ir.Int64Type {
-					// We need `wx` registers to store other types.
+				switch ty {
+				case ir.Int1Type, ir.Int8Type:
+					c.emit("strb %s, [%s]", value.to32bit(), target)
+				case ir.Int64Type:
+					c.emit("str %s, [%s]", value, target)
+				default:
 					return errors.Errorf("we don't know how to store a value of type %q yet", inst.ValueType)
-
 				}
 			case *ir.PointerType:
+				c.emit("str %s, [%s]", value, target)
 			default:
 				return errors.Errorf("invalid target type for load instruction: %T", ty)
 			}
-			c.emit("str %s, [%s]", value, target)
 		case *ir.Call:
 			c.registerAllocator.spillCallRegisters(len(c.function.Type.Params))
 			savedCallerRegisters := c.registerAllocator.spillCallerSavedRegisters()
@@ -567,6 +578,30 @@ func defineBuiltInPrintIntFunction(asm *ASMText) {
     ret`, typed.BuiltInPrintIntFunction.Id())
 }
 
+func defineBuiltInPrintBoolFunction(asm *ASMText) {
+	asm.emit(
+		`
+; Function: print_bool
+%s:
+    stp fp, lr, [sp, #-16]!
+    mov fp, sp
+    cmp x0, #0
+    bne print_bool_true
+    adrp x0, _print_bool_false@PAGE
+    add x0, x0, _print_bool_false@PAGEOFF+0
+    b print_bool_end
+print_bool_true:
+    adrp x0, _print_bool_true@PAGE
+    add x0, x0, _print_bool_true@PAGEOFF+0
+print_bool_end:
+    bl _printf
+    mov x0, 0
+    bl _fflush
+    ldp fp, lr, [sp], #16
+    mov x0, xzr
+    ret`, typed.BuiltInPrintBoolFunction.Id())
+}
+
 func defineBuiltInUnsafeMalloc(asm *ASMText) {
 	asm.emit(
 		`
@@ -597,6 +632,7 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
 	defineBuiltInUnsafeMalloc(&asm)
 	defineBuiltInPrintFunction(&asm)
 	defineBuiltInPrintIntFunction(&asm)
+	defineBuiltInPrintBoolFunction(&asm)
 	for _, function := range irModule.Functions {
 		code, err := generateFunction(function, irModule, function == irModule.Main)
 		if err != nil {
@@ -624,6 +660,12 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
 	asm.emit(".align 3")
 	asm.emit("_print_int_format:")
 	asm.incIndent().emit(".asciz \"%%lld\"").decIndent()
+	asm.emit(".align 3")
+	asm.emit("_print_bool_true:")
+	asm.incIndent().emit(".asciz \"true\"").decIndent()
+	asm.emit(".align 3")
+	asm.emit("_print_bool_false:")
+	asm.incIndent().emit(".asciz \"false\"").decIndent()
 	asm.emit(".align 3")
 	asm.emit("_unsafe_malloc_failed:")
 	asm.incIndent().emit(".asciz \"out of memory\"").decIndent()

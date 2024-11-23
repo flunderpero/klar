@@ -21,7 +21,7 @@ type BuiltInType string
 
 const (
 	NoneType  BuiltInType = "none"
-	BoolType  BuiltInType = "i1"
+	Int1Type  BuiltInType = "i1"
 	Int8Type  BuiltInType = "i8"
 	Int32Type BuiltInType = "i32"
 	Int64Type BuiltInType = "i64"
@@ -35,7 +35,7 @@ func (t BuiltInType) Size() int {
 	switch t {
 	case NoneType:
 		return 0
-	case BoolType:
+	case Int1Type:
 		return 1
 	case Int8Type:
 		return 1
@@ -383,25 +383,26 @@ func (i SignedInt64AddWithOverflow) String() string {
 	return fmt.Sprintf("%s = iaddo i64 %s, i64 %s", i.register, i.Lhs, i.Rhs)
 }
 
-type Int64CompOp string
+type IntCompOp string
 
 const (
-	Int64CompOpEQ Int64CompOp = "eq"
+	IntCompOpEQ IntCompOp = "eq"
 )
 
-type Int64Compare struct {
+type IntCompare struct {
 	register Register
 	Lhs      Register
 	Rhs      Register
-	Op       Int64CompOp
+	Op       IntCompOp
+	IntType  BuiltInType
 }
 
-func (i *Int64Compare) Register() Register {
+func (i IntCompare) Register() Register {
 	return i.register
 }
 
-func (i Int64Compare) String() string {
-	return fmt.Sprintf("%s = icmp %s i64 %s, %s", i.register, i.Op, i.Lhs, i.Rhs)
+func (i IntCompare) String() string {
+	return fmt.Sprintf("%s = icmp %s %s %s, %s", i.register, i.Op, i.IntType, i.Lhs, i.Rhs)
 }
 
 type Callee interface {
@@ -715,7 +716,7 @@ func (g *generator) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) 
 		value = 1
 	}
 	g.append(&BoolConst{
-		register: g.nextRegister(BoolType),
+		register: g.nextRegister(Int1Type),
 		Value:    value,
 	}, expr)
 	return nil
@@ -843,16 +844,12 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 		}
 		g.append(&SignedInt64AddWithOverflow{register: g.nextRegister(Int64Type), Lhs: lhs, Rhs: rhs}, expr)
 	case ast.OpEquality:
-		// For now, we only know how to compare 64 bit integers.
-		lhsType := g.typeInfo.MustLookup(expr.Lhs)
-		if lhsType != typed.Int64Type {
-			return errors.Errorf("type of lhs is not Int64Type, but %s", lhsType)
+		// For now, we only know how to compare 64 and 1 bit integers.
+		ty := g.lookupType(expr.Lhs).(BuiltInType)
+		if ty != Int64Type && ty != Int1Type {
+			return errors.Errorf("type of lhs is not a supported int type, but %s", ty)
 		}
-		rhsType := g.typeInfo.MustLookup(expr.Rhs)
-		if rhsType != typed.Int64Type {
-			return errors.Errorf("type of rhs is not Int64Type, but %s", rhsType)
-		}
-		g.append(&Int64Compare{register: g.nextRegister(BoolType), Op: Int64CompOpEQ, Lhs: lhs, Rhs: rhs}, expr)
+		g.append(&IntCompare{register: g.nextRegister(Int1Type), Op: IntCompOpEQ, IntType: ty, Lhs: lhs, Rhs: rhs}, expr)
 	default:
 		return errors.Errorf("unsupported binary operator: %s", expr.Op)
 	}
@@ -1055,6 +1052,8 @@ func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
 		return NoneType
 	case typed.StrType:
 		return StrType
+	case typed.BoolType:
+		return Int1Type
 	case typed.Int64Type:
 		return Int64Type
 	}
@@ -1155,6 +1154,7 @@ func GenerateIR(lowered *lower.LoweredAST, typeInfo *typed.TypeInfo) (*Module, e
 	}
 	declareBuiltInFunction(typed.BuiltInPrintFunction)
 	declareBuiltInFunction(typed.BuiltInPrintIntFunction)
+	declareBuiltInFunction(typed.BuiltInPrintBoolFunction)
 	declareBuiltInFunction(typed.BuiltInUnsafeMallocFunction)
 	constants := []*StrConst{}
 	// Generate code for each function specialization.

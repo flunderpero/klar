@@ -1130,12 +1130,8 @@ func declareFunction(
 func GenerateIR(lowered *lower.LoweredAST, typeInfo *typed.TypeInfo) (*Module, error) {
 	declaredTypes := &DeclaredTypes{Types: make(map[typed.TypeId]Type)}
 	rootSymbolTable := symbolTable{symbols: make(map[ast.Ident]Register)}
-	for _, node := range lowered.Module.Nodes {
-		switch node := node.(type) {
-		case *ast.StructTypeDeclaration:
-			ty := typeInfo.MustLookup(node)
-			declaredTypes.declare(ty)
-		}
+	for _, specializedStruct := range lowered.StructSpecializations {
+		declaredTypes.declare(specializedStruct.Specialized)
 	}
 	funcSpecs := lowered.FunctionSpecializations
 	funcDefs := []*FunctionDefinition{}

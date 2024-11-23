@@ -99,7 +99,7 @@ type FunctionType struct {
 
 func (t FunctionType) String() string {
 	return fmt.Sprintf(
-		"FunctionType\n%s%s\n%s",
+		"FunctionType%s%s\n%s",
 		base.IndentString(typeParamsString(t.TypeParams), 1), base.IndentSlice(t.Params, 1), base.Indent(t.Result, 1))
 }
 
@@ -317,12 +317,17 @@ func (f StructTypeField) String() string {
 
 type StructTypeDeclaration struct {
 	node
-	Name   Ident
-	Fields []StructTypeField
+	Name       Ident
+	TypeParams []TypeParam
+	Fields     []StructTypeField
 }
 
 func (st StructTypeDeclaration) String() string {
-	return fmt.Sprintf("StructTypeDeclaration\n%s%s", base.Indent(st.Name, 1), base.IndentSlice(st.Fields, 1))
+	return fmt.Sprintf(
+		"StructTypeDeclaration%s\n%s%s",
+		base.IndentString(typeParamsString(st.TypeParams), 1),
+		base.Indent(st.Name, 1),
+		base.IndentSlice(st.Fields, 1))
 }
 
 func (st *StructTypeDeclaration) FindField(name Ident) (*StructTypeField, error) {
@@ -943,6 +948,10 @@ func (p *Parser) parseStructDeclaration() (*StructTypeDeclaration, error) {
 	if err != nil {
 		return nil, err
 	}
+	typeParams, err := p.parseTypeParams()
+	if err != nil {
+		return nil, err
+	}
 	if _, err = p.consume(token.LCurly); err != nil {
 		return nil, err
 	}
@@ -952,7 +961,8 @@ func (p *Parser) parseStructDeclaration() (*StructTypeDeclaration, error) {
 		switch t.Kind {
 		case token.RCurly:
 			p.consumeAny()
-			return &StructTypeDeclaration{node: p.newNode(from), Name: Ident(identToken.Value), Fields: fields}, nil
+			return &StructTypeDeclaration{
+				node: p.newNode(from), Name: Ident(identToken.Value), Fields: fields, TypeParams: typeParams}, nil
 		case token.Ident:
 			from := p.span()
 			p.consumeAny()

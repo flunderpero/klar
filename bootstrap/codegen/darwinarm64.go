@@ -415,7 +415,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			case ir.BuiltInType:
 				if ty != ir.Int64Type {
 					// We need `wx` registers to store other types.
-					return errors.Errorf("we don't know how to store a value of type %d yet", inst.ValueType)
+					return errors.Errorf("we don't know how to store a value of type %q yet", inst.ValueType)
 
 				}
 			case *ir.PointerType:

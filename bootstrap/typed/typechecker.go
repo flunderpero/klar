@@ -143,6 +143,8 @@ func (f TypeAndName[T]) String() string {
 type GenericType interface {
 	Type
 	TypeParams() []TypeParam
+	TypeArgs() []Type
+	HasTypeParams() bool
 }
 
 type TypeParam struct {
@@ -153,7 +155,7 @@ type TypeParam struct {
 }
 
 func (ty TypeParam) String() string {
-	return fmt.Sprintf("TypeParam %s %s[%d]", ty.Name, ty.GenericType.Id(), ty.Index)
+	return fmt.Sprintf("TypeParam %s #%s of %s[%d]", ty.Name, ty.Id(), ty.GenericType.Id(), ty.Index)
 }
 
 func (t TypeParam) Equal(other TypeParam) bool {
@@ -208,18 +210,46 @@ func (ty DeclaredType) IsAssignableFrom(other_ Type) bool {
 
 type StructType struct {
 	BaseType
-	Fields  []TypeAndName[Type]
-	Methods []TypeAndName[FunctionType]
-	traits  []*TraitType
+	typeParams []TypeParam
+	typeArgs   []Type
+	Fields     []TypeAndName[Type]
+	Methods    []TypeAndName[*FunctionType]
+	traits     []*TraitType
 }
 
-func (ty *StructType) Traits() []*TraitType {
+func (ty StructType) Traits() []*TraitType {
 	return ty.traits
 }
 
 func (ty StructType) String() string {
+	typeToString := func(t Type) string {
+		if t.Id() == ty.Id() {
+			return "Self"
+		}
+		return t.Id().String()
+	}
+	fields := make([]string, len(ty.Fields))
+	for i, field := range ty.Fields {
+		fields[i] = fmt.Sprintf("%s\n%s", field.Name, base.IndentString(typeToString(field.Type), 1))
+	}
 	return fmt.Sprintf(
-		"StructType\n    (Fields)%s\n    (Methods)%s", base.IndentSlice(ty.Fields, 2), base.IndentSlice(ty.Methods, 2))
+		"StructType%s%s\n    (Fields)%s\n    (Methods)%s",
+		base.IndentString(typeParamsString(ty.typeParams), 1),
+		base.IndentString(typeArgsString(ty.typeArgs), 1),
+		base.IndentStringSlice(fields, 2),
+		base.IndentSlice(ty.Methods, 2),
+	)
+}
+
+func (ty StructType) CloneWith(id TypeId, typeArgs []Type) *StructType {
+	return &StructType{
+		BaseType:   BaseType{id},
+		typeParams: ty.typeParams,
+		typeArgs:   typeArgs,
+		Fields:     ty.Fields,
+		Methods:    ty.Methods,
+		traits:     ty.traits,
+	}
 }
 
 func (ty StructType) FindFieldIndex(name ast.Ident, span token.Span) (int, bool) {
@@ -241,7 +271,7 @@ func (ty StructType) FindField(name ast.Ident, span token.Span) (*TypeAndName[Ty
 func (ty StructType) FindMethod(name ast.Ident, span token.Span) (*FunctionType, bool) {
 	for _, method := range ty.Methods {
 		if method.Name == name {
-			return &method.Type, true
+			return method.Type, true
 		}
 	}
 	return nil, false
@@ -265,6 +295,18 @@ func (ty StructType) CallParams() []FunctionParam {
 
 func (ty StructType) CallResult() Type {
 	return &ty
+}
+
+func (ty StructType) TypeParams() []TypeParam {
+	return ty.typeParams
+}
+
+func (ty StructType) TypeArgs() []Type {
+	return ty.typeArgs
+}
+
+func (ty StructType) HasTypeParams() bool {
+	return len(ty.typeParams) > 0
 }
 
 type TraitType struct {
@@ -299,7 +341,7 @@ type FunctionParam = TypeAndName[Type]
 type FunctionType struct {
 	BaseType
 	typeParams []TypeParam
-	TypeArgs   []Type
+	typeArgs   []Type
 	Receiver   Type
 	Params     []FunctionParam
 	Result     Type
@@ -309,7 +351,7 @@ func (ty FunctionType) CloneWith(id TypeId, typeArgs []Type) *FunctionType {
 	return &FunctionType{
 		BaseType:   BaseType{id},
 		typeParams: ty.typeParams,
-		TypeArgs:   typeArgs,
+		typeArgs:   typeArgs,
 		Receiver:   ty.Receiver,
 		Params:     ty.Params,
 		Result:     ty.Result,
@@ -336,13 +378,9 @@ func (ty FunctionType) String() string {
 		"FunctionType%s%s%s\n    (Parameters)%s\n    (Result)\n%s",
 		receiverType,
 		base.IndentString(typeParamsString(ty.typeParams), 1),
-		base.IndentString(typeArgsString(ty.TypeArgs), 1),
+		base.IndentString(typeArgsString(ty.typeArgs), 1),
 		base.IndentStringSlice(params, 2),
 		base.IndentString(result, 2))
-}
-
-func (ty FunctionType) IsGeneric() bool {
-	return len(ty.typeParams) > 0
 }
 
 func (ty FunctionType) IsMethod() bool {
@@ -377,6 +415,14 @@ func (ty FunctionType) CheckSameSignatureIgnoringReceiverTypes(other *FunctionTy
 
 func (ty FunctionType) TypeParams() []TypeParam {
 	return ty.typeParams
+}
+
+func (ty FunctionType) TypeArgs() []Type {
+	return ty.typeArgs
+}
+
+func (ty FunctionType) HasTypeParams() bool {
+	return len(ty.typeParams) > 0
 }
 
 func (ty FunctionType) IsAssignableFrom(other Type) bool {
@@ -702,28 +748,59 @@ func (tc *typeChecker) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpressio
 
 func resolveTypeArgs(ty Type, typeParams []TypeParam, typeArgs []Type) Type {
 	switch ty := ty.(type) {
-	case *FunctionType:
-		if !ty.IsGeneric() {
-			return ty
+	case GenericType:
+		for i, typeArg := range ty.TypeArgs() {
+			typeArgs[i] = resolveTypeArgs(typeArg, typeParams, typeArgs)
 		}
-		funcTypeArgs := make([]Type, len(ty.TypeArgs))
-		for i, typeArg := range ty.TypeArgs {
-			funcTypeArgs[i] = resolveTypeArgs(typeArg, typeParams, typeArgs)
-		}
-		params := make([]TypeAndName[Type], len(ty.Params))
-		for i, param := range ty.Params {
-			param := param // Make a copy.
-			param.Type = resolveTypeArgs(param.Type, typeParams, typeArgs)
-			params[i] = param
-		}
-		result := resolveTypeArgs(ty.Result, typeParams, typeArgs)
-		return &FunctionType{
-			BaseType:   ty.BaseType,
-			typeParams: ty.typeParams,
-			TypeArgs:   funcTypeArgs,
-			Params:     params,
-			Result:     result,
-			Receiver:   ty.Receiver,
+		switch ty := ty.(type) {
+		case *FunctionType:
+			params := make([]TypeAndName[Type], len(ty.Params))
+			for i, param := range ty.Params {
+				if ty.Receiver != nil && ty.Receiver.Id() == param.Type.Id() {
+					params[i] = param
+					continue
+				}
+				param := param // Make a copy.
+				param.Type = resolveTypeArgs(param.Type, typeParams, typeArgs)
+				params[i] = param
+			}
+			result := resolveTypeArgs(ty.Result, typeParams, typeArgs)
+			return &FunctionType{
+				BaseType:   ty.BaseType,
+				typeParams: ty.typeParams,
+				typeArgs:   typeArgs,
+				Params:     params,
+				Result:     result,
+				Receiver:   ty.Receiver,
+			}
+		case *StructType:
+			fields := make([]TypeAndName[Type], len(ty.Fields))
+			for i, field := range ty.Fields {
+				field := field // Make a copy.
+				field.Type = resolveTypeArgs(field.Type, typeParams, typeArgs)
+				fields[i] = field
+			}
+			methods := make([]TypeAndName[*FunctionType], len(ty.Methods))
+			for i, method := range ty.Methods {
+				method := method // Make a copy.
+				resolvedMethodType := resolveTypeArgs(method.Type, typeParams, typeArgs)
+				methodType, ok := resolvedMethodType.(*FunctionType)
+				if !ok {
+					panic(fmt.Sprintf("expected function type, got: %T", resolvedMethodType))
+				}
+				method.Type = methodType
+				methods[i] = method
+			}
+			return &StructType{
+				BaseType:   ty.BaseType,
+				typeParams: ty.typeParams,
+				typeArgs:   typeArgs,
+				Fields:     fields,
+				Methods:    methods,
+				traits:     ty.traits,
+			}
+		default:
+			panic(fmt.Sprintf("unexpected generic type: %T", ty))
 		}
 	default:
 		for i, typeParam := range typeParams {
@@ -743,11 +820,11 @@ func (tc *typeChecker) resolveGenericType(ty GenericType, astTypeArgs []ast.Type
 	}
 	typeArgs := make([]Type, len(astTypeArgs))
 	for i, astTypeArg := range astTypeArgs {
-		argType, err := tc.lookupTypeOfNode(astTypeArg)
+		typeArg, err := tc.lookupTypeOfNode(astTypeArg)
 		if err != nil {
 			return nil, err
 		}
-		typeArgs[i] = argType
+		typeArgs[i] = typeArg
 	}
 	return resolveTypeArgs(ty, typeParams, typeArgs), nil
 }
@@ -942,9 +1019,9 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 	// The declared function type will have the type parameters as its type arguments. This way
 	// we don't have to distinguish between a type with type arguments set and one without type
 	// arguments.
-	funcType.TypeArgs = make([]Type, len(typeParams))
+	funcType.typeArgs = make([]Type, len(typeParams))
 	for i, typeParam := range typeParams {
-		funcType.TypeArgs[i] = typeParam
+		funcType.typeArgs[i] = typeParam
 	}
 	params, result, err := tc.resolveFunctionParamsAndResult(decl.Params, decl.Result)
 	if err != nil {
@@ -1034,6 +1111,15 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 	}
 	tc.enterScope(impl)
 	defer tc.exitScope()
+	if structType.HasTypeParams() {
+		tc.enterGenericScope()
+		defer tc.exitGenericScope()
+		for _, typeParam := range structType.typeParams {
+			if err := tc.genericScope.declareTypeParam(typeParam.Name.String(), &typeParam, impl.Span()); err != nil {
+				return err
+			}
+		}
+	}
 	if err := tc.typeScope.declareType("Self", structType, impl.Span()); err != nil {
 		return err
 	}
@@ -1095,7 +1181,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 			}
 			delete(unimplementedTraitMethods, decl.Name)
 		}
-		structType.Methods = append(structType.Methods, TypeAndName[FunctionType]{Name: decl.Name, Type: *methodType})
+		structType.Methods = append(structType.Methods, TypeAndName[*FunctionType]{Name: decl.Name, Type: methodType})
 		tc.typeInfo.Set(method, &DeclaredType{Type: methodType})
 	}
 	if traitType != nil && len(unimplementedTraitMethods) > 0 {
@@ -1188,21 +1274,36 @@ func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 	return nil
 }
 
-func (tc *typeChecker) VisitStructTypeDeclaration(d *ast.StructTypeDeclaration) error {
+func (tc *typeChecker) VisitStructTypeDeclaration(decl *ast.StructTypeDeclaration) error {
+	tc.enterGenericScope()
+	defer tc.exitGenericScope()
+	structType := &StructType{BaseType: tc.newType()}
+	typeParams, err := tc.resolveTypeParams(structType, decl.TypeParams)
+	if err != nil {
+		return err
+	}
+	structType.typeParams = typeParams
+	// The declared struct type will have the type parameters as its type arguments. This way
+	// we don't have to distinguish between a type with type arguments set and one without type
+	// arguments.
+	structType.typeArgs = make([]Type, len(typeParams))
+	for i, typeParam := range typeParams {
+		structType.typeArgs[i] = typeParam
+	}
 	fields := []TypeAndName[Type]{}
-	for _, field := range d.Fields {
+	for _, field := range decl.Fields {
 		fieldType, err := tc.lookupTypeOfNode(field.Type)
 		if err != nil {
 			return errors.Errorf("%s: type %q not found for field %q", field.Span, field.Type, field.Name)
 		}
 		fields = append(fields, TypeAndName[Type]{Name: field.Name, Type: fieldType})
 	}
-	structType := &StructType{BaseType: tc.newType(), Fields: fields}
-	if err := tc.typeScope.declareType(string(d.Name), structType, d.Span()); err != nil {
+	if err := tc.typeScope.declareType(string(decl.Name), structType, decl.Span()); err != nil {
 		return err
 	}
-	tc.declareSymbol(structType.Id(), d.Name.String())
-	tc.typeInfo.Set(d, &DeclaredType{Type: structType})
+	structType.Fields = fields
+	tc.declareSymbol(structType.Id(), decl.Name.String())
+	tc.typeInfo.Set(decl, &DeclaredType{Type: structType})
 	return nil
 }
 

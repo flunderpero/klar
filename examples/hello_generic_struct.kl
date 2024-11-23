@@ -1,0 +1,10 @@
+struct Single<T> {
+    value T
+}
+
+fn main() {
+    let s = Single<Str>(value="Hello, ")
+    print(s.value)
+    let i = Single<Int>(value=42)
+    print_int(i.value)
+}

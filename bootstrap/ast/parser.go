@@ -540,8 +540,22 @@ func (p *Parser) parseCallExpression(callee Expression) (*CallExpression, error)
 
 func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
 	from := p.span()
-	if _, err := p.consume(token.LCurly); err != nil {
-		return nil, err
+	t := p.peek()
+	switch t.Kind {
+	case token.LCurly:
+		p.consumeAny()
+	case token.Equal:
+		// Single expression block.
+		if p.peek1().Kind != token.RAngle {
+			return nil, errors.Errorf("expected `=>`, got %s %s", t, p.peek1())
+		}
+		p.consumeAny()
+		p.consumeAny()
+		expr, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		return &BlockExpression{node: p.newNode(from), Nodes: []Node{expr}}, nil
 	}
 	var nodes []Node
 	for p.index < len(p.tokens) {
@@ -566,7 +580,7 @@ func (p *Parser) parseIfExpression() (*IfExpression, error) {
 	}
 	condition, err := p.parseExpression()
 	if err != nil {
-		return nil, errors.Errorf("failed to parse condition: %v", err)
+		return nil, errors.Wrapf(err, "failed to parse condition")
 	}
 	trueBody, err := p.parseBlockExpression()
 	if err != nil {
@@ -810,6 +824,10 @@ func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 	// Technically, the AssignmentStatement is not an expression but we parse it here anyway
 	// because it fits here very well.
 	if p.peek().Kind == token.Equal {
+		if p.peek1().Kind == token.RAngle {
+			// This is the start of a single-expression block.
+			return lhs, nil
+		}
 		p.consumeAny()
 		return p.parseAssignmentStatement(lhs)
 	}
@@ -921,9 +939,8 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 		return p.parseBlockExpression()
 	case token.If:
 		return p.parseIfExpression()
-	default:
-		return nil, errors.Errorf("expected expression, got token: %s", t)
 	}
+	return nil, errors.Errorf("expected expression, got token: %s", t)
 
 }
 
@@ -1087,11 +1104,7 @@ func (p *Parser) ParseNode() (Node, error) {
 		case token.Trait:
 			return p.parseTraitDeclaration()
 		case token.Ident, token.TypeIdent, token.LCurly, token.If, token.True, token.False, token.Str, token.Int, token.Self:
-			expr, err := p.parseExpression()
-			if err != nil {
-				return nil, err
-			}
-			return expr, nil
+			return p.parseExpression()
 		default:
 			return nil, errors.Errorf("unexpected token: %s", t)
 		}

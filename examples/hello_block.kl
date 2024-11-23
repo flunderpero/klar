@@ -9,4 +9,6 @@ fn main() {
     } 
     -- Empty block:
     {}
+    -- Single expression block:
+    if true => print(" again!")
 }

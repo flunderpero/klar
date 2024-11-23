@@ -2,9 +2,7 @@ fn print_hello() {
     print("Hello, ")
 }
 
-fn print_world() {
-    print("world!")
-}
+fn print_world() => print("world!")
 
 fn print_two(first Str, second Str) {
     print(first)

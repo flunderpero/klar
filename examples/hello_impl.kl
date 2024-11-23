@@ -9,21 +9,13 @@ impl Planet {
         print(greetings)
     }
 
-    fn diameter(self) Int {
-        self.radius + self.radius
-    }
+    fn diameter(self) Int => self.radius + self.radius
 
-    fn return_self(self) Self {
-        self
-    }
+    fn return_self(self) Self => self
 
-    fn static() Str {
-        "I am static"
-    }
+    fn static() Str => "I am static"
 
-    fn some_planet() Self {
-        Planet(name="Surprise", radius=4242)
-    }
+    fn some_planet() Self => Planet(name="Surprise", radius=4242)
 }
 
 fn main() {

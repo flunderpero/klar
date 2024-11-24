@@ -189,6 +189,9 @@ func (r *registerAllocator) ensureInRegister(allocation *registerAllocation) reg
 	reg := r.scratchRegisters[r.nextScratchRegisterIndex]
 	allocation.reg = reg
 	r.usedScratchRegisters[r.nextScratchRegisterIndex] = allocation
+	if allocation.stackOffset == -1 {
+		panic("allocation.stackOffset is -1 for")
+	}
 	r.code.emit("ldr %s, [sp, #%d]", reg, allocation.stackOffset)
 	r.nextScratchRegisterIndex = (r.nextScratchRegisterIndex + 1) % len(r.scratchRegisters)
 	return reg
@@ -225,7 +228,11 @@ func (r *registerAllocator) allocateScratchRegister(irReg ir.Register) *register
 		}
 	}
 	allocation := &registerAllocation{stackOffset: -1}
-	r.ensureInRegister(allocation)
+	r.spillNextScratchRegisterIfNeeded()
+	reg := r.scratchRegisters[r.nextScratchRegisterIndex]
+	allocation.reg = reg
+	r.usedScratchRegisters[r.nextScratchRegisterIndex] = allocation
+	r.nextScratchRegisterIndex = (r.nextScratchRegisterIndex + 1) % len(r.scratchRegisters)
 	r.allocations[irReg] = allocation
 	return allocation
 }

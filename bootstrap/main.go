@@ -85,7 +85,7 @@ func main() {
 		fmt.Println(lowered)
 		os.Exit(0)
 	}
-	irModule, err := ir.GenerateIR(lowered, typeInfo, codegen.DataLayout{})
+	irModule, err := ir.GenerateIR(lowered, codegen.DataLayout{})
 	if err != nil {
 		fmt.Printf("Failed to generate the IR: %+v\n", err)
 		os.Exit(1)

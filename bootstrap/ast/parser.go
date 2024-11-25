@@ -205,11 +205,10 @@ type CallArg struct {
 }
 
 func (f CallArg) String() string {
-	name := ""
 	if f.Name != "" {
-		name = fmt.Sprintf("%s\n", f.Name)
+		return fmt.Sprintf("%s\n%s", f.Name, base.Indent(f.Value, 1))
 	}
-	return fmt.Sprintf("%s%s", name, base.Indent(f.Value, 1))
+	return f.Value.String()
 }
 
 type CallExpression struct {

@@ -157,12 +157,14 @@ func (ir *Return) Targets() []*Block {
 type FunctionDefinition struct {
 	Id                  typed.TypeId
 	Type                FunctionType
+	TypeInfo            *lower.SpecializedTypeInfo
 	Entry               *Block
 	RegisterConstraints RegisterConstraints
 }
 
 func (t FunctionDefinition) String() string {
-	return fmt.Sprintf("declare %s %s", t.Id, t.Type)
+	name := t.TypeInfo.MustLookupSymbol(t.Id).FQN()
+	return fmt.Sprintf("declare %s %s", name, t.Type)
 }
 
 type Module struct {
@@ -170,7 +172,6 @@ type Module struct {
 	Functions     []*FunctionDefinition
 	Constants     []*StrConst
 	DeclaredTypes *DeclaredTypes
-	TypeInfo      *typed.TypeInfo
 	Main          *FunctionDefinition
 }
 
@@ -201,7 +202,8 @@ func (m Module) String() string {
 		if i > 0 {
 			writeln()
 		}
-		writeln(function, " {")
+		writeln(function)
+		writeln("{")
 		indent += 1
 		err := WalkBlock(function.Entry, func(block *Block) error {
 			writeln(block)
@@ -252,6 +254,10 @@ type StrConst struct {
 
 func (i StrConst) DeclareString() string {
 	return fmt.Sprintf("declare const %s = @str %q", i.Id, i.Value)
+}
+
+func (i StrConst) String() string {
+	return i.Id
 }
 
 func (i StrConst) getPointerSourceMarker() {}
@@ -383,12 +389,17 @@ type Callee interface {
 }
 
 type DefinedFunction struct {
-	Id typed.TypeId
+	Id  typed.TypeId
+	FQN string
 }
 
-func (c DefinedFunction) calleeMarker() {}
+func (self DefinedFunction) String() string {
+	return self.FQN
+}
 
-func (i DefinedFunction) getPointerSourceMarker() {}
+func (self DefinedFunction) calleeMarker() {}
+
+func (self DefinedFunction) getPointerSourceMarker() {}
 
 type Call struct {
 	register     Register
@@ -589,7 +600,7 @@ type loopScope struct {
 type generator struct {
 	ast.DefaultVisitor
 	currentBlock        *Block
-	typeInfo            *typed.TypeInfo
+	typeInfo            *lower.SpecializedTypeInfo
 	registerByNodeId    map[ast.NodeId]Register
 	symbolTable         *symbolTable
 	globalConstants     *[]*StrConst
@@ -737,9 +748,10 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 			register: sizeReg,
 			Value:    int64(g.dataLayout.SizeOf(structType)),
 		}, nil)
+		mallocSymbol := g.typeInfo.MustLookupSymbol(typed.BuiltInUnsafeMallocFunction.Id())
 		g.append(&Call{
 			register:     mallocReg,
-			Callee:       DefinedFunction{typed.BuiltInUnsafeMallocFunction.Id()},
+			Callee:       DefinedFunction{Id: typed.BuiltInUnsafeMallocFunction.Id(), FQN: mallocSymbol.FQN()},
 			FunctionType: mallocFuncType,
 			Args:         []Register{sizeReg},
 		}, expr)
@@ -1079,11 +1091,12 @@ func declareFunction(
 	declaredTypes *DeclaredTypes,
 	rootSymbolTable *symbolTable,
 	functionType *typed.FunctionType,
+	typeInfo *lower.SpecializedTypeInfo,
 ) *FunctionDefinition {
 	params := []FunctionParam{}
 	for i, tyParam := range functionType.Params {
 		if callArgFuncType, ok := tyParam.Type.(*typed.FunctionType); ok {
-			declareFunction(declaredTypes, rootSymbolTable, callArgFuncType)
+			declareFunction(declaredTypes, rootSymbolTable, callArgFuncType, typeInfo)
 		}
 		paramType := declaredTypes.MustLookup(tyParam.Type)
 		param := FunctionParam{
@@ -1094,32 +1107,31 @@ func declareFunction(
 	}
 	result := declaredTypes.MustLookup(functionType.Result)
 	res := &FunctionDefinition{
-		Id:   functionType.Id(),
-		Type: FunctionType{Params: params, Result: result},
+		Id:       functionType.Id(),
+		Type:     FunctionType{Params: params, Result: result},
+		TypeInfo: typeInfo,
 	}
 	return res
 }
 
-func GenerateIR(lowered *lower.LoweredAST, typeInfo *typed.TypeInfo, dataLayout DataLayout) (*Module, error) {
+func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, error) {
 	declaredTypes := &DeclaredTypes{Types: make(map[typed.TypeId]Type)}
 	rootSymbolTable := symbolTable{symbols: make(map[ast.Ident]Register)}
-	for _, specializedStruct := range lowered.StructSpecializations {
-		declaredTypes.declare(specializedStruct.Specialized)
-	}
-	funcSpecs := lowered.FunctionSpecializations
+	funcSpecs := lowered.FuncSpecs
 	funcDefs := []*FunctionDefinition{}
 	definedFunctions := make(map[typed.TypeId]DefinedFunction)
 	var main *FunctionDefinition
 	// First forward declare all functions.
 	for _, funcSpec := range funcSpecs {
 		funcType := funcSpec.Specialized
-		funcDef := declareFunction(declaredTypes, &rootSymbolTable, funcType)
+		funcDef := declareFunction(declaredTypes, &rootSymbolTable, funcType, funcSpec.TypeInfo)
 		funcDefs = append(funcDefs, funcDef)
-		if funcType == typeInfo.Main {
+		if funcSpec.IsMain {
 			main = funcDef
 		}
 		declaredTypes.declare(funcType)
-		definedFunctions[funcDef.Id] = DefinedFunction{Id: funcDef.Id}
+		fqn := funcSpec.TypeInfo.MustLookupSymbol(funcType.Id()).FQN()
+		definedFunctions[funcDef.Id] = DefinedFunction{Id: funcDef.Id, FQN: fqn}
 	}
 	// Declare builtin functions.
 	declareBuiltInFunction := func(f *typed.FunctionType) {
@@ -1136,7 +1148,7 @@ func GenerateIR(lowered *lower.LoweredAST, typeInfo *typed.TypeInfo, dataLayout 
 		funcSpec := funcSpecs[i]
 		gen := &generator{
 			DefaultVisitor:      ast.DefaultVisitor{},
-			typeInfo:            typeInfo,
+			typeInfo:            funcSpec.TypeInfo,
 			registerByNodeId:    make(map[ast.NodeId]Register),
 			symbolTable:         &symbolTable{symbols: make(map[ast.Ident]Register), parent: &rootSymbolTable},
 			globalConstants:     &constants,
@@ -1155,7 +1167,7 @@ func GenerateIR(lowered *lower.LoweredAST, typeInfo *typed.TypeInfo, dataLayout 
 		block := gen.newBlock()
 		gen.currentBlock = block
 		walker := &ast.DefaultWalker{Visitor: gen}
-		if err := walker.WalkNode(funcSpec.FunctionDef.Body); err != nil {
+		if err := walker.WalkNode(funcSpec.FuncDef.Body); err != nil {
 			return nil, err
 		}
 		if gen.currentBlock.Terminator != nil {
@@ -1171,7 +1183,6 @@ func GenerateIR(lowered *lower.LoweredAST, typeInfo *typed.TypeInfo, dataLayout 
 		Constants:     constants,
 		DeclaredTypes: declaredTypes,
 		Main:          main,
-		TypeInfo:      typeInfo,
 	}, nil
 }
 

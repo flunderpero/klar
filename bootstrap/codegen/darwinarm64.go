@@ -346,6 +346,11 @@ func (c *Code) emitAtOffset(offset int, s string, args ...any) *Code {
 	return c
 }
 
+func (c *Code) funcName(id typed.TypeId) string {
+	fqn := c.function.TypeInfo.MustLookupSymbol(id).FQN()
+	return "." + strings.ReplaceAll(fqn, "::", "$$")
+}
+
 func (c *Code) mustLookupRegisterAllocation(reg ir.Register) *registerAllocation {
 	result, ok := c.values[reg.Id]
 	if !ok {
@@ -355,7 +360,7 @@ func (c *Code) mustLookupRegisterAllocation(reg ir.Register) *registerAllocation
 }
 
 func (c *Code) blockLabel(block *ir.Block) string {
-	return fmt.Sprintf("%s_%s", c.function.Id, block.Id)
+	return fmt.Sprintf("%s_%s", c.funcName(c.function.Id), block.Id)
 }
 
 func (c *Code) prepareBinaryOperation(resReg ir.Register, lhsReg ir.Register, rhsReg ir.Register) (reg *registerAllocation, lhs register, rhs register) {
@@ -442,8 +447,9 @@ func (c *Code) generateBlock(block *ir.Block) error {
 				c.emit("add %s, %s, %s@PAGEOFF+%d", reg, reg, source.Id, offset)
 			case ir.DefinedFunction:
 				reg = c.registerAllocator.allocateScratchRegister(inst.Register())
-				c.emit("adrp %s, %s@PAGE", reg, source.Id)
-				c.emit("add %s, %s, %s@PAGEOFF+%d", reg, reg, source.Id, offset)
+				sourceName := c.funcName(source.Id)
+				c.emit("adrp %s, %s@PAGE", reg, sourceName)
+				c.emit("add %s, %s, %s@PAGEOFF+%d", reg, reg, sourceName, offset)
 			case ir.Register:
 				reg = c.mustLookupRegisterAllocation(source)
 				if offset > 0 {
@@ -504,7 +510,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 				reg := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(callee))
 				c.emit("blr %s", reg)
 			case ir.DefinedFunction:
-				c.emit("bl %s", callee.Id)
+				c.emit("bl %s", c.funcName(callee.Id))
 			default:
 				panic(fmt.Sprintf("unknown callee type: %T", callee))
 			}
@@ -558,9 +564,7 @@ func generateFunction(function *ir.FunctionDefinition, module *ir.Module, isMain
 	if isMain {
 		c.emit("_main:")
 	} else {
-		symbol := module.TypeInfo.MustLookupSymbol(function.Id)
-		c.emit("; Function: %s", symbol.Name)
-		c.emit("%s:", function.Id)
+		c.emit("%s:", c.funcName(function.Id))
 	}
 	// Remember the location where we will have to insert the correct stack frame setup.
 	// We don't know the size of the stack yet, so we have to come back later and insert
@@ -606,8 +610,7 @@ func generateFunction(function *ir.FunctionDefinition, module *ir.Module, isMain
 func defineBuiltInPrintFunction(asm *ASMText) {
 	asm.emit(
 		`
-; Function: print
-%s:
+.print:
     stp fp, lr, [sp, #-16]!
     mov fp, sp
     ldr x1, [x0, 8]
@@ -616,14 +619,13 @@ func defineBuiltInPrintFunction(asm *ASMText) {
     bl _write
     ldp fp, lr, [sp], #16
     mov x0, xzr
-    ret`, typed.BuiltInPrintFunction.Id())
+    ret`)
 }
 
 func defineBuiltInPrintIntFunction(asm *ASMText) {
 	asm.emit(
 		`
-; Function: print_int
-%s:
+.print_int:
     stp fp, lr, [sp, #-32]!
     mov fp, sp
     str x0, [sp]
@@ -634,51 +636,49 @@ func defineBuiltInPrintIntFunction(asm *ASMText) {
     bl _fflush
     ldp fp, lr, [sp], #32
     mov x0, xzr
-    ret`, typed.BuiltInPrintIntFunction.Id())
+    ret`)
 }
 
 func defineBuiltInPrintBoolFunction(asm *ASMText) {
 	asm.emit(
 		`
-; Function: print_bool
-%s:
+.print_bool:
     stp fp, lr, [sp, #-16]!
     mov fp, sp
     cmp x0, #0
-    bne print_bool_true
+    bne .print_bool_true
     adrp x0, _print_bool_false@PAGE
     add x0, x0, _print_bool_false@PAGEOFF+0
-    b print_bool_end
-print_bool_true:
+    b .print_bool_end
+.print_bool_true:
     adrp x0, _print_bool_true@PAGE
     add x0, x0, _print_bool_true@PAGEOFF+0
-print_bool_end:
+.print_bool_end:
     bl _printf
     mov x0, 0
     bl _fflush
     ldp fp, lr, [sp], #16
     mov x0, xzr
-    ret`, typed.BuiltInPrintBoolFunction.Id())
+    ret`)
 }
 
 func defineBuiltInUnsafeMalloc(asm *ASMText) {
 	asm.emit(
 		`
-; Function: __unsafe_malloc
-%s:
+._unsafe_malloc:
     stp fp, lr, [sp, #-16]!
     mov fp, sp
     bl _malloc
     cmp x0, #0
-    bgt _success      
+    bgt .unsafe_malloc_success      
     adrp x0, _unsafe_malloc_failed@PAGE
     add x0, x0, _unsafe_malloc_failed@PAGEOFF
     bl _puts
     mov x0, #1
     bl _exit
-_success:
+.unsafe_malloc_success:
     ldp fp, lr, [sp], #16
-    ret`, typed.BuiltInUnsafeMallocFunction.Id())
+    ret`)
 }
 
 func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {

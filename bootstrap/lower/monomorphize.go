@@ -17,58 +17,10 @@ import (
 	"github.com/flunderpero/klar/bootstrap/typed"
 )
 
-type SpecializedTypeInfo struct {
-	base           *typed.TypeInfo
-	overlayTypes   map[ast.NodeId]typed.Type
-	overlaySymbols map[typed.IsId]*typed.Symbol
-	typeParams     []typed.TypeParam
-	typeArgs       []typed.Type
-}
-
-func newTypeInfo(typeInfo *typed.TypeInfo, typeParams []typed.TypeParam, typeArgs []typed.Type) *SpecializedTypeInfo {
-	return &SpecializedTypeInfo{
-		base:         typeInfo,
-		overlayTypes: make(map[ast.NodeId]typed.Type),
-		typeParams:   typeParams,
-		typeArgs:     typeArgs,
-	}
-}
-
-func (self *SpecializedTypeInfo) set(node ast.Node, ty typed.Type) {
-	self.overlayTypes[node.Id()] = ty
-}
-
-func (self *SpecializedTypeInfo) MustLookup(node ast.Node) typed.Type {
-	if ty, ok := self.overlayTypes[node.Id()]; ok {
-		return ty
-	}
-	return self.base.MustLookup(node)
-}
-
-func (self *SpecializedTypeInfo) MustLookupSymbol(id typed.IsId) *typed.Symbol {
-	if s, ok := self.LookupSymbol(id); ok {
-		return s
-	}
-	panic(fmt.Sprintf("symbol not found: %s", id))
-}
-
-func (self *SpecializedTypeInfo) LookupSymbol(id typed.IsId) (*typed.Symbol, bool) {
-	if symbol, ok := self.overlaySymbols[id]; ok {
-		return symbol, true
-	}
-	return self.base.LookupSymbol(id)
-}
-
-func (self *SpecializedTypeInfo) lookupAndResolve(node ast.Node) typed.Type {
-	ty := self.MustLookup(node)
-	return typed.ResolveTypeArgs(ty, self.typeParams, self.typeArgs)
-}
-
 type FunctionSpecialization struct {
 	FuncDef     *ast.FunctionDefinition
 	Specialized *typed.FunctionType
 	Base        *typed.FunctionType
-	TypeInfo    *SpecializedTypeInfo
 	IsMain      bool
 }
 
@@ -88,33 +40,47 @@ func mustBeFullyResolved(ty typed.Type) {
 type workItem struct {
 	funcInfo    *funcInfo
 	specialized *typed.FunctionType
-	typeInfo    *SpecializedTypeInfo
+}
+
+func (self *workItem) resolve(ty typed.Type) typed.Type {
+	switch ty := ty.(type) {
+	case *typed.FunctionType:
+		// There are no more methods, everything is a plain function.
+		ty.Receiver = nil
+		if typed.HasTypeParams(ty) {
+			// We need to also resolve all type parameters of the function.
+			typeParams := append(self.specialized.TypeParams(), ty.TypeParams()...)
+			typeArgs := append(self.specialized.TypeArgs(), ty.TypeArgs()...)
+			return typed.ResolveTypeArgs(ty, typeParams, typeArgs)
+		}
+	case *typed.StructType:
+		// Structs are just data holders at this point, because we converted
+		// all methods to plain functions.
+		ty.Methods = []typed.TypeAndName[*typed.FunctionType]{}
+	}
+	return typed.ResolveTypeArgs(ty, self.specialized.TypeParams(), self.specialized.TypeArgs())
 }
 
 type mono struct {
 	ast.DefaultVisitor
-	funcInfos           map[typed.TypeId]*funcInfo
-	queue               []*workItem
-	typeInfo            *typed.TypeInfo
-	specializedTypeInfo *SpecializedTypeInfo
-	funcSpecs           []*FunctionSpecialization
-	nextTypeId          int
+	funcInfos  map[typed.TypeId]*funcInfo
+	queue      []*workItem
+	current    *workItem
+	typeInfo   *typed.TypeInfo
+	funcSpecs  []*FunctionSpecialization
+	nextTypeId int
 }
 
 func (self *mono) VisitIdentExpression(expr *ast.IdentExpression) error {
 	// Note: During `prepare` we converted all `ast.MemberExpression` that reference
 	//       a static method to `ast.IdentExpressions`.
 	//       So there is no need to visit member expressions.
-	ty := self.specializedTypeInfo.lookupAndResolve(expr)
+	ty := self.typeInfo.MustLookup(expr)
+	ty = self.current.resolve(ty)
 	if specialized, ok := self.lookupOrCreateSpecialized(ty); ok {
 		// This is a specialized function type (with its own `TypeId`).
 		// We have to set it in the global typeInfo.
 		self.typeInfo.Set(expr, specialized)
-	} else {
-		// The node's type might have been altered by `lookupAndResolve`,
-		// i.e. type parameters may have been resolved. The result is a
-		// specialized type that is local to the current function.
-		self.specializedTypeInfo.set(expr, ty)
 	}
 	return nil
 }
@@ -127,12 +93,11 @@ func (self *mono) newTypeId() typed.TypeId {
 func (self *mono) newWorkItem(info *funcInfo, specialized *typed.FunctionType) *workItem {
 	return &workItem{
 		funcInfo:    info,
-		typeInfo:    newTypeInfo(self.typeInfo, specialized.TypeParams(), specialized.TypeArgs()),
 		specialized: specialized,
 	}
 }
 
-func matchTypeArgs(ty1 *typed.FunctionType, ty2 *typed.FunctionType) bool {
+func matchSpecializedTypes(ty1 *typed.FunctionType, ty2 *typed.FunctionType) bool {
 	for i, typeArg := range ty1.TypeArgs() {
 		if typeArg.Id() != ty2.TypeArgs()[i].Id() {
 			return false
@@ -158,14 +123,14 @@ func (self *mono) lookupOrCreateSpecialized(ty typed.Type) (*typed.FunctionType,
 	item := self.newWorkItem(funcInfo, specialized)
 	for _, queued := range self.queue {
 		if queued.funcInfo == item.funcInfo {
-			if matchTypeArgs(queued.specialized, item.specialized) {
+			if matchSpecializedTypes(queued.specialized, item.specialized) {
 				return queued.specialized, true
 			}
 		}
 	}
 	for _, spec := range self.funcSpecs {
 		if spec.Base.Id() == funcType.Id() {
-			if matchTypeArgs(spec.Specialized, specialized) {
+			if matchSpecializedTypes(spec.Specialized, specialized) {
 				return spec.Specialized, true
 			}
 		}
@@ -177,7 +142,7 @@ func (self *mono) lookupOrCreateSpecialized(ty typed.Type) (*typed.FunctionType,
 func (self *mono) run() {
 	for len(self.queue) > 0 {
 		item := self.queue[0]
-		self.specializedTypeInfo = item.typeInfo
+		self.current = item
 		self.queue = self.queue[1:]
 		walker := &ast.DefaultWalker{Visitor: self}
 		base.Must(walker.WalkFunctionDefinition(item.funcInfo.funcDef))
@@ -196,7 +161,6 @@ func (self *mono) run() {
 			FuncDef:     item.funcInfo.funcDef,
 			Specialized: item.specialized,
 			Base:        item.funcInfo.funcType,
-			TypeInfo:    item.typeInfo,
 			IsMain:      item.funcInfo.funcType == self.typeInfo.Main,
 		}
 		self.funcSpecs = append(self.funcSpecs, funcSpec)
@@ -209,12 +173,11 @@ func Monomorphize(module *ast.Module, typeInfo *typed.TypeInfo, funcInfos map[ty
 		panic("Main function not found")
 	}
 	m := mono{
-		funcInfos:           funcInfos,
-		queue:               []*workItem{},
-		typeInfo:            typeInfo,
-		specializedTypeInfo: newTypeInfo(typeInfo, []typed.TypeParam{}, []typed.Type{}),
-		funcSpecs:           []*FunctionSpecialization{},
-		nextTypeId:          nextTypeId,
+		funcInfos:  funcInfos,
+		queue:      []*workItem{},
+		typeInfo:   typeInfo,
+		funcSpecs:  []*FunctionSpecialization{},
+		nextTypeId: nextTypeId,
 	}
 	m.lookupOrCreateSpecialized(main.funcType)
 	m.run()

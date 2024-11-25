@@ -2,9 +2,20 @@ struct Single<T> {
     value T
 }
 
+impl Single {
+    fn return_value(self) T => self.value
+
+    fn generic<U>(self, val U) U => val
+}
+
 fn main() {
     let s = Single<Str>(value="Hello, ")
     print(s.value)
     let i = Single<Int>(value=42)
     print_int(i.value)
+    print(", ")
+    print(s.return_value())
+    print_int(i.return_value())
+    print(", ")
+    print_bool(i.generic<Bool>(false))
 }

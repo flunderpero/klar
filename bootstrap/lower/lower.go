@@ -32,6 +32,7 @@ const lowerTypeIdStart = 1_000_000_000
 type LoweredAST struct {
 	Module    *ast.Module
 	FuncSpecs []*FunctionSpecialization
+	TypeInfo  *typed.TypeInfo
 }
 
 func (l *LoweredAST) String() string {
@@ -42,5 +43,5 @@ func (l *LoweredAST) String() string {
 func Lower(module *ast.Module, typeInfo *typed.TypeInfo) *LoweredAST {
 	module, funcInfos := Prepare(module, typeInfo)
 	funcSpecs := Monomorphize(module, typeInfo, funcInfos, lowerTypeIdStart)
-	return &LoweredAST{Module: module, FuncSpecs: funcSpecs}
+	return &LoweredAST{Module: module, FuncSpecs: funcSpecs, TypeInfo: typeInfo}
 }

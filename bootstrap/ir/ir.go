@@ -157,14 +157,12 @@ func (ir *Return) Targets() []*Block {
 type FunctionDefinition struct {
 	Id                  typed.TypeId
 	Type                FunctionType
-	TypeInfo            *lower.SpecializedTypeInfo
 	Entry               *Block
 	RegisterConstraints RegisterConstraints
 }
 
 func (t FunctionDefinition) String() string {
-	name := t.TypeInfo.MustLookupSymbol(t.Id).FQN()
-	return fmt.Sprintf("declare %s %s", name, t.Type)
+	return fmt.Sprintf("%s = %s", t.Id, t.Type)
 }
 
 type Module struct {
@@ -173,6 +171,7 @@ type Module struct {
 	Constants     []*StrConst
 	DeclaredTypes *DeclaredTypes
 	Main          *FunctionDefinition
+	TypeInfo      *typed.TypeInfo
 }
 
 func (m Module) String() string {
@@ -202,8 +201,8 @@ func (m Module) String() string {
 		if i > 0 {
 			writeln()
 		}
-		writeln(function)
-		writeln("{")
+		name := m.TypeInfo.MustLookupSymbol(function.Id).FQN()
+		writeln(fmt.Sprintf("declare %s %s\n{", name, function.Type))
 		indent += 1
 		err := WalkBlock(function.Entry, func(block *Block) error {
 			writeln(block)
@@ -600,7 +599,7 @@ type loopScope struct {
 type generator struct {
 	ast.DefaultVisitor
 	currentBlock        *Block
-	typeInfo            *lower.SpecializedTypeInfo
+	typeInfo            *typed.TypeInfo
 	registerByNodeId    map[ast.NodeId]Register
 	symbolTable         *symbolTable
 	globalConstants     *[]*StrConst
@@ -1050,16 +1049,11 @@ func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
 		}
 		dt.declare(ty)
 		return dt.Types[ty.Id()]
-	case *typed.TypeParam:
-		return NoneType
 	}
 	panic(fmt.Sprintf("type not found for %T", ty))
 }
 
 func (dt *DeclaredTypes) declare(ty typed.Type) {
-	if typeDecl, ok := ty.(*typed.DeclaredType); ok {
-		ty = typeDecl.Type
-	}
 	switch ty := ty.(type) {
 	case *typed.StructType:
 		fieldTypes := []Type{}
@@ -1091,12 +1085,11 @@ func declareFunction(
 	declaredTypes *DeclaredTypes,
 	rootSymbolTable *symbolTable,
 	functionType *typed.FunctionType,
-	typeInfo *lower.SpecializedTypeInfo,
 ) *FunctionDefinition {
 	params := []FunctionParam{}
 	for i, tyParam := range functionType.Params {
 		if callArgFuncType, ok := tyParam.Type.(*typed.FunctionType); ok {
-			declareFunction(declaredTypes, rootSymbolTable, callArgFuncType, typeInfo)
+			declareFunction(declaredTypes, rootSymbolTable, callArgFuncType)
 		}
 		paramType := declaredTypes.MustLookup(tyParam.Type)
 		param := FunctionParam{
@@ -1107,14 +1100,14 @@ func declareFunction(
 	}
 	result := declaredTypes.MustLookup(functionType.Result)
 	res := &FunctionDefinition{
-		Id:       functionType.Id(),
-		Type:     FunctionType{Params: params, Result: result},
-		TypeInfo: typeInfo,
+		Id:   functionType.Id(),
+		Type: FunctionType{Params: params, Result: result},
 	}
 	return res
 }
 
 func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, error) {
+	typeInfo := lowered.TypeInfo
 	declaredTypes := &DeclaredTypes{Types: make(map[typed.TypeId]Type)}
 	rootSymbolTable := symbolTable{symbols: make(map[ast.Ident]Register)}
 	funcSpecs := lowered.FuncSpecs
@@ -1124,13 +1117,13 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 	// First forward declare all functions.
 	for _, funcSpec := range funcSpecs {
 		funcType := funcSpec.Specialized
-		funcDef := declareFunction(declaredTypes, &rootSymbolTable, funcType, funcSpec.TypeInfo)
+		funcDef := declareFunction(declaredTypes, &rootSymbolTable, funcType)
 		funcDefs = append(funcDefs, funcDef)
 		if funcSpec.IsMain {
 			main = funcDef
 		}
 		declaredTypes.declare(funcType)
-		fqn := funcSpec.TypeInfo.MustLookupSymbol(funcType.Id()).FQN()
+		fqn := typeInfo.MustLookupSymbol(funcType.Id()).FQN()
 		definedFunctions[funcDef.Id] = DefinedFunction{Id: funcDef.Id, FQN: fqn}
 	}
 	// Declare builtin functions.
@@ -1148,7 +1141,7 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 		funcSpec := funcSpecs[i]
 		gen := &generator{
 			DefaultVisitor:      ast.DefaultVisitor{},
-			typeInfo:            funcSpec.TypeInfo,
+			typeInfo:            typeInfo,
 			registerByNodeId:    make(map[ast.NodeId]Register),
 			symbolTable:         &symbolTable{symbols: make(map[ast.Ident]Register), parent: &rootSymbolTable},
 			globalConstants:     &constants,
@@ -1183,6 +1176,7 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 		Constants:     constants,
 		DeclaredTypes: declaredTypes,
 		Main:          main,
+		TypeInfo:      typeInfo,
 	}, nil
 }
 

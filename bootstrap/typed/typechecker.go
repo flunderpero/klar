@@ -239,6 +239,17 @@ type StructType struct {
 	traits     []*TraitType
 }
 
+func (ty StructType) CloneWithNewId(id TypeId) *StructType {
+	return &StructType{
+		BaseType:   BaseType{id},
+		typeParams: ty.typeParams,
+		typeArgs:   ty.typeArgs,
+		Fields:     ty.Fields,
+		Methods:    ty.Methods,
+		traits:     ty.traits,
+	}
+}
+
 func (ty StructType) Traits() []*TraitType {
 	return ty.traits
 }
@@ -261,17 +272,6 @@ func (ty StructType) String() string {
 		base.IndentStringSlice(fields, 2),
 		base.IndentSlice(ty.Methods, 2),
 	)
-}
-
-func (ty StructType) CloneWith(id TypeId, typeArgs []Type) *StructType {
-	return &StructType{
-		BaseType:   BaseType{id},
-		typeParams: ty.typeParams,
-		typeArgs:   typeArgs,
-		Fields:     ty.Fields,
-		Methods:    ty.Methods,
-		traits:     ty.traits,
-	}
 }
 
 func (ty StructType) FindFieldIndex(name ast.Ident, span token.Span) (int, bool) {
@@ -829,6 +829,8 @@ func ResolveTypeArgs(ty Type, typeParams []TypeParam, typeArgs []Type) Type {
 			if ty.Receiver == nil || ty.Receiver.Id() != ty.Result.Id() {
 				result = ResolveTypeArgs(ty.Result, typeParams, typeArgs)
 			}
+			// We explicitly don't cache the function type here, because lowering
+			// depends on each type to be a unique instance.
 			return &FunctionType{
 				BaseType:   ty.BaseType,
 				typeParams: ty.typeParams,
@@ -855,6 +857,8 @@ func ResolveTypeArgs(ty Type, typeParams []TypeParam, typeArgs []Type) Type {
 				method.Type = methodType
 				methods[i] = method
 			}
+			// We explicitly don't cache the function type here, because lowering
+			// depends on each type to be a unique instance.
 			return &StructType{
 				BaseType:   ty.BaseType,
 				typeParams: ty.typeParams,

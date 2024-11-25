@@ -335,6 +335,7 @@ type Code struct {
 	registerAllocator registerAllocator
 	stackAllocator    *stackAllocator
 	dataLayout        ir.DataLayout
+	typeInfo          *typed.TypeInfo
 }
 
 func (c *Code) offset() int {
@@ -347,7 +348,7 @@ func (c *Code) emitAtOffset(offset int, s string, args ...any) *Code {
 }
 
 func (c *Code) funcName(id typed.TypeId) string {
-	fqn := c.function.TypeInfo.MustLookupSymbol(id).FQN()
+	fqn := c.typeInfo.MustLookupSymbol(id).FQN()
 	return "." + strings.ReplaceAll(fqn, "::", "$$")
 }
 
@@ -552,6 +553,7 @@ func generateFunction(function *ir.FunctionDefinition, module *ir.Module, isMain
 		values:          make(map[ir.RegisterId]*registerAllocation),
 		stackAllocator:  stackAllocator,
 		dataLayout:      module.DataLayout,
+		typeInfo:        module.TypeInfo,
 	}
 	c.registerAllocator = newRegisterAllocator(
 		slices.Concat(callerSavedRegisters, calleeSavedRegisters),

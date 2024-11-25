@@ -377,9 +377,10 @@ func (f *FunctionDefinition) String() string {
 
 type ImplDefinition struct {
 	node
-	Target  Ident
-	Methods []*FunctionDefinition
-	Trait   Ident // optional
+	Target        Ident
+	Methods       []*FunctionDefinition
+	Trait         Ident // optional
+	TraitTypeArgs []Type
 }
 
 func (impl *ImplDefinition) ImplementsTrait() bool {
@@ -387,17 +388,26 @@ func (impl *ImplDefinition) ImplementsTrait() bool {
 }
 
 func (impl ImplDefinition) String() string {
-	return fmt.Sprintf("ImplDefinition\n%s%s", base.Indent(impl.Target, 1), base.IndentSlice(impl.Methods, 1))
+	trait := ""
+	if impl.Trait != "" {
+		trait = fmt.Sprintf("(Trait)\n%s%s", impl.Trait, base.IndentString(typeArgsString(impl.TraitTypeArgs), 1))
+	}
+	return fmt.Sprintf("ImplDefinition\n%s%s%s", base.Indent(impl.Target, 1), trait, base.IndentSlice(impl.Methods, 1))
 }
 
 type TraitDeclaration struct {
 	node
 	Name        Ident
+	TypeParams  []TypeParam
 	MethodDecls []*FunctionDeclaration
 }
 
 func (trait *TraitDeclaration) String() string {
-	return fmt.Sprintf("TraitDeclaration\n%s%s", base.Indent(trait.Name, 1), base.IndentSlice(trait.MethodDecls, 1))
+	return fmt.Sprintf(
+		"TraitDeclaration\n%s%s%s",
+		base.Indent(trait.Name, 1),
+		base.IndentString(typeParamsString(trait.TypeParams), 1),
+		base.IndentSlice(trait.MethodDecls, 1))
 }
 
 type VariableDefinition struct {
@@ -1012,6 +1022,10 @@ func (p *Parser) parseImplDefinition() (*ImplDefinition, error) {
 	}
 	target := Ident(targetIdentToken.Value)
 	var trait Ident = ""
+	traitTypeArgs, err := p.parseTypeArgs()
+	if err != nil {
+		return nil, err
+	}
 	if p.peek().Kind == token.For {
 		p.consumeAny()
 		traitIdentToken, err := p.consume(token.TypeIdent)
@@ -1020,6 +1034,8 @@ func (p *Parser) parseImplDefinition() (*ImplDefinition, error) {
 		}
 		trait = target
 		target = Ident(traitIdentToken.Value)
+	} else if len(traitTypeArgs) > 0 {
+		return nil, errors.Errorf("%s: type arguments are only allowed when implementing a trait", from)
 	}
 	if _, err = p.consume(token.LCurly); err != nil {
 		return nil, err
@@ -1030,7 +1046,8 @@ func (p *Parser) parseImplDefinition() (*ImplDefinition, error) {
 		switch t.Kind {
 		case token.RCurly:
 			p.consumeAny()
-			return &ImplDefinition{node: p.newNode(from), Trait: trait, Target: target, Methods: functions}, nil
+			return &ImplDefinition{
+				node: p.newNode(from), Trait: trait, TraitTypeArgs: traitTypeArgs, Target: target, Methods: functions}, nil
 		case token.Fn:
 			function, err := p.parseFunctionDefinition(true)
 			if err != nil {
@@ -1053,6 +1070,10 @@ func (p *Parser) parseTraitDeclaration() (*TraitDeclaration, error) {
 	if err != nil {
 		return nil, err
 	}
+	typeParams, err := p.parseTypeParams()
+	if err != nil {
+		return nil, err
+	}
 	if _, err = p.consume(token.LCurly); err != nil {
 		return nil, err
 	}
@@ -1065,6 +1086,7 @@ func (p *Parser) parseTraitDeclaration() (*TraitDeclaration, error) {
 			return &TraitDeclaration{
 				node:        p.newNode(from),
 				Name:        Ident(typeIdentToken.Value),
+				TypeParams:  typeParams,
 				MethodDecls: methodDecls,
 			}, nil
 		case token.Fn:

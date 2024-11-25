@@ -1,0 +1,25 @@
+trait Reflect<T> {
+    fn reflect(self) T
+}
+
+trait Constant<T> {
+    fn constant(self) T
+}
+
+struct Single<U> {
+    value U
+}
+
+impl Reflect<U> for Single {
+    fn reflect(self) U => self.value
+}
+
+impl Constant<Int> for Single {
+    fn constant(self) Int => 42
+}
+
+fn main() {
+    let s = Single<Str>("Hello, ")
+    print(s.reflect())
+    print_int(s.constant())
+}

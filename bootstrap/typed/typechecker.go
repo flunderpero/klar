@@ -329,20 +329,34 @@ func (ty StructType) TypeArgs() []Type {
 
 type TraitType struct {
 	BaseType
-	Methods []TypeAndName[FunctionType]
+	typeParams []TypeParam
+	typeArgs   []Type
+	Methods    []TypeAndName[*FunctionType]
 }
 
 func (ty TraitType) String() string {
-	return fmt.Sprintf("TraitType%s", base.IndentSlice(ty.Methods, 1))
+	return fmt.Sprintf(
+		"TraitType%s%s%s",
+		base.IndentSlice(ty.Methods, 1),
+		base.IndentString(typeParamsString(ty.typeParams), 1),
+		base.IndentString(typeArgsString(ty.typeArgs), 1))
 }
 
 func (ty *TraitType) FindMethod(name ast.Ident, span token.Span) (*FunctionType, error) {
 	for _, method := range ty.Methods {
 		if method.Name == name {
-			return &method.Type, nil
+			return method.Type, nil
 		}
 	}
 	return nil, errors.Errorf("%s: method %q not found in trait type %q", span, name, ty)
+}
+
+func (ty *TraitType) TypeParams() []TypeParam {
+	return ty.typeParams
+}
+
+func (ty *TraitType) TypeArgs() []Type {
+	return ty.typeArgs
 }
 
 type ImplType struct {
@@ -891,6 +905,26 @@ func ResolveTypeArgs(ty Type, typeParams []TypeParam, typeArgs []Type) Type {
 				Methods:    methods,
 				traits:     ty.traits,
 			}
+		case *TraitType:
+			methods := make([]TypeAndName[*FunctionType], len(ty.Methods))
+			for i, method := range ty.Methods {
+				method := method // Make a copy.
+				resolvedMethodType := ResolveTypeArgs(method.Type, typeParams, typeArgs)
+				methodType, ok := resolvedMethodType.(*FunctionType)
+				if !ok {
+					panic(fmt.Sprintf("expected function type, got: %T", resolvedMethodType))
+				}
+				method.Type = methodType
+				methods[i] = method
+			}
+			// We explicitly don't cache the function type here, because lowering
+			// depends on each type to be a unique instance.
+			return &TraitType{
+				BaseType:   ty.BaseType,
+				typeParams: ty.typeParams,
+				typeArgs:   genericTypeArgs,
+				Methods:    methods,
+			}
 		default:
 			panic(fmt.Sprintf("unexpected generic type: %T", ty))
 		}
@@ -1169,6 +1203,13 @@ func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.
 	}
 	tc.enterScope(trait)
 	defer tc.exitScope()
+	tc.enterGenericScope()
+	defer tc.exitGenericScope()
+	typeParams, err := tc.resolveTypeParams(traitType, trait.TypeParams)
+	if err != nil {
+		return err
+	}
+	traitType.typeParams = typeParams
 	if err := tc.typeScope.declareType("Self", traitType, trait.Span()); err != nil {
 		return err
 	}
@@ -1186,7 +1227,7 @@ func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.
 	for _, methodDecl := range trait.MethodDecls {
 		methodType := tc.typeInfo.MustLookupDeclaredType(methodDecl).Type.(*FunctionType)
 		methodType.Receiver = traitType
-		methodAndName := TypeAndName[FunctionType]{Name: methodDecl.Name, Type: *methodType}
+		methodAndName := TypeAndName[*FunctionType]{Name: methodDecl.Name, Type: methodType}
 		traitType.Methods = append(traitType.Methods, methodAndName)
 	}
 	tc.declareSymbol(traitType.Id(), trait.Name.String())
@@ -1205,25 +1246,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 	}
 	tc.enterScope(impl)
 	defer tc.exitScope()
-	if HasTypeParams(structType) {
-		tc.enterGenericScope()
-		defer tc.exitGenericScope()
-		for _, typeParam := range structType.typeParams {
-			if err := tc.genericScope.declareTypeParam(typeParam.Name.String(), &typeParam, impl.Span()); err != nil {
-				return err
-			}
-		}
-	}
-	if err := tc.typeScope.declareType("Self", structType, impl.Span()); err != nil {
-		return err
-	}
-	tc.enterCheckingMode(insideTraitOrImplMode)
-	defer tc.exitCheckingMode()
-	if err := w.WalkImplDefinition(impl); err != nil {
-		return err
-	}
 	var traitType *TraitType = nil
-	unimplementedTraitMethods := map[ast.Ident]*TypeAndName[FunctionType]{}
 	if impl.ImplementsTrait() {
 		traitType_, found := tc.typeScope.lookupType(string(impl.Trait))
 		if !found {
@@ -1233,6 +1256,33 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 		if !ok {
 			return errors.Errorf("%s: type %q is not a trait type", impl.Span(), traitType_)
 		}
+	}
+	if HasTypeParams(structType) {
+		tc.enterGenericScope()
+		defer tc.exitGenericScope()
+		for _, typeParam := range structType.typeParams {
+			if err := tc.genericScope.declareTypeParam(typeParam.Name.String(), &typeParam, impl.Span()); err != nil {
+				return err
+			}
+		}
+	}
+	if traitType != nil && HasTypeParams(traitType) {
+		traitType_, err := tc.resolveGenericType(traitType, impl.TraitTypeArgs, impl.Span())
+		if err != nil {
+			return err
+		}
+		traitType = traitType_.(*TraitType)
+	}
+	if err := tc.typeScope.declareType("Self", structType, impl.Span()); err != nil {
+		return err
+	}
+	tc.enterCheckingMode(insideTraitOrImplMode)
+	defer tc.exitCheckingMode()
+	if err := w.WalkImplDefinition(impl); err != nil {
+		return err
+	}
+	unimplementedTraitMethods := map[ast.Ident]*TypeAndName[*FunctionType]{}
+	if traitType != nil {
 		for _, method := range traitType.Methods {
 			unimplementedTraitMethods[method.Name] = &method
 		}

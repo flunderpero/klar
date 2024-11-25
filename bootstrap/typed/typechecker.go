@@ -777,15 +777,39 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 			return nil, errors.Errorf("undefined type parameter: %s", node.TypeName())
 		}
 		return res, nil
-	default:
-		if res, found := tc.typeScope.lookupType(node.TypeName()); found {
-			return res, nil
+	case *ast.SimpleType:
+		if len(node.TypeArgs) > 0 {
+			baseType, found := tc.typeScope.lookupType(node.TypeName())
+			if !found {
+				return nil, errors.Errorf("undefined type: %s", node.TypeName())
+			}
+			structType, ok := baseType.(*StructType)
+			if !ok {
+				return nil, errors.Errorf("expected struct type, got: %T", baseType)
+			}
+			if len(node.TypeArgs) != len(structType.TypeParams()) {
+				return nil, errors.Errorf(
+					"expected %d type arguments, got %d for %q",
+					len(structType.TypeParams()), len(node.TypeArgs), node.TypeName())
+			}
+			typeArgs := make([]Type, len(node.TypeArgs))
+			for i, typeArg := range node.TypeArgs {
+				typeArg, err := tc.lookupTypeOfNode(typeArg)
+				if err != nil {
+					return nil, err
+				}
+				typeArgs[i] = typeArg
+			}
+			return ResolveTypeArgs(structType, structType.typeParams, typeArgs), nil
 		}
-		if res, found := tc.genericScope.lookupTypeParam(node.TypeName()); found {
-			return res, nil
-		}
-		return nil, errors.Errorf("undefined type: %s", node.TypeName())
 	}
+	if res, found := tc.typeScope.lookupType(node.TypeName()); found {
+		return res, nil
+	}
+	if res, found := tc.genericScope.lookupTypeParam(node.TypeName()); found {
+		return res, nil
+	}
+	return nil, errors.Errorf("undefined type: %s", node.TypeName())
 }
 
 func (tc *typeChecker) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
@@ -1074,10 +1098,6 @@ func (tc *typeChecker) resolveFunctionParamsAndResult(
 }
 
 func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) error {
-	if tc.checkingMode == insideTraitOrImplMode {
-		tc.enterGenericScope()
-		defer tc.exitGenericScope()
-	}
 	funcType := &FunctionType{BaseType: tc.newType()}
 	typeParams, err := tc.resolveTypeParams(funcType, decl.TypeParams)
 	if err != nil {
@@ -1154,8 +1174,14 @@ func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.
 	}
 	tc.enterCheckingMode(insideTraitOrImplMode)
 	defer tc.exitCheckingMode()
-	if err := w.WalkTraitDeclaration(trait); err != nil {
-		return err
+	for _, decl := range trait.MethodDecls {
+		tc.enterGenericScope()
+		err := tc.VisitFunctionDeclaration(decl)
+		if err != nil {
+			tc.exitGenericScope()
+			return err
+		}
+		tc.exitGenericScope()
 	}
 	for _, methodDecl := range trait.MethodDecls {
 		methodType := tc.typeInfo.MustLookupDeclaredType(methodDecl).Type.(*FunctionType)

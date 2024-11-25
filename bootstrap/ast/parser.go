@@ -75,11 +75,12 @@ type Type interface {
 
 type SimpleType struct {
 	node
-	Name Ident
+	Name     Ident
+	TypeArgs []Type
 }
 
 func (t SimpleType) String() string {
-	return fmt.Sprintf("SimpleType %q", t.Name)
+	return fmt.Sprintf("SimpleType %q%s", t.Name, base.IndentString(typeArgsString(t.TypeArgs), 1))
 }
 
 func (t SimpleType) TypeName() string {
@@ -386,7 +387,7 @@ func (impl *ImplDefinition) ImplementsTrait() bool {
 }
 
 func (impl ImplDefinition) String() string {
-	return fmt.Sprintf("ImplDefinition\n%s%s)", base.Indent(impl.Target, 1), base.IndentSlice(impl.Methods, 1))
+	return fmt.Sprintf("ImplDefinition\n%s%s", base.Indent(impl.Target, 1), base.IndentSlice(impl.Methods, 1))
 }
 
 type TraitDeclaration struct {
@@ -396,7 +397,7 @@ type TraitDeclaration struct {
 }
 
 func (trait *TraitDeclaration) String() string {
-	return fmt.Sprintf("TraitDeclaration\n%s%s)", base.Indent(trait.Name, 1), base.IndentSlice(trait.MethodDecls, 1))
+	return fmt.Sprintf("TraitDeclaration\n%s%s", base.Indent(trait.Name, 1), base.IndentSlice(trait.MethodDecls, 1))
 }
 
 type VariableDefinition struct {
@@ -636,7 +637,11 @@ func (p *Parser) parseType() (Type, error) {
 	switch t.Kind {
 	case token.TypeIdent:
 		p.consumeAny()
-		return &SimpleType{node: p.newNode(p.span()), Name: Ident(t.Value)}, nil
+		typeArgs, err := p.parseTypeArgs()
+		if err != nil {
+			return nil, err
+		}
+		return &SimpleType{node: p.newNode(p.span()), Name: Ident(t.Value), TypeArgs: typeArgs}, nil
 	case token.Fn:
 		return p.parseFunctionType()
 	}

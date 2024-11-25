@@ -1,0 +1,26 @@
+struct Single<T> {
+    value T
+}
+
+struct Pair<K, V> {
+    key K
+    value V
+}
+
+impl Single {
+    fn make_pair<U>(self, value U) Pair<T, U> => Pair<T, U>(key=self.value, value=value) 
+}
+
+fn print_pair(p Pair<Str, Int>) {
+    print(p.key)
+    print_int(p.value)
+}
+
+fn main() {
+    let s = Single<Str>("Hello, ")
+    let p = s.make_pair<Int>(42)
+    print(p.key)
+    print_int(p.value)
+    print(", ")
+    print_pair(p)
+}

@@ -70,17 +70,16 @@ func main() {
 		fmt.Println(module)
 		os.Exit(0)
 	}
-	ty, typeInfo, err := typed.TypeCheck(module)
+	typeInfo, genericsResolver, err := typed.TypeCheck(module)
 	if err != nil {
 		fmt.Printf("Failed to typecheck: %+v\n", err)
 		os.Exit(1)
 	}
 	if cmd == "types" {
-		fmt.Println(ty)
 		printTypedAST(module, typeInfo)
 		os.Exit(0)
 	}
-	lowered := lower.Lower(module, typeInfo)
+	lowered := lower.Lower(module, typeInfo, genericsResolver)
 	if cmd == "lower" {
 		fmt.Println(lowered)
 		os.Exit(0)

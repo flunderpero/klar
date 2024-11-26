@@ -26,9 +26,6 @@ import (
 	"github.com/flunderpero/klar/bootstrap/typed"
 )
 
-// 640kb will be enough forever. :-)
-const lowerTypeIdStart = 1_000_000_000
-
 type LoweredAST struct {
 	Module    *ast.Module
 	FuncSpecs []*FunctionSpecialization
@@ -40,8 +37,8 @@ func (l *LoweredAST) String() string {
 		"LoweredAST\n%s%s", base.Indent(l.Module, 1), base.IndentSlice(l.FuncSpecs, 1))
 }
 
-func Lower(module *ast.Module, typeInfo *typed.TypeInfo) *LoweredAST {
+func Lower(module *ast.Module, typeInfo *typed.TypeInfo, genericsResolver *typed.GenericsResolver) *LoweredAST {
 	module, funcInfos := Prepare(module, typeInfo)
-	funcSpecs := Monomorphize(module, typeInfo, funcInfos, lowerTypeIdStart)
+	funcSpecs := Monomorphize(module, typeInfo, funcInfos, genericsResolver)
 	return &LoweredAST{Module: module, FuncSpecs: funcSpecs, TypeInfo: typeInfo}
 }

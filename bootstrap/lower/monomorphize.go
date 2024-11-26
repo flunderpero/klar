@@ -90,13 +90,13 @@ type workItem struct {
 
 type mono struct {
 	ast.DefaultVisitor
-	funcInfos      map[typed.TypeId]*funcInfo
-	queue          []*workItem
-	current        *workItem
-	globalTypeInfo *typed.TypeInfo
-	funcSpecs      []*FunctionSpecialization
-	structSpecs    []*StructSpecialization
-	nextTypeId     int
+	funcInfos        map[typed.TypeId]*funcInfo
+	queue            []*workItem
+	current          *workItem
+	globalTypeInfo   *typed.TypeInfo
+	funcSpecs        []*FunctionSpecialization
+	structSpecs      []*StructSpecialization
+	genericsResolver *typed.GenericsResolver
 }
 
 func (self *mono) VisitNode(expr ast.Node, w ast.Walker) error {
@@ -117,8 +117,7 @@ func (self *mono) VisitNode(expr ast.Node, w ast.Walker) error {
 }
 
 func (self *mono) newTypeId() typed.TypeId {
-	self.nextTypeId++
-	return typed.TypeId(self.nextTypeId)
+	return self.genericsResolver.NewBaseType().Id()
 }
 
 func (self *mono) newWorkItem(info *funcInfo, specialized *typed.FunctionType) *workItem {
@@ -141,14 +140,14 @@ func (self *mono) resolve(ty typed.Type) typed.Type {
 			typeParams = append(typeParams, ty.TypeParams()...)
 			typeArgs = append(typeArgs, ty.TypeArgs()...)
 		}
-		return typed.ResolveTypeArgs(ty, typeParams, typeArgs)
+		return self.genericsResolver.ResolveTypeArgs(ty, typeParams, typeArgs)
 	case *typed.StructType:
 		// Structs are just data holders at this point, because we converted
 		// all methods to plain functions.
 		ty.Methods = []typed.TypeAndName[*typed.FunctionType]{}
-		return typed.ResolveTypeArgs(ty, typeParams, typeArgs)
+		return self.genericsResolver.ResolveTypeArgs(ty, typeParams, typeArgs)
 	default:
-		return typed.ResolveTypeArgs(ty, typeParams, typeArgs)
+		return self.genericsResolver.ResolveTypeArgs(ty, typeParams, typeArgs)
 	}
 }
 
@@ -255,17 +254,17 @@ func (self *mono) run() {
 	}
 }
 
-func Monomorphize(module *ast.Module, typeInfo *typed.TypeInfo, funcInfos map[typed.TypeId]*funcInfo, nextTypeId int) []*FunctionSpecialization {
+func Monomorphize(module *ast.Module, typeInfo *typed.TypeInfo, funcInfos map[typed.TypeId]*funcInfo, genericsResolver *typed.GenericsResolver) []*FunctionSpecialization {
 	main, ok := funcInfos[typeInfo.Main.Id()]
 	if !ok {
 		panic("Main function not found")
 	}
 	m := mono{
-		funcInfos:      funcInfos,
-		queue:          []*workItem{},
-		globalTypeInfo: typeInfo,
-		funcSpecs:      []*FunctionSpecialization{},
-		nextTypeId:     nextTypeId,
+		funcInfos:        funcInfos,
+		queue:            []*workItem{},
+		globalTypeInfo:   typeInfo,
+		funcSpecs:        []*FunctionSpecialization{},
+		genericsResolver: genericsResolver,
 	}
 	m.lookupOrCreateSpecializedFunction(main.funcType)
 	m.run()

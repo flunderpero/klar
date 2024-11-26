@@ -696,14 +696,15 @@ const (
 
 type typeChecker struct {
 	ast.DefaultVisitor
-	typeInfo      *TypeInfo
-	typeScope     *typeScope
-	symbolScope   *SymbolScope
-	genericScope  *genericScope
-	loopDepth     int
-	nextTypeId    int
-	checkingMode  checkingMode
-	functionTypes map[string]FunctionType
+	typeInfo         *TypeInfo
+	typeScope        *typeScope
+	symbolScope      *SymbolScope
+	genericScope     *genericScope
+	genericsResolver *GenericsResolver
+	loopDepth        int
+	nextTypeId       int
+	checkingMode     checkingMode
+	functionTypes    map[string]FunctionType
 }
 
 func (tc *typeChecker) newType() BaseType {
@@ -841,97 +842,6 @@ func (tc *typeChecker) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpressio
 	return nil
 }
 
-func ResolveTypeArgs(ty Type, typeParams []TypeParam, typeArgs []Type) Type {
-	if len(typeParams) != len(typeArgs) {
-		panic(fmt.Sprintf("expected %d type arguments, got %d while resolving: %s", len(typeParams), len(typeArgs), ty))
-	}
-	switch ty := ty.(type) {
-	case GenericType:
-		genericTypeArgs := make([]Type, len(ty.TypeArgs()))
-		for i, typeArg := range ty.TypeArgs() {
-			genericTypeArgs[i] = ResolveTypeArgs(typeArg, typeParams, typeArgs)
-		}
-		switch ty := ty.(type) {
-		case *FunctionType:
-			params := make([]TypeAndName[Type], len(ty.Params))
-			for i, param := range ty.Params {
-				if ty.Receiver != nil && ty.Receiver.Id() == param.Type.Id() {
-					params[i] = param
-					continue
-				}
-				param := param // Make a copy.
-				param.Type = ResolveTypeArgs(param.Type, typeParams, typeArgs)
-				params[i] = param
-			}
-			result := ty.Result
-			if ty.Receiver == nil || ty.Receiver.Id() != ty.Result.Id() {
-				result = ResolveTypeArgs(ty.Result, typeParams, typeArgs)
-			}
-			return &FunctionType{
-				BaseType:   ty.BaseType,
-				typeParams: ty.typeParams,
-				typeArgs:   genericTypeArgs,
-				Params:     params,
-				Result:     result,
-				Receiver:   ty.Receiver,
-			}
-		case *StructType:
-			fields := make([]TypeAndName[Type], len(ty.Fields))
-			for i, field := range ty.Fields {
-				field := field // Make a copy.
-				field.Type = ResolveTypeArgs(field.Type, typeParams, typeArgs)
-				fields[i] = field
-			}
-			methods := make([]TypeAndName[*FunctionType], len(ty.Methods))
-			for i, method := range ty.Methods {
-				method := method // Make a copy.
-				resolvedMethodType := ResolveTypeArgs(method.Type, typeParams, typeArgs)
-				methodType, ok := resolvedMethodType.(*FunctionType)
-				if !ok {
-					panic(fmt.Sprintf("expected function type, got: %T", resolvedMethodType))
-				}
-				method.Type = methodType
-				methods[i] = method
-			}
-			return &StructType{
-				BaseType:   ty.BaseType,
-				typeParams: ty.typeParams,
-				typeArgs:   genericTypeArgs,
-				Fields:     fields,
-				Methods:    methods,
-				traits:     ty.traits,
-			}
-		case *TraitType:
-			methods := make([]TypeAndName[*FunctionType], len(ty.Methods))
-			for i, method := range ty.Methods {
-				method := method // Make a copy.
-				resolvedMethodType := ResolveTypeArgs(method.Type, typeParams, typeArgs)
-				methodType, ok := resolvedMethodType.(*FunctionType)
-				if !ok {
-					panic(fmt.Sprintf("expected function type, got: %T", resolvedMethodType))
-				}
-				method.Type = methodType
-				methods[i] = method
-			}
-			return &TraitType{
-				BaseType:   ty.BaseType,
-				typeParams: ty.typeParams,
-				typeArgs:   genericTypeArgs,
-				Methods:    methods,
-			}
-		default:
-			panic(fmt.Sprintf("unexpected generic type: %T", ty))
-		}
-	default:
-		for i, typeParam := range typeParams {
-			if ty.Id() == typeParam.Id() {
-				return typeArgs[i]
-			}
-		}
-		return ty
-	}
-}
-
 func (tc *typeChecker) resolveGenericType(ty GenericType, astTypeArgs []ast.Type, span token.Span) (Type, error) {
 	typeParams := ty.TypeParams()
 	if len(astTypeArgs) != len(typeParams) {
@@ -946,7 +856,7 @@ func (tc *typeChecker) resolveGenericType(ty GenericType, astTypeArgs []ast.Type
 		}
 		typeArgs[i] = typeArg
 	}
-	return ResolveTypeArgs(ty, typeParams, typeArgs), nil
+	return tc.genericsResolver.ResolveTypeArgs(ty, typeParams, typeArgs), nil
 }
 
 func (tc *typeChecker) VisitIdentExpression(expr *ast.IdentExpression) error {
@@ -1461,7 +1371,7 @@ func (tc *typeChecker) check(node ast.Node, w ast.Walker) (Type, error) {
 	return nodeType, nil
 }
 
-func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
+func TypeCheck(node ast.Node) (*TypeInfo, *GenericsResolver, error) {
 	tc := &typeChecker{
 		DefaultVisitor: ast.DefaultVisitor{},
 		typeInfo: &TypeInfo{
@@ -1475,6 +1385,7 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 		nextTypeId:    1000,
 		functionTypes: make(map[string]FunctionType),
 	}
+	tc.genericsResolver = newGenericsResolver(func() BaseType { return tc.newType() })
 	// Declare builtin types and functions.
 	builtInSymbolScope := newSymbolScope(nil, nil)
 	declareBuiltIn := func(name string, ty Type) {
@@ -1492,9 +1403,9 @@ func TypeCheck(node ast.Node) (Type, *TypeInfo, error) {
 	declareBuiltIn("print_bool", BuiltInPrintBoolFunction)
 	declareBuiltIn("_unsafe_malloc", BuiltInUnsafeMallocFunction)
 	walker := &ast.DefaultWalker{Visitor: tc}
-	res, err := tc.check(node, walker)
+	_, err := tc.check(node, walker)
 	if err != nil {
-		return nil, nil, err
+		return nil, tc.genericsResolver, err
 	}
-	return res, tc.typeInfo, nil
+	return tc.typeInfo, tc.genericsResolver, nil
 }

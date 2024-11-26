@@ -814,7 +814,7 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 				}
 				typeArgs[i] = typeArg
 			}
-			return ResolveTypeArgs(structType, structType.typeParams, typeArgs), nil
+			return tc.resolveGenericType(structType, node.TypeArgs, node.Span())
 		}
 	}
 	if res, found := tc.typeScope.lookupType(node.TypeName()); found {
@@ -867,8 +867,6 @@ func ResolveTypeArgs(ty Type, typeParams []TypeParam, typeArgs []Type) Type {
 			if ty.Receiver == nil || ty.Receiver.Id() != ty.Result.Id() {
 				result = ResolveTypeArgs(ty.Result, typeParams, typeArgs)
 			}
-			// We explicitly don't cache the function type here, because lowering
-			// depends on each type to be a unique instance.
 			return &FunctionType{
 				BaseType:   ty.BaseType,
 				typeParams: ty.typeParams,
@@ -895,8 +893,6 @@ func ResolveTypeArgs(ty Type, typeParams []TypeParam, typeArgs []Type) Type {
 				method.Type = methodType
 				methods[i] = method
 			}
-			// We explicitly don't cache the function type here, because lowering
-			// depends on each type to be a unique instance.
 			return &StructType{
 				BaseType:   ty.BaseType,
 				typeParams: ty.typeParams,
@@ -917,8 +913,6 @@ func ResolveTypeArgs(ty Type, typeParams []TypeParam, typeArgs []Type) Type {
 				method.Type = methodType
 				methods[i] = method
 			}
-			// We explicitly don't cache the function type here, because lowering
-			// depends on each type to be a unique instance.
 			return &TraitType{
 				BaseType:   ty.BaseType,
 				typeParams: ty.typeParams,

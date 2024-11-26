@@ -1,4 +1,5 @@
 struct Single<T> {
+    bool Bool  -- We add this field, so we can test that struct layout is correct in the IR and ASM.
     value T
 }
 
@@ -9,13 +10,27 @@ impl Single {
 }
 
 fn main() {
-    let s = Single<Str>(value="Hello, ")
+    let b = Single<Bool>(false, value=true)
+    print_bool(b.value)
+    print(" ")
+    print_bool(b.return_value())
+    print(" ")
+    print_bool(b.generic<Bool>(false))
+    print(" ")
+    print(", ")
+
+    let s = Single<Str>(false, value="Hello")
     print(s.value)
-    let i = Single<Int>(value=42)
-    print_int(i.value)
-    print(", ")
+    print(" ")
     print(s.return_value())
-    print_int(i.return_value())
+    print(" ")
+    print_bool(s.generic<Bool>(true))
     print(", ")
+
+    let i = Single<Int>(false, value=42)
+    print_int(i.value)
+    print(" ")
+    print_int(i.return_value())
+    print(" ")
     print_bool(i.generic<Bool>(false))
 }

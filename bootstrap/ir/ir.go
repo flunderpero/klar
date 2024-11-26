@@ -157,6 +157,7 @@ func (ir *Return) Targets() []*Block {
 type FunctionDefinition struct {
 	Id                  typed.TypeId
 	Type                FunctionType
+	TypeInfo            *lower.SpecializedTypeInfo
 	Entry               *Block
 	RegisterConstraints RegisterConstraints
 }
@@ -428,7 +429,7 @@ func (inst Call) String() string {
 	return fmt.Sprintf("%s%scall %s %s(%s)", assign, prefix, inst.FunctionType.Result, inst.Callee, args)
 }
 
-func (inst *Call) Register() Register {
+func (inst Call) Register() Register {
 	return inst.register
 }
 
@@ -599,7 +600,7 @@ type loopScope struct {
 type generator struct {
 	ast.DefaultVisitor
 	currentBlock        *Block
-	typeInfo            *typed.TypeInfo
+	typeInfo            *lower.SpecializedTypeInfo
 	registerByNodeId    map[ast.NodeId]Register
 	symbolTable         *symbolTable
 	globalConstants     *[]*StrConst
@@ -608,7 +609,7 @@ type generator struct {
 	declaredTypes       *DeclaredTypes
 	registerConstraints RegisterConstraints
 	loopScopes          []loopScope
-	definedFunctions    *map[typed.TypeId]DefinedFunction
+	definedFunctions    map[typed.TypeId]DefinedFunction
 	dataLayout          DataLayout
 }
 
@@ -669,7 +670,7 @@ func (g *generator) updateRegisterConstraints(symbolTableBefore map[ast.Ident]Re
 }
 
 func (g *generator) isDefinedFunction(id typed.TypeId) (DefinedFunction, bool) {
-	res, ok := (*g.definedFunctions)[id]
+	res, ok := g.definedFunctions[id]
 	return res, ok
 }
 
@@ -743,14 +744,14 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		sizeReg := g.nextRegister(Int64Type)
 		mallocReg := g.nextRegister(Int64Type)
 		mallocFuncType := g.declaredTypes.MustLookup(typed.BuiltInUnsafeMallocFunction).(*FunctionType)
+		mallocFuncDef := g.definedFunctions[typed.BuiltInUnsafeMallocFunction.Id()]
 		g.append(&Int64Const{
 			register: sizeReg,
 			Value:    int64(g.dataLayout.SizeOf(structType)),
 		}, nil)
-		mallocSymbol := g.typeInfo.MustLookupSymbol(typed.BuiltInUnsafeMallocFunction.Id())
 		g.append(&Call{
 			register:     mallocReg,
-			Callee:       DefinedFunction{Id: typed.BuiltInUnsafeMallocFunction.Id(), FQN: mallocSymbol.FQN()},
+			Callee:       mallocFuncDef,
 			FunctionType: mallocFuncType,
 			Args:         []Register{sizeReg},
 		}, expr)
@@ -1127,28 +1128,28 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 		definedFunctions[funcDef.Id] = DefinedFunction{Id: funcDef.Id, FQN: fqn}
 	}
 	// Declare builtin functions.
-	declareBuiltInFunction := func(f *typed.FunctionType) {
+	declareBuiltInFunction := func(name string, f *typed.FunctionType) {
 		declaredTypes.declare(f)
-		definedFunctions[f.Id()] = DefinedFunction{Id: f.Id()}
+		definedFunctions[f.Id()] = DefinedFunction{Id: f.Id(), FQN: name}
 	}
-	declareBuiltInFunction(typed.BuiltInPrintFunction)
-	declareBuiltInFunction(typed.BuiltInPrintIntFunction)
-	declareBuiltInFunction(typed.BuiltInPrintBoolFunction)
-	declareBuiltInFunction(typed.BuiltInUnsafeMallocFunction)
+	declareBuiltInFunction("print", typed.BuiltInPrintFunction)
+	declareBuiltInFunction("print_int", typed.BuiltInPrintIntFunction)
+	declareBuiltInFunction("print_bool", typed.BuiltInPrintBoolFunction)
+	declareBuiltInFunction("_unsafe_malloc", typed.BuiltInUnsafeMallocFunction)
 	constants := []*StrConst{}
 	// Generate code for each function specialization.
 	for i, funcDef := range funcDefs {
 		funcSpec := funcSpecs[i]
 		gen := &generator{
 			DefaultVisitor:      ast.DefaultVisitor{},
-			typeInfo:            typeInfo,
+			typeInfo:            funcSpec.TypeInfo,
 			registerByNodeId:    make(map[ast.NodeId]Register),
 			symbolTable:         &symbolTable{symbols: make(map[ast.Ident]Register), parent: &rootSymbolTable},
 			globalConstants:     &constants,
 			declaredTypes:       declaredTypes,
 			registerConstraints: RegisterConstraints{},
 			loopScopes:          []loopScope{},
-			definedFunctions:    &definedFunctions,
+			definedFunctions:    definedFunctions,
 			dataLayout:          dataLayout,
 		}
 		// Make function parameters visible.

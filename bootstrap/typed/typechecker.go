@@ -233,12 +233,12 @@ func (ty DeclaredType) IsAssignableFrom(other_ Type) bool {
 
 type StructType struct {
 	BaseType
-	base       *StructType
-	typeParams []TypeParam
-	typeArgs   []Type
-	Fields     []TypeAndName[Type]
-	Methods    []TypeAndName[*FunctionType]
-	traits     []*TraitType
+	genericBase *StructType
+	typeParams  []TypeParam
+	typeArgs    []Type
+	Fields      []TypeAndName[Type]
+	Methods     []TypeAndName[*FunctionType]
+	traits      []*TraitType
 }
 
 func (ty StructType) Traits() []*TraitType {
@@ -257,8 +257,8 @@ func (ty StructType) String() string {
 		fields[i] = fmt.Sprintf("%s\n%s", field.Name, base.IndentString(typeToString(field.Type), 1))
 	}
 	baseType := ""
-	if ty.base != nil {
-		baseType = fmt.Sprintf(" (base #%s)", ty.base.id)
+	if ty.genericBase != nil {
+		baseType = fmt.Sprintf(" (base #%s)", ty.genericBase.id)
 	}
 	return fmt.Sprintf(
 		"StructType #%s%s%s%s\n    (Fields)%s\n    (Methods)%s",
@@ -325,18 +325,18 @@ func (ty StructType) TypeArgs() []Type {
 }
 
 func (ty StructType) GenericBase() (GenericType, bool) {
-	if ty.base == nil {
+	if ty.genericBase == nil {
 		return nil, false
 	}
-	return ty.base, true
+	return ty.genericBase, true
 }
 
 type TraitType struct {
 	BaseType
-	base       *TraitType
-	typeParams []TypeParam
-	typeArgs   []Type
-	Methods    []TypeAndName[*FunctionType]
+	genericBase *TraitType
+	typeParams  []TypeParam
+	typeArgs    []Type
+	Methods     []TypeAndName[*FunctionType]
 }
 
 func (ty TraitType) String() string {
@@ -365,10 +365,10 @@ func (ty *TraitType) TypeArgs() []Type {
 }
 
 func (ty TraitType) GenericBase() (GenericType, bool) {
-	if ty.base == nil {
+	if ty.genericBase == nil {
 		return nil, false
 	}
-	return ty.base, true
+	return ty.genericBase, true
 }
 
 type ImplType struct {
@@ -384,12 +384,12 @@ type FunctionParam = TypeAndName[Type]
 
 type FunctionType struct {
 	BaseType
-	base       *FunctionType
-	typeParams []TypeParam
-	typeArgs   []Type
-	Receiver   Type
-	Params     []FunctionParam
-	Result     Type
+	genericBase *FunctionType
+	typeParams  []TypeParam
+	typeArgs    []Type
+	Receiver    Type
+	Params      []FunctionParam
+	Result      Type
 }
 
 func (ty FunctionType) String() string {
@@ -413,8 +413,8 @@ func (ty FunctionType) String() string {
 	}
 	result := typeToString(ty.Result)
 	baseType := ""
-	if ty.base != nil {
-		baseType = fmt.Sprintf(" (base #%s)", ty.base.id)
+	if ty.genericBase != nil {
+		baseType = fmt.Sprintf(" (base #%s)", ty.genericBase.id)
 	}
 	return fmt.Sprintf(
 		"FunctionType #%s%s%s%s%s\n    (Parameters)%s\n    (Result)\n%s",
@@ -466,10 +466,10 @@ func (ty FunctionType) TypeArgs() []Type {
 }
 
 func (ty FunctionType) GenericBase() (GenericType, bool) {
-	if ty.base == nil {
+	if ty.genericBase == nil {
 		return nil, false
 	}
-	return ty.base, true
+	return ty.genericBase, true
 }
 
 func (ty FunctionType) IsAssignableFrom(other Type) bool {
@@ -1264,6 +1264,16 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 	valueType := tc.typeInfo.MustLookup(v.Value)
 	if valueType == NoneType {
 		return errors.Errorf("%s: variable %s must have a type that is not None", v.Span(), v.Name)
+	}
+	if v.Type != nil {
+		variableType, err := tc.lookupTypeOfNode(v.Type)
+		if err != nil {
+			return err
+		}
+		if !variableType.IsAssignableFrom(valueType) {
+			return errors.Errorf(
+				"%s: variable %q must be assignable to type %s, got %s", v.Span(), v.Name, variableType, valueType)
+		}
 	}
 	varInfo := variableInfo{type_: valueType, mutable: true, span: v.Span()}
 	if err := tc.typeScope.declareVariable(string(v.Name), varInfo); err != nil {

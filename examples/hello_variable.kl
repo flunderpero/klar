@@ -3,4 +3,7 @@ fn main() {
     let b = 24
     print_int(a)
     print_int(b)
+
+    let typed_var Str = " Hello"
+    print(typed_var)
 }

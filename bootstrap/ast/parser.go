@@ -412,7 +412,9 @@ func (trait *TraitDeclaration) String() string {
 
 type VariableDefinition struct {
 	node
-	Name    Ident
+	Name Ident
+	// Optional
+	Type    Type
 	Mutable bool
 	Value   Expression
 }
@@ -422,8 +424,13 @@ func (v *VariableDefinition) String() string {
 	if v.Mutable {
 		mutable = "(mutable)"
 	}
+	ty := ""
+	if v.Type != nil {
+		ty = fmt.Sprintf("\n(Type)\n%s", base.Indent(v.Type, 1))
+	}
 	return fmt.Sprintf(
-		"VariableDefinition\n%s\n%s\n%s", base.IndentString(mutable, 1), base.Indent(v.Name, 1), base.Indent(v.Value, 1))
+		"VariableDefinition\n%s\n%s%s\n%s",
+		base.IndentString(mutable, 1), base.Indent(v.Name, 1), base.IndentString(ty, 1), base.Indent(v.Value, 1))
 }
 
 type Parser struct {
@@ -790,6 +797,10 @@ func (p *Parser) parseVariableDefinition() (*VariableDefinition, error) {
 	if err != nil {
 		return nil, err
 	}
+	ty, err := p.tryParseType(nil)
+	if err != nil {
+		return nil, err
+	}
 	if _, err = p.consume(token.Equal); err != nil {
 		return nil, err
 	}
@@ -797,7 +808,8 @@ func (p *Parser) parseVariableDefinition() (*VariableDefinition, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &VariableDefinition{node: p.newNode(from), Name: Ident(identToken.Value), Value: value, Mutable: mutable}, nil
+	return &VariableDefinition{
+		node: p.newNode(from), Name: Ident(identToken.Value), Type: ty, Value: value, Mutable: mutable}, nil
 }
 
 func (p *Parser) parseAssignmentStatement(lhs Expression) (*AssignmentStatement, error) {

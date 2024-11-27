@@ -10,6 +10,12 @@ fn apply_and_return<U, T>(val U, f fn(U) T) T {
     f(val)
 }
 
+-- Make sure type parameter names and function types (`f fn(U) T`)
+-- each are local to the function definition. 
+fn apply_and_return2<U, T>(val U, f fn(U) T) T {
+    f(val)
+}
+
 fn return_first<K, V>(first K, second V) K {
     first
 }
@@ -46,6 +52,7 @@ fn main() {
     print(return_it<Planet>(p).name)
     print(p.method<Str>(" and method "))
     print_int(apply_and_return<Str, Int>("Hello", str_to_int))
+    print_int(apply_and_return2<Str, Int>("Hello", str_to_int))
     let var = return_it<Str>
     print(var(" from variable with type args "))
     -- Type inference

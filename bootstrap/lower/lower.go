@@ -38,7 +38,7 @@ func (l *LoweredAST) String() string {
 }
 
 func Lower(module *ast.Module, typeInfo *typed.TypeInfo, genericsResolver *typed.GenericsResolver) *LoweredAST {
-	module, funcInfos := Prepare(module, typeInfo)
+	module, funcInfos := Prepare(module, typeInfo, genericsResolver)
 	funcSpecs := Monomorphize(module, typeInfo, funcInfos, genericsResolver)
 	return &LoweredAST{Module: module, FuncSpecs: funcSpecs, TypeInfo: typeInfo}
 }

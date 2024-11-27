@@ -1,9 +1,13 @@
 trait Reflect<T> {
     fn reflect(self) T
+
+    fn static_reflect(val T) T
 }
 
 trait Constant<T> {
     fn constant(self) T
+
+    fn static_constant_plus(add T) T
 }
 
 struct Single<U> {
@@ -12,14 +16,22 @@ struct Single<U> {
 
 impl Reflect<U> for Single {
     fn reflect(self) U => self.value
+
+    fn static_reflect(val U) U => val
 }
 
 impl Constant<Int> for Single {
     fn constant(self) Int => 42
+
+    fn static_constant_plus(add Int) Int => 40 + add
 }
 
 fn main() {
     let s = Single<Str>("Hello, ")
     print(s.reflect())
     print_int(s.constant())
+    print(", ")
+    print_bool(Single<Bool>.static_reflect(true))
+    print(", ")
+    print_int(Single<Bool>.static_constant_plus(2))
 }

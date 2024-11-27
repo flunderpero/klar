@@ -1,11 +1,13 @@
 /*
 # Monomorphization (And Dead Code Elimination)
 
-This pass walks from the `main` function and collects all references to functions and creates
-specialized versions if they are generic.
+This pass walks from the AST starting at the  `main` function and collects all references to
+functions and creates specialized versions if they are generic.
 
-The result is a set of `FunctionSpecializations` that represents all reachable (and specialized)
+The result is a set of `FunctionSpecializations` that represents all reachable and specialized
 functions in the AST.
+
+Because only reachable functions are collected, this pass also performs dead code elimination.
 */
 package lower
 
@@ -41,14 +43,7 @@ func (self *SpecializedTypeInfo) MustLookup(node ast.Node) typed.Type {
 }
 
 func (self *SpecializedTypeInfo) MustLookupSymbol(id typed.IsId) *typed.Symbol {
-	if s, ok := self.LookupSymbol(id); ok {
-		return s
-	}
-	panic(fmt.Sprintf("symbol not found: %s", id))
-}
-
-func (self *SpecializedTypeInfo) LookupSymbol(id typed.IsId) (*typed.Symbol, bool) {
-	return self.base.LookupSymbol(id)
+	return self.base.MustLookupSymbol(id)
 }
 
 type FunctionSpecialization struct {
@@ -64,24 +59,6 @@ func (self FunctionSpecialization) String() string {
 	return fmt.Sprintf("FunctionSpecialization\n%s\n%s", base.IndentString(name, 1), base.Indent(self.Specialized, 1))
 }
 
-type StructSpecialization struct {
-	Specialized *typed.StructType
-	Base        *typed.StructType
-}
-
-func (self StructSpecialization) String() string {
-	name := fmt.Sprintf("%s from %s", self.Specialized.Id(), self.Base.Id())
-	return fmt.Sprintf("StructSpecialization\n%s\n%s", base.IndentString(name, 1), base.Indent(self.Specialized, 1))
-}
-
-func mustBeFullyResolved(ty typed.Type) {
-	if genericType, ok := ty.(typed.GenericType); ok {
-		if !typed.IsFullyResolved(genericType) {
-			panic(fmt.Sprintf("generic type is not fully resolved: %s", ty))
-		}
-	}
-}
-
 type workItem struct {
 	funcInfo    *funcInfo
 	specialized *typed.FunctionType
@@ -95,7 +72,6 @@ type mono struct {
 	current          *workItem
 	globalTypeInfo   *typed.TypeInfo
 	funcSpecs        []*FunctionSpecialization
-	structSpecs      []*StructSpecialization
 	genericsResolver *typed.GenericsResolver
 }
 
@@ -103,21 +79,14 @@ func (self *mono) VisitNode(expr ast.Node, w ast.Walker) error {
 	if err := w.WalkNode(expr); err != nil {
 		return err
 	}
-	// Note: During `prepare` we converted all `ast.MemberExpression` that reference
-	//       a static method to `ast.IdentExpressions`.
-	//       So there is no need to visit member expressions.
 	ty := self.current.typeInfo.MustLookup(expr)
 	ty = self.resolve(ty)
 	if specialized, ok := self.lookupOrCreateSpecializedFunction(ty); ok {
 		self.current.typeInfo.set(expr, specialized)
-	} else if specialized, ok := self.lookupOrCreateSpecializedStruct(ty); ok {
-		self.current.typeInfo.set(expr, specialized)
+	} else {
+		self.current.typeInfo.set(expr, ty)
 	}
 	return nil
-}
-
-func (self *mono) newTypeId() typed.TypeId {
-	return self.genericsResolver.NewBaseType().Id()
 }
 
 func (self *mono) newWorkItem(info *funcInfo, specialized *typed.FunctionType) *workItem {
@@ -135,29 +104,14 @@ func (self *mono) resolve(ty typed.Type) typed.Type {
 	case *typed.FunctionType:
 		// There are no more methods, everything is a plain function.
 		ty.Receiver = nil
-		if typed.HasTypeParams(ty) {
-			// We need to also resolve all type parameters of the function as well.
-			typeParams = append(typeParams, ty.TypeParams()...)
-			typeArgs = append(typeArgs, ty.TypeArgs()...)
-		}
-		return self.genericsResolver.ResolveTypeArgs(ty, typeParams, typeArgs)
 	case *typed.StructType:
 		// Structs are just data holders at this point, because we converted
 		// all methods to plain functions.
 		ty.Methods = []typed.TypeAndName[*typed.FunctionType]{}
-		return self.genericsResolver.ResolveTypeArgs(ty, typeParams, typeArgs)
-	default:
-		return self.genericsResolver.ResolveTypeArgs(ty, typeParams, typeArgs)
+	case *typed.DeclaredType:
+		return ty
 	}
-}
-
-func matchSpecializedTypes(ty1 typed.GenericType, ty2 typed.GenericType) bool {
-	for i, typeArg := range ty1.TypeArgs() {
-		if typeArg.Id() != ty2.TypeArgs()[i].Id() {
-			return false
-		}
-	}
-	return true
+	return self.genericsResolver.ResolveTypeArgs(ty, typeParams, typeArgs)
 }
 
 func (self *mono) lookupOrCreateSpecializedFunction(ty typed.Type) (*typed.FunctionType, bool) {
@@ -168,72 +122,34 @@ func (self *mono) lookupOrCreateSpecializedFunction(ty typed.Type) (*typed.Funct
 	if typed.IsBuiltInFunction(funcType) {
 		return nil, false
 	}
-	funcInfo, ok := self.funcInfos[ty.Id()]
+	baseType, ok := funcType.GenericBase()
+	if !ok {
+		baseType = funcType
+	}
+	funcInfo, ok := self.funcInfos[baseType.Id()]
 	if !ok {
 		return nil, false
 	}
 	for _, queued := range self.queue {
 		if queued.funcInfo == funcInfo {
-			if matchSpecializedTypes(queued.specialized, funcType) {
+			if queued.specialized.Id() == funcType.Id() {
 				return queued.specialized, true
 			}
 		}
 	}
 	for _, spec := range self.funcSpecs {
-		if spec.Base.Id() == funcType.Id() {
-			if matchSpecializedTypes(spec.Specialized, funcType) {
+		if spec.Base.Id() == baseType.Id() {
+			if spec.Specialized.Id() == funcType.Id() {
 				return spec.Specialized, true
 			}
 		}
 	}
-	specialized := funcType.CloneWithNewId(self.newTypeId())
-	mustBeFullyResolved(specialized)
-	// Fix specialized struct types in the function's signature.
-	for i, param := range specialized.Params {
-		if specializedStruct, ok := self.lookupOrCreateSpecializedStruct(param.Type); ok {
-			specialized.Params[i] = typed.TypeAndName[typed.Type]{Type: specializedStruct, Name: param.Name}
-		}
+	if !typed.IsFullyResolved(funcType) {
+		panic(fmt.Sprintf("function type is not fully resolved: %s", ty))
 	}
-	if specializedStruct, ok := self.lookupOrCreateSpecializedFunction(specialized.Result); ok {
-		specialized.Result = specializedStruct
-	}
-	item := self.newWorkItem(funcInfo, specialized)
+	item := self.newWorkItem(funcInfo, funcType)
 	self.queue = append(self.queue, item)
-	self.declareSymbolForSpecializedType(specialized, funcType)
 	return item.specialized, true
-}
-
-func (self *mono) lookupOrCreateSpecializedStruct(ty typed.Type) (*typed.StructType, bool) {
-	structType, ok := ty.(*typed.StructType)
-	if !ok {
-		return nil, false
-	}
-	for _, spec := range self.structSpecs {
-		if spec.Base.Id() == structType.Id() {
-			if matchSpecializedTypes(spec.Specialized, structType) {
-				return spec.Specialized, true
-			}
-		}
-	}
-	specialized := structType.CloneWithNewId(self.newTypeId())
-	mustBeFullyResolved(specialized)
-	self.structSpecs = append(self.structSpecs, &StructSpecialization{Base: structType, Specialized: specialized})
-	self.declareSymbolForSpecializedType(specialized, structType)
-	return specialized, true
-}
-
-func (self *mono) declareSymbolForSpecializedType(specialized typed.GenericType, base typed.GenericType) {
-	baseSymbol := self.globalTypeInfo.MustLookupSymbol(base.Id())
-	symbolName := baseSymbol.Name
-	for _, typeArg := range specialized.TypeArgs() {
-		symbolName += "$"
-		typeArgName := self.globalTypeInfo.MustLookupSymbol(typeArg.Id()).FQN()
-		symbolName += typeArgName
-	}
-	self.globalTypeInfo.DeclareSymbol(specialized.Id(), &typed.Symbol{
-		Name:  symbolName,
-		Scope: baseSymbol.Scope,
-	})
 }
 
 func (self *mono) run() {
@@ -254,7 +170,12 @@ func (self *mono) run() {
 	}
 }
 
-func Monomorphize(module *ast.Module, typeInfo *typed.TypeInfo, funcInfos map[typed.TypeId]*funcInfo, genericsResolver *typed.GenericsResolver) []*FunctionSpecialization {
+func Monomorphize(
+	module *ast.Module,
+	typeInfo *typed.TypeInfo,
+	funcInfos map[typed.TypeId]*funcInfo,
+	genericsResolver *typed.GenericsResolver,
+) []*FunctionSpecialization {
 	main, ok := funcInfos[typeInfo.Main.Id()]
 	if !ok {
 		panic("Main function not found")

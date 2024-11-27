@@ -16,7 +16,6 @@ fn main() {
     print_bool(b.return_value())
     print(" ")
     print_bool(b.generic<Bool>(false))
-    print(" ")
     print(", ")
 
     let s = Single<Str>(false, value="Hello")
@@ -24,7 +23,7 @@ fn main() {
     print(" ")
     print(s.return_value())
     print(" ")
-    print_bool(s.generic<Bool>(true))
+    print_int(s.generic<Int>(42))
     print(", ")
 
     let i = Single<Int>(false, value=42)
@@ -32,5 +31,5 @@ fn main() {
     print(" ")
     print_int(i.return_value())
     print(" ")
-    print_bool(i.generic<Bool>(false))
+    print(i.generic<Str>("Hello"))
 }

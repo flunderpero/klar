@@ -149,6 +149,7 @@ type GenericType interface {
 	Type
 	TypeParams() []TypeParam
 	TypeArgs() []Type
+	GenericBase() (GenericType, bool)
 }
 
 func HasTypeParams(ty GenericType) bool {
@@ -232,22 +233,12 @@ func (ty DeclaredType) IsAssignableFrom(other_ Type) bool {
 
 type StructType struct {
 	BaseType
+	base       *StructType
 	typeParams []TypeParam
 	typeArgs   []Type
 	Fields     []TypeAndName[Type]
 	Methods    []TypeAndName[*FunctionType]
 	traits     []*TraitType
-}
-
-func (ty StructType) CloneWithNewId(id TypeId) *StructType {
-	return &StructType{
-		BaseType:   BaseType{id},
-		typeParams: ty.typeParams,
-		typeArgs:   ty.typeArgs,
-		Fields:     ty.Fields,
-		Methods:    ty.Methods,
-		traits:     ty.traits,
-	}
 }
 
 func (ty StructType) Traits() []*TraitType {
@@ -265,8 +256,14 @@ func (ty StructType) String() string {
 	for i, field := range ty.Fields {
 		fields[i] = fmt.Sprintf("%s\n%s", field.Name, base.IndentString(typeToString(field.Type), 1))
 	}
+	baseType := ""
+	if ty.base != nil {
+		baseType = fmt.Sprintf(" (base #%s)", ty.base.id)
+	}
 	return fmt.Sprintf(
-		"StructType%s%s\n    (Fields)%s\n    (Methods)%s",
+		"StructType #%s%s%s%s\n    (Fields)%s\n    (Methods)%s",
+		ty.id,
+		baseType,
 		base.IndentString(typeParamsString(ty.typeParams), 1),
 		base.IndentString(typeArgsString(ty.typeArgs), 1),
 		base.IndentStringSlice(fields, 2),
@@ -327,8 +324,16 @@ func (ty StructType) TypeArgs() []Type {
 	return ty.typeArgs
 }
 
+func (ty StructType) GenericBase() (GenericType, bool) {
+	if ty.base == nil {
+		return nil, false
+	}
+	return ty.base, true
+}
+
 type TraitType struct {
 	BaseType
+	base       *TraitType
 	typeParams []TypeParam
 	typeArgs   []Type
 	Methods    []TypeAndName[*FunctionType]
@@ -359,6 +364,13 @@ func (ty *TraitType) TypeArgs() []Type {
 	return ty.typeArgs
 }
 
+func (ty TraitType) GenericBase() (GenericType, bool) {
+	if ty.base == nil {
+		return nil, false
+	}
+	return ty.base, true
+}
+
 type ImplType struct {
 	BaseType
 	ReceiverType Type
@@ -372,33 +384,12 @@ type FunctionParam = TypeAndName[Type]
 
 type FunctionType struct {
 	BaseType
+	base       *FunctionType
 	typeParams []TypeParam
 	typeArgs   []Type
 	Receiver   Type
 	Params     []FunctionParam
 	Result     Type
-}
-
-func (ty FunctionType) CloneWithNewId(id TypeId) *FunctionType {
-	return &FunctionType{
-		BaseType:   BaseType{id},
-		typeParams: ty.typeParams,
-		typeArgs:   ty.typeArgs,
-		Receiver:   ty.Receiver,
-		Params:     ty.Params,
-		Result:     ty.Result,
-	}
-}
-
-func (ty FunctionType) CloneWithTypeParamsAndArgs(typeParams []TypeParam, typeArgs []Type) *FunctionType {
-	return &FunctionType{
-		BaseType:   ty.BaseType,
-		typeParams: typeParams,
-		typeArgs:   typeArgs,
-		Receiver:   ty.Receiver,
-		Params:     ty.Params,
-		Result:     ty.Result,
-	}
 }
 
 func (ty FunctionType) String() string {
@@ -414,11 +405,21 @@ func (ty FunctionType) String() string {
 	}
 	params := make([]string, len(ty.Params))
 	for i, param := range ty.Params {
-		params[i] = fmt.Sprintf("%s\n%s", param.Name, base.IndentString(typeToString(param.Type), 1))
+		paramName := param.Name.String()
+		if paramName == "" {
+			paramName = "<positional>"
+		}
+		params[i] = fmt.Sprintf("%s\n%s", paramName, base.IndentString(typeToString(param.Type), 1))
 	}
 	result := typeToString(ty.Result)
+	baseType := ""
+	if ty.base != nil {
+		baseType = fmt.Sprintf(" (base #%s)", ty.base.id)
+	}
 	return fmt.Sprintf(
-		"FunctionType%s%s%s\n    (Parameters)%s\n    (Result)\n%s",
+		"FunctionType #%s%s%s%s%s\n    (Parameters)%s\n    (Result)\n%s",
+		ty.id,
+		baseType,
 		receiverType,
 		base.IndentString(typeParamsString(ty.typeParams), 1),
 		base.IndentString(typeArgsString(ty.typeArgs), 1),
@@ -462,6 +463,13 @@ func (ty FunctionType) TypeParams() []TypeParam {
 
 func (ty FunctionType) TypeArgs() []Type {
 	return ty.typeArgs
+}
+
+func (ty FunctionType) GenericBase() (GenericType, bool) {
+	if ty.base == nil {
+		return nil, false
+	}
+	return ty.base, true
 }
 
 func (ty FunctionType) IsAssignableFrom(other Type) bool {
@@ -584,7 +592,10 @@ type Symbol struct {
 func (self *Symbol) FQN() string {
 	scopeFQN := self.Scope.FQN()
 	if scopeFQN != "" {
-		return fmt.Sprintf("%s::%s", scopeFQN, self.Name)
+		if self.Name != "" {
+			return fmt.Sprintf("%s::%s", scopeFQN, self.Name)
+		}
+		return scopeFQN
 	}
 	return self.Name
 }
@@ -704,7 +715,6 @@ type typeChecker struct {
 	loopDepth        int
 	nextTypeId       int
 	checkingMode     checkingMode
-	functionTypes    map[string]FunctionType
 }
 
 func (tc *typeChecker) newType() BaseType {
@@ -766,9 +776,6 @@ func (tc *typeChecker) declareSymbol(key IsId, name string) {
 func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 	switch node := node.(type) {
 	case *ast.FunctionType:
-		if res, found := tc.functionTypes[node.TypeName()]; found {
-			return &res, nil
-		}
 		params := make([]TypeAndName[Type], len(node.Params))
 		for i, astParam := range node.Params {
 			argType, err := tc.lookupTypeOfNode(astParam)
@@ -784,7 +791,6 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 			return nil, err
 		}
 		res := FunctionType{BaseType: tc.newType(), Params: params, Result: result}
-		tc.functionTypes[node.TypeName()] = res
 		return &res, nil
 	case *ast.TypeParam:
 		res, found := tc.genericScope.lookupTypeParam(node.TypeName())
@@ -1049,6 +1055,7 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 	for i, typeParam := range typeParams {
 		funcType.typeArgs[i] = typeParam
 	}
+	tc.declareSymbol(funcType.Id(), decl.Name.String())
 	params, result, err := tc.resolveFunctionParamsAndResult(decl.Params, decl.Result)
 	if err != nil {
 		return err
@@ -1081,7 +1088,6 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 	}
 	declaredType := tc.typeInfo.MustLookup(fn.Decl).(*DeclaredType)
 	functionType := declaredType.Type.(*FunctionType)
-	tc.declareSymbol(functionType.Id(), fn.Decl.Name.String())
 	tc.typeInfo.Set(fn, declaredType)
 	tc.enterScope(fn)
 	defer tc.exitScope()
@@ -1371,7 +1377,7 @@ func (tc *typeChecker) check(node ast.Node, w ast.Walker) (Type, error) {
 	return nodeType, nil
 }
 
-func TypeCheck(node ast.Node) (*TypeInfo, *GenericsResolver, error) {
+func TypeCheck(node *ast.Module) (*TypeInfo, *GenericsResolver, error) {
 	tc := &typeChecker{
 		DefaultVisitor: ast.DefaultVisitor{},
 		typeInfo: &TypeInfo{
@@ -1379,13 +1385,12 @@ func TypeCheck(node ast.Node) (*TypeInfo, *GenericsResolver, error) {
 			symbols:      make(map[string]*Symbol),
 			typeBindings: make(map[*ast.IdentExpression]Type),
 		},
-		typeScope:     newTypeScope(nil),
-		symbolScope:   newSymbolScope(node, nil),
-		genericScope:  newGenericScope(nil),
-		nextTypeId:    1000,
-		functionTypes: make(map[string]FunctionType),
+		typeScope:    newTypeScope(nil),
+		symbolScope:  newSymbolScope(node, nil),
+		genericScope: newGenericScope(nil),
+		nextTypeId:   1000,
 	}
-	tc.genericsResolver = newGenericsResolver(func() BaseType { return tc.newType() })
+	tc.genericsResolver = newGenericsResolver(tc.typeInfo, func() BaseType { return tc.newType() })
 	// Declare builtin types and functions.
 	builtInSymbolScope := newSymbolScope(nil, nil)
 	declareBuiltIn := func(name string, ty Type) {

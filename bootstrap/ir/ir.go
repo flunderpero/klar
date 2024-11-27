@@ -1128,14 +1128,15 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 		definedFunctions[funcDef.Id] = DefinedFunction{Id: funcDef.Id, FQN: fqn}
 	}
 	// Declare builtin functions.
-	declareBuiltInFunction := func(name string, f *typed.FunctionType) {
+	declareBuiltInFunction := func(f *typed.FunctionType) {
 		declaredTypes.declare(f)
-		definedFunctions[f.Id()] = DefinedFunction{Id: f.Id(), FQN: name}
+		symbol := typeInfo.MustLookupSymbol(f.Id())
+		definedFunctions[f.Id()] = DefinedFunction{Id: f.Id(), FQN: symbol.FQN()}
 	}
-	declareBuiltInFunction("print", typed.BuiltInPrintFunction)
-	declareBuiltInFunction("print_int", typed.BuiltInPrintIntFunction)
-	declareBuiltInFunction("print_bool", typed.BuiltInPrintBoolFunction)
-	declareBuiltInFunction("_unsafe_malloc", typed.BuiltInUnsafeMallocFunction)
+	declareBuiltInFunction(typed.BuiltInPrintFunction)
+	declareBuiltInFunction(typed.BuiltInPrintIntFunction)
+	declareBuiltInFunction(typed.BuiltInPrintBoolFunction)
+	declareBuiltInFunction(typed.BuiltInUnsafeMallocFunction)
 	constants := []*StrConst{}
 	// Generate code for each function specialization.
 	for i, funcDef := range funcDefs {

@@ -14,9 +14,10 @@ type funcInfo struct {
 
 type prepare struct {
 	DefaultTransformer
-	funcInfos map[typed.TypeId]*funcInfo
-	funcInfo  *funcInfo
-	typeInfo  *typed.TypeInfo
+	funcInfos        map[typed.TypeId]*funcInfo
+	funcInfo         *funcInfo
+	typeInfo         *typed.TypeInfo
+	genericsResolver *typed.GenericsResolver
 }
 
 func (self *prepare) convertToTypeIdIdentExpression(expr ast.Expression, ty typed.Type) *ast.IdentExpression {
@@ -80,10 +81,7 @@ func (self *prepare) VisitCallExpression(expr *ast.CallExpression, w TransformWa
 		receiverType := self.typeInfo.MustLookup(receiver).(typed.GenericType)
 		if typed.HasTypeParams(receiverType) {
 			// Propagate the type parameters and arguments from the receiver type to the callee.
-			calleeType = calleeType.CloneWithTypeParamsAndArgs(
-				append(receiverType.TypeParams(), calleeType.TypeParams()...),
-				append(receiverType.TypeArgs(), calleeType.TypeArgs()...),
-			)
+			calleeType = self.genericsResolver.CloneAndMergeReceiverGenerics(calleeType)
 		}
 		receiverCallArg := ast.CallArg{Name: "self", Value: receiver, Span: expr.Span()}
 		expr.Args = append([]ast.CallArg{receiverCallArg}, expr.Args...)
@@ -120,10 +118,11 @@ func (self *prepare) VisitImplDefinition(def *ast.ImplDefinition, w TransformWal
 	return nil, false
 }
 
-func Prepare(module *ast.Module, typeInfo *typed.TypeInfo) (*ast.Module, map[typed.TypeId]*funcInfo) {
+func Prepare(module *ast.Module, typeInfo *typed.TypeInfo, genericsResolver *typed.GenericsResolver) (*ast.Module, map[typed.TypeId]*funcInfo) {
 	prepare := &prepare{
-		funcInfos: map[typed.TypeId]*funcInfo{},
-		typeInfo:  typeInfo,
+		funcInfos:        map[typed.TypeId]*funcInfo{},
+		typeInfo:         typeInfo,
+		genericsResolver: genericsResolver,
 	}
 	walker := DefaultTransformWalker{Transformer: prepare}
 	module, ok := walker.Transformer.VisitModule(module, &walker)

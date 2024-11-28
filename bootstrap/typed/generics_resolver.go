@@ -10,11 +10,11 @@ type GenericsResolver struct {
 	resolvedStructTypes []*StructType
 	resolvedTraitTypes  []*TraitType
 	typeInfo            *TypeInfo
-	newBaseType         func() BaseType
+	typeCreator         *TypeCreator
 }
 
-func newGenericsResolver(typeInfo *TypeInfo, newBaseType func() BaseType) *GenericsResolver {
-	return &GenericsResolver{typeInfo: typeInfo, newBaseType: newBaseType}
+func newGenericsResolver(typeInfo *TypeInfo, typeCreator *TypeCreator) *GenericsResolver {
+	return &GenericsResolver{typeInfo: typeInfo, typeCreator: typeCreator}
 }
 
 func matchTypeArgs(resolved GenericType, typeArgs []Type) bool {
@@ -127,7 +127,7 @@ func (self *GenericsResolver) declareSymbolForSpecializedType(resolved GenericTy
 	self.typeInfo.DeclareSymbol(resolved.Id(), symbol)
 }
 
-func baseType[T GenericType](ty T) T {
+func genericBase[T GenericType](ty T) T {
 	base, ok := ty.GenericBase()
 	if ok {
 		return base.(T)
@@ -215,14 +215,8 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 				// `ResolveTypeArgs` on the receiver.
 				receiver = self.ResolveTypeArgs(ty.Receiver, typeParams, typeArgs)
 			}
-			res := &FunctionType{
-				BaseType:    self.newBaseType(),
-				genericBase: baseType(ty),
-				typeParams:  ty.typeParams,
-				typeArgs:    genericTypeArgs,
-				Params:      params,
-				Receiver:    receiver,
-			}
+			res := self.typeCreator.NewFunctionType(
+				genericBase(ty), ty.typeParams, genericTypeArgs, receiver, params, ty.Result)
 			self.resolvedFuncTypes = append(self.resolvedFuncTypes, res)
 			for i, param := range ty.Params {
 				param := param // Make a copy.
@@ -236,15 +230,14 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 			if resolved, ok := self.findResolvedStructType(ty, genericTypeArgs); ok {
 				return resolved
 			}
-			res := &StructType{
-				BaseType:    self.newBaseType(),
-				genericBase: baseType(ty),
-				typeParams:  ty.typeParams,
-				typeArgs:    genericTypeArgs,
-				Fields:      make([]TypeAndName[Type], len(ty.Fields)),
-				Methods:     make([]TypeAndName[*FunctionType], len(ty.Methods)),
-				traits:      ty.traits,
-			}
+			res := self.typeCreator.NewStructType(
+				genericBase(ty),
+				ty.typeParams,
+				genericTypeArgs,
+				make([]TypeAndName[Type], len(ty.Fields)),
+				make([]TypeAndName[*FunctionType], len(ty.Methods)),
+				ty.traits,
+			)
 			self.resolvedStructTypes = append(self.resolvedStructTypes, res)
 			for i, field := range ty.Fields {
 				field := field // Make a copy.
@@ -262,13 +255,8 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 			if resolved, ok := self.findResolvedTraitType(ty, genericTypeArgs); ok {
 				return resolved
 			}
-			res := &TraitType{
-				BaseType:    self.newBaseType(),
-				genericBase: baseType(ty),
-				typeParams:  ty.typeParams,
-				typeArgs:    genericTypeArgs,
-				Methods:     make([]TypeAndName[*FunctionType], len(ty.Methods)),
-			}
+			res := self.typeCreator.NewTraitType(
+				genericBase(ty), ty.typeParams, genericTypeArgs, make([]TypeAndName[*FunctionType], len(ty.Methods)))
 			self.resolvedTraitTypes = append(self.resolvedTraitTypes, res)
 			for i, method := range ty.Methods {
 				method := method // Make a copy.
@@ -307,15 +295,7 @@ func (self *GenericsResolver) CloneAndMergeReceiverGenerics(ty *FunctionType) *F
 	if ty.genericBase != nil {
 		baseType = ty.genericBase
 	}
-	res := &FunctionType{
-		BaseType:    self.newBaseType(),
-		genericBase: baseType,
-		typeParams:  typeParams,
-		typeArgs:    typeArgs,
-		Receiver:    ty.Receiver,
-		Params:      ty.Params,
-		Result:      ty.Result,
-	}
+	res := self.typeCreator.NewFunctionType(baseType, typeParams, typeArgs, ty.Receiver, ty.Params, ty.Result)
 	self.declareSymbolForSpecializedType(res)
 	return res
 }

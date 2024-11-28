@@ -18,11 +18,12 @@ type prepare struct {
 	funcInfo         *funcInfo
 	typeInfo         *typed.TypeInfo
 	genericsResolver *typed.GenericsResolver
+	nodeCreator      *ast.NodeCreator
 }
 
 func (self *prepare) convertToTypeIdIdentExpression(expr ast.Expression, ty typed.Type) *ast.IdentExpression {
 	symbol := self.typeInfo.MustLookupSymbol(ty.Id())
-	res := ast.NewIdentExpression(ast.Ident(symbol.FQN()), expr.Id(), expr.Span())
+	res := self.nodeCreator.NewIdentExpression(ast.Ident(symbol.FQN()), expr.Span())
 	self.typeInfo.Set(res, ty)
 	return res
 }
@@ -118,11 +119,18 @@ func (self *prepare) VisitImplDefinition(def *ast.ImplDefinition, w TransformWal
 	return nil, false
 }
 
-func Prepare(module *ast.Module, typeInfo *typed.TypeInfo, genericsResolver *typed.GenericsResolver) (*ast.Module, map[typed.TypeId]*funcInfo) {
+func Prepare(
+	module *ast.Module,
+	typeInfo *typed.TypeInfo,
+	genericsResolver *typed.GenericsResolver,
+	nodeCreator *ast.NodeCreator,
+	typeCreator *typed.TypeCreator,
+) (*ast.Module, map[typed.TypeId]*funcInfo) {
 	prepare := &prepare{
 		funcInfos:        map[typed.TypeId]*funcInfo{},
 		typeInfo:         typeInfo,
 		genericsResolver: genericsResolver,
+		nodeCreator:      nodeCreator,
 	}
 	walker := DefaultTransformWalker{Transformer: prepare}
 	module, ok := walker.Transformer.VisitModule(module, &walker)

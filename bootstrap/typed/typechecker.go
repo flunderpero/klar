@@ -19,6 +19,53 @@ func (id TypeId) String() string {
 
 func (id TypeId) IdMarker() {}
 
+type TypeCreator struct {
+	nextTypeId int
+}
+
+func NewTypeCreator() *TypeCreator {
+	return &TypeCreator{nextTypeId: 1000}
+}
+
+func (self *TypeCreator) newTypeBase() typeBase {
+	self.nextTypeId++
+	return typeBase{id: TypeId(self.nextTypeId)}
+}
+
+func (self *TypeCreator) NewFunctionType(genericBase *FunctionType, typeParams []TypeParam, typeArgs []Type, receiver Type, params []FunctionParam, result Type) *FunctionType {
+	return &FunctionType{
+		typeBase:    self.newTypeBase(),
+		genericBase: genericBase,
+		typeParams:  typeParams,
+		typeArgs:    typeArgs,
+		Receiver:    receiver,
+		Params:      params,
+		Result:      result,
+	}
+}
+
+func (self *TypeCreator) NewTraitType(genericBase *TraitType, typeParams []TypeParam, typeArgs []Type, methods []TypeAndName[*FunctionType]) *TraitType {
+	return &TraitType{
+		typeBase:    self.newTypeBase(),
+		genericBase: genericBase,
+		typeParams:  typeParams,
+		typeArgs:    typeArgs,
+		Methods:     methods,
+	}
+}
+
+func (self *TypeCreator) NewStructType(genericBase *StructType, typeParams []TypeParam, typeArgs []Type, fields []TypeAndName[Type], methods []TypeAndName[*FunctionType], traits []*TraitType) *StructType {
+	return &StructType{
+		typeBase:    self.newTypeBase(),
+		genericBase: genericBase,
+		typeParams:  typeParams,
+		typeArgs:    typeArgs,
+		Fields:      fields,
+		Methods:     methods,
+		traits:      traits,
+	}
+}
+
 type IsId interface {
 	String() string
 	IdMarker()
@@ -31,22 +78,22 @@ type Type interface {
 }
 
 var BuiltInPrintFunction = &FunctionType{
-	BaseType: BaseType{TypeId(100)},
+	typeBase: typeBase{TypeId(100)},
 	Params:   []FunctionParam{{Name: "value", Type: StrType}},
 	Result:   NoneType,
 }
 var BuiltInPrintIntFunction = &FunctionType{
-	BaseType: BaseType{TypeId(101)},
+	typeBase: typeBase{TypeId(101)},
 	Params:   []FunctionParam{{Name: "value", Type: Int64Type}},
 	Result:   NoneType,
 }
 var BuiltInPrintBoolFunction = &FunctionType{
-	BaseType: BaseType{TypeId(102)},
+	typeBase: typeBase{TypeId(102)},
 	Params:   []FunctionParam{{Name: "value", Type: BoolType}},
 	Result:   NoneType,
 }
 var BuiltInUnsafeMallocFunction = &FunctionType{
-	BaseType: BaseType{TypeId(103)},
+	typeBase: typeBase{TypeId(103)},
 	Params:   []FunctionParam{{Name: "size", Type: Int64Type}},
 	Result:   Int64Type,
 }
@@ -57,10 +104,10 @@ func IsBuiltInFunction(functionType *FunctionType) bool {
 }
 
 var builtInSpan = token.Span{File: new(string), Src: &[]byte{}, Start: 0, End: 0}
-var StrType = &strType{BaseType: BaseType{1}}
-var BoolType = &boolType{BaseType: BaseType{2}}
-var Int64Type = &int64Type{BaseType: BaseType{3}}
-var NoneType = &noneType{BaseType: BaseType{4}}
+var StrType = &strType{typeBase: typeBase{1}}
+var BoolType = &boolType{typeBase: typeBase{2}}
+var Int64Type = &int64Type{typeBase: typeBase{3}}
+var NoneType = &noneType{typeBase: typeBase{4}}
 
 type TypeWithTraits interface {
 	Type
@@ -73,24 +120,20 @@ type CallableType interface {
 	CallResult() Type
 }
 
-type BaseType struct {
+type typeBase struct {
 	id TypeId
 }
 
-func NewBaseType(id TypeId) BaseType {
-	return BaseType{id}
-}
-
-func (ty BaseType) Id() TypeId {
+func (ty typeBase) Id() TypeId {
 	return ty.id
 }
 
-func (ty BaseType) IsAssignableFrom(other Type) bool {
+func (ty typeBase) IsAssignableFrom(other Type) bool {
 	return ty.Id() == other.Id()
 }
 
 type strType struct {
-	BaseType
+	typeBase
 	traits []*TraitType
 }
 
@@ -103,7 +146,7 @@ func (ty *strType) Traits() []*TraitType {
 }
 
 type boolType struct {
-	BaseType
+	typeBase
 	traits []*TraitType
 }
 
@@ -116,7 +159,7 @@ func (ty boolType) String() string {
 }
 
 type int64Type struct {
-	BaseType
+	typeBase
 	traits []*TraitType
 }
 
@@ -129,7 +172,7 @@ func (ty int64Type) String() string {
 }
 
 type noneType struct {
-	BaseType
+	typeBase
 }
 
 func (ty noneType) String() string {
@@ -171,7 +214,7 @@ func IsFullyResolved(ty Type) bool {
 }
 
 type TypeParam struct {
-	BaseType
+	typeBase
 	GenericType GenericType
 	Name        ast.Ident
 	Index       int
@@ -232,7 +275,7 @@ func (ty DeclaredType) IsAssignableFrom(other_ Type) bool {
 }
 
 type StructType struct {
-	BaseType
+	typeBase
 	genericBase *StructType
 	typeParams  []TypeParam
 	typeArgs    []Type
@@ -332,7 +375,7 @@ func (ty StructType) GenericBase() (GenericType, bool) {
 }
 
 type TraitType struct {
-	BaseType
+	typeBase
 	genericBase *TraitType
 	typeParams  []TypeParam
 	typeArgs    []Type
@@ -372,7 +415,7 @@ func (ty TraitType) GenericBase() (GenericType, bool) {
 }
 
 type ImplType struct {
-	BaseType
+	typeBase
 	ReceiverType Type
 }
 
@@ -383,7 +426,7 @@ func (ty ImplType) String() string {
 type FunctionParam = TypeAndName[Type]
 
 type FunctionType struct {
-	BaseType
+	typeBase
 	genericBase *FunctionType
 	typeParams  []TypeParam
 	typeArgs    []Type
@@ -713,13 +756,12 @@ type typeChecker struct {
 	genericScope     *genericScope
 	genericsResolver *GenericsResolver
 	loopDepth        int
-	nextTypeId       int
 	checkingMode     checkingMode
+	typeCreator      *TypeCreator
 }
 
-func (tc *typeChecker) newType() BaseType {
-	tc.nextTypeId += 1
-	return BaseType{TypeId(tc.nextTypeId)}
+func (tc *typeChecker) newTypeBase() typeBase {
+	return tc.typeCreator.newTypeBase()
 }
 
 func (tc *typeChecker) enterScope(node ast.Node) {
@@ -790,7 +832,7 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 		if err != nil {
 			return nil, err
 		}
-		res := FunctionType{BaseType: tc.newType(), Params: params, Result: result}
+		res := FunctionType{typeBase: tc.newTypeBase(), Params: params, Result: result}
 		return &res, nil
 	case *ast.TypeParam:
 		res, found := tc.genericScope.lookupTypeParam(node.TypeName())
@@ -1013,7 +1055,7 @@ func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) e
 func (tc *typeChecker) resolveTypeParams(genericType GenericType, astParams []ast.TypeParam) ([]TypeParam, error) {
 	typeParams := make([]TypeParam, len(astParams))
 	for i, astParam := range astParams {
-		typeParam := TypeParam{BaseType: tc.newType(), GenericType: genericType, Name: astParam.Name, Index: i}
+		typeParam := TypeParam{typeBase: tc.newTypeBase(), GenericType: genericType, Name: astParam.Name, Index: i}
 		typeParams[i] = typeParam
 		if err := tc.genericScope.declareTypeParam(typeParam.Name.String(), &typeParam, astParams[i].Span()); err != nil {
 			return nil, err
@@ -1042,7 +1084,7 @@ func (tc *typeChecker) resolveFunctionParamsAndResult(
 }
 
 func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) error {
-	funcType := &FunctionType{BaseType: tc.newType()}
+	funcType := &FunctionType{typeBase: tc.newTypeBase()}
 	typeParams, err := tc.resolveTypeParams(funcType, decl.TypeParams)
 	if err != nil {
 		return err
@@ -1107,7 +1149,7 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 
 func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.Walker) error {
 	// We need to forward declare the trait type so that we can set the `Self` type correctly.
-	traitType := &TraitType{BaseType: tc.newType()}
+	traitType := &TraitType{typeBase: tc.newTypeBase()}
 	if err := tc.typeScope.declareType(string(trait.Name), traitType, trait.Span()); err != nil {
 		return err
 	}
@@ -1253,7 +1295,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 			strings.Join(missingTraitMethods, ", "),
 		)
 	}
-	tc.typeInfo.Set(impl, &ImplType{BaseType: tc.newType(), ReceiverType: structType})
+	tc.typeInfo.Set(impl, &ImplType{typeBase: tc.newTypeBase(), ReceiverType: structType})
 	return nil
 }
 
@@ -1341,7 +1383,7 @@ func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 func (tc *typeChecker) VisitStructTypeDeclaration(decl *ast.StructTypeDeclaration) error {
 	tc.enterGenericScope()
 	defer tc.exitGenericScope()
-	structType := &StructType{BaseType: tc.newType()}
+	structType := &StructType{typeBase: tc.newTypeBase()}
 	typeParams, err := tc.resolveTypeParams(structType, decl.TypeParams)
 	if err != nil {
 		return err
@@ -1387,20 +1429,21 @@ func (tc *typeChecker) check(node ast.Node, w ast.Walker) (Type, error) {
 	return nodeType, nil
 }
 
-func TypeCheck(node *ast.Module) (*TypeInfo, *GenericsResolver, error) {
-	tc := &typeChecker{
-		DefaultVisitor: ast.DefaultVisitor{},
-		typeInfo: &TypeInfo{
-			types:        make(map[ast.NodeId]Type),
-			symbols:      make(map[string]*Symbol),
-			typeBindings: make(map[*ast.IdentExpression]Type),
-		},
-		typeScope:    newTypeScope(nil),
-		symbolScope:  newSymbolScope(node, nil),
-		genericScope: newGenericScope(nil),
-		nextTypeId:   1000,
+func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *GenericsResolver, error) {
+	typeInfo := &TypeInfo{
+		types:        make(map[ast.NodeId]Type),
+		symbols:      make(map[string]*Symbol),
+		typeBindings: make(map[*ast.IdentExpression]Type),
 	}
-	tc.genericsResolver = newGenericsResolver(tc.typeInfo, func() BaseType { return tc.newType() })
+	tc := &typeChecker{
+		DefaultVisitor:   ast.DefaultVisitor{},
+		typeScope:        newTypeScope(nil),
+		typeInfo:         typeInfo,
+		symbolScope:      newSymbolScope(node, nil),
+		typeCreator:      typeCreator,
+		genericScope:     newGenericScope(nil),
+		genericsResolver: newGenericsResolver(typeInfo, typeCreator),
+	}
 	// Declare builtin types and functions.
 	builtInSymbolScope := newSymbolScope(nil, nil)
 	declareBuiltIn := func(name string, ty Type) {

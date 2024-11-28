@@ -37,8 +37,14 @@ func (l *LoweredAST) String() string {
 		"LoweredAST\n%s%s", base.Indent(l.Module, 1), base.IndentSlice(l.FuncSpecs, 1))
 }
 
-func Lower(module *ast.Module, typeInfo *typed.TypeInfo, genericsResolver *typed.GenericsResolver) *LoweredAST {
-	module, funcInfos := Prepare(module, typeInfo, genericsResolver)
+func Lower(
+	module *ast.Module,
+	typeInfo *typed.TypeInfo,
+	genericsResolver *typed.GenericsResolver,
+	nodeCreator *ast.NodeCreator,
+	typeCreator *typed.TypeCreator,
+) *LoweredAST {
+	module, funcInfos := Prepare(module, typeInfo, genericsResolver, nodeCreator, typeCreator)
 	funcSpecs := Monomorphize(module, typeInfo, funcInfos, genericsResolver)
 	return &LoweredAST{Module: module, FuncSpecs: funcSpecs, TypeInfo: typeInfo}
 }

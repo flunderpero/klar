@@ -24,23 +24,40 @@ type Node interface {
 	Span() token.Span
 }
 
-type node struct {
+type NodeCreator struct {
+	nextNodeId int
+}
+
+func NewNodeCreator() *NodeCreator {
+	return &NodeCreator{nextNodeId: 0}
+}
+
+func (self *NodeCreator) newNodeBase(span token.Span) nodeBase {
+	self.nextNodeId++
+	return nodeBase{id: NodeId(self.nextNodeId), span: span}
+}
+
+func (self *NodeCreator) NewIdentExpression(ident Ident, span token.Span) *IdentExpression {
+	return &IdentExpression{nodeBase: self.newNodeBase(span), Ident: ident}
+}
+
+type nodeBase struct {
 	id   NodeId
 	span token.Span
 }
 
-func (n *node) Id() NodeId {
+func (n *nodeBase) Id() NodeId {
 	return n.id
 }
 
-func (n *node) Span() token.Span {
+func (n *nodeBase) Span() token.Span {
 	return n.span
 }
 
 type Ident string
 
 type TypeParam struct {
-	node
+	nodeBase
 	Name Ident
 }
 
@@ -74,7 +91,7 @@ type Type interface {
 }
 
 type SimpleType struct {
-	node
+	nodeBase
 	Name     Ident
 	TypeArgs []Type
 }
@@ -87,12 +104,8 @@ func (t SimpleType) TypeName() string {
 	return string(t.Name)
 }
 
-func NewSimpleType(name Ident, id NodeId, span token.Span) *SimpleType {
-	return &SimpleType{node: node{id: id, span: span}, Name: name}
-}
-
 type FunctionType struct {
-	node
+	nodeBase
 	TypeParams []TypeParam
 	Params     []Type
 	Result     Type
@@ -124,13 +137,9 @@ type Expression interface {
 }
 
 type IdentExpression struct {
-	node
+	nodeBase
 	Ident    Ident
 	TypeArgs []Type
-}
-
-func NewIdentExpression(ident Ident, id NodeId, span token.Span) *IdentExpression {
-	return &IdentExpression{node: node{id: id, span: span}, Ident: ident}
 }
 
 func (expr *IdentExpression) String() string {
@@ -138,7 +147,7 @@ func (expr *IdentExpression) String() string {
 }
 
 type StringLiteralExpression struct {
-	node
+	nodeBase
 	Value string
 }
 
@@ -147,7 +156,7 @@ func (expr *StringLiteralExpression) String() string {
 }
 
 type IntLiteralExpression struct {
-	node
+	nodeBase
 	Value int64
 }
 
@@ -156,7 +165,7 @@ func (expr *IntLiteralExpression) String() string {
 }
 
 type BoolLiteralExpression struct {
-	node
+	nodeBase
 	Value bool
 }
 
@@ -165,7 +174,7 @@ func (expr *BoolLiteralExpression) String() string {
 }
 
 type MemberExpression struct {
-	node
+	nodeBase
 	Target   Expression
 	Field    Ident
 	TypeArgs []Type
@@ -187,7 +196,7 @@ func (op BinaryOperator) String() string {
 }
 
 type BinaryExpression struct {
-	node
+	nodeBase
 	Lhs Expression
 	Rhs Expression
 	Op  BinaryOperator
@@ -213,7 +222,7 @@ func (f CallArg) String() string {
 }
 
 type CallExpression struct {
-	node
+	nodeBase
 	Callee Expression
 	Args   []CallArg
 }
@@ -223,7 +232,7 @@ func (expr *CallExpression) String() string {
 }
 
 type BlockExpression struct {
-	node
+	nodeBase
 	Nodes []Node
 }
 
@@ -232,7 +241,7 @@ func (expr BlockExpression) String() string {
 }
 
 type IfExpression struct {
-	node
+	nodeBase
 	Condition Expression
 	TrueBody  *BlockExpression
 	FalseBody *BlockExpression
@@ -251,7 +260,7 @@ func (expr *IfExpression) String() string {
 }
 
 type LoopStatement struct {
-	node
+	nodeBase
 	Body *BlockExpression
 }
 
@@ -260,7 +269,7 @@ func (l *LoopStatement) String() string {
 }
 
 type BreakStatement struct {
-	node
+	nodeBase
 }
 
 func (b *BreakStatement) String() string {
@@ -268,7 +277,7 @@ func (b *BreakStatement) String() string {
 }
 
 type ContinueStatement struct {
-	node
+	nodeBase
 }
 
 func (b *ContinueStatement) String() string {
@@ -276,7 +285,7 @@ func (b *ContinueStatement) String() string {
 }
 
 type AssignmentStatement struct {
-	node
+	nodeBase
 	Variable *IdentExpression
 	// This is optional but we cannot express this in Go.
 	Field *Ident
@@ -296,7 +305,7 @@ func (a *AssignmentStatement) IsAssignToMember() bool {
 }
 
 type Module struct {
-	node
+	nodeBase
 	Name  Ident
 	Nodes []Node
 }
@@ -316,7 +325,7 @@ func (f StructTypeField) String() string {
 }
 
 type StructTypeDeclaration struct {
-	node
+	nodeBase
 	Name       Ident
 	TypeParams []TypeParam
 	Fields     []StructTypeField
@@ -349,7 +358,7 @@ func (f FunctionParam) String() string {
 }
 
 type FunctionDeclaration struct {
-	node
+	nodeBase
 	Name       Ident
 	TypeParams []TypeParam
 	Params     []FunctionParam
@@ -366,7 +375,7 @@ func (f FunctionDeclaration) String() string {
 }
 
 type FunctionDefinition struct {
-	node
+	nodeBase
 	Decl *FunctionDeclaration
 	Body *BlockExpression
 }
@@ -376,7 +385,7 @@ func (f *FunctionDefinition) String() string {
 }
 
 type ImplDefinition struct {
-	node
+	nodeBase
 	Target        Ident
 	Methods       []*FunctionDefinition
 	Trait         Ident // optional
@@ -396,7 +405,7 @@ func (impl ImplDefinition) String() string {
 }
 
 type TraitDeclaration struct {
-	node
+	nodeBase
 	Name        Ident
 	TypeParams  []TypeParam
 	MethodDecls []*FunctionDeclaration
@@ -411,7 +420,7 @@ func (trait *TraitDeclaration) String() string {
 }
 
 type VariableDefinition struct {
-	node
+	nodeBase
 	Name Ident
 	// Optional
 	Type    Type
@@ -434,9 +443,9 @@ func (v *VariableDefinition) String() string {
 }
 
 type Parser struct {
-	tokens []token.Token
-	index  int
-	nodeId NodeId
+	tokens      []token.Token
+	index       int
+	nodeCreator *NodeCreator
 }
 
 func (p *Parser) spanToHere(from token.Span) token.Span {
@@ -445,9 +454,8 @@ func (p *Parser) spanToHere(from token.Span) token.Span {
 	return span
 }
 
-func (p *Parser) newNode(from token.Span) node {
-	p.nodeId = p.nodeId + 1
-	return node{id: p.nodeId, span: p.spanToHere(from)}
+func (p *Parser) newNodeBase(from token.Span) nodeBase {
+	return p.nodeCreator.newNodeBase(p.spanToHere(from))
 }
 
 func (p *Parser) consume(kind token.TokenKind) (token.Token, error) {
@@ -552,7 +560,7 @@ func (p *Parser) parseCallExpression(callee Expression) (*CallExpression, error)
 			args = append(args, arg)
 		}
 	}
-	return &CallExpression{node: p.newNode(callee.Span()), Callee: callee, Args: args}, nil
+	return &CallExpression{nodeBase: p.newNodeBase(callee.Span()), Callee: callee, Args: args}, nil
 }
 
 func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
@@ -572,7 +580,7 @@ func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &BlockExpression{node: p.newNode(from), Nodes: []Node{expr}}, nil
+		return &BlockExpression{nodeBase: p.newNodeBase(from), Nodes: []Node{expr}}, nil
 	}
 	var nodes []Node
 	for p.index < len(p.tokens) {
@@ -587,7 +595,7 @@ func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
 		}
 		nodes = append(nodes, node)
 	}
-	return &BlockExpression{node: p.newNode(from), Nodes: nodes}, nil
+	return &BlockExpression{nodeBase: p.newNodeBase(from), Nodes: nodes}, nil
 }
 
 func (p *Parser) parseIfExpression() (*IfExpression, error) {
@@ -611,7 +619,7 @@ func (p *Parser) parseIfExpression() (*IfExpression, error) {
 			return nil, errors.Errorf("failed to parse `false` branch body: %v", err)
 		}
 	}
-	return &IfExpression{node: p.newNode(from), Condition: condition, TrueBody: trueBody, FalseBody: falseBody}, nil
+	return &IfExpression{nodeBase: p.newNodeBase(from), Condition: condition, TrueBody: trueBody, FalseBody: falseBody}, nil
 }
 
 func (p *Parser) parseFunctionType() (*FunctionType, error) {
@@ -642,11 +650,11 @@ func (p *Parser) parseFunctionType() (*FunctionType, error) {
 		}
 	}
 	resultSpan := p.span()
-	result, err := p.tryParseType(&SimpleType{node: p.newNode(resultSpan), Name: "None"})
+	result, err := p.tryParseType(&SimpleType{nodeBase: p.newNodeBase(resultSpan), Name: "None"})
 	if err != nil {
 		return nil, err
 	}
-	return &FunctionType{node: p.newNode(from), Params: params, Result: result}, nil
+	return &FunctionType{nodeBase: p.newNodeBase(from), Params: params, Result: result}, nil
 }
 
 func (p *Parser) parseType() (Type, error) {
@@ -658,7 +666,7 @@ func (p *Parser) parseType() (Type, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &SimpleType{node: p.newNode(p.span()), Name: Ident(t.Value), TypeArgs: typeArgs}, nil
+		return &SimpleType{nodeBase: p.newNodeBase(p.span()), Name: Ident(t.Value), TypeArgs: typeArgs}, nil
 	case token.Fn:
 		return p.parseFunctionType()
 	}
@@ -690,7 +698,7 @@ func (p *Parser) parseTypeParams() ([]TypeParam, error) {
 		if err != nil {
 			return nil, err
 		}
-		param := TypeParam{node: p.newNode(typeIdent.Span), Name: Ident(typeIdent.Value)}
+		param := TypeParam{nodeBase: p.newNodeBase(typeIdent.Span), Name: Ident(typeIdent.Value)}
 		params = append(params, param)
 		switch p.peek().Kind {
 		case token.Comma:
@@ -746,7 +754,7 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 			if len(params) > 0 {
 				return nil, errors.Errorf("self parameter must be the first parameter")
 			}
-			selfType := &SimpleType{node: p.newNode(from), Name: "Self"}
+			selfType := &SimpleType{nodeBase: p.newNodeBase(from), Name: "Self"}
 			param := FunctionParam{Name: Ident("self"), Type: selfType, Span: p.spanToHere(from)}
 			params = append(params, param)
 		}
@@ -760,12 +768,12 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 		}
 		p.consumeAny()
 	}
-	result, err := p.tryParseType(&SimpleType{node: p.newNode(from), Name: "None"})
+	result, err := p.tryParseType(&SimpleType{nodeBase: p.newNodeBase(from), Name: "None"})
 	if err != nil {
 		return nil, err
 	}
 	return &FunctionDeclaration{
-		node: p.newNode(from), TypeParams: typeParams, Name: Ident(nameToken.Value), Params: params, Result: result,
+		nodeBase: p.newNodeBase(from), TypeParams: typeParams, Name: Ident(nameToken.Value), Params: params, Result: result,
 	}, nil
 }
 
@@ -779,7 +787,7 @@ func (p *Parser) parseFunctionDefinition(acceptSelfParameter bool) (*FunctionDef
 	if err != nil {
 		return nil, err
 	}
-	return &FunctionDefinition{node: p.newNode(from), Decl: decl, Body: body}, nil
+	return &FunctionDefinition{nodeBase: p.newNodeBase(from), Decl: decl, Body: body}, nil
 }
 
 func (p *Parser) parseVariableDefinition() (*VariableDefinition, error) {
@@ -809,7 +817,7 @@ func (p *Parser) parseVariableDefinition() (*VariableDefinition, error) {
 		return nil, err
 	}
 	return &VariableDefinition{
-		node: p.newNode(from), Name: Ident(identToken.Value), Type: ty, Value: value, Mutable: mutable}, nil
+		nodeBase: p.newNodeBase(from), Name: Ident(identToken.Value), Type: ty, Value: value, Mutable: mutable}, nil
 }
 
 func (p *Parser) parseAssignmentStatement(lhs Expression) (*AssignmentStatement, error) {
@@ -820,11 +828,11 @@ func (p *Parser) parseAssignmentStatement(lhs Expression) (*AssignmentStatement,
 	}
 	switch lhs := lhs.(type) {
 	case *IdentExpression:
-		return &AssignmentStatement{node: p.newNode(from), Variable: lhs, Field: nil, Rhs: rhs}, nil
+		return &AssignmentStatement{nodeBase: p.newNodeBase(from), Variable: lhs, Field: nil, Rhs: rhs}, nil
 	case *MemberExpression:
 		switch variable := lhs.Target.(type) {
 		case *IdentExpression:
-			return &AssignmentStatement{node: p.newNode(from), Variable: variable, Field: &lhs.Field, Rhs: rhs}, nil
+			return &AssignmentStatement{nodeBase: p.newNodeBase(from), Variable: variable, Field: &lhs.Field, Rhs: rhs}, nil
 		}
 	}
 	return nil, errors.Errorf("expected identifier or member expression with identifier as target, got %s", lhs)
@@ -876,7 +884,7 @@ func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 		if err != nil {
 			return nil, err
 		}
-		lhs = &BinaryExpression{node: p.newNode(from), Op: ops[op.Kind], Lhs: lhs, Rhs: rhs}
+		lhs = &BinaryExpression{nodeBase: p.newNodeBase(from), Op: ops[op.Kind], Lhs: lhs, Rhs: rhs}
 	}
 	return lhs, nil
 }
@@ -911,7 +919,7 @@ func (p *Parser) parseExpressionWithPostfix() (Expression, error) {
 			if err != nil {
 				return nil, err
 			}
-			expr = &MemberExpression{node: p.newNode(from), Target: expr, Field: Ident(field.Value), TypeArgs: typeArgs}
+			expr = &MemberExpression{nodeBase: p.newNodeBase(from), Target: expr, Field: Ident(field.Value), TypeArgs: typeArgs}
 		case token.LParen, token.LAngle:
 			if is_forbidden_expression {
 				return nil, errors.Errorf("block and if expressions cannot be called")
@@ -932,7 +940,7 @@ func (p *Parser) parseIdentExpression(token token.Token) (*IdentExpression, erro
 	if err != nil {
 		return nil, err
 	}
-	return &IdentExpression{node: p.newNode(token.Span), Ident: Ident(token.Value), TypeArgs: typeArgs}, nil
+	return &IdentExpression{nodeBase: p.newNodeBase(token.Span), Ident: Ident(token.Value), TypeArgs: typeArgs}, nil
 }
 
 func (p *Parser) parsePrimaryExpression() (Expression, error) {
@@ -944,23 +952,23 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 		return p.parseIdentExpression(t)
 	case token.Self:
 		p.consumeAny()
-		return &IdentExpression{node: p.newNode(from), Ident: Ident("self")}, nil
+		return &IdentExpression{nodeBase: p.newNodeBase(from), Ident: Ident("self")}, nil
 	case token.Str:
 		p.consumeAny()
-		return &StringLiteralExpression{node: p.newNode(from), Value: t.Value}, nil
+		return &StringLiteralExpression{nodeBase: p.newNodeBase(from), Value: t.Value}, nil
 	case token.Int:
 		p.consumeAny()
 		value, err := strconv.ParseInt(t.Value, 10, 64)
 		if err != nil {
 			return nil, errors.Errorf("failed to parse int literal: %v", err)
 		}
-		return &IntLiteralExpression{node: p.newNode(from), Value: value}, nil
+		return &IntLiteralExpression{nodeBase: p.newNodeBase(from), Value: value}, nil
 	case token.True:
 		p.consumeAny()
-		return &BoolLiteralExpression{node: p.newNode(from), Value: true}, nil
+		return &BoolLiteralExpression{nodeBase: p.newNodeBase(from), Value: true}, nil
 	case token.False:
 		p.consumeAny()
-		return &BoolLiteralExpression{node: p.newNode(from), Value: false}, nil
+		return &BoolLiteralExpression{nodeBase: p.newNodeBase(from), Value: false}, nil
 	case token.LCurly:
 		return p.parseBlockExpression()
 	case token.If:
@@ -979,7 +987,7 @@ func (p *Parser) parseLoopStatement() (*LoopStatement, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &LoopStatement{node: p.newNode(from), Body: body}, nil
+	return &LoopStatement{nodeBase: p.newNodeBase(from), Body: body}, nil
 }
 
 func (p *Parser) parseStructDeclaration() (*StructTypeDeclaration, error) {
@@ -1005,7 +1013,7 @@ func (p *Parser) parseStructDeclaration() (*StructTypeDeclaration, error) {
 		case token.RCurly:
 			p.consumeAny()
 			return &StructTypeDeclaration{
-				node: p.newNode(from), Name: Ident(identToken.Value), Fields: fields, TypeParams: typeParams}, nil
+				nodeBase: p.newNodeBase(from), Name: Ident(identToken.Value), Fields: fields, TypeParams: typeParams}, nil
 		case token.Ident:
 			from := p.span()
 			p.consumeAny()
@@ -1059,7 +1067,7 @@ func (p *Parser) parseImplDefinition() (*ImplDefinition, error) {
 		case token.RCurly:
 			p.consumeAny()
 			return &ImplDefinition{
-				node: p.newNode(from), Trait: trait, TraitTypeArgs: traitTypeArgs, Target: target, Methods: functions}, nil
+				nodeBase: p.newNodeBase(from), Trait: trait, TraitTypeArgs: traitTypeArgs, Target: target, Methods: functions}, nil
 		case token.Fn:
 			function, err := p.parseFunctionDefinition(true)
 			if err != nil {
@@ -1096,7 +1104,7 @@ func (p *Parser) parseTraitDeclaration() (*TraitDeclaration, error) {
 		case token.RCurly:
 			p.consumeAny()
 			return &TraitDeclaration{
-				node:        p.newNode(from),
+				nodeBase:    p.newNodeBase(from),
 				Name:        Ident(typeIdentToken.Value),
 				TypeParams:  typeParams,
 				MethodDecls: methodDecls,
@@ -1131,10 +1139,10 @@ func (p *Parser) ParseNode() (Node, error) {
 			return p.parseLoopStatement()
 		case token.Break:
 			p.consumeAny()
-			return &BreakStatement{node: p.newNode(from)}, nil
+			return &BreakStatement{nodeBase: p.newNodeBase(from)}, nil
 		case token.Continue:
 			p.consumeAny()
-			return &ContinueStatement{node: p.newNode(from)}, nil
+			return &ContinueStatement{nodeBase: p.newNodeBase(from)}, nil
 		case token.Struct:
 			return p.parseStructDeclaration()
 		case token.Impl:
@@ -1159,7 +1167,7 @@ func (p *Parser) Parse(moduleName Ident) (*Module, error) {
 			if len(nodes) == 0 {
 				return nil, errors.Errorf("expected at least one AST node")
 			}
-			return &Module{node: p.newNode(from), Name: moduleName, Nodes: nodes}, nil
+			return &Module{nodeBase: p.newNodeBase(from), Name: moduleName, Nodes: nodes}, nil
 		}
 		if err != nil {
 			return nil, err
@@ -1169,7 +1177,7 @@ func (p *Parser) Parse(moduleName Ident) (*Module, error) {
 	return nil, errors.Errorf("unexpected end of file")
 }
 
-func Parse(tokens []token.Token, moduleName Ident) (*Module, error) {
-	p := Parser{tokens: tokens, index: 0, nodeId: 0}
+func Parse(tokens []token.Token, moduleName Ident, nodeCreator *NodeCreator) (*Module, error) {
+	p := Parser{tokens: tokens, index: 0, nodeCreator: nodeCreator}
 	return p.Parse(moduleName)
 }

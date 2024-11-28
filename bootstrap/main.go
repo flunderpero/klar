@@ -61,7 +61,8 @@ func main() {
 	}
 	fileParts := strings.Split(strings.Split(file, ".")[0], "/")
 	moduleName := fileParts[len(fileParts)-1]
-	module, err := ast.Parse(tokens, ast.Ident(moduleName))
+	nodeCreator := ast.NewNodeCreator()
+	module, err := ast.Parse(tokens, ast.Ident(moduleName), nodeCreator)
 	if err != nil {
 		fmt.Printf("Failed to parse: %+v\n", err)
 		os.Exit(1)
@@ -70,7 +71,8 @@ func main() {
 		fmt.Println(module)
 		os.Exit(0)
 	}
-	typeInfo, genericsResolver, err := typed.TypeCheck(module)
+	typeCreator := typed.NewTypeCreator()
+	typeInfo, genericsResolver, err := typed.TypeCheck(module, typeCreator)
 	if err != nil {
 		fmt.Printf("Failed to typecheck: %+v\n", err)
 		os.Exit(1)
@@ -79,7 +81,7 @@ func main() {
 		printTypedAST(module, typeInfo)
 		os.Exit(0)
 	}
-	lowered := lower.Lower(module, typeInfo, genericsResolver)
+	lowered := lower.Lower(module, typeInfo, genericsResolver, nodeCreator, typeCreator)
 	if cmd == "lower" {
 		fmt.Println(lowered)
 		os.Exit(0)

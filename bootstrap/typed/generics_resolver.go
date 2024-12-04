@@ -160,6 +160,13 @@ func willResolve(ty Type, typeParams []TypeParam, seen map[TypeId]bool) bool {
 			}
 		}
 		return willResolve(ty.Result, typeParams, seen)
+	case *TupleType:
+		for _, value := range ty.Values {
+			if willResolve(value, typeParams, seen) {
+				return true
+			}
+		}
+		return false
 	case *StructType:
 		for _, field := range ty.Fields {
 			if willResolve(field.Type, typeParams, seen) {
@@ -268,6 +275,12 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 		default:
 			panic(fmt.Sprintf("unexpected generic type: %T", ty))
 		}
+	case *TupleType:
+		values := make([]Type, len(ty.Values))
+		for i, value := range ty.Values {
+			values[i] = self.ResolveTypeArgs(value, typeParams, typeArgs)
+		}
+		return self.typeCreator.NewTupleType(values)
 	default:
 		for i, typeParam := range typeParams {
 			if ty.Id() == typeParam.Id() {

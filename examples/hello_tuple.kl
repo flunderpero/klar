@@ -1,0 +1,29 @@
+fn nested(i Int, s Str, tuple (Bool, Str)) (Int, Str, (Bool, Str)) => (i, s, tuple)
+
+struct Person {
+    name_and_age (Str, Int)
+    street_and_number_and_valid (Str, Int, Bool)
+}
+
+fn main() {
+    let t = (true, "Hello", 40 + 2)
+    print_bool(t.0)
+    print(t.1)
+    print_int(t.2)
+    print(", ")
+    let typed (Int, Str, Bool) = (38 + 4, "World", false)
+    print_int(typed.0)
+    print(typed.1)
+    print_bool(typed.2)
+    print(", ")
+    let n = nested(42, "Hello", (true, "World"))
+    print(n.1)
+    print_int(n.0)
+    print(", ")
+    let p = Person(("Mary", 25), ("Wall Street", 25, true))
+    print(p.name_and_age.0)
+    print_int(p.name_and_age.1)
+    print(p.street_and_number_and_valid.0)
+    print_int(p.street_and_number_and_valid.1)
+    print_bool(p.street_and_number_and_valid.2)
+}

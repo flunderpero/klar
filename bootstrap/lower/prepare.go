@@ -14,11 +14,14 @@ type funcInfo struct {
 
 type prepare struct {
 	DefaultTransformer
-	funcInfos        map[typed.TypeId]*funcInfo
-	funcInfo         *funcInfo
-	typeInfo         *typed.TypeInfo
-	genericsResolver *typed.GenericsResolver
-	nodeCreator      *ast.NodeCreator
+	funcInfos                          map[typed.TypeId]*funcInfo
+	funcInfo                           *funcInfo
+	typeInfo                           *typed.TypeInfo
+	genericsResolver                   *typed.GenericsResolver
+	nodeCreator                        *ast.NodeCreator
+	typeCreator                        *typed.TypeCreator
+	tupleStructs                       map[string]*typed.StructType
+	replaceTupleTypeWithStructTypeSeen map[typed.TypeId]typed.Type
 }
 
 func (self *prepare) convertToTypeIdIdentExpression(expr ast.Expression, ty typed.Type) *ast.IdentExpression {
@@ -119,6 +122,101 @@ func (self *prepare) VisitImplDefinition(def *ast.ImplDefinition, w TransformWal
 	return nil, false
 }
 
+func (self *prepare) convertTupleToStructType(tupleType *typed.TupleType) *typed.StructType {
+	key := ""
+	for _, value := range tupleType.Values {
+		key += value.Id().String() + ","
+	}
+	structType, ok := self.tupleStructs[key]
+	if !ok {
+		fields := make([]typed.TypeAndName[typed.Type], len(tupleType.Values))
+		for i, value := range tupleType.Values {
+			if tupleValue, ok := value.(*typed.TupleType); ok {
+				value = self.convertTupleToStructType(tupleValue)
+			}
+			field := typed.TypeAndName[typed.Type]{Name: ast.Ident(fmt.Sprintf("%d", i)), Type: value}
+			fields[i] = field
+		}
+		structType = self.typeCreator.NewStructType(nil, nil, nil, fields, nil, nil)
+		self.tupleStructs[key] = structType
+	}
+	return structType
+}
+
+func (self *prepare) VisitTupleLiteralExpression(expr *ast.TupleLiteralExpression, w TransformWalker) (ast.Expression, bool) {
+	newExpr, ok := w.WalkTupleLiteralExpression(expr)
+	if !ok {
+		return nil, false
+	}
+	expr, ok = newExpr.(*ast.TupleLiteralExpression)
+	if !ok {
+		return newExpr, true
+	}
+	tupleType := self.typeInfo.MustLookup(expr).(*typed.TupleType)
+	structType := self.convertTupleToStructType(tupleType)
+	callArgs := make([]ast.CallArg, len(expr.Values))
+	for i, value := range expr.Values {
+		self.typeInfo.Set(value, structType.Fields[i].Type)
+		callArgs[i] = ast.CallArg{Value: value, Span: value.Span()}
+	}
+	calleeExpr := self.nodeCreator.NewIdentExpression(ast.Ident("$Tuple"), expr.Span())
+	self.typeInfo.Set(calleeExpr, structType)
+	callExpr := self.nodeCreator.NewCallExpression(calleeExpr, callArgs, expr.Span())
+	self.typeInfo.Set(callExpr, structType)
+	return callExpr, true
+}
+
+func (self *prepare) VisitNode(node ast.Node, w TransformWalker) (ast.Node, bool) {
+	node, ok := w.WalkNode(node)
+	if !ok {
+		return nil, false
+	}
+	ty := self.typeInfo.MustLookup(node)
+	ty = self.replaceTupleTypeWithStructType(ty)
+	self.typeInfo.Set(node, ty)
+	return node, true
+}
+
+func (self *prepare) replaceTupleTypeWithStructType(ty typed.Type) typed.Type {
+	// todo: `typed.DeclaredType` should not have the same `TypeId` as its enclosed type.
+	if _, ok := ty.(*typed.DeclaredType); ok {
+		return ty
+	}
+	if res, ok := self.replaceTupleTypeWithStructTypeSeen[ty.Id()]; ok {
+		return res
+	}
+	switch tyKind := ty.(type) {
+	case *typed.TupleType:
+		ty = self.convertTupleToStructType(tyKind)
+		self.replaceTupleTypeWithStructTypeSeen[ty.Id()] = ty
+	case *typed.FunctionType:
+		self.replaceTupleTypeWithStructTypeSeen[ty.Id()] = ty
+		for i, param := range tyKind.Params {
+			param.Type = self.replaceTupleTypeWithStructType(param.Type)
+			tyKind.Params[i] = param
+		}
+		tyKind.Result = self.replaceTupleTypeWithStructType(tyKind.Result)
+		if tyKind.Receiver != nil {
+			tyKind.Receiver = self.replaceTupleTypeWithStructType(tyKind.Receiver)
+		}
+		self.replaceTupleTypeWithStructTypeSeen[ty.Id()] = ty
+	case *typed.StructType:
+		self.replaceTupleTypeWithStructTypeSeen[ty.Id()] = ty
+		for i, field := range tyKind.Fields {
+			field.Type = self.replaceTupleTypeWithStructType(field.Type)
+			tyKind.Fields[i] = field
+		}
+		for i, method := range tyKind.Methods {
+			method.Type = self.replaceTupleTypeWithStructType(method.Type).(*typed.FunctionType)
+			tyKind.Methods[i] = method
+		}
+	case *typed.BoolType, *typed.Int64Type, *typed.StrType, *typed.NoneType, *typed.TypeParam:
+	default:
+		panic(fmt.Sprintf("unexpected type: %T", ty))
+	}
+	return ty
+}
+
 func Prepare(
 	module *ast.Module,
 	typeInfo *typed.TypeInfo,
@@ -127,10 +225,13 @@ func Prepare(
 	typeCreator *typed.TypeCreator,
 ) (*ast.Module, map[typed.TypeId]*funcInfo) {
 	prepare := &prepare{
-		funcInfos:        map[typed.TypeId]*funcInfo{},
-		typeInfo:         typeInfo,
-		genericsResolver: genericsResolver,
-		nodeCreator:      nodeCreator,
+		funcInfos:                          map[typed.TypeId]*funcInfo{},
+		typeInfo:                           typeInfo,
+		genericsResolver:                   genericsResolver,
+		nodeCreator:                        nodeCreator,
+		typeCreator:                        typeCreator,
+		tupleStructs:                       map[string]*typed.StructType{},
+		replaceTupleTypeWithStructTypeSeen: map[typed.TypeId]typed.Type{},
 	}
 	walker := DefaultTransformWalker{Transformer: prepare}
 	module, ok := walker.Transformer.VisitModule(module, &walker)

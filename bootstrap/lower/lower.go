@@ -11,6 +11,9 @@ Lowering will:
   - re-order the arguments in a `CallExpression` to be in the order of the function
     parameters. (see `prepare`)
 
+  - convert all tuple literals to anonymous struct initializations so that they can be treated as
+    regular structs from here on.
+
   - remove all trait and impl declarations after collection all function
     definitions. (see `prepare`)
 

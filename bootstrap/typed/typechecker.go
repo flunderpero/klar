@@ -66,6 +66,10 @@ func (self *TypeCreator) NewStructType(genericBase *StructType, typeParams []Typ
 	}
 }
 
+func (self *TypeCreator) NewTupleType(values []Type) *TupleType {
+	return &TupleType{typeBase: self.newTypeBase(), Values: values}
+}
+
 type IsId interface {
 	String() string
 	IdMarker()
@@ -302,6 +306,33 @@ func (ty DeclaredType) IsAssignableFrom(other_ Type) bool {
 	return ty.Type.IsAssignableFrom(other)
 }
 
+type TupleType struct {
+	typeBase
+	Values []Type
+}
+
+func (self TupleType) String() string {
+	return fmt.Sprintf("TupleType%s", base.IndentSlice(self.Values, 1))
+}
+
+func (self TupleType) IsAssignableFrom(other Type) bool {
+	if self.id == other.Id() {
+		return true
+	}
+	if other, ok := other.(*TupleType); ok {
+		if len(self.Values) != len(other.Values) {
+			return false
+		}
+		for i, value := range self.Values {
+			if !value.IsAssignableFrom(other.Values[i]) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 type StructType struct {
 	typeBase
 	genericBase *StructType
@@ -342,15 +373,15 @@ func (ty StructType) String() string {
 	)
 }
 
-func (ty StructType) FindFieldIndex(name ast.Ident, span token.Span) (int, bool) {
-	fieldIndex := slices.IndexFunc(ty.Fields, func(field TypeAndName[Type]) bool { return field.Name == name })
+func (ty StructType) FindFieldIndex(name ast.MemberExpressionField, span token.Span) (int, bool) {
+	fieldIndex := slices.IndexFunc(ty.Fields, func(field TypeAndName[Type]) bool { return string(field.Name) == string(name) })
 	if fieldIndex < 0 {
 		return -1, false
 	}
 	return fieldIndex, true
 }
 
-func (ty StructType) FindField(name ast.Ident, span token.Span) (*TypeAndName[Type], bool) {
+func (ty StructType) FindField(name ast.MemberExpressionField, span token.Span) (*TypeAndName[Type], bool) {
 	fieldIndex, found := ty.FindFieldIndex(name, span)
 	if !found {
 		return nil, false
@@ -367,12 +398,15 @@ func (ty StructType) FindMethod(name ast.Ident, span token.Span) (*FunctionType,
 	return nil, false
 }
 
-func (ty StructType) FindMember(name ast.Ident, span token.Span) (Type, bool) {
+func (ty StructType) FindMember(name ast.MemberExpressionField, span token.Span) (Type, bool) {
 	field, found := ty.FindField(name, span)
 	if found {
 		return field.Type, true
 	}
-	method, found := ty.FindMethod(name, span)
+	if name.IsIndex() {
+		return nil, false
+	}
+	method, found := ty.FindMethod(name.AsIdent(), span)
 	if found {
 		return method, true
 	}
@@ -862,6 +896,17 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 		}
 		res := FunctionType{typeBase: tc.newTypeBase(), Params: params, Result: result}
 		return &res, nil
+	case *ast.TupleType:
+		values := make([]Type, len(node.Values))
+		for i, astValue := range node.Values {
+			valueType, err := tc.lookupTypeOfNode(astValue)
+			if err != nil {
+				return nil, err
+			}
+			values[i] = valueType
+		}
+		res := TupleType{typeBase: tc.newTypeBase(), Values: values}
+		return &res, nil
 	case *ast.TypeParam:
 		res, found := tc.genericScope.lookupTypeParam(node.TypeName())
 		if !found {
@@ -915,6 +960,20 @@ func (tc *typeChecker) VisitIntLiteralExpression(expr *ast.IntLiteralExpression)
 
 func (tc *typeChecker) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) error {
 	tc.typeInfo.Set(expr, boolType)
+	return nil
+}
+
+func (tc *typeChecker) VisitTupleLiteralExpression(expr *ast.TupleLiteralExpression, w ast.Walker) error {
+	if err := w.WalkTupleLiteralExpression(expr); err != nil {
+		return err
+	}
+	values := make([]Type, len(expr.Values))
+	for i, astValue := range expr.Values {
+		valueType := tc.typeInfo.MustLookup(astValue)
+		values[i] = valueType
+	}
+	tupleType := &TupleType{typeBase: tc.newTypeBase(), Values: values}
+	tc.typeInfo.Set(expr, tupleType)
 	return nil
 }
 
@@ -1031,15 +1090,29 @@ func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.W
 	if err := w.WalkMemberExpression(expr); err != nil {
 		return err
 	}
-	structType_ := tc.typeInfo.MustLookup(expr.Target)
-	structType, isType := structType_.(*StructType)
-	if !isType {
-		return errors.Errorf("%s: type %q is not a struct type", expr.Span(), structType_)
-	}
-	memberType, found := structType.FindMember(expr.Field, expr.Span())
-	if !found {
-		structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
-		return errors.Errorf("%s: member %q not found in struct type %q", expr.Span(), expr.Field, structSymbol.Name)
+	ty := tc.typeInfo.MustLookup(expr.Target)
+	var memberType Type
+	if expr.Field.IsIndex() {
+		tupleType, ok := ty.(*TupleType)
+		if !ok {
+			return errors.Errorf("%s: type %q is not a tuple type", expr.Span(), ty)
+		}
+		fieldIndex := expr.Field.AsIndex()
+		if fieldIndex < 0 || fieldIndex >= len(tupleType.Values) {
+			return errors.Errorf("%s: index %d out of bounds for tuple type %q", expr.Span(), fieldIndex, ty)
+		}
+		memberType = tupleType.Values[fieldIndex]
+	} else {
+		structType, isType := ty.(*StructType)
+		if !isType {
+			return errors.Errorf("%s: type %q is not a struct type", expr.Span(), ty)
+		}
+		memberType_, found := structType.FindMember(expr.Field, expr.Span())
+		if !found {
+			structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
+			return errors.Errorf("%s: member %q not found in struct type %q", expr.Span(), expr.Field, structSymbol.Name)
+		}
+		memberType = memberType_
 	}
 	if genericType, ok := memberType.(GenericType); ok && len(expr.TypeArgs) > 0 {
 		resolvedType, err := tc.resolveGenericType(genericType, expr.TypeArgs, expr.Span())
@@ -1269,7 +1342,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 	}
 	for _, method := range impl.Methods {
 		decl := method.Decl
-		if _, found := structType.FindField(decl.Name, decl.Span()); found {
+		if _, found := structType.FindField(ast.MemberExpressionField(decl.Name), decl.Span()); found {
 			structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
 			return errors.Errorf(
 				"%s: method name %q already used in struct type %q", decl.Span(), decl.Name, structSymbol.Name)
@@ -1370,7 +1443,7 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 		if !ok {
 			return errors.Errorf("%s: variable %q is not a struct type", s.Span(), s.Variable.Ident)
 		}
-		field, found := structType.FindField(*s.Field, s.Span())
+		field, found := structType.FindField(ast.MemberExpressionField(*s.Field), s.Span())
 		if !found {
 			structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
 			return errors.Errorf("%s: field %q not found in struct type %q", s.Span(), s.Field, structSymbol.Name)

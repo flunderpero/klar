@@ -33,6 +33,7 @@ type Transformer interface {
 	VisitStringLiteralExpression(expr *ast.StringLiteralExpression) (ast.Expression, bool)
 	VisitIntLiteralExpression(expr *ast.IntLiteralExpression) (ast.Expression, bool)
 	VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) (ast.Expression, bool)
+	VisitTupleLiteralExpression(expr *ast.TupleLiteralExpression, w TransformWalker) (ast.Expression, bool)
 	VisitAssignmentStatement(stmt *ast.AssignmentStatement, w TransformWalker) (*ast.AssignmentStatement, bool)
 	VisitLoopStatement(stmt *ast.LoopStatement, w TransformWalker) (*ast.LoopStatement, bool)
 	VisitBreakStatement(stmt *ast.BreakStatement) (*ast.BreakStatement, bool)
@@ -49,6 +50,7 @@ type TransformWalker interface {
 	WalkExpression(expr ast.Expression) (ast.Expression, bool)
 	WalkBlockExpression(expr *ast.BlockExpression) (ast.Expression, bool)
 	WalkCallExpression(expr *ast.CallExpression) (ast.Expression, bool)
+	WalkTupleLiteralExpression(expr *ast.TupleLiteralExpression) (ast.Expression, bool)
 	WalkMemberExpression(expr *ast.MemberExpression) (ast.Expression, bool)
 	WalkIfExpression(expr *ast.IfExpression) (ast.Expression, bool)
 	WalkBinaryExpression(expr *ast.BinaryExpression) (ast.Expression, bool)
@@ -72,6 +74,10 @@ func (_ *DefaultTransformer) VisitIntLiteralExpression(expr *ast.IntLiteralExpre
 
 func (_ *DefaultTransformer) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) (ast.Expression, bool) {
 	return expr, true
+}
+
+func (_ *DefaultTransformer) VisitTupleLiteralExpression(expr *ast.TupleLiteralExpression, w TransformWalker) (ast.Expression, bool) {
+	return w.WalkTupleLiteralExpression(expr)
 }
 
 func (_ *DefaultTransformer) VisitCallExpression(expr *ast.CallExpression, w TransformWalker) (ast.Expression, bool) {
@@ -166,6 +172,8 @@ func (w *DefaultTransformWalker) WalkExpression(expr ast.Expression) (ast.Expres
 		return w.Transformer.VisitCallExpression(expr, w)
 	case *ast.MemberExpression:
 		return w.Transformer.VisitMemberExpression(expr, w)
+	case *ast.TupleLiteralExpression:
+		return w.Transformer.VisitTupleLiteralExpression(expr, w)
 	case *ast.IfExpression:
 		return w.Transformer.VisitIfExpression(expr, w)
 	case *ast.BlockExpression:
@@ -176,8 +184,8 @@ func (w *DefaultTransformWalker) WalkExpression(expr ast.Expression) (ast.Expres
 }
 
 func (w *DefaultTransformWalker) WalkBinaryExpression(expr *ast.BinaryExpression) (ast.Expression, bool) {
-	lhs, lhsOk := w.Transformer.VisitExpression(expr.Lhs, w)
-	rhs, rhsOk := w.Transformer.VisitExpression(expr.Rhs, w)
+	lhs, lhsOk := w.Transformer.VisitNode(expr.Lhs, w)
+	rhs, rhsOk := w.Transformer.VisitNode(expr.Rhs, w)
 	if !lhsOk && !rhsOk {
 		return nil, false
 	}
@@ -190,14 +198,14 @@ func (w *DefaultTransformWalker) WalkBinaryExpression(expr *ast.BinaryExpression
 }
 
 func (w *DefaultTransformWalker) WalkCallExpression(expr *ast.CallExpression) (ast.Expression, bool) {
-	callee, ok := w.Transformer.VisitExpression(expr.Callee, w)
+	callee, ok := w.Transformer.VisitNode(expr.Callee, w)
 	if !ok {
 		return nil, false
 	}
 	expr.Callee = callee
 	args := []ast.CallArg{}
 	for _, arg := range expr.Args {
-		transformed, ok := w.Transformer.VisitExpression(arg.Value, w)
+		transformed, ok := w.Transformer.VisitNode(arg.Value, w)
 		if ok {
 			callArg := arg
 			callArg.Value = transformed
@@ -209,7 +217,7 @@ func (w *DefaultTransformWalker) WalkCallExpression(expr *ast.CallExpression) (a
 }
 
 func (w *DefaultTransformWalker) WalkIfExpression(expr *ast.IfExpression) (ast.Expression, bool) {
-	condition, conditionOk := w.Transformer.VisitExpression(expr.Condition, w)
+	condition, conditionOk := w.Transformer.VisitNode(expr.Condition, w)
 	trueBody, trueBodyOk := w.Transformer.VisitBlockExpression(expr.TrueBody, w)
 	if expr.FalseBody != nil {
 		falseBody, falseBodyOk := w.Transformer.VisitBlockExpression(expr.FalseBody, w)
@@ -239,11 +247,23 @@ func (w *DefaultTransformWalker) WalkBlockExpression(expr *ast.BlockExpression) 
 }
 
 func (w *DefaultTransformWalker) WalkMemberExpression(expr *ast.MemberExpression) (ast.Expression, bool) {
-	target, ok := w.Transformer.VisitExpression(expr.Target, w)
+	target, ok := w.Transformer.VisitNode(expr.Target, w)
 	if !ok {
 		return nil, false
 	}
 	expr.Target = target
+	return expr, true
+}
+
+func (w *DefaultTransformWalker) WalkTupleLiteralExpression(expr *ast.TupleLiteralExpression) (ast.Expression, bool) {
+	values := []ast.Expression{}
+	for _, value := range expr.Values {
+		transformed, ok := w.Transformer.VisitNode(value, w)
+		if ok {
+			values = append(values, transformed)
+		}
+	}
+	expr.Values = values
 	return expr, true
 }
 
@@ -298,7 +318,7 @@ func (w *DefaultTransformWalker) WalkFunctionDefinition(fn *ast.FunctionDefiniti
 }
 
 func (w *DefaultTransformWalker) WalkVariableDefinition(variable *ast.VariableDefinition) (*ast.VariableDefinition, bool) {
-	value, ok := w.Transformer.VisitExpression(variable.Value, w)
+	value, ok := w.Transformer.VisitNode(variable.Value, w)
 	if !ok {
 		return nil, false
 	}
@@ -308,7 +328,7 @@ func (w *DefaultTransformWalker) WalkVariableDefinition(variable *ast.VariableDe
 
 func (w *DefaultTransformWalker) WalkAssignmentStatement(stmt *ast.AssignmentStatement) (*ast.AssignmentStatement, bool) {
 	variable, variableOk := w.Transformer.VisitIdentExpression(stmt.Variable)
-	rhs, rhsOk := w.Transformer.VisitExpression(stmt.Rhs, w)
+	rhs, rhsOk := w.Transformer.VisitNode(stmt.Rhs, w)
 	if variableOk != rhsOk {
 		panic("either both or none of variable and rhs can be deleted")
 	}

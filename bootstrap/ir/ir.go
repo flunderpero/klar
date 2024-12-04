@@ -964,7 +964,7 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 		sourceReg := g.symbolTable.mustLookup(stmt.Variable.Ident)
 		structType := g.typeInfo.MustLookup(stmt.Variable).(*typed.StructType)
 		sourceType := g.lookupType(stmt.Variable).(*StructType)
-		fieldIndex, found := structType.FindFieldIndex(*stmt.Field, stmt.Span())
+		fieldIndex, found := structType.FindFieldIndex(ast.MemberExpressionField(*stmt.Field), stmt.Span())
 		if !found {
 			structSymbol := g.typeInfo.MustLookupSymbol(structType.Id())
 			return errors.Errorf("field %q not found in struct %q", *stmt.Field, structSymbol.Name)
@@ -1048,7 +1048,7 @@ func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
 		dt.declare(ty)
 		return dt.Types[ty.Id()]
 	}
-	panic(fmt.Sprintf("type not found for %T", ty))
+	panic(fmt.Sprintf("type not found for %s (%T)", ty, ty))
 }
 
 func (dt *DeclaredTypes) declare(ty typed.Type) {

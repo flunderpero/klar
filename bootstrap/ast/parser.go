@@ -41,6 +41,10 @@ func (self *NodeCreator) NewIdentExpression(ident Ident, span token.Span) *Ident
 	return &IdentExpression{nodeBase: self.newNodeBase(span), Ident: ident}
 }
 
+func (self *NodeCreator) NewCallExpression(callee Expression, args []CallArg, span token.Span) *CallExpression {
+	return &CallExpression{nodeBase: self.newNodeBase(span), Callee: callee, Args: args}
+}
+
 type nodeBase struct {
 	id   NodeId
 	span token.Span
@@ -102,6 +106,26 @@ func (t SimpleType) String() string {
 
 func (t SimpleType) TypeName() string {
 	return string(t.Name)
+}
+
+type TupleType struct {
+	nodeBase
+	Values []Type
+}
+
+func (t TupleType) String() string {
+	return fmt.Sprintf("TupleType%s", base.IndentSlice(t.Values, 1))
+}
+
+func (t TupleType) TypeName() string {
+	values := ""
+	for i, value := range t.Values {
+		if i > 0 {
+			values += ","
+		}
+		values += value.TypeName()
+	}
+	return fmt.Sprintf("(%s)", values)
 }
 
 type FunctionType struct {
@@ -173,10 +197,45 @@ func (expr *BoolLiteralExpression) String() string {
 	return fmt.Sprintf("BoolLiteralExpression \"%t\"", expr.Value)
 }
 
+type TupleLiteralExpression struct {
+	nodeBase
+	Values []Expression
+}
+
+func (self *TupleLiteralExpression) String() string {
+	return fmt.Sprintf("TupleLiteralExpression%s", base.IndentSlice(self.Values, 1))
+}
+
+type MemberExpressionField string
+
+func (self MemberExpressionField) String() string {
+	return string(self)
+}
+
+func (self MemberExpressionField) IsIndex() bool {
+	_, err := strconv.Atoi(string(self))
+	return err == nil
+}
+
+func (self MemberExpressionField) AsIndex() int {
+	index, err := strconv.Atoi(string(self))
+	if err != nil {
+		panic(fmt.Sprintf("expected index, got identifier %q", self))
+	}
+	return index
+}
+
+func (self MemberExpressionField) AsIdent() Ident {
+	if self.IsIndex() {
+		panic(fmt.Sprintf("expected identifier, got index %q", self))
+	}
+	return Ident(self)
+}
+
 type MemberExpression struct {
 	nodeBase
 	Target   Expression
-	Field    Ident
+	Field    MemberExpressionField
 	TypeArgs []Type
 }
 
@@ -622,6 +681,31 @@ func (p *Parser) parseIfExpression() (*IfExpression, error) {
 	return &IfExpression{nodeBase: p.newNodeBase(from), Condition: condition, TrueBody: trueBody, FalseBody: falseBody}, nil
 }
 
+func (p *Parser) parseTupleLiteralExpression() (*TupleLiteralExpression, error) {
+	from := p.span()
+	if _, err := p.consume(token.LParen); err != nil {
+		return nil, err
+	}
+	values := []Expression{}
+	for p.index < len(p.tokens) {
+		value, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+		switch p.peek().Kind {
+		case token.RParen:
+			p.consumeAny()
+			return &TupleLiteralExpression{nodeBase: p.newNodeBase(from), Values: values}, nil
+		case token.Comma:
+			p.consumeAny()
+		default:
+			return nil, errors.Errorf("expected comma or close paren, got %s", p.peek())
+		}
+	}
+	panic("unexpected end of file while parsing tuple")
+}
+
 func (p *Parser) parseFunctionType() (*FunctionType, error) {
 	from := p.span()
 	if _, err := p.consume(token.Fn); err != nil {
@@ -657,6 +741,33 @@ func (p *Parser) parseFunctionType() (*FunctionType, error) {
 	return &FunctionType{nodeBase: p.newNodeBase(from), Params: params, Result: result}, nil
 }
 
+func (p *Parser) parseTupleType() (*TupleType, error) {
+	from := p.span()
+	if _, err := p.consume(token.LParen); err != nil {
+		return nil, err
+	}
+	values := []Type{}
+	for p.index < len(p.tokens) {
+		if p.peek().Kind == token.RParen {
+			break
+		}
+		value, err := p.parseType()
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+		t := p.peek()
+		if t.Kind == token.RParen {
+			p.consumeAny()
+			break
+		}
+		if _, err := p.consume(token.Comma); err != nil {
+			return nil, err
+		}
+	}
+	return &TupleType{nodeBase: p.newNodeBase(from), Values: values}, nil
+}
+
 func (p *Parser) parseType() (Type, error) {
 	t := p.peek()
 	switch t.Kind {
@@ -667,6 +778,8 @@ func (p *Parser) parseType() (Type, error) {
 			return nil, err
 		}
 		return &SimpleType{nodeBase: p.newNodeBase(p.span()), Name: Ident(t.Value), TypeArgs: typeArgs}, nil
+	case token.LParen:
+		return p.parseTupleType()
 	case token.Fn:
 		return p.parseFunctionType()
 	}
@@ -676,7 +789,7 @@ func (p *Parser) parseType() (Type, error) {
 func (p *Parser) tryParseType(defaultValue Type) (Type, error) {
 	t := p.peek()
 	switch t.Kind {
-	case token.TypeIdent:
+	case token.TypeIdent, token.LParen:
 		return p.parseType()
 	case token.Fn:
 		if p.peek1().Kind == token.LParen {
@@ -832,7 +945,11 @@ func (p *Parser) parseAssignmentStatement(lhs Expression) (*AssignmentStatement,
 	case *MemberExpression:
 		switch variable := lhs.Target.(type) {
 		case *IdentExpression:
-			return &AssignmentStatement{nodeBase: p.newNodeBase(from), Variable: variable, Field: &lhs.Field, Rhs: rhs}, nil
+			if lhs.Field.IsIndex() {
+				return nil, errors.Errorf("%s: cannot assign to an index", lhs.span)
+			}
+			field := lhs.Field.AsIdent()
+			return &AssignmentStatement{nodeBase: p.newNodeBase(from), Variable: variable, Field: &field, Rhs: rhs}, nil
 		}
 	}
 	return nil, errors.Errorf("expected identifier or member expression with identifier as target, got %s", lhs)
@@ -911,15 +1028,17 @@ func (p *Parser) parseExpressionWithPostfix() (Expression, error) {
 				return nil, errors.Errorf("block and if expressions cannot be used as member expressions")
 			}
 			p.consumeAny()
-			field, err := p.consume(token.Ident)
-			if err != nil {
-				return nil, err
+			t := p.peek()
+			if t.Kind != token.Int && t.Kind != token.Ident && t.Kind != token.TypeIdent {
+				return nil, errors.Errorf("expected identifier or integer literal after dot, got %s", t)
 			}
+			field := p.consumeAny()
 			typeArgs, err := p.parseTypeArgs()
 			if err != nil {
 				return nil, err
 			}
-			expr = &MemberExpression{nodeBase: p.newNodeBase(from), Target: expr, Field: Ident(field.Value), TypeArgs: typeArgs}
+			expr = &MemberExpression{
+				nodeBase: p.newNodeBase(from), Target: expr, Field: MemberExpressionField(field.Value), TypeArgs: typeArgs}
 		case token.LParen, token.LAngle:
 			if is_forbidden_expression {
 				return nil, errors.Errorf("block and if expressions cannot be called")
@@ -971,6 +1090,8 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 		return &BoolLiteralExpression{nodeBase: p.newNodeBase(from), Value: false}, nil
 	case token.LCurly:
 		return p.parseBlockExpression()
+	case token.LParen:
+		return p.parseTupleLiteralExpression()
 	case token.If:
 		return p.parseIfExpression()
 	}
@@ -1149,7 +1270,7 @@ func (p *Parser) ParseNode() (Node, error) {
 			return p.parseImplDefinition()
 		case token.Trait:
 			return p.parseTraitDeclaration()
-		case token.Ident, token.TypeIdent, token.LCurly, token.If, token.True, token.False, token.Str, token.Int, token.Self:
+		case token.Ident, token.TypeIdent, token.LCurly, token.LParen, token.If, token.True, token.False, token.Str, token.Int, token.Self:
 			return p.parseExpression()
 		default:
 			return nil, errors.Errorf("unexpected token: %s", t)

@@ -1,0 +1,10 @@
+-- Tuple is not a generic type per se, but it can contain type parameters.
+
+fn return_them<T, U>(a T, b U) (T, Int, U) => (a, 42, b)
+
+fn main() {
+    let v = return_them<Str, Bool>("Hello", true)
+    print(v.0)
+    print_int(v.1)
+    print_bool(v.2)
+}

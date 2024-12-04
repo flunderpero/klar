@@ -1,6 +1,8 @@
 package ast
 
-import "github.com/pkg/errors"
+import (
+	"github.com/pkg/errors"
+)
 
 type Visitor interface {
 	VisitNode(node Node, w Walker) error
@@ -21,6 +23,7 @@ type Visitor interface {
 	VisitStringLiteralExpression(expr *StringLiteralExpression) error
 	VisitIntLiteralExpression(expr *IntLiteralExpression) error
 	VisitBoolLiteralExpression(expr *BoolLiteralExpression) error
+	VisitTupleLiteralExpression(expr *TupleLiteralExpression, w Walker) error
 	VisitAssignmentStatement(stmt *AssignmentStatement, w Walker) error
 	VisitLoopStatement(stmt *LoopStatement, w Walker) error
 	VisitBreakStatement(stmt *BreakStatement) error
@@ -37,6 +40,7 @@ type Walker interface {
 	WalkExpression(expr Expression) error
 	WalkBlockExpression(expr *BlockExpression) error
 	WalkCallExpression(expr *CallExpression) error
+	WalkTupleLiteralExpression(expr *TupleLiteralExpression) error
 	WalkMemberExpression(expr *MemberExpression) error
 	WalkIfExpression(expr *IfExpression) error
 	WalkBinaryExpression(expr *BinaryExpression) error
@@ -60,6 +64,10 @@ func (_ *DefaultVisitor) VisitIntLiteralExpression(expr *IntLiteralExpression) e
 
 func (_ *DefaultVisitor) VisitBoolLiteralExpression(expr *BoolLiteralExpression) error {
 	return nil
+}
+
+func (_ *DefaultVisitor) VisitTupleLiteralExpression(expr *TupleLiteralExpression, w Walker) error {
+	return w.WalkTupleLiteralExpression(expr)
 }
 
 func (_ *DefaultVisitor) VisitCallExpression(expr *CallExpression, w Walker) error {
@@ -155,6 +163,8 @@ func (w *DefaultWalker) WalkExpression(expr Expression) error {
 		err = w.Visitor.VisitCallExpression(expr, w)
 	case *MemberExpression:
 		err = w.Visitor.VisitMemberExpression(expr, w)
+	case *TupleLiteralExpression:
+		err = w.Visitor.VisitTupleLiteralExpression(expr, w)
 	case *IfExpression:
 		err = w.Visitor.VisitIfExpression(expr, w)
 	case *BlockExpression:
@@ -207,6 +217,15 @@ func (w *DefaultWalker) WalkBlockExpression(expr *BlockExpression) error {
 
 func (w *DefaultWalker) WalkMemberExpression(expr *MemberExpression) error {
 	return w.Visitor.VisitNode(expr.Target, w)
+}
+
+func (w *DefaultWalker) WalkTupleLiteralExpression(expr *TupleLiteralExpression) error {
+	for _, value := range expr.Values {
+		if err := w.Visitor.VisitNode(value, w); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (w *DefaultWalker) WalkModule(module *Module) error {

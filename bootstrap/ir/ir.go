@@ -823,8 +823,7 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 	rhs := g.lookupRegisterByNode(expr.Rhs)
 	switch expr.Op {
 	case ast.OpAdd:
-		ty := g.typeInfo.MustLookup(expr)
-		if ty != typed.Int64Type {
+		if ty, ok := g.typeInfo.MustLookup(expr).(*typed.Int64Type); !ok {
 			// For now we only support 64 bit integers.
 			return errors.Errorf("add expression must be of type Int64Type, got %s", ty)
 		}
@@ -1033,17 +1032,15 @@ type DeclaredTypes struct {
 }
 
 func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
-	switch ty {
-	case typed.NoneType:
-		return NoneType
-	case typed.StrType:
-		return StrType
-	case typed.BoolType:
-		return Int1Type
-	case typed.Int64Type:
-		return Int64Type
-	}
 	switch ty := ty.(type) {
+	case *typed.NoneType:
+		return NoneType
+	case *typed.StrType:
+		return StrType
+	case *typed.BoolType:
+		return Int1Type
+	case *typed.Int64Type:
+		return Int64Type
 	case *typed.StructType, *typed.FunctionType:
 		if res, found := dt.Types[ty.Id()]; found {
 			return res

@@ -79,23 +79,23 @@ type Type interface {
 
 var BuiltInPrintFunction = &FunctionType{
 	typeBase: typeBase{TypeId(100)},
-	Params:   []FunctionParam{{Name: "value", Type: StrType}},
-	Result:   NoneType,
+	Params:   []FunctionParam{{Name: "value", Type: strType}},
+	Result:   noneType,
 }
 var BuiltInPrintIntFunction = &FunctionType{
 	typeBase: typeBase{TypeId(101)},
-	Params:   []FunctionParam{{Name: "value", Type: Int64Type}},
-	Result:   NoneType,
+	Params:   []FunctionParam{{Name: "value", Type: int64Type}},
+	Result:   noneType,
 }
 var BuiltInPrintBoolFunction = &FunctionType{
 	typeBase: typeBase{TypeId(102)},
-	Params:   []FunctionParam{{Name: "value", Type: BoolType}},
-	Result:   NoneType,
+	Params:   []FunctionParam{{Name: "value", Type: boolType}},
+	Result:   noneType,
 }
 var BuiltInUnsafeMallocFunction = &FunctionType{
 	typeBase: typeBase{TypeId(103)},
-	Params:   []FunctionParam{{Name: "size", Type: Int64Type}},
-	Result:   Int64Type,
+	Params:   []FunctionParam{{Name: "size", Type: int64Type}},
+	Result:   int64Type,
 }
 
 func IsBuiltInFunction(functionType *FunctionType) bool {
@@ -104,10 +104,10 @@ func IsBuiltInFunction(functionType *FunctionType) bool {
 }
 
 var builtInSpan = token.Span{File: new(string), Src: &[]byte{}, Start: 0, End: 0}
-var StrType = &strType{typeBase: typeBase{1}}
-var BoolType = &boolType{typeBase: typeBase{2}}
-var Int64Type = &int64Type{typeBase: typeBase{3}}
-var NoneType = &noneType{typeBase: typeBase{4}}
+var strType = &StrType{}
+var boolType = &BoolType{}
+var int64Type = &Int64Type{}
+var noneType = &NoneType{}
 
 type TypeWithTraits interface {
 	Type
@@ -132,50 +132,78 @@ func (ty typeBase) IsAssignableFrom(other Type) bool {
 	return ty.Id() == other.Id()
 }
 
-type strType struct {
-	typeBase
+type StrType struct {
 	traits []*TraitType
 }
 
-func (ty strType) String() string {
+func (ty StrType) Id() TypeId {
+	return 1
+}
+
+func (ty StrType) IsAssignableFrom(other Type) bool {
+	return ty.Id() == other.Id()
+}
+
+func (ty StrType) String() string {
 	return "StrType"
 }
 
-func (ty *strType) Traits() []*TraitType {
+func (ty *StrType) Traits() []*TraitType {
 	return ty.traits
 }
 
-type boolType struct {
-	typeBase
+type BoolType struct {
 	traits []*TraitType
 }
 
-func (ty *boolType) Traits() []*TraitType {
+func (ty BoolType) Id() TypeId {
+	return 2
+}
+
+func (ty BoolType) IsAssignableFrom(other Type) bool {
+	return ty.Id() == other.Id()
+}
+
+func (ty *BoolType) Traits() []*TraitType {
 	return ty.traits
 }
 
-func (ty boolType) String() string {
+func (ty BoolType) String() string {
 	return "BoolType"
 }
 
-type int64Type struct {
-	typeBase
+type Int64Type struct {
 	traits []*TraitType
 }
 
-func (ty *int64Type) Traits() []*TraitType {
+func (ty Int64Type) Id() TypeId {
+	return 3
+}
+
+func (ty Int64Type) IsAssignableFrom(other Type) bool {
+	return ty.Id() == other.Id()
+}
+
+func (ty *Int64Type) Traits() []*TraitType {
 	return ty.traits
 }
 
-func (ty int64Type) String() string {
+func (ty Int64Type) String() string {
 	return "Int64Type"
 }
 
-type noneType struct {
-	typeBase
+type NoneType struct {
 }
 
-func (ty noneType) String() string {
+func (ty NoneType) Id() TypeId {
+	return 4
+}
+
+func (ty NoneType) IsAssignableFrom(other Type) bool {
+	return ty.Id() == other.Id()
+}
+
+func (ty NoneType) String() string {
 	return "NoneType"
 }
 
@@ -876,17 +904,17 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 }
 
 func (tc *typeChecker) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
-	tc.typeInfo.Set(expr, StrType)
+	tc.typeInfo.Set(expr, strType)
 	return nil
 }
 
 func (tc *typeChecker) VisitIntLiteralExpression(expr *ast.IntLiteralExpression) error {
-	tc.typeInfo.Set(expr, Int64Type)
+	tc.typeInfo.Set(expr, int64Type)
 	return nil
 }
 
 func (tc *typeChecker) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) error {
-	tc.typeInfo.Set(expr, BoolType)
+	tc.typeInfo.Set(expr, boolType)
 	return nil
 }
 
@@ -934,22 +962,22 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 	rhs := tc.typeInfo.MustLookup(expr.Rhs)
 	switch expr.Op {
 	case ast.OpAdd:
-		if lhs != Int64Type {
+		if lhs != int64Type {
 			return errors.Errorf("%s: lhs of add expression must be of type Int64Type, got %s", expr.Span(), lhs)
 		}
-		if rhs != Int64Type {
+		if rhs != int64Type {
 			return errors.Errorf("%s: rhs of add expression must be of type Int64Type, got %s", expr.Span(), rhs)
 		}
-		tc.typeInfo.Set(expr, Int64Type)
+		tc.typeInfo.Set(expr, int64Type)
 	case ast.OpEquality:
 		// For now, we only support equality of Int (alias for Int64) and Bool.
-		if lhs != Int64Type && lhs != BoolType {
+		if lhs != int64Type && lhs != boolType {
 			return errors.Errorf("%s: lhs of equality expression must be of type Int64Type, got %s", expr.Span(), lhs)
 		}
 		if rhs != lhs {
 			return errors.Errorf("%s: rhs of equality expression must match lhs, expected %q got %q", expr.Span(), lhs, rhs)
 		}
-		tc.typeInfo.Set(expr, BoolType)
+		tc.typeInfo.Set(expr, boolType)
 	default:
 		return errors.Errorf("%s: unsupported binary operator: %s", expr.Span(), expr.Op)
 	}
@@ -1030,7 +1058,7 @@ func (tc *typeChecker) VisitBlockExpression(expr *ast.BlockExpression, w ast.Wal
 	if err := w.WalkBlockExpression(expr); err != nil {
 		return err
 	}
-	var blockType Type = NoneType
+	var blockType Type = noneType
 	if len(expr.Nodes) > 0 {
 		blockType = tc.typeInfo.MustLookup(expr.Nodes[len(expr.Nodes)-1])
 	}
@@ -1043,12 +1071,12 @@ func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) e
 		return err
 	}
 	condType := tc.typeInfo.MustLookup(expr.Condition)
-	if tc.typeInfo.MustLookup(expr.Condition) != BoolType {
+	if _, ok := tc.typeInfo.MustLookup(expr.Condition).(*BoolType); !ok {
 		return errors.Errorf("%s: the condition of an if expression must be a boolean type, got: %s", expr.Condition.Span(), condType)
 	}
 	// Only an if expression with an else branch can have a type other than None.
 	// And currently we don't have else branches.
-	tc.typeInfo.Set(expr, NoneType)
+	tc.typeInfo.Set(expr, noneType)
 	return nil
 }
 
@@ -1109,7 +1137,7 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 			if len(funcType.Params) > 0 {
 				return errors.Errorf("%s: main function must not have arguments", decl.Span())
 			}
-			if _, ok := funcType.Result.(*noneType); !ok {
+			if _, ok := funcType.Result.(*NoneType); !ok {
 				return errors.Errorf("%s: main function must return () (no return value)", decl.Span())
 			}
 			tc.typeInfo.Main = funcType
@@ -1304,7 +1332,7 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 		return err
 	}
 	valueType := tc.typeInfo.MustLookup(v.Value)
-	if valueType == NoneType {
+	if _, ok := valueType.(*NoneType); ok {
 		return errors.Errorf("%s: variable %s must have a type that is not None", v.Span(), v.Name)
 	}
 	if v.Type != nil {
@@ -1321,7 +1349,7 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 	if err := tc.typeScope.declareVariable(string(v.Name), varInfo); err != nil {
 		return err
 	}
-	tc.typeInfo.Set(v, NoneType)
+	tc.typeInfo.Set(v, noneType)
 	return nil
 }
 
@@ -1353,12 +1381,12 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 		return errors.Errorf(
 			"%s: lhs and rhs of assignment statement must have the same type, got %s and %s", s.Span(), varType, rhsType)
 	}
-	tc.typeInfo.Set(s, NoneType)
+	tc.typeInfo.Set(s, noneType)
 	return nil
 }
 
 func (tc *typeChecker) VisitLoopStatement(s *ast.LoopStatement, w ast.Walker) error {
-	tc.typeInfo.Set(s, NoneType)
+	tc.typeInfo.Set(s, noneType)
 	tc.enterLoop()
 	defer tc.exitLoop()
 	return w.WalkLoopStatement(s)
@@ -1368,7 +1396,7 @@ func (tc *typeChecker) VisitContinueStatement(s *ast.ContinueStatement) error {
 	if tc.loopDepth == 0 {
 		return errors.Errorf("%s: continue statement outside of a loop", s.Span())
 	}
-	tc.typeInfo.Set(s, NoneType)
+	tc.typeInfo.Set(s, noneType)
 	return nil
 }
 
@@ -1376,7 +1404,7 @@ func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 	if tc.loopDepth == 0 {
 		return errors.Errorf("%s: break statement outside of a loop", s.Span())
 	}
-	tc.typeInfo.Set(s, NoneType)
+	tc.typeInfo.Set(s, noneType)
 	return nil
 }
 
@@ -1414,7 +1442,7 @@ func (tc *typeChecker) VisitStructTypeDeclaration(decl *ast.StructTypeDeclaratio
 }
 
 func (tc *typeChecker) VisitModule(module *ast.Module, w ast.Walker) error {
-	tc.typeInfo.Set(module, NoneType)
+	tc.typeInfo.Set(module, noneType)
 	return w.WalkModule(module)
 }
 
@@ -1452,10 +1480,10 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 		}
 		tc.typeInfo.DeclareSymbol(ty.Id(), &Symbol{Name: name, Scope: builtInSymbolScope})
 	}
-	declareBuiltIn("None", NoneType)
-	declareBuiltIn("Str", StrType)
-	declareBuiltIn("Bool", BoolType)
-	declareBuiltIn("Int", Int64Type)
+	declareBuiltIn("None", noneType)
+	declareBuiltIn("Str", strType)
+	declareBuiltIn("Bool", boolType)
+	declareBuiltIn("Int", int64Type)
 	declareBuiltIn("print", BuiltInPrintFunction)
 	declareBuiltIn("print_int", BuiltInPrintIntFunction)
 	declareBuiltIn("print_bool", BuiltInPrintBoolFunction)

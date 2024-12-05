@@ -1,0 +1,6 @@
+union StrIntBoolColor = Str | Int | Bool | RGB(Int, Int, Int)
+
+fn main() {
+    let str StrIntBoolColor = "str"
+    let color StrIntBoolColor = StrIntBoolColor.RGB(1, 2, 3)
+}

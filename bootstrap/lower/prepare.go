@@ -40,12 +40,15 @@ func (self *prepare) VisitMemberExpression(expr *ast.MemberExpression, w Transfo
 	if !ok {
 		return newExpr, false
 	}
-	functionType, ok := self.typeInfo.MustLookup(expr).(*typed.FunctionType)
-	if !ok || !functionType.IsStaticMethod() {
-		return expr, true
+	switch ty := self.typeInfo.MustLookup(expr).(type) {
+	case *typed.FunctionType:
+		if !ty.IsStaticMethod() {
+			return expr, true
+		}
+		res := self.convertToTypeIdIdentExpression(expr, ty)
+		return res, true
 	}
-	res := self.convertToTypeIdIdentExpression(expr, functionType)
-	return res, true
+	return expr, true
 }
 
 func (self *prepare) VisitCallExpression(expr *ast.CallExpression, w TransformWalker) (ast.Expression, bool) {
@@ -138,6 +141,9 @@ func (self *prepare) convertTupleToStructType(tupleType *typed.TupleType) *typed
 			fields[i] = field
 		}
 		structType = self.typeCreator.NewStructType(nil, nil, nil, fields, nil, nil)
+		if symbol, ok := self.typeInfo.LookupSymbol(tupleType.Id()); ok {
+			self.typeInfo.DeclareSymbol(structType.Id(), symbol)
+		}
 		self.tupleStructs[key] = structType
 	}
 	return structType
@@ -209,6 +215,16 @@ func (self *prepare) replaceTupleTypeWithStructType(ty typed.Type) typed.Type {
 		for i, method := range tyKind.Methods {
 			method.Type = self.replaceTupleTypeWithStructType(method.Type).(*typed.FunctionType)
 			tyKind.Methods[i] = method
+		}
+	case *typed.UnionType:
+		self.replaceTupleTypeWithStructTypeSeen[ty.Id()] = ty
+		for _, variant := range tyKind.Variants {
+			switch variant.Kind {
+			case typed.UnionVariantKindType:
+				variant.Type = self.replaceTupleTypeWithStructType(variant.Type)
+			case typed.UnionVariantKindNamed:
+				variant.Named.Type = self.replaceTupleTypeWithStructType(variant.Named.Type)
+			}
 		}
 	case *typed.BoolType, *typed.Int64Type, *typed.StrType, *typed.NoneType, *typed.TypeParam:
 	default:

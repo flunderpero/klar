@@ -54,6 +54,7 @@ const (
 	Dot         TokenKind = "."
 	Plus        TokenKind = "+"
 	Equal       TokenKind = "="
+	Pipe        TokenKind = "|"
 	EqualEqual  TokenKind = "=="
 	Str         TokenKind = "Str"
 	Int         TokenKind = "Int"
@@ -72,6 +73,7 @@ const (
 	Trait       TokenKind = "trait"
 	For         TokenKind = "for"
 	Self        TokenKind = "self"
+	Union       TokenKind = "union"
 	Minus       TokenKind = "-"
 	LineComment TokenKind = "LineComment"
 	EOF         TokenKind = "EOF"
@@ -121,6 +123,8 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			tokens = append(tokens, Token{Kind: Plus, Value: "", Span: span})
 		} else if c == '.' {
 			tokens = append(tokens, Token{Kind: Dot, Value: "", Span: span})
+		} else if c == '|' {
+			tokens = append(tokens, Token{Kind: Pipe, Value: "", Span: span})
 		} else if c == '-' {
 			if src[i] == '-' {
 				i += 1
@@ -222,6 +226,8 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 				token = Token{Kind: For, Value: ""}
 			case "self":
 				token = Token{Kind: Self, Value: ""}
+			case "union":
+				token = Token{Kind: Union, Value: ""}
 			default:
 				kind := Ident
 				if isTypeIdentifier(string(value)) {

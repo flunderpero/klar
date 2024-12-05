@@ -333,6 +333,107 @@ func (self TupleType) IsAssignableFrom(other Type) bool {
 	return false
 }
 
+func (self TupleType) CallParams() []FunctionParam {
+	params := make([]FunctionParam, len(self.Values))
+	for i, value := range self.Values {
+		params[i] = FunctionParam{Name: ast.Ident(fmt.Sprintf("%d", i)), Type: value}
+	}
+	return params
+}
+
+func (self TupleType) CallResult() Type {
+	return &self
+}
+
+type UnionVariantKind int
+
+const (
+	UnionVariantKindNamed UnionVariantKind = 1
+	UnionVariantKindType  UnionVariantKind = 2
+)
+
+type NamedUnionVariant = TypeAndName[Type]
+
+type UnionVariant struct {
+	Kind  UnionVariantKind
+	Named NamedUnionVariant
+	Type  Type
+}
+
+func (self UnionVariant) String() string {
+	switch self.Kind {
+	case UnionVariantKindNamed:
+		return fmt.Sprintf("NamedVariant\n%s", base.Indent(self.Named, 1))
+	case UnionVariantKindType:
+		return fmt.Sprintf("TypeVariant\n%s", base.Indent(self.Type, 1))
+	default:
+		panic(fmt.Sprintf("unexpected union variant kind: %d", self.Kind))
+	}
+}
+
+func (self UnionVariant) AsType() Type {
+	switch self.Kind {
+	case UnionVariantKindType:
+		return self.Type
+	case UnionVariantKindNamed:
+		return self.Named.Type
+	default:
+		panic(fmt.Sprintf("unexpected union variant kind: %d", self.Kind))
+	}
+}
+
+type UnionType struct {
+	typeBase
+	genericBase *StructType
+	typeParams  []TypeParam
+	typeArgs    []Type
+	Variants    []UnionVariant
+}
+
+func (self UnionType) String() string {
+	return fmt.Sprintf("UnionType%s%s%s",
+		base.IndentString(typeParamsString(self.typeParams), 1),
+		base.IndentString(typeArgsString(self.typeArgs), 1),
+		base.IndentSlice(self.Variants, 1),
+	)
+}
+
+func (self UnionType) FindNamedVariant(name ast.Ident) (*NamedUnionVariant, bool) {
+	for _, variant := range self.Variants {
+		if variant.Kind == UnionVariantKindNamed && variant.Named.Name == name {
+			return &variant.Named, true
+		}
+	}
+	return nil, false
+}
+
+func (self UnionType) TypeParams() []TypeParam {
+	return self.typeParams
+}
+
+func (self UnionType) TypeArgs() []Type {
+	return self.typeArgs
+}
+
+func (self UnionType) GenericBase() (GenericType, bool) {
+	if self.genericBase == nil {
+		return nil, false
+	}
+	return self.genericBase, true
+}
+
+func (self UnionType) IsAssignableFrom(other Type) bool {
+	if self.Id() == other.Id() {
+		return true
+	}
+	for _, variant := range self.Variants {
+		if variant.AsType().IsAssignableFrom(other) {
+			return true
+		}
+	}
+	return false
+}
+
 type StructType struct {
 	typeBase
 	genericBase *StructType
@@ -717,6 +818,8 @@ func (self *SymbolScope) FQN() string {
 	switch node := self.Node.(type) {
 	case *ast.FunctionDefinition:
 		name = node.Decl.Name.String()
+	case *ast.UnionTypeDeclaration:
+		name = node.Name.String()
 	case *ast.ImplDefinition:
 		name = node.Target.String()
 	case *ast.Module:
@@ -1103,16 +1206,24 @@ func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.W
 		}
 		memberType = tupleType.Values[fieldIndex]
 	} else {
-		structType, isType := ty.(*StructType)
-		if !isType {
-			return errors.Errorf("%s: type %q is not a struct type", expr.Span(), ty)
+		switch ty := ty.(type) {
+		case *StructType:
+			memberType_, found := ty.FindMember(expr.Field, expr.Span())
+			if !found {
+				structSymbol := tc.typeInfo.MustLookupSymbol(ty.Id())
+				return errors.Errorf("%s: member %q not found in struct type %q", expr.Span(), expr.Field, structSymbol.Name)
+			}
+			memberType = memberType_
+		case *UnionType:
+			variant, found := ty.FindNamedVariant(expr.Field.AsIdent())
+			if !found {
+				unionSymbol := tc.typeInfo.MustLookupSymbol(ty.Id())
+				return errors.Errorf("%s: variant %q not found in union type %q", expr.Span(), expr.Field, unionSymbol.Name)
+			}
+			memberType = variant.Type
+		default:
+			panic(fmt.Sprintf("unexpected type %T", ty))
 		}
-		memberType_, found := structType.FindMember(expr.Field, expr.Span())
-		if !found {
-			structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
-			return errors.Errorf("%s: member %q not found in struct type %q", expr.Span(), expr.Field, structSymbol.Name)
-		}
-		memberType = memberType_
 	}
 	if genericType, ok := memberType.(GenericType); ok && len(expr.TypeArgs) > 0 {
 		resolvedType, err := tc.resolveGenericType(genericType, expr.TypeArgs, expr.Span())
@@ -1408,17 +1519,19 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 	if _, ok := valueType.(*NoneType); ok {
 		return errors.Errorf("%s: variable %s must have a type that is not None", v.Span(), v.Name)
 	}
+	variableType := valueType
 	if v.Type != nil {
-		variableType, err := tc.lookupTypeOfNode(v.Type)
+		variableType_, err := tc.lookupTypeOfNode(v.Type)
 		if err != nil {
 			return err
 		}
-		if !variableType.IsAssignableFrom(valueType) {
+		if !variableType_.IsAssignableFrom(valueType) {
 			return errors.Errorf(
 				"%s: variable %q must be assignable to type %s, got %s", v.Span(), v.Name, variableType, valueType)
 		}
+		variableType = variableType_
 	}
-	varInfo := variableInfo{type_: valueType, mutable: true, span: v.Span()}
+	varInfo := variableInfo{type_: variableType, mutable: true, span: v.Span()}
 	if err := tc.typeScope.declareVariable(string(v.Name), varInfo); err != nil {
 		return err
 	}
@@ -1478,6 +1591,61 @@ func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 		return errors.Errorf("%s: break statement outside of a loop", s.Span())
 	}
 	tc.typeInfo.Set(s, noneType)
+	return nil
+}
+
+func (tc *typeChecker) VisitUnionTypeDeclaration(decl *ast.UnionTypeDeclaration) error {
+	tc.enterGenericScope()
+	defer tc.exitGenericScope()
+	unionType := &UnionType{typeBase: tc.newTypeBase()}
+	typeParams, err := tc.resolveTypeParams(unionType, decl.TypeParams)
+	if err != nil {
+		return err
+	}
+	unionType.typeParams = typeParams
+	// The declared union type will have the type parameters as its type arguments. This way
+	// we don't have to distinguish between a type with type arguments set and one without type
+	// arguments.
+	unionType.typeArgs = make([]Type, len(typeParams))
+	for i, typeParam := range typeParams {
+		unionType.typeArgs[i] = typeParam
+	}
+	if err := tc.typeScope.declareType(string(decl.Name), unionType, decl.Span()); err != nil {
+		return err
+	}
+	tc.declareSymbol(unionType.Id(), decl.Name.String())
+	tc.typeInfo.Set(decl, &DeclaredType{Type: unionType})
+	tc.enterScope(decl)
+	defer tc.exitScope()
+	variants := make([]UnionVariant, len(decl.Variants))
+	for i, astVariant := range decl.Variants {
+		var variant UnionVariant
+		switch astVariant.Kind {
+		case ast.UnionVariantKindType:
+			variantType, err := tc.lookupTypeOfNode(astVariant.Type)
+			if err != nil {
+				return err
+			}
+			variant = UnionVariant{Kind: UnionVariantKindType, Type: variantType}
+		case ast.UnionVariantKindNamed:
+			variantType_, err := tc.lookupTypeOfNode(astVariant.Named.Type)
+			if err != nil {
+				return err
+			}
+			variantType, ok := variantType_.(*TupleType)
+			if !ok {
+				return errors.Errorf("%s: expected tuple type, got %s", astVariant.Named.Type.Span(), variantType_)
+			}
+			tc.declareSymbol(variantType.Id(), astVariant.Named.Name.String())
+			variant = UnionVariant{
+				Kind:  UnionVariantKindNamed,
+				Named: NamedUnionVariant{Name: astVariant.Named.Name, Type: variantType}}
+		default:
+			panic(fmt.Sprintf("unexpected variant kind: %d", astVariant.Kind))
+		}
+		variants[i] = variant
+	}
+	unionType.Variants = variants
 	return nil
 }
 

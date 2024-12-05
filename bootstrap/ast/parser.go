@@ -373,6 +373,53 @@ func (m Module) String() string {
 	return fmt.Sprintf("Module\n%s%s", base.Indent(m.Name, 1), base.IndentSlice(m.Nodes, 1))
 }
 
+type NamedVariant struct {
+	Name Ident
+	Type Type
+}
+
+func (self NamedVariant) String() string {
+	return fmt.Sprintf("NamedVariant\n%s\n%s", base.Indent(self.Name, 1), base.Indent(self.Type, 1))
+}
+
+type UnionVariantKind int
+
+const (
+	UnionVariantKindNamed UnionVariantKind = 1
+	UnionVariantKindType  UnionVariantKind = 2
+)
+
+type UnionVariant struct {
+	Kind  UnionVariantKind
+	Named NamedVariant
+	Type  Type
+}
+
+func (self UnionVariant) String() string {
+	if self.Kind == UnionVariantKindType {
+		return fmt.Sprintf("UnionVariant\n%s", base.Indent(self.Type, 1))
+	}
+	return fmt.Sprintf("UnionVariant\n%s", base.Indent(self.Named, 1))
+}
+
+type UnionTypeDeclaration struct {
+	nodeBase
+	Name       Ident
+	TypeParams []TypeParam
+	Variants   []UnionVariant
+}
+
+func (self UnionTypeDeclaration) String() string {
+	name := ""
+	if self.Name.String() != "" {
+		name = fmt.Sprintf("\n%s", base.Indent(self.Name, 1))
+	}
+	return fmt.Sprintf("UnionTypeDeclaration%s%s%s",
+		name,
+		base.IndentString(typeParamsString(self.TypeParams), 1),
+		base.IndentSlice(self.Variants, 1))
+}
+
 type StructTypeField struct {
 	Name Ident
 	Type Type
@@ -1111,6 +1158,65 @@ func (p *Parser) parseLoopStatement() (*LoopStatement, error) {
 	return &LoopStatement{nodeBase: p.newNodeBase(from), Body: body}, nil
 }
 
+func (p *Parser) parseNamedUnionDeclaration() (*UnionTypeDeclaration, error) {
+	from := p.span()
+	if _, err := p.consume(token.Union); err != nil {
+		return nil, err
+	}
+	identToken, err := p.consume(token.TypeIdent)
+	if err != nil {
+		return nil, err
+	}
+	typeParams, err := p.parseTypeParams()
+	if err != nil {
+		return nil, err
+	}
+	if _, err = p.consume(token.Equal); err != nil {
+		return nil, err
+	}
+	res, err := p.parseAnonymousUnionDeclaration()
+	if err != nil {
+		return nil, err
+	}
+	res.Name = Ident(identToken.Value)
+	res.TypeParams = typeParams
+	res.span = p.spanToHere(from)
+	return res, nil
+}
+
+func (p *Parser) parseAnonymousUnionDeclaration() (*UnionTypeDeclaration, error) {
+	from := p.span()
+	variants := []UnionVariant{}
+	for p.index < len(p.tokens) {
+		t := p.peek()
+		switch t.Kind {
+		case token.Pipe:
+			p.consumeAny()
+		case token.TypeIdent:
+			var variant UnionVariant
+			if p.peek1().Kind == token.LParen {
+				p.consumeAny()
+				tupleType, err := p.parseTupleType()
+				if err != nil {
+					return nil, err
+				}
+				variant = UnionVariant{Kind: UnionVariantKindNamed, Named: NamedVariant{Name: Ident(t.Value), Type: tupleType}}
+			} else {
+				variantType, err := p.parseType()
+				if err != nil {
+					return nil, err
+				}
+				variant = UnionVariant{Kind: UnionVariantKindType, Type: variantType}
+			}
+			variants = append(variants, variant)
+			if p.peek().Kind != token.Pipe {
+				return &UnionTypeDeclaration{nodeBase: p.newNodeBase(from), Variants: variants}, nil
+			}
+		}
+	}
+	panic("unexpected end of file while parsing union")
+}
+
 func (p *Parser) parseStructDeclaration() (*StructTypeDeclaration, error) {
 	from := p.span()
 	if _, err := p.consume(token.Struct); err != nil {
@@ -1266,6 +1372,8 @@ func (p *Parser) ParseNode() (Node, error) {
 			return &ContinueStatement{nodeBase: p.newNodeBase(from)}, nil
 		case token.Struct:
 			return p.parseStructDeclaration()
+		case token.Union:
+			return p.parseNamedUnionDeclaration()
 		case token.Impl:
 			return p.parseImplDefinition()
 		case token.Trait:

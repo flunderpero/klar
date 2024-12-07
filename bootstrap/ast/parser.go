@@ -755,6 +755,9 @@ func (p *Parser) parseTupleLiteralExpression() (*TupleLiteralExpression, error) 
 
 func (p *Parser) parseFunctionType() (*FunctionType, error) {
 	from := p.span()
+	if _, err := p.consume(token.LParen); err != nil {
+		return nil, err
+	}
 	if _, err := p.consume(token.Fn); err != nil {
 		return nil, err
 	}
@@ -783,6 +786,9 @@ func (p *Parser) parseFunctionType() (*FunctionType, error) {
 	resultSpan := p.span()
 	result, err := p.tryParseType(&SimpleType{nodeBase: p.newNodeBase(resultSpan), Name: "None"})
 	if err != nil {
+		return nil, err
+	}
+	if _, err := p.consume(token.RParen); err != nil {
 		return nil, err
 	}
 	return &FunctionType{nodeBase: p.newNodeBase(from), Params: params, Result: result}, nil
@@ -826,9 +832,12 @@ func (p *Parser) parseType() (Type, error) {
 		}
 		return &SimpleType{nodeBase: p.newNodeBase(p.span()), Name: Ident(t.Value), TypeArgs: typeArgs}, nil
 	case token.LParen:
-		return p.parseTupleType()
-	case token.Fn:
-		return p.parseFunctionType()
+		switch p.peek1().Kind {
+		case token.Fn:
+			return p.parseFunctionType()
+		default:
+			return p.parseTupleType()
+		}
 	}
 	return nil, errors.Errorf("%s: expected type, got %s", t.Span, t)
 }

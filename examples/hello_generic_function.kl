@@ -6,13 +6,13 @@ fn return_it_again<U>(val U) U {
     return_it<U>(val)
 }
 
-fn apply_and_return<U, T>(val U, f fn(U) T) T {
+fn apply_and_return<U, T>(val U, f (fn(U) T)) T {
     f(val)
 }
 
 -- Make sure type parameter names and function types (`f fn(U) T`)
 -- each are local to the function definition. 
-fn apply_and_return2<U, T>(val U, f fn(U) T) T {
+fn apply_and_return2<U, T>(val U, f (fn(U) T)) T {
     f(val)
 }
 

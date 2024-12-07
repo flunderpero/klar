@@ -14,11 +14,11 @@ fn add2(a Int, b Int) Int {
     a + a + b + b
 }
 
-fn return_add() fn(Int, Int) Int {
+fn return_add() (fn(Int, Int) Int) {
     add
 }
 
-fn do_math(a Int, b Int, f fn(Int, Int) Int) Int {
+fn do_math(a Int, b Int, f (fn(Int, Int) Int)) Int {
     f(a, b)
 }
 

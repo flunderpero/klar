@@ -247,6 +247,7 @@ type BinaryOperator string
 
 const (
 	OpAdd      BinaryOperator = "+"
+	OpMultiply BinaryOperator = "*"
 	OpEquality BinaryOperator = "=="
 )
 
@@ -1039,21 +1040,23 @@ func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 		return p.parseAssignmentStatement(lhs)
 	}
 	precedences := map[token.TokenKind]int{
-		token.Plus:       2,
 		token.EqualEqual: 1,
+		token.Plus:       2,
+		token.Star:       3,
 	}
 	ops := map[token.TokenKind]BinaryOperator{
 		token.Plus:       OpAdd,
+		token.Star:       OpMultiply,
 		token.EqualEqual: OpEquality,
 	}
 	for {
 		op := p.peek()
 		precedence, isOp := precedences[op.Kind]
-		if !isOp || precedence <= minPrecedence {
+		if !isOp || precedence < minPrecedence {
 			break
 		}
 		p.consumeAny()
-		rhs, err := p.parseExpressionWithPostfix()
+		rhs, err := p.parseBinaryExpression(precedence)
 		if err != nil {
 			return nil, err
 		}

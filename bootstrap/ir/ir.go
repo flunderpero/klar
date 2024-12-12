@@ -362,6 +362,20 @@ func (i SignedInt64AddWithOverflow) String() string {
 	return fmt.Sprintf("%s = iaddo i64 %s, i64 %s", i.register, i.Lhs, i.Rhs)
 }
 
+type SignedInt64MultiplyWithOverflow struct {
+	register Register
+	Lhs      Register
+	Rhs      Register
+}
+
+func (i *SignedInt64MultiplyWithOverflow) Register() Register {
+	return i.register
+}
+
+func (i SignedInt64MultiplyWithOverflow) String() string {
+	return fmt.Sprintf("%s = imulo i64 %s, i64 %s", i.register, i.Lhs, i.Rhs)
+}
+
 type IntCompOp string
 
 const (
@@ -849,6 +863,12 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 			return errors.Errorf("add expression must be of type Int64Type, got %s", ty)
 		}
 		g.append(&SignedInt64AddWithOverflow{register: g.nextRegister(Int64Type), Lhs: lhs, Rhs: rhs}, expr)
+	case ast.OpMultiply:
+		if ty, ok := g.typeInfo.MustLookup(expr).(*typed.Int64Type); !ok {
+			// For now we only support 64 bit integers.
+			return errors.Errorf("multiply expression must be of type Int64Type, got %s", ty)
+		}
+		g.append(&SignedInt64MultiplyWithOverflow{register: g.nextRegister(Int64Type), Lhs: lhs, Rhs: rhs}, expr)
 	case ast.OpEquality:
 		// For now, we only know how to compare 64 and 1 bit integers.
 		ty := g.lookupType(expr.Lhs).(BuiltInType)

@@ -421,6 +421,10 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
 			c.emit("adds %s, %s, %s", reg, lhs, rhs)
 			c.values[inst.Register().Id] = reg
+		case *ir.SignedInt64MultiplyWithOverflow:
+			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
+			c.emit("mul %s, %s, %s", reg, lhs, rhs)
+			c.values[inst.Register().Id] = reg
 		case *ir.IntCompare:
 			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
 			c.values[inst.Register().Id] = reg

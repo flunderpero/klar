@@ -1,4 +1,9 @@
 fn main() {
     print_int(31 + 11)
+    print(", ")
     print_int(10 + 20 + 12)
+    print(", ")
+    print_int(2 + 4 * 10)
+    print(", ")
+    print_int(4 * 5 + 2 * 5 + 2 * 5 + 2)
 }

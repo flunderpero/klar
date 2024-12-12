@@ -53,6 +53,7 @@ const (
 	Comma       TokenKind = ","
 	Dot         TokenKind = "."
 	Plus        TokenKind = "+"
+	Star        TokenKind = "*"
 	Equal       TokenKind = "="
 	Pipe        TokenKind = "|"
 	EqualEqual  TokenKind = "=="
@@ -121,6 +122,8 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			tokens = append(tokens, Token{Kind: Comma, Value: "", Span: span})
 		} else if c == '+' {
 			tokens = append(tokens, Token{Kind: Plus, Value: "", Span: span})
+		} else if c == '*' {
+			tokens = append(tokens, Token{Kind: Star, Value: "", Span: span})
 		} else if c == '.' {
 			tokens = append(tokens, Token{Kind: Dot, Value: "", Span: span})
 		} else if c == '|' {

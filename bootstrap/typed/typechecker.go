@@ -1148,6 +1148,14 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 			return errors.Errorf("%s: rhs of add expression must be of type Int64Type, got %s", expr.Span(), rhs)
 		}
 		tc.typeInfo.Set(expr, int64Type)
+	case ast.OpMultiply:
+		if lhs != int64Type {
+			return errors.Errorf("%s: lhs of multiply expression must be of type Int64Type, got %s", expr.Span(), lhs)
+		}
+		if rhs != int64Type {
+			return errors.Errorf("%s: rhs of multiply expression must be of type Int64Type, got %s", expr.Span(), rhs)
+		}
+		tc.typeInfo.Set(expr, int64Type)
 	case ast.OpEquality:
 		// For now, we only support equality of Int (alias for Int64) and Bool.
 		if lhs != int64Type && lhs != boolType {

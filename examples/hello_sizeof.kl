@@ -3,6 +3,11 @@ struct Pair<K, V> {
     value V
 }
 
+impl Pair {
+    fn static_size() Int => sizeof<K>()
+    fn key_size(self) Int => sizeof<K>()
+}
+
 fn generic<T>() Int => sizeof<T>()
 
 fn main() {
@@ -13,4 +18,9 @@ fn main() {
     print_int(generic<Int>())
     print(", ")
     print_int(sizeof<Pair<Bool, Bool>>())
+    print(", ")
+    let p = Pair<Bool, Int>(true, 1)
+    print_int(p.key_size())
+    print(", ")
+    print_int(Pair<Str, Str>.static_size())
 }

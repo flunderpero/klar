@@ -22,12 +22,36 @@ type prepare struct {
 	typeCreator                        *typed.TypeCreator
 	tupleStructs                       map[string]*typed.StructType
 	replaceTupleTypeWithStructTypeSeen map[typed.TypeId]typed.Type
+	mergedReceiverGenericsFunctions    []*typed.FunctionType
 }
 
 func (self *prepare) convertToTypeIdIdentExpression(expr ast.Expression, ty typed.Type) *ast.IdentExpression {
 	symbol := self.typeInfo.MustLookupSymbol(ty.Id())
 	res := self.nodeCreator.NewIdentExpression(ast.Ident(symbol.FQN()), expr.Span())
 	self.typeInfo.Set(res, ty)
+	return res
+}
+
+func (self *prepare) mergeReceiverGenericsIntoFunction(funcType *typed.FunctionType, receiverType typed.GenericType) *typed.FunctionType {
+	funcBase := funcType
+	if base, ok := funcType.GenericBase(); ok {
+		funcBase = base.(*typed.FunctionType)
+	}
+	typeArgs := receiverType.TypeArgs()
+	for _, merged := range self.mergedReceiverGenericsFunctions {
+		mergedBase := merged
+		if base, ok := merged.GenericBase(); ok {
+			mergedBase = base.(*typed.FunctionType)
+		}
+		if mergedBase.Id() != funcBase.Id() {
+			continue
+		}
+		if len(merged.TypeArgs()) == len(typeArgs) && typed.MatchTypeArgs(merged, typeArgs) {
+			return merged
+		}
+	}
+	res := self.genericsResolver.CloneAndMergeReceiverGenerics(funcType, receiverType)
+	self.mergedReceiverGenericsFunctions = append(self.mergedReceiverGenericsFunctions, res)
 	return res
 }
 
@@ -44,6 +68,11 @@ func (self *prepare) VisitMemberExpression(expr *ast.MemberExpression, w Transfo
 	case *typed.FunctionType:
 		if !ty.IsStaticMethod() {
 			return expr, true
+		}
+		receiver := expr.Target
+		receiverType := self.typeInfo.MustLookup(receiver).(typed.GenericType)
+		if typed.HasTypeParams(receiverType) {
+			ty = self.mergeReceiverGenericsIntoFunction(ty, receiverType)
 		}
 		res := self.convertToTypeIdIdentExpression(expr, ty)
 		return res, true
@@ -88,7 +117,7 @@ func (self *prepare) VisitCallExpression(expr *ast.CallExpression, w TransformWa
 		receiverType := self.typeInfo.MustLookup(receiver).(typed.GenericType)
 		if typed.HasTypeParams(receiverType) {
 			// Propagate the type parameters and arguments from the receiver type to the callee.
-			calleeType = self.genericsResolver.CloneAndMergeReceiverGenerics(calleeType)
+			calleeType = self.mergeReceiverGenericsIntoFunction(calleeType, receiverType)
 		}
 		receiverCallArg := ast.CallArg{Name: "self", Value: receiver, Span: expr.Span()}
 		expr.Args = append([]ast.CallArg{receiverCallArg}, expr.Args...)

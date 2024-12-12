@@ -17,7 +17,7 @@ func newGenericsResolver(typeInfo *TypeInfo, typeCreator *TypeCreator) *Generics
 	return &GenericsResolver{typeInfo: typeInfo, typeCreator: typeCreator}
 }
 
-func matchTypeArgs(resolved GenericType, typeArgs []Type) bool {
+func MatchTypeArgs(resolved GenericType, typeArgs []Type) bool {
 	resolvedTypeArgs := resolved.TypeArgs()
 	if len(resolvedTypeArgs) != len(typeArgs) {
 		panic(
@@ -45,7 +45,7 @@ func (self *GenericsResolver) findResolvedStructType(ty *StructType, typeArgs []
 		if base.Id() != tyBase.Id() {
 			continue
 		}
-		if matchTypeArgs(resolved, typeArgs) {
+		if MatchTypeArgs(resolved, typeArgs) {
 			return resolved, true
 		}
 	}
@@ -65,7 +65,7 @@ func (self *GenericsResolver) findResolvedTraitType(ty *TraitType, typeArgs []Ty
 		if base.Id() != tyBase.Id() {
 			continue
 		}
-		if matchTypeArgs(resolved, typeArgs) {
+		if MatchTypeArgs(resolved, typeArgs) {
 			return resolved, true
 		}
 	}
@@ -92,7 +92,7 @@ func (self *GenericsResolver) findResolvedFuncType(ty *FunctionType, typeArgs []
 		} else if resolved.Receiver != nil {
 			continue
 		}
-		if matchTypeArgs(resolved, typeArgs) {
+		if MatchTypeArgs(resolved, typeArgs) {
 			return resolved, true
 		}
 	}
@@ -291,11 +291,8 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 	}
 }
 
-func (self *GenericsResolver) CloneAndMergeReceiverGenerics(ty *FunctionType) *FunctionType {
-	if ty.Receiver == nil {
-		panic(fmt.Sprintf("expected a method (`Receiver != nil`), got: %s", ty))
-	}
-	genericReceiverType, ok := ty.Receiver.(GenericType)
+func (self *GenericsResolver) CloneAndMergeReceiverGenerics(ty *FunctionType, receiver Type) *FunctionType {
+	genericReceiverType, ok := receiver.(GenericType)
 	if !ok {
 		return ty
 	}
@@ -308,7 +305,7 @@ func (self *GenericsResolver) CloneAndMergeReceiverGenerics(ty *FunctionType) *F
 	if ty.genericBase != nil {
 		baseType = ty.genericBase
 	}
-	res := self.typeCreator.NewFunctionType(baseType, typeParams, typeArgs, ty.Receiver, ty.Params, ty.Result)
+	res := self.typeCreator.NewFunctionType(baseType, typeParams, typeArgs, receiver, ty.Params, ty.Result)
 	self.declareSymbolForSpecializedType(res)
 	return res
 }

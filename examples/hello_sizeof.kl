@@ -1,0 +1,16 @@
+struct Pair<K, V> {
+    key K
+    value V
+}
+
+fn generic<T>() Int => sizeof<T>()
+
+fn main() {
+    print_int(sizeof<Str>())
+    print(", ")
+    print_int(generic<Bool>())
+    print(", ")
+    print_int(generic<Int>())
+    print(", ")
+    print_int(sizeof<Pair<Bool, Bool>>())
+}

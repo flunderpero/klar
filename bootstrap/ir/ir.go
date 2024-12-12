@@ -669,8 +669,14 @@ func (g *generator) updateRegisterConstraints(symbolTableBefore map[ast.Ident]Re
 	}
 }
 
-func (g *generator) isDefinedFunction(id typed.TypeId) (DefinedFunction, bool) {
-	res, ok := g.definedFunctions[id]
+func (g *generator) isDefinedFunction(typedTy typed.Type) (DefinedFunction, bool) {
+	res, ok := g.definedFunctions[typedTy.Id()]
+	if !ok {
+		funcType := typedTy.(*typed.FunctionType)
+		if base, hasBase := funcType.GenericBase(); hasBase {
+			return g.isDefinedFunction(base)
+		}
+	}
 	return res, ok
 }
 
@@ -715,7 +721,7 @@ func (g *generator) VisitIdentExpression(expr *ast.IdentExpression) error {
 	typedTy := g.typeInfo.MustLookup(expr)
 	sourceType := g.declaredTypes.MustLookup(typedTy)
 	var source GetPointerSource
-	if definedFunc, ok := g.isDefinedFunction(typedTy.Id()); ok {
+	if definedFunc, ok := g.isDefinedFunction(typedTy); ok {
 		source = definedFunc
 	} else {
 		source = g.symbolTable.mustLookup(expr.Ident)
@@ -778,8 +784,23 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		}
 		g.registerByNodeId[expr.Id()] = mallocReg
 	case *typed.FunctionType:
+		if base, hasBase := calleeType.GenericBase(); hasBase && base.Id() == typed.BuiltInSizeOfFunction.Id() {
+			// Special handling for `sizeof`.
+			typeArg := calleeType.TypeArgs()[0]
+			ty := g.declaredTypes.MustLookup(typeArg)
+			var size int
+			switch ty.(type) {
+			case *FunctionType, *StructType:
+				size = 8 // These are always pointer types.
+			default:
+				size = g.dataLayout.SizeOf(ty)
+			}
+			reg := g.nextRegister(Int64Type)
+			g.append(&Int64Const{register: reg, Value: int64(size)}, expr)
+			return nil
+		}
 		var callee Callee
-		if definedFunc, ok := g.isDefinedFunction(calleeType.Id()); ok {
+		if definedFunc, ok := g.isDefinedFunction(calleeType); ok {
 			// We need to walk the arguments ourselves since we are not using the default walker.
 			for _, arg := range expr.Args {
 				if err := g.VisitNode(arg.Value, w); err != nil {
@@ -1134,6 +1155,7 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 	declareBuiltInFunction(typed.BuiltInPrintIntFunction)
 	declareBuiltInFunction(typed.BuiltInPrintBoolFunction)
 	declareBuiltInFunction(typed.BuiltInUnsafeMallocFunction)
+	declareBuiltInFunction(typed.BuiltInSizeOfFunction)
 	constants := []*StrConst{}
 	// Generate code for each function specialization.
 	for i, funcDef := range funcDefs {

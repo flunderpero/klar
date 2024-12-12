@@ -101,10 +101,27 @@ var BuiltInUnsafeMallocFunction = &FunctionType{
 	Params:   []FunctionParam{{Name: "size", Type: int64Type}},
 	Result:   int64Type,
 }
+var BuiltInSizeOfFunctionTypeParam = &TypeParam{
+	typeBase:    typeBase{TypeId(104)},
+	GenericType: BuiltInSizeOfFunction,
+	Name:        ast.Ident("T"),
+	Index:       0,
+}
+var BuiltInSizeOfFunction = &FunctionType{
+	typeBase: typeBase{TypeId(105)},
+	Params:   []FunctionParam{},
+	Result:   int64Type,
+}
 
 func IsBuiltInFunction(functionType *FunctionType) bool {
 	id := functionType.Id()
-	return id == BuiltInPrintFunction.Id() || id == BuiltInPrintIntFunction.Id() || id == BuiltInUnsafeMallocFunction.Id() || id == BuiltInPrintBoolFunction.Id()
+	res := id == BuiltInPrintFunction.Id() || id == BuiltInPrintIntFunction.Id() || id == BuiltInUnsafeMallocFunction.Id() || id == BuiltInPrintBoolFunction.Id() || id == BuiltInSizeOfFunction.Id()
+	if !res {
+		if base, ok := functionType.GenericBase(); ok {
+			return IsBuiltInFunction(base.(*FunctionType))
+		}
+	}
+	return res
 }
 
 var builtInSpan = token.Span{File: new(string), Src: &[]byte{}, Start: 0, End: 0}
@@ -1729,6 +1746,9 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 	declareBuiltIn("print_int", BuiltInPrintIntFunction)
 	declareBuiltIn("print_bool", BuiltInPrintBoolFunction)
 	declareBuiltIn("_unsafe_malloc", BuiltInUnsafeMallocFunction)
+	BuiltInSizeOfFunction.typeParams = []TypeParam{*BuiltInSizeOfFunctionTypeParam}
+	BuiltInSizeOfFunction.typeArgs = []Type{BuiltInSizeOfFunctionTypeParam}
+	declareBuiltIn("sizeof", BuiltInSizeOfFunction)
 	walker := &ast.DefaultWalker{Visitor: tc}
 	_, err := tc.check(node, walker)
 	if err != nil {

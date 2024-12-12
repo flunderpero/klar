@@ -96,28 +96,56 @@ var BuiltInPrintBoolFunction = &FunctionType{
 	Params:   []FunctionParam{{Name: "value", Type: boolType}},
 	Result:   noneType,
 }
-var BuiltInUnsafeMallocFunction = &FunctionType{
+var BuiltInInternalMallocFunction = &FunctionType{
 	typeBase: typeBase{TypeId(103)},
 	Params:   []FunctionParam{{Name: "size", Type: int64Type}},
 	Result:   int64Type,
 }
+var BuiltInInternalFreeFunction = &FunctionType{
+	typeBase: typeBase{TypeId(104)},
+	Params:   []FunctionParam{{Name: "ptr", Type: rawPtr}},
+	Result:   noneType,
+}
 var BuiltInSizeOfFunctionTypeParam = &TypeParam{
-	typeBase:    typeBase{TypeId(104)},
+	typeBase:    typeBase{TypeId(105)},
 	GenericType: BuiltInSizeOfFunction,
 	Name:        ast.Ident("T"),
 	Index:       0,
 }
 var BuiltInSizeOfFunction = &FunctionType{
-	typeBase: typeBase{TypeId(105)},
+	typeBase: typeBase{TypeId(106)},
 	Params:   []FunctionParam{},
 	Result:   int64Type,
 }
+var BuiltInInternalWritePtrFunctionTypeParam = &TypeParam{
+	typeBase: typeBase{TypeId(107)},
+	Name:     ast.Ident("T"),
+	Index:    0,
+}
+var BuiltInInternalWritePtrFunction = &FunctionType{
+	typeBase: typeBase{TypeId(108)},
+	Params: []FunctionParam{
+		{Name: "ptr", Type: rawPtr},
+		{Name: "value", Type: BuiltInInternalWritePtrFunctionTypeParam},
+	},
+	Result: noneType,
+}
+var BuiltInInternalReadPtrFunctionTypeParam = &TypeParam{
+	typeBase:    typeBase{TypeId(109)},
+	GenericType: BuiltInInternalReadPtrFunction,
+	Name:        ast.Ident("T"),
+	Index:       0,
+}
+var BuiltInInternalReadPtrFunction = &FunctionType{
+	typeBase: typeBase{TypeId(110)},
+	Params:   []FunctionParam{{Name: "ptr", Type: rawPtr}},
+}
 
-func IsBuiltInFunction(functionType *FunctionType) bool {
-	id := functionType.Id()
-	res := id == BuiltInPrintFunction.Id() || id == BuiltInPrintIntFunction.Id() || id == BuiltInUnsafeMallocFunction.Id() || id == BuiltInPrintBoolFunction.Id() || id == BuiltInSizeOfFunction.Id()
+func IsBuiltInFunction(funcType *FunctionType) bool {
+	id := funcType.Id()
+	res := id >= BuiltInPrintFunction.Id() && id <= BuiltInInternalReadPtrFunction.Id()
 	if !res {
-		if base, ok := functionType.GenericBase(); ok {
+		if base, ok := funcType.GenericBase(); ok {
 			return IsBuiltInFunction(base.(*FunctionType))
 		}
 	}
@@ -129,6 +157,7 @@ var strType = &StrType{}
 var boolType = &BoolType{}
 var int64Type = &Int64Type{}
 var noneType = &NoneType{}
+var rawPtr = &RawPtr{}
 
 type TypeWithTraits interface {
 	Type
@@ -226,6 +255,20 @@ func (ty NoneType) IsAssignableFrom(other Type) bool {
 
 func (ty NoneType) String() string {
 	return "NoneType"
+}
+
+type RawPtr struct{}
+
+func (ty RawPtr) Id() TypeId {
+	return 5
+}
+
+func (ty RawPtr) IsAssignableFrom(other Type) bool {
+	return ty.Id() == other.Id() || other.Id() == int64Type.Id()
+}
+
+func (ty RawPtr) String() string {
+	return "RawPtr"
 }
 
 type TypeAndName[T Type] struct {
@@ -1140,20 +1183,14 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 	lhs := tc.typeInfo.MustLookup(expr.Lhs)
 	rhs := tc.typeInfo.MustLookup(expr.Rhs)
 	switch expr.Op {
-	case ast.OpAdd:
-		if lhs != int64Type {
-			return errors.Errorf("%s: lhs of add expression must be of type Int64Type, got %s", expr.Span(), lhs)
+	case ast.OpAdd, ast.OpMultiply:
+		if !lhs.IsAssignableFrom(int64Type) {
+			return errors.Errorf(
+				"%s: lhs of arithmetic expression must be assignable to Int64Type, got %s", expr.Span(), lhs)
 		}
-		if rhs != int64Type {
-			return errors.Errorf("%s: rhs of add expression must be of type Int64Type, got %s", expr.Span(), rhs)
-		}
-		tc.typeInfo.Set(expr, int64Type)
-	case ast.OpMultiply:
-		if lhs != int64Type {
-			return errors.Errorf("%s: lhs of multiply expression must be of type Int64Type, got %s", expr.Span(), lhs)
-		}
-		if rhs != int64Type {
-			return errors.Errorf("%s: rhs of multiply expression must be of type Int64Type, got %s", expr.Span(), rhs)
+		if !rhs.IsAssignableFrom(int64Type) {
+			return errors.Errorf(
+				"%s: rhs of arithmetic expression must be assignable to Int64Type, got %s", expr.Span(), rhs)
 		}
 		tc.typeInfo.Set(expr, int64Type)
 	case ast.OpEquality:
@@ -1750,10 +1787,20 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 	declareBuiltIn("Str", strType)
 	declareBuiltIn("Bool", boolType)
 	declareBuiltIn("Int", int64Type)
+	declareBuiltIn("RawPtr", rawPtr)
 	declareBuiltIn("print", BuiltInPrintFunction)
 	declareBuiltIn("print_int", BuiltInPrintIntFunction)
 	declareBuiltIn("print_bool", BuiltInPrintBoolFunction)
-	declareBuiltIn("_unsafe_malloc", BuiltInUnsafeMallocFunction)
+	declareBuiltIn("internal_malloc", BuiltInInternalMallocFunction)
+	declareBuiltIn("internal_free", BuiltInInternalFreeFunction)
+	BuiltInInternalWritePtrFunctionTypeParam.GenericType = BuiltInInternalWritePtrFunction
+	BuiltInInternalWritePtrFunction.typeParams = []TypeParam{*BuiltInInternalWritePtrFunctionTypeParam}
+	BuiltInInternalWritePtrFunction.typeArgs = []Type{BuiltInInternalWritePtrFunctionTypeParam}
+	declareBuiltIn("internal_write_ptr", BuiltInInternalWritePtrFunction)
+	BuiltInInternalReadPtrFunction.typeParams = []TypeParam{*BuiltInInternalReadPtrFunctionTypeParam}
+	BuiltInInternalReadPtrFunction.typeArgs = []Type{BuiltInInternalReadPtrFunctionTypeParam}
+	BuiltInInternalReadPtrFunction.Result = BuiltInInternalReadPtrFunctionTypeParam
+	declareBuiltIn("internal_read_ptr", BuiltInInternalReadPtrFunction)
 	BuiltInSizeOfFunction.typeParams = []TypeParam{*BuiltInSizeOfFunctionTypeParam}
 	BuiltInSizeOfFunction.typeArgs = []Type{BuiltInSizeOfFunctionTypeParam}
 	declareBuiltIn("sizeof", BuiltInSizeOfFunction)

@@ -1,0 +1,88 @@
+struct MyArray<T> {
+    data RawPtr
+}
+
+impl MyArray {
+    fn new(capacity Int) Self {
+        let size = sizeof<T>() * capacity
+        let data = internal_malloc(size)
+        Self(data)
+    }
+
+    fn get(self, index Int) T {
+        let ptr = self.data + index * sizeof<T>()
+        internal_read_ptr<T>(ptr)
+    }
+
+    fn set(self, index Int, value T) {
+        let ptr = self.data + index * sizeof<T>()
+        internal_write_ptr<T>(ptr, value)
+    }
+
+    fn dispose(self) { 
+        internal_free(self.data)
+    }
+}
+
+-- All "object" types (structs, Str, ...) are stored as references.
+fn test_with_reference_types() {
+    let elm_size = sizeof<Str>()
+    let mem = internal_malloc(elm_size * 3)
+    internal_write_ptr<Str>(mem, "Hello")
+    internal_write_ptr<Str>(mem + elm_size, ", ")
+    internal_write_ptr<Str>(mem + elm_size * 2, "world!")
+    print(internal_read_ptr<Str>(mem))
+    print(internal_read_ptr<Str>(mem + elm_size))
+    print(internal_read_ptr<Str>(mem + elm_size * 2))
+    internal_free(mem)
+}
+
+-- All "primitive" types (Int, Bool, ...) are stored by value.
+fn test_with_value_type_bool() {
+    let elm_size = sizeof<Bool>()
+    let mem = internal_malloc(elm_size * 3)
+    internal_write_ptr<Bool>(mem, true)
+    internal_write_ptr<Bool>(mem + elm_size, false)
+    internal_write_ptr<Bool>(mem + elm_size * 2, true)
+    print_bool(internal_read_ptr<Bool>(mem))
+    print_bool(internal_read_ptr<Bool>(mem + elm_size))
+    print_bool(internal_read_ptr<Bool>(mem + elm_size * 2))
+    internal_free(mem)
+}
+
+-- All "primitive" types (Int, Bool, ...) are stored by value.
+fn test_with_value_type_int() {
+    let elm_size = sizeof<Int>()
+    let mem = internal_malloc(elm_size * 3)
+    internal_write_ptr<Int>(mem, 1)
+    internal_write_ptr<Int>(mem + elm_size, 2)
+    internal_write_ptr<Int>(mem + elm_size * 2, 3)
+    print_int(internal_read_ptr<Int>(mem))
+    print_int(internal_read_ptr<Int>(mem + elm_size))
+    print_int(internal_read_ptr<Int>(mem + elm_size * 2))
+    internal_free(mem)
+}
+
+fn test_with_generic_struct() {
+    let arr = MyArray<Str>.new(5)
+    arr.set(0, "Hello")
+    arr.set(1, ", ")
+    arr.set(2, "world")
+    arr.set(3, "!")
+    mut i = 0
+    loop {
+        print(arr.get(i))
+        i = i + 1
+        if i == 4 { break }
+    }
+}
+
+fn main() {
+    test_with_reference_types()
+    print(", ")
+    test_with_value_type_bool()
+    print(", ")
+    test_with_value_type_int()
+    print(", ")
+    test_with_generic_struct()
+}

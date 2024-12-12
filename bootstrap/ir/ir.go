@@ -38,6 +38,14 @@ func (t PointerType) String() string {
 	return fmt.Sprintf("%s*", t.ElementType)
 }
 
+func isValueType(ty Type) bool {
+	switch ty.(type) {
+	case BuiltInType, *PointerType:
+		return true
+	}
+	return false
+}
+
 type StructType struct {
 	Fields []Type
 }
@@ -763,8 +771,8 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		structType := g.lookupType(expr).(*StructType)
 		sizeReg := g.nextRegister(Int64Type)
 		mallocReg := g.nextRegister(Int64Type)
-		mallocFuncType := g.declaredTypes.MustLookup(typed.BuiltInUnsafeMallocFunction).(*FunctionType)
-		mallocFuncDef := g.definedFunctions[typed.BuiltInUnsafeMallocFunction.Id()]
+		mallocFuncType := g.declaredTypes.MustLookup(typed.BuiltInInternalMallocFunction).(*FunctionType)
+		mallocFuncDef := g.definedFunctions[typed.BuiltInInternalMallocFunction.Id()]
 		g.append(&Int64Const{
 			register: sizeReg,
 			Value:    int64(g.dataLayout.SizeOf(structType)),
@@ -798,7 +806,8 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		}
 		g.registerByNodeId[expr.Id()] = mallocReg
 	case *typed.FunctionType:
-		if base, hasBase := calleeType.GenericBase(); hasBase && base.Id() == typed.BuiltInSizeOfFunction.Id() {
+		genericBase, hasGenericBase := calleeType.GenericBase()
+		if hasGenericBase && genericBase.Id() == typed.BuiltInSizeOfFunction.Id() {
 			// Special handling for `sizeof`.
 			typeArg := calleeType.TypeArgs()[0]
 			ty := g.declaredTypes.MustLookup(typeArg)
@@ -831,6 +840,32 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		args := []Register{}
 		for _, arg := range expr.Args {
 			args = append(args, g.lookupRegisterByNode(arg.Value))
+		}
+		if hasGenericBase && genericBase.Id() == typed.BuiltInInternalWritePtrFunction.Id() {
+			// Special handling for `internal_write_ptr` which becomes just a `Store` instruction.
+			valueType := g.declaredTypes.MustLookup(calleeType.TypeArgs()[0])
+			if !isValueType(valueType) {
+				valueType = &PointerType{ElementType: valueType}
+			}
+			g.append(&Store{
+				Target:    args[0],
+				Value:     args[1],
+				ValueType: valueType,
+			}, expr)
+			return nil
+		}
+		if hasGenericBase && genericBase.Id() == typed.BuiltInInternalReadPtrFunction.Id() {
+			// Special handling for `internal_read_ptr` which becomes just a `Load` instruction.
+			targetType := g.declaredTypes.MustLookup(calleeType.TypeArgs()[0])
+			if !isValueType(targetType) {
+				targetType = &PointerType{ElementType: targetType}
+			}
+			g.append(&Load{
+				register:   g.nextRegister(targetType),
+				Source:     args[0],
+				TargetType: targetType,
+			}, expr)
+			return nil
 		}
 		ty := g.typeInfo.MustLookup(expr.Callee)
 		funcType := g.declaredTypes.MustLookup(ty).(*FunctionType)
@@ -1080,7 +1115,7 @@ func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
 		return StrType
 	case *typed.BoolType:
 		return Int1Type
-	case *typed.Int64Type:
+	case *typed.Int64Type, *typed.RawPtr:
 		return Int64Type
 	case *typed.StructType, *typed.FunctionType:
 		if res, found := dt.Types[ty.Id()]; found {
@@ -1166,16 +1201,21 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 		definedFunctions[funcDef.Id] = DefinedFunction{Id: funcDef.Id, FQN: fqn}
 	}
 	// Declare builtin functions.
-	declareBuiltInFunction := func(f *typed.FunctionType) {
-		declaredTypes.declare(f)
+	declareBuiltInFunction := func(f *typed.FunctionType, declareType bool) {
+		if declareType {
+			declaredTypes.declare(f)
+		}
 		symbol := typeInfo.MustLookupSymbol(f.Id())
 		definedFunctions[f.Id()] = DefinedFunction{Id: f.Id(), FQN: symbol.FQN()}
 	}
-	declareBuiltInFunction(typed.BuiltInPrintFunction)
-	declareBuiltInFunction(typed.BuiltInPrintIntFunction)
-	declareBuiltInFunction(typed.BuiltInPrintBoolFunction)
-	declareBuiltInFunction(typed.BuiltInUnsafeMallocFunction)
-	declareBuiltInFunction(typed.BuiltInSizeOfFunction)
+	declareBuiltInFunction(typed.BuiltInPrintFunction, true)
+	declareBuiltInFunction(typed.BuiltInPrintIntFunction, true)
+	declareBuiltInFunction(typed.BuiltInPrintBoolFunction, true)
+	declareBuiltInFunction(typed.BuiltInInternalMallocFunction, true)
+	declareBuiltInFunction(typed.BuiltInInternalFreeFunction, true)
+	declareBuiltInFunction(typed.BuiltInInternalWritePtrFunction, false)
+	declareBuiltInFunction(typed.BuiltInInternalReadPtrFunction, false)
+	declareBuiltInFunction(typed.BuiltInSizeOfFunction, true)
 	constants := []*StrConst{}
 	// Generate code for each function specialization.
 	for i, funcDef := range funcDefs {

@@ -501,7 +501,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			case *ir.PointerType:
 				c.emit("str %s, [%s]", value, target)
 			default:
-				return errors.Errorf("invalid target type for load instruction: %T", ty)
+				return errors.Errorf("invalid target type for store instruction: %T", ty)
 			}
 		case *ir.Call:
 			c.registerAllocator.spillCallRegisters(len(c.function.Type.Params))
@@ -668,21 +668,32 @@ func defineBuiltInPrintBoolFunction(asm *ASMText) {
     ret`)
 }
 
-func defineBuiltInUnsafeMalloc(asm *ASMText) {
+func defineBuiltInInternalMalloc(asm *ASMText) {
 	asm.emit(
 		`
-._unsafe_malloc:
+.internal_malloc:
     stp fp, lr, [sp, #-16]!
     mov fp, sp
     bl _malloc
     cmp x0, #0
-    bgt .unsafe_malloc_success      
-    adrp x0, _unsafe_malloc_failed@PAGE
-    add x0, x0, _unsafe_malloc_failed@PAGEOFF
+    bgt .internal_malloc_success      
+    adrp x0, _internal_malloc_failed@PAGE
+    add x0, x0, _internal_malloc_failed@PAGEOFF
     bl _puts
     mov x0, #1
     bl _exit
-.unsafe_malloc_success:
+.internal_malloc_success:
+    ldp fp, lr, [sp], #16
+    ret`)
+}
+
+func defineBuiltInInternalFree(asm *ASMText) {
+	asm.emit(
+		`
+.internal_free:
+    stp fp, lr, [sp, #-16]!
+    mov fp, sp
+    bl _free
     ldp fp, lr, [sp], #16
     ret`)
 }
@@ -694,7 +705,8 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
 	asm := ASMText{}
 	asm.emit(".global _main")
 	asm.emit(".text")
-	defineBuiltInUnsafeMalloc(&asm)
+	defineBuiltInInternalMalloc(&asm)
+	defineBuiltInInternalFree(&asm)
 	defineBuiltInPrintFunction(&asm)
 	defineBuiltInPrintIntFunction(&asm)
 	defineBuiltInPrintBoolFunction(&asm)
@@ -732,7 +744,7 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
 	asm.emit("_print_bool_false:")
 	asm.incIndent().emit(".asciz \"false\"").decIndent()
 	asm.emit(".align 3")
-	asm.emit("_unsafe_malloc_failed:")
+	asm.emit("_internal_malloc_failed:")
 	asm.incIndent().emit(".asciz \"out of memory\"").decIndent()
 	return asm, nil
 }

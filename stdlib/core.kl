@@ -1,0 +1,6 @@
+-- All core types that are always available.
+
+fn panic(msg Str) {
+    print(msg)
+    internal_exit(1)
+}

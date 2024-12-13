@@ -21,6 +21,7 @@ type Compiler struct {
 	OnLowered   func(ast *lower.LoweredAST) bool
 	OnIR        func(module *ir.Module) bool
 	OnASM       func(code *codegen.ASMText) bool
+	nodeCreator *ast.NodeCreator
 }
 
 type CompilationUnit struct {
@@ -47,26 +48,47 @@ func (self *Compiler) CompileAndRun(unit CompilationUnit, stdout io.Writer, stde
 	return runCmd, nil
 }
 
-func (self *Compiler) Compile(unit CompilationUnit, targetFile string) error {
+func (self *Compiler) Parse(unit CompilationUnit) (*ast.Module, error) {
 	tokens, err := token.Tokenize(unit.src, unit.file)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if self.OnTokenize != nil {
 		(self.OnTokenize)(tokens)
 	}
 	fileParts := strings.Split(strings.Split(unit.file, ".")[0], "/")
 	moduleName := fileParts[len(fileParts)-1]
-	nodeCreator := ast.NewNodeCreator()
-	module, err := ast.Parse(tokens, ast.Ident(moduleName), nodeCreator)
+	module, err := ast.Parse(tokens, ast.Ident(moduleName), self.nodeCreator)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if self.OnParse != nil {
 		if !(self.OnParse)(module) {
-			return nil
+			return nil, nil
 		}
 	}
+	return module, nil
+}
+
+func (self *Compiler) parseCore() (*ast.Module, error) {
+	src, err := os.ReadFile("./stdlib/core.kl")
+	if err != nil {
+		return nil, err
+	}
+	return self.Parse(CompilationUnit{src, "./stdlib/core.kl"})
+}
+
+func (self *Compiler) Compile(unit CompilationUnit, targetFile string) error {
+	self.nodeCreator = ast.NewNodeCreator()
+	core_module, err := self.parseCore()
+	if err != nil {
+		return err
+	}
+	module, err := self.Parse(unit)
+	if err != nil {
+		return err
+	}
+	module.Nodes = append(core_module.Nodes, module.Nodes...)
 	typeCreator := typed.NewTypeCreator()
 	typeInfo, genericsResolver, err := typed.TypeCheck(module, typeCreator)
 	if err != nil {
@@ -77,7 +99,7 @@ func (self *Compiler) Compile(unit CompilationUnit, targetFile string) error {
 			return nil
 		}
 	}
-	lowered := lower.Lower(module, typeInfo, genericsResolver, nodeCreator, typeCreator)
+	lowered := lower.Lower(module, typeInfo, genericsResolver, self.nodeCreator, typeCreator)
 	if self.OnLowered != nil {
 		if !(self.OnLowered)(lowered) {
 			return nil

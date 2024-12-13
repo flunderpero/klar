@@ -1,0 +1,8 @@
+-- expect.stdout {
+-- Panic at the source code
+-- } expect.stdout
+-- expect.exit_code: 1
+
+fn main() {
+    panic("Panic at the source code")
+}

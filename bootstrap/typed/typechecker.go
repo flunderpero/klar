@@ -1223,6 +1223,14 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 			return errors.Errorf("%s: rhs of comparison expression must match lhs, expected %q got %q", expr.Span(), lhs, rhs)
 		}
 		tc.typeInfo.Set(expr, boolType)
+	case ast.OpAnd, ast.OpOr:
+		if lhs != boolType {
+			return errors.Errorf("%s: lhs of logical expression must be of type BoolType, got %s", expr.Span(), lhs)
+		}
+		if rhs != boolType {
+			return errors.Errorf("%s: rhs of logical expression must be of type BoolType, got %s", expr.Span(), rhs)
+		}
+		tc.typeInfo.Set(expr, boolType)
 	default:
 		return errors.Errorf("%s: unsupported binary operator: %s", expr.Span(), expr.Op)
 	}

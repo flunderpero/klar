@@ -411,6 +411,28 @@ func (i IntCompare) String() string {
 	return fmt.Sprintf("%s = icmp %s %s %s, %s", i.register, i.Op, i.IntType, i.Lhs, i.Rhs)
 }
 
+type LogicOp string
+
+const (
+	LogicOpAnd LogicOp = "and"
+	LogicOpOr  LogicOp = "or"
+)
+
+type Logic struct {
+	register Register
+	Lhs      Register
+	Rhs      Register
+	Op       LogicOp
+}
+
+func (self Logic) Register() Register {
+	return self.register
+}
+
+func (self Logic) String() string {
+	return fmt.Sprintf("%s = %s i1 %s, %s", self.register, self.Op, self.Lhs, self.Rhs)
+}
+
 type Callee interface {
 	calleeMarker()
 }
@@ -928,6 +950,16 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 			panic(fmt.Sprintf("unknown binary operator: %s", expr.Op))
 		}
 		g.append(&IntCompare{register: g.nextRegister(Int1Type), Op: op, IntType: ty, Lhs: lhs, Rhs: rhs}, expr)
+	case ast.OpOr, ast.OpAnd:
+		ty := g.lookupType(expr.Lhs).(BuiltInType)
+		if ty != Int1Type {
+			return errors.Errorf("type of lhs is not a supported int type, but %s", ty)
+		}
+		op := LogicOpAnd
+		if expr.Op == ast.OpOr {
+			op = LogicOpOr
+		}
+		g.append(&Logic{register: g.nextRegister(Int1Type), Op: op, Lhs: lhs, Rhs: rhs}, expr)
 	default:
 		return errors.Errorf("unsupported binary operator: %s", expr.Op)
 	}

@@ -430,6 +430,14 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			c.values[inst.Register().Id] = reg
 			c.emit("cmp %s, %s", lhs, rhs)
 			c.emit("cset %s, %s", reg, inst.Op)
+		case *ir.Logic:
+			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
+			c.values[inst.Register().Id] = reg
+			op := "orr"
+			if inst.Op == ir.LogicOpAnd {
+				op = "and"
+			}
+			c.emit("%s %s, %s, %s", op, reg, lhs, rhs)
 		case *ir.GetPointer:
 			var reg *registerAllocation
 			offset := 0

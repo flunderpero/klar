@@ -254,6 +254,8 @@ const (
 	OpGreaterThan        BinaryOperator = ">"
 	OpGreaterThanOrEqual BinaryOperator = ">="
 	OpNotEqual           BinaryOperator = "!="
+	OpAnd                BinaryOperator = "and"
+	OpOr                 BinaryOperator = "or"
 )
 
 func (op BinaryOperator) String() string {
@@ -1041,14 +1043,16 @@ func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 		return lhs, nil
 	}
 	precedences := map[token.TokenKind]int{
-		token.EqualEqual:         1,
-		token.NotEqual:           1,
-		token.LessThanOrEqual:    1,
-		token.LAngle:             1,
-		token.RAngle:             1,
-		token.GreaterThanOrEqual: 1,
-		token.Plus:               2,
-		token.Star:               3,
+		token.Or:                 1,
+		token.And:                2,
+		token.EqualEqual:         3,
+		token.NotEqual:           3,
+		token.LessThanOrEqual:    3,
+		token.LAngle:             3,
+		token.RAngle:             3,
+		token.GreaterThanOrEqual: 3,
+		token.Plus:               4,
+		token.Star:               5,
 	}
 	ops := map[token.TokenKind]BinaryOperator{
 		token.Plus:               OpAdd,
@@ -1059,6 +1063,8 @@ func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 		token.RAngle:             OpGreaterThan,
 		token.LessThanOrEqual:    OpLessThanOrEqual,
 		token.GreaterThanOrEqual: OpGreaterThanOrEqual,
+		token.And:                OpAnd,
+		token.Or:                 OpOr,
 	}
 	for {
 		op := p.peek()

@@ -82,6 +82,8 @@ const (
 	Minus              TokenKind = "-"
 	LineComment        TokenKind = "LineComment"
 	EOF                TokenKind = "EOF"
+	And                TokenKind = "and"
+	Or                 TokenKind = "or"
 )
 
 func (t Token) String() string {
@@ -255,6 +257,10 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 				token = Token{Kind: Self, Value: ""}
 			case "union":
 				token = Token{Kind: Union, Value: ""}
+			case "or":
+				token = Token{Kind: Or, Value: ""}
+			case "and":
+				token = Token{Kind: And, Value: ""}
 			default:
 				kind := Ident
 				if isTypeIdentifier(string(value)) {

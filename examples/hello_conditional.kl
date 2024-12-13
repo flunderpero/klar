@@ -1,5 +1,5 @@
 -- expect.stdout {
--- It's true! Got the else. 2 > 1,  2 >= 2,  2 == 2,  1 != 2,  1 < 2,  1 <= 2, 
+-- It's true! Got the else. 2 > 1,  2 >= 2,  2 == 2,  1 != 2,  1 < 2,  1 <= 2,  1 == 2 or 2 == 2,  1 == 1 and 2 == 2, 
 -- } expect.stdout
 -- expect.exit_code: 0
 
@@ -16,4 +16,6 @@ fn main() {
     if 1 != 2 => print(" 1 != 2, ")
     if 1 < 2 => print(" 1 < 2, ")
     if 1 <= 2 => print(" 1 <= 2, ")
+    if 1 == 2 or 2 == 2 => print(" 1 == 2 or 2 == 2, ")
+    if 1 == 1 and 2 == 2 => print(" 1 == 1 and 2 == 2, ")
 }

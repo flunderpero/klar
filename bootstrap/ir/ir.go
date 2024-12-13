@@ -1215,6 +1215,7 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 	declareBuiltInFunction(typed.BuiltInInternalFreeFunction, true)
 	declareBuiltInFunction(typed.BuiltInInternalWritePtrFunction, false)
 	declareBuiltInFunction(typed.BuiltInInternalReadPtrFunction, false)
+	declareBuiltInFunction(typed.BuiltInInternalExitFunction, true)
 	declareBuiltInFunction(typed.BuiltInSizeOfFunction, true)
 	constants := []*StrConst{}
 	// Generate code for each function specialization.

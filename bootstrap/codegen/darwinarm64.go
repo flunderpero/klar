@@ -698,6 +698,14 @@ func defineBuiltInInternalFree(asm *ASMText) {
     ret`)
 }
 
+func defineBuiltInInternalExit(asm *ASMText) {
+	asm.emit(
+		`
+.internal_exit:
+    bl _exit
+    `)
+}
+
 func GenerateDarwinArm64ASM(irModule *ir.Module) (*ASMText, error) {
 	if irModule.Main == nil {
 		panic("no main function found")
@@ -707,6 +715,7 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (*ASMText, error) {
 	asm.emit(".text")
 	defineBuiltInInternalMalloc(asm)
 	defineBuiltInInternalFree(asm)
+	defineBuiltInInternalExit(asm)
 	defineBuiltInPrintFunction(asm)
 	defineBuiltInPrintIntFunction(asm)
 	defineBuiltInPrintBoolFunction(asm)

@@ -1,0 +1,8 @@
+-- expect.stdout {
+-- 
+-- } expect.stdout
+-- expect.exit_code: 42
+
+fn main() {
+    internal_exit(42)
+}

@@ -140,10 +140,15 @@ var BuiltInInternalReadPtrFunction = &FunctionType{
 	typeBase: typeBase{TypeId(110)},
 	Params:   []FunctionParam{{Name: "ptr", Type: rawPtr}},
 }
+var BuiltInInternalExitFunction = &FunctionType{
+	typeBase: typeBase{TypeId(111)},
+	Params:   []FunctionParam{{Name: "code", Type: int64Type}},
+	Result:   noneType,
+}
 
 func IsBuiltInFunction(funcType *FunctionType) bool {
 	id := funcType.Id()
-	res := id >= BuiltInPrintFunction.Id() && id <= BuiltInInternalReadPtrFunction.Id()
+	res := id >= BuiltInPrintFunction.Id() && id <= BuiltInInternalExitFunction.Id()
 	if !res {
 		if base, ok := funcType.GenericBase(); ok {
 			return IsBuiltInFunction(base.(*FunctionType))
@@ -1791,6 +1796,7 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 	declareBuiltIn("print", BuiltInPrintFunction)
 	declareBuiltIn("print_int", BuiltInPrintIntFunction)
 	declareBuiltIn("print_bool", BuiltInPrintBoolFunction)
+	declareBuiltIn("internal_exit", BuiltInInternalExitFunction)
 	declareBuiltIn("internal_malloc", BuiltInInternalMallocFunction)
 	declareBuiltIn("internal_free", BuiltInInternalFreeFunction)
 	BuiltInInternalWritePtrFunctionTypeParam.GenericType = BuiltInInternalWritePtrFunction

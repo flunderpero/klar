@@ -1214,13 +1214,13 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 				"%s: rhs of arithmetic expression must be assignable to Int64Type, got %s", expr.Span(), rhs)
 		}
 		tc.typeInfo.Set(expr, int64Type)
-	case ast.OpEquality:
+	case ast.OpEqual, ast.OpNotEqual, ast.OpGreaterThan, ast.OpGreaterThanOrEqual, ast.OpLessThan, ast.OpLessThanOrEqual:
 		// For now, we only support equality of Int (alias for Int64) and Bool.
 		if lhs != int64Type && lhs != boolType {
-			return errors.Errorf("%s: lhs of equality expression must be of type Int64Type, got %s", expr.Span(), lhs)
+			return errors.Errorf("%s: lhs of comparison expression must be of type Int64Type, got %s", expr.Span(), lhs)
 		}
 		if rhs != lhs {
-			return errors.Errorf("%s: rhs of equality expression must match lhs, expected %q got %q", expr.Span(), lhs, rhs)
+			return errors.Errorf("%s: rhs of comparison expression must match lhs, expected %q got %q", expr.Span(), lhs, rhs)
 		}
 		tc.typeInfo.Set(expr, boolType)
 	default:

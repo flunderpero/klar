@@ -246,9 +246,14 @@ func (expr *MemberExpression) String() string {
 type BinaryOperator string
 
 const (
-	OpAdd      BinaryOperator = "+"
-	OpMultiply BinaryOperator = "*"
-	OpEquality BinaryOperator = "=="
+	OpAdd                BinaryOperator = "+"
+	OpMultiply           BinaryOperator = "*"
+	OpEqual              BinaryOperator = "=="
+	OpLessThan           BinaryOperator = "<"
+	OpLessThanOrEqual    BinaryOperator = "<="
+	OpGreaterThan        BinaryOperator = ">"
+	OpGreaterThanOrEqual BinaryOperator = ">="
+	OpNotEqual           BinaryOperator = "!="
 )
 
 func (op BinaryOperator) String() string {
@@ -676,12 +681,8 @@ func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
 	switch t.Kind {
 	case token.LCurly:
 		p.consumeAny()
-	case token.Equal:
+	case token.FatArrow:
 		// Single expression block.
-		if p.peek1().Kind != token.RAngle {
-			return nil, errors.Errorf("expected `=>`, got %s %s", t, p.peek1())
-		}
-		p.consumeAny()
 		p.consumeAny()
 		expr, err := p.parseExpression()
 		if err != nil {
@@ -1029,25 +1030,35 @@ func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Technically, the AssignmentStatement is not an expression but we parse it here anyway
-	// because it fits here very well.
-	if p.peek().Kind == token.Equal {
-		if p.peek1().Kind == token.RAngle {
-			// This is the start of a single-expression block.
-			return lhs, nil
-		}
+	switch p.peek().Kind {
+	case token.Equal:
+		// Technically, the AssignmentStatement is not an expression but we parse it here anyway
+		// because it fits here very well.
 		p.consumeAny()
 		return p.parseAssignmentStatement(lhs)
+	case token.FatArrow:
+		// This is the start of a single-expression block.
+		return lhs, nil
 	}
 	precedences := map[token.TokenKind]int{
-		token.EqualEqual: 1,
-		token.Plus:       2,
-		token.Star:       3,
+		token.EqualEqual:         1,
+		token.NotEqual:           1,
+		token.LessThanOrEqual:    1,
+		token.LAngle:             1,
+		token.RAngle:             1,
+		token.GreaterThanOrEqual: 1,
+		token.Plus:               2,
+		token.Star:               3,
 	}
 	ops := map[token.TokenKind]BinaryOperator{
-		token.Plus:       OpAdd,
-		token.Star:       OpMultiply,
-		token.EqualEqual: OpEquality,
+		token.Plus:               OpAdd,
+		token.Star:               OpMultiply,
+		token.NotEqual:           OpNotEqual,
+		token.EqualEqual:         OpEqual,
+		token.LAngle:             OpLessThan,
+		token.RAngle:             OpGreaterThan,
+		token.LessThanOrEqual:    OpLessThanOrEqual,
+		token.GreaterThanOrEqual: OpGreaterThanOrEqual,
 	}
 	for {
 		op := p.peek()
@@ -1098,7 +1109,7 @@ func (p *Parser) parseExpressionWithPostfix() (Expression, error) {
 			}
 			expr = &MemberExpression{
 				nodeBase: p.newNodeBase(from), Target: expr, Field: MemberExpressionField(field.Value), TypeArgs: typeArgs}
-		case token.LParen, token.LAngle:
+		case token.LParen:
 			if is_forbidden_expression {
 				return nil, errors.Errorf("block and if expressions cannot be called")
 			}

@@ -42,42 +42,46 @@ type Token struct {
 type TokenKind string
 
 const (
-	Ident       TokenKind = "Ident"
-	TypeIdent   TokenKind = "TypeIdent"
-	LParen      TokenKind = "("
-	RParen      TokenKind = ")"
-	LCurly      TokenKind = "{"
-	RCurly      TokenKind = "}"
-	LAngle      TokenKind = "<"
-	RAngle      TokenKind = ">"
-	Comma       TokenKind = ","
-	Dot         TokenKind = "."
-	Plus        TokenKind = "+"
-	Star        TokenKind = "*"
-	Equal       TokenKind = "="
-	Pipe        TokenKind = "|"
-	EqualEqual  TokenKind = "=="
-	Str         TokenKind = "Str"
-	Int         TokenKind = "Int"
-	True        TokenKind = "true"
-	False       TokenKind = "false"
-	If          TokenKind = "if"
-	Else        TokenKind = "else"
-	Fn          TokenKind = "fn"
-	Mut         TokenKind = "mut"
-	Let         TokenKind = "let"
-	Loop        TokenKind = "loop"
-	Break       TokenKind = "break"
-	Continue    TokenKind = "continue"
-	Struct      TokenKind = "struct"
-	Impl        TokenKind = "impl"
-	Trait       TokenKind = "trait"
-	For         TokenKind = "for"
-	Self        TokenKind = "self"
-	Union       TokenKind = "union"
-	Minus       TokenKind = "-"
-	LineComment TokenKind = "LineComment"
-	EOF         TokenKind = "EOF"
+	Ident              TokenKind = "Ident"
+	TypeIdent          TokenKind = "TypeIdent"
+	LParen             TokenKind = "("
+	RParen             TokenKind = ")"
+	LCurly             TokenKind = "{"
+	RCurly             TokenKind = "}"
+	LAngle             TokenKind = "<"
+	RAngle             TokenKind = ">"
+	LessThanOrEqual    TokenKind = "<="
+	GreaterThanOrEqual TokenKind = ">="
+	Comma              TokenKind = ","
+	Dot                TokenKind = "."
+	Plus               TokenKind = "+"
+	Star               TokenKind = "*"
+	Equal              TokenKind = "="
+	NotEqual           TokenKind = "!="
+	FatArrow           TokenKind = "=>"
+	Pipe               TokenKind = "|"
+	EqualEqual         TokenKind = "=="
+	Str                TokenKind = "Str"
+	Int                TokenKind = "Int"
+	True               TokenKind = "true"
+	False              TokenKind = "false"
+	If                 TokenKind = "if"
+	Else               TokenKind = "else"
+	Fn                 TokenKind = "fn"
+	Mut                TokenKind = "mut"
+	Let                TokenKind = "let"
+	Loop               TokenKind = "loop"
+	Break              TokenKind = "break"
+	Continue           TokenKind = "continue"
+	Struct             TokenKind = "struct"
+	Impl               TokenKind = "impl"
+	Trait              TokenKind = "trait"
+	For                TokenKind = "for"
+	Self               TokenKind = "self"
+	Union              TokenKind = "union"
+	Minus              TokenKind = "-"
+	LineComment        TokenKind = "LineComment"
+	EOF                TokenKind = "EOF"
 )
 
 func (t Token) String() string {
@@ -115,9 +119,21 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 		} else if c == '}' {
 			tokens = append(tokens, Token{Kind: RCurly, Value: "", Span: span})
 		} else if c == '<' {
-			tokens = append(tokens, Token{Kind: LAngle, Value: "", Span: span})
+			kind := LAngle
+			if src[i] == '=' {
+				i += 1
+				span.End += 1
+				kind = LessThanOrEqual
+			}
+			tokens = append(tokens, Token{Kind: kind, Value: "", Span: span})
 		} else if c == '>' {
-			tokens = append(tokens, Token{Kind: RAngle, Value: "", Span: span})
+			kind := RAngle
+			if src[i] == '=' {
+				i += 1
+				span.End += 1
+				kind = GreaterThanOrEqual
+			}
+			tokens = append(tokens, Token{Kind: kind, Value: "", Span: span})
 		} else if c == ',' {
 			tokens = append(tokens, Token{Kind: Comma, Value: "", Span: span})
 		} else if c == '+' {
@@ -152,9 +168,17 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 				i += 1
 				span.End += 1
 				tokens = append(tokens, Token{Kind: EqualEqual, Value: "", Span: span})
+			} else if src[i] == '>' {
+				i += 1
+				span.End += 1
+				tokens = append(tokens, Token{Kind: FatArrow, Value: "", Span: span})
 			} else {
 				tokens = append(tokens, Token{Kind: Equal, Value: "", Span: span})
 			}
+		} else if c == '!' && src[i] == '=' {
+			i += 1
+			span.End += 1
+			tokens = append(tokens, Token{Kind: NotEqual, Value: "", Span: span})
 		} else if c == '"' {
 			// Parse string.
 			value := []byte{}

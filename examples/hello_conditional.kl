@@ -1,13 +1,19 @@
 -- expect.stdout {
--- It's true! Got the else.
+-- It's true! Got the else. 2 > 1,  2 >= 2,  2 == 2,  1 != 2,  1 < 2,  1 <= 2, 
 -- } expect.stdout
 -- expect.exit_code: 0
 
 fn main() {
     if true => print("It's true! ")
     if false {
-        print("This should not be reached.")
+        print("This should not be reached. ")
     } else {
         print("Got the else.")
     }
+    if 2 > 1 => print(" 2 > 1, ")
+    if 2 >= 2 => print(" 2 >= 2, ")
+    if 2 == 2 => print(" 2 == 2, ")
+    if 1 != 2 => print(" 1 != 2, ")
+    if 1 < 2 => print(" 1 < 2, ")
+    if 1 <= 2 => print(" 1 <= 2, ")
 }

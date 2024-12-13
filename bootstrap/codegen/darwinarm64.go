@@ -428,13 +428,8 @@ func (c *Code) generateBlock(block *ir.Block) error {
 		case *ir.IntCompare:
 			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
 			c.values[inst.Register().Id] = reg
-			switch inst.Op {
-			case ir.IntCompOpEQ:
-				c.emit("cmp %s, %s", lhs, rhs)
-				c.emit("cset %s, eq", reg)
-			default:
-				return errors.Errorf("unknown comparison operator: %s", inst.Op)
-			}
+			c.emit("cmp %s, %s", lhs, rhs)
+			c.emit("cset %s, %s", reg, inst.Op)
 		case *ir.GetPointer:
 			var reg *registerAllocation
 			offset := 0

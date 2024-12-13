@@ -136,12 +136,12 @@ func main() {
 	unit := CompilationUnit{src, file}
 	if cmd == "run" {
 		if runCmd, err := compiler.CompileAndRun(unit, os.Stdout, os.Stderr); err != nil {
-			fmt.Println("Failed:", err)
+			fmt.Printf("Failed: %+v\n", err)
 			os.Exit(runCmd.ProcessState.ExitCode())
 		}
 	} else {
 		if err := compiler.Compile(unit, targetFile); err != nil {
-			fmt.Println("Failed:", err)
+			fmt.Printf("Failed: %+v\n", err)
 			os.Exit(1)
 		}
 		if cmd == "build" {

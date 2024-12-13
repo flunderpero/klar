@@ -88,6 +88,9 @@ func (self *Compiler) Compile(unit CompilationUnit, targetFile string) error {
 	if err != nil {
 		return err
 	}
+	if module == nil {
+		return nil
+	}
 	module.Nodes = append(core_module.Nodes, module.Nodes...)
 	typeCreator := typed.NewTypeCreator()
 	typeInfo, genericsResolver, err := typed.TypeCheck(module, typeCreator)

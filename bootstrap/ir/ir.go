@@ -387,7 +387,12 @@ func (i SignedInt64MultiplyWithOverflow) String() string {
 type IntCompOp string
 
 const (
-	IntCompOpEQ IntCompOp = "eq"
+	IntCompOpEQ  IntCompOp = "eq"
+	IntCompOpNEQ IntCompOp = "ne"
+	IntCompOpLT  IntCompOp = "lt"
+	IntCompOpLTE IntCompOp = "le"
+	IntCompOpGT  IntCompOp = "gt"
+	IntCompOpGTE IntCompOp = "ge"
 )
 
 type IntCompare struct {
@@ -904,13 +909,25 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 			return errors.Errorf("multiply expression must be of type Int64Type, got %s", ty)
 		}
 		g.append(&SignedInt64MultiplyWithOverflow{register: g.nextRegister(Int64Type), Lhs: lhs, Rhs: rhs}, expr)
-	case ast.OpEquality:
+	case ast.OpEqual, ast.OpNotEqual, ast.OpLessThan, ast.OpLessThanOrEqual, ast.OpGreaterThan, ast.OpGreaterThanOrEqual:
 		// For now, we only know how to compare 64 and 1 bit integers.
 		ty := g.lookupType(expr.Lhs).(BuiltInType)
 		if ty != Int64Type && ty != Int1Type {
 			return errors.Errorf("type of lhs is not a supported int type, but %s", ty)
 		}
-		g.append(&IntCompare{register: g.nextRegister(Int1Type), Op: IntCompOpEQ, IntType: ty, Lhs: lhs, Rhs: rhs}, expr)
+		ops := map[ast.BinaryOperator]IntCompOp{
+			ast.OpEqual:              IntCompOpEQ,
+			ast.OpNotEqual:           IntCompOpNEQ,
+			ast.OpLessThan:           IntCompOpLT,
+			ast.OpLessThanOrEqual:    IntCompOpLTE,
+			ast.OpGreaterThan:        IntCompOpGT,
+			ast.OpGreaterThanOrEqual: IntCompOpGTE,
+		}
+		op, ok := ops[expr.Op]
+		if !ok {
+			panic(fmt.Sprintf("unknown binary operator: %s", expr.Op))
+		}
+		g.append(&IntCompare{register: g.nextRegister(Int1Type), Op: op, IntType: ty, Lhs: lhs, Rhs: rhs}, expr)
 	default:
 		return errors.Errorf("unsupported binary operator: %s", expr.Op)
 	}

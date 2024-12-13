@@ -1,4 +1,9 @@
--- Tuple is not a generic type per se, but it can contain type parameters.
+-- expect.stdout {
+-- Hello42true
+-- } expect.stdout
+-- expect.exit_code: 0
+
+
 
 fn return_them<T, U>(a T, b U) (T, Int, U) => (a, 42, b)
 

@@ -1,3 +1,8 @@
+-- expect.stdout {
+-- Hello, world!
+-- } expect.stdout
+-- expect.exit_code: 0
+
 fn main() {
     print("Hello, world!")
 }

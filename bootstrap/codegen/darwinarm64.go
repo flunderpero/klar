@@ -698,18 +698,18 @@ func defineBuiltInInternalFree(asm *ASMText) {
     ret`)
 }
 
-func GenerateDarwinArm64ASM(irModule *ir.Module) (ASMText, error) {
+func GenerateDarwinArm64ASM(irModule *ir.Module) (*ASMText, error) {
 	if irModule.Main == nil {
 		panic("no main function found")
 	}
-	asm := ASMText{}
+	asm := &ASMText{}
 	asm.emit(".global _main")
 	asm.emit(".text")
-	defineBuiltInInternalMalloc(&asm)
-	defineBuiltInInternalFree(&asm)
-	defineBuiltInPrintFunction(&asm)
-	defineBuiltInPrintIntFunction(&asm)
-	defineBuiltInPrintBoolFunction(&asm)
+	defineBuiltInInternalMalloc(asm)
+	defineBuiltInInternalFree(asm)
+	defineBuiltInPrintFunction(asm)
+	defineBuiltInPrintIntFunction(asm)
+	defineBuiltInPrintBoolFunction(asm)
 	for _, function := range irModule.Functions {
 		code, err := generateFunction(function, irModule, function == irModule.Main)
 		if err != nil {

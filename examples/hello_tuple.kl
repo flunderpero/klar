@@ -1,3 +1,8 @@
+-- expect.stdout {
+-- trueHello42, 42Worldfalse, Hello42, Mary25Wall Street25true
+-- } expect.stdout
+-- expect.exit_code: 0
+
 fn nested(i Int, s Str, tuple (Bool, Str)) (Int, Str, (Bool, Str)) => (i, s, tuple)
 
 struct Person {

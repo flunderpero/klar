@@ -1,3 +1,8 @@
+-- expect.stdout {
+-- EarthSurprise
+-- } expect.stdout
+-- expect.exit_code: 0
+
 struct Planet {
     name Str
     radius Int

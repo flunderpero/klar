@@ -1,3 +1,8 @@
+-- expect.stdout {
+-- Hello, world!, truefalsetrue, 123, Hello, world!
+-- } expect.stdout
+-- expect.exit_code: 0
+
 struct MyArray<T> {
     data RawPtr
 }

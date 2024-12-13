@@ -1,3 +1,8 @@
+-- expect.stdout {
+-- Yes again 42 multiple 42 static Earth and method 12345678901234567890 from variable with type args 
+-- } expect.stdout
+-- expect.exit_code: 0
+
 fn return_it<T>(val T) T {
     val
 }

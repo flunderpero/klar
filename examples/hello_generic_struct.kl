@@ -1,3 +1,8 @@
+-- expect.stdout {
+-- true true false, Hello Hello 42, 42 42 Hello
+-- } expect.stdout
+-- expect.exit_code: 0
+
 struct Single<T> {
     bool Bool  -- We add this field, so we can test that struct layout is correct in the IR and ASM.
     value T

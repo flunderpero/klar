@@ -1,4 +1,9 @@
--- This is a line comment.
+-- expect.stdout {
+-- Hello, comment!
+-- } expect.stdout
+-- expect.exit_code: 0
+
+
 
 fn main() { -- Another comment
     print("Hello, comment!")

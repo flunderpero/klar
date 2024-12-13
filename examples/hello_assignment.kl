@@ -1,3 +1,8 @@
+-- expect.stdout {
+-- 42Hello, world!
+-- } expect.stdout
+-- expect.exit_code: 0
+
 fn main() {
     mut a = 30
     a = a + 12

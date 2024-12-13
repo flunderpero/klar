@@ -1,3 +1,8 @@
+-- expect.stdout {
+-- 4224 Hello
+-- } expect.stdout
+-- expect.exit_code: 0
+
 fn main() {
     mut a = 42
     let b = 24

@@ -1,3 +1,8 @@
+-- expect.stdout {
+-- One for all!
+-- } expect.stdout
+-- expect.exit_code: 0
+
 fn main() {
     if 1 + 1 == 2 {
         print("One for all!")

@@ -1,3 +1,8 @@
+-- expect.stdout {
+-- 4242
+-- } expect.stdout
+-- expect.exit_code: 0
+
 fn shadow_in_branch() {
     mut a = 2
     if true {

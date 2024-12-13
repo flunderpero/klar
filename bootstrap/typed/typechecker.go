@@ -143,7 +143,7 @@ var BuiltInInternalReadPtrFunction = &FunctionType{
 var BuiltInInternalExitFunction = &FunctionType{
 	typeBase: typeBase{TypeId(111)},
 	Params:   []FunctionParam{{Name: "code", Type: int64Type}},
-	Result:   noneType,
+	Result:   neverType,
 }
 
 func IsBuiltInFunction(funcType *FunctionType) bool {
@@ -162,6 +162,7 @@ var strType = &StrType{}
 var boolType = &BoolType{}
 var int64Type = &Int64Type{}
 var noneType = &NoneType{}
+var neverType = &NeverType{}
 var rawPtr = &RawPtr{}
 
 type TypeWithTraits interface {
@@ -274,6 +275,21 @@ func (ty RawPtr) IsAssignableFrom(other Type) bool {
 
 func (ty RawPtr) String() string {
 	return "RawPtr"
+}
+
+type NeverType struct {
+}
+
+func (ty NeverType) Id() TypeId {
+	return 6
+}
+
+func (ty NeverType) IsAssignableFrom(other Type) bool {
+	return false
+}
+
+func (ty NeverType) String() string {
+	return "NeverType"
 }
 
 type TypeAndName[T Type] struct {
@@ -1793,6 +1809,7 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 	declareBuiltIn("Bool", boolType)
 	declareBuiltIn("Int", int64Type)
 	declareBuiltIn("RawPtr", rawPtr)
+	declareBuiltIn("Never", neverType)
 	declareBuiltIn("print", BuiltInPrintFunction)
 	declareBuiltIn("print_int", BuiltInPrintIntFunction)
 	declareBuiltIn("print_bool", BuiltInPrintBoolFunction)

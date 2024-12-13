@@ -1109,7 +1109,7 @@ type DeclaredTypes struct {
 
 func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
 	switch ty := ty.(type) {
-	case *typed.NoneType:
+	case *typed.NoneType, *typed.NeverType:
 		return NoneType
 	case *typed.StrType:
 		return StrType

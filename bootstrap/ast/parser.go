@@ -274,6 +274,26 @@ func (expr *BinaryExpression) String() string {
 		"BinaryExpression\n%s\n%s\n%s", base.Indent(expr.Lhs, 1), base.Indent(expr.Op, 1), base.Indent(expr.Rhs, 1))
 }
 
+type UnaryOperator string
+
+const (
+	OpNot UnaryOperator = "not"
+)
+
+func (op UnaryOperator) String() string {
+	return string(op)
+}
+
+type UnaryExpression struct {
+	nodeBase
+	Value Expression
+	Op    UnaryOperator
+}
+
+func (expr *UnaryExpression) String() string {
+	return fmt.Sprintf("UnaryExpression\n%s\n%s", base.Indent(expr.Op, 1), base.Indent(expr.Value, 1))
+}
+
 type CallArg struct {
 	// Optional, maybe set to "".
 	Name  Ident
@@ -1170,6 +1190,13 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 		return p.parseTupleLiteralExpression()
 	case token.If:
 		return p.parseIfExpression()
+	case token.Not:
+		p.consumeAny()
+		expr, err := p.parsePrimaryExpression()
+		if err != nil {
+			return nil, err
+		}
+		return &UnaryExpression{nodeBase: p.newNodeBase(from), Op: OpNot, Value: expr}, nil
 	}
 	return nil, errors.Errorf("expected expression, got token: %s", t)
 

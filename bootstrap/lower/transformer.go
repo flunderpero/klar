@@ -30,6 +30,7 @@ type Transformer interface {
 	VisitMemberExpression(expr *ast.MemberExpression, w TransformWalker) (ast.Expression, bool)
 	VisitIfExpression(expr *ast.IfExpression, w TransformWalker) (ast.Expression, bool)
 	VisitBinaryExpression(expr *ast.BinaryExpression, w TransformWalker) (ast.Expression, bool)
+	VisitUnaryExpression(expr *ast.UnaryExpression, w TransformWalker) (ast.Expression, bool)
 	VisitIdentExpression(expr *ast.IdentExpression) (ast.Expression, bool)
 	VisitStringLiteralExpression(expr *ast.StringLiteralExpression) (ast.Expression, bool)
 	VisitIntLiteralExpression(expr *ast.IntLiteralExpression) (ast.Expression, bool)
@@ -55,6 +56,7 @@ type TransformWalker interface {
 	WalkMemberExpression(expr *ast.MemberExpression) (ast.Expression, bool)
 	WalkIfExpression(expr *ast.IfExpression) (ast.Expression, bool)
 	WalkBinaryExpression(expr *ast.BinaryExpression) (ast.Expression, bool)
+	WalkUnaryExpression(expr *ast.UnaryExpression) (ast.Expression, bool)
 	WalkAssignmentStatement(stmt *ast.AssignmentStatement) (*ast.AssignmentStatement, bool)
 	WalkLoopStatement(stmt *ast.LoopStatement) (*ast.LoopStatement, bool)
 }
@@ -91,6 +93,10 @@ func (_ *DefaultTransformer) VisitMemberExpression(expr *ast.MemberExpression, w
 
 func (_ *DefaultTransformer) VisitIfExpression(expr *ast.IfExpression, w TransformWalker) (ast.Expression, bool) {
 	return w.WalkIfExpression(expr)
+}
+
+func (_ *DefaultTransformer) VisitUnaryExpression(expr *ast.UnaryExpression, w TransformWalker) (ast.Expression, bool) {
+	return w.WalkUnaryExpression(expr)
 }
 
 func (_ *DefaultTransformer) VisitBinaryExpression(expr *ast.BinaryExpression, w TransformWalker) (ast.Expression, bool) {
@@ -171,6 +177,8 @@ func (w *DefaultTransformWalker) WalkExpression(expr ast.Expression) (ast.Expres
 		return w.Transformer.VisitIntLiteralExpression(expr)
 	case *ast.BoolLiteralExpression:
 		return w.Transformer.VisitBoolLiteralExpression(expr)
+	case *ast.UnaryExpression:
+		return w.Transformer.VisitUnaryExpression(expr, w)
 	case *ast.BinaryExpression:
 		return w.Transformer.VisitBinaryExpression(expr, w)
 	case *ast.CallExpression:
@@ -199,6 +207,15 @@ func (w *DefaultTransformWalker) WalkBinaryExpression(expr *ast.BinaryExpression
 	}
 	expr.Lhs = lhs
 	expr.Rhs = rhs
+	return expr, true
+}
+
+func (w *DefaultTransformWalker) WalkUnaryExpression(expr *ast.UnaryExpression) (ast.Expression, bool) {
+	value, ok := w.Transformer.VisitNode(expr.Value, w)
+	if !ok {
+		return nil, false
+	}
+	expr.Value = value
 	return expr, true
 }
 

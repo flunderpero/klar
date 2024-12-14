@@ -83,6 +83,7 @@ const (
 	LineComment        TokenKind = "LineComment"
 	EOF                TokenKind = "EOF"
 	And                TokenKind = "and"
+	Not                TokenKind = "not"
 	Or                 TokenKind = "or"
 )
 
@@ -261,6 +262,8 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 				token = Token{Kind: Or, Value: ""}
 			case "and":
 				token = Token{Kind: And, Value: ""}
+			case "not":
+				token = Token{Kind: Not, Value: ""}
 			default:
 				kind := Ident
 				if isTypeIdentifier(string(value)) {

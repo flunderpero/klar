@@ -1237,6 +1237,24 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 	return nil
 }
 
+func (tc *typeChecker) VisitUnaryExpression(expr *ast.UnaryExpression, w ast.Walker) error {
+	if err := w.WalkUnaryExpression(expr); err != nil {
+		return err
+	}
+	valueType := tc.typeInfo.MustLookup(expr.Value)
+	switch expr.Op {
+	case ast.OpNot:
+		if valueType != boolType {
+			return errors.Errorf(
+				"%s: operand of logical not expression must be of type BoolType, got %s", expr.Span(), valueType)
+		}
+		tc.typeInfo.Set(expr, boolType)
+	default:
+		return errors.Errorf("%s: unsupported unary operator: %s", expr.Span(), expr.Op)
+	}
+	return nil
+}
+
 func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) error {
 	if err := w.WalkCallExpression(expr); err != nil {
 		return err

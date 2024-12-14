@@ -373,6 +373,13 @@ func (c *Code) prepareBinaryOperation(resReg ir.Register, lhsReg ir.Register, rh
 	return reg, lhs, rhs
 }
 
+func (c *Code) prepareUnaryOperation(resReg ir.Register, valueReg ir.Register) (reg *registerAllocation, value register) {
+	reg = c.registerAllocator.allocateScratchRegister(resReg)
+	valueAllocation := c.mustLookupRegisterAllocation(valueReg)
+	value = c.registerAllocator.ensureInRegister(valueAllocation)
+	return reg, value
+}
+
 // It is not straight forward to load int values > 16bit. There are a lot of ways to optimize
 // this, but that's an exercise for another day.
 func (c *Code) generateIntImmediate(target register, value int64) {
@@ -430,14 +437,23 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			c.values[inst.Register().Id] = reg
 			c.emit("cmp %s, %s", lhs, rhs)
 			c.emit("cset %s, %s", reg, inst.Op)
-		case *ir.Logic:
+		case *ir.BinaryLogic:
 			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
 			c.values[inst.Register().Id] = reg
-			op := "orr"
-			if inst.Op == ir.LogicOpAnd {
+			var op string
+			switch inst.Op {
+			case ir.BinaryLogicOpAnd:
 				op = "and"
+			case ir.BinaryLogicOpOr:
+				op = "orr"
+			default:
+				return errors.Errorf("unknown binary logic operation: %s", inst.Op)
 			}
 			c.emit("%s %s, %s, %s", op, reg, lhs, rhs)
+		case *ir.UnaryLogic:
+			reg, value := c.prepareUnaryOperation(inst.Register(), inst.Value)
+			c.values[inst.Register().Id] = reg
+			c.emit("eor %s, %s, #1", reg, value)
 		case *ir.GetPointer:
 			var reg *registerAllocation
 			offset := 0

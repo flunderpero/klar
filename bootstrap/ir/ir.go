@@ -411,26 +411,46 @@ func (i IntCompare) String() string {
 	return fmt.Sprintf("%s = icmp %s %s %s, %s", i.register, i.Op, i.IntType, i.Lhs, i.Rhs)
 }
 
-type LogicOp string
+type BinaryLogicOp string
 
 const (
-	LogicOpAnd LogicOp = "and"
-	LogicOpOr  LogicOp = "or"
+	BinaryLogicOpAnd BinaryLogicOp = "and"
+	BinaryLogicOpOr  BinaryLogicOp = "or"
 )
 
-type Logic struct {
+type BinaryLogic struct {
 	register Register
 	Lhs      Register
 	Rhs      Register
-	Op       LogicOp
+	Op       BinaryLogicOp
 }
 
-func (self Logic) Register() Register {
+func (self BinaryLogic) Register() Register {
 	return self.register
 }
 
-func (self Logic) String() string {
+func (self BinaryLogic) String() string {
 	return fmt.Sprintf("%s = %s i1 %s, %s", self.register, self.Op, self.Lhs, self.Rhs)
+}
+
+type UnaryLogicOp string
+
+const (
+	UnaryLogicOpNot UnaryLogicOp = "not"
+)
+
+type UnaryLogic struct {
+	register Register
+	Value    Register
+	Op       UnaryLogicOp
+}
+
+func (self UnaryLogic) Register() Register {
+	return self.register
+}
+
+func (self UnaryLogic) String() string {
+	return fmt.Sprintf("%s = %s i1 %s", self.register, self.Op, self.Value)
 }
 
 type Callee interface {
@@ -955,13 +975,36 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 		if ty != Int1Type {
 			return errors.Errorf("type of lhs is not a supported int type, but %s", ty)
 		}
-		op := LogicOpAnd
-		if expr.Op == ast.OpOr {
-			op = LogicOpOr
+		var op BinaryLogicOp
+		switch expr.Op {
+		case ast.OpOr:
+			op = BinaryLogicOpOr
+		case ast.OpAnd:
+			op = BinaryLogicOpAnd
+		default:
+			return errors.Errorf("unsupported binary operator: %s", expr.Op)
 		}
-		g.append(&Logic{register: g.nextRegister(Int1Type), Op: op, Lhs: lhs, Rhs: rhs}, expr)
+		g.append(&BinaryLogic{register: g.nextRegister(Int1Type), Op: op, Lhs: lhs, Rhs: rhs}, expr)
 	default:
 		return errors.Errorf("unsupported binary operator: %s", expr.Op)
+	}
+	return nil
+}
+
+func (g *generator) VisitUnaryExpression(expr *ast.UnaryExpression, w ast.Walker) error {
+	if err := w.WalkUnaryExpression(expr); err != nil {
+		return err
+	}
+	switch expr.Op {
+	case ast.OpNot:
+		ty := g.lookupType(expr).(BuiltInType)
+		if ty != Int1Type {
+			return errors.Errorf("type of expression is not a supported int type, but %s", ty)
+		}
+		reg := g.lookupRegisterByNode(expr.Value)
+		g.append(&UnaryLogic{register: g.nextRegister(Int1Type), Op: UnaryLogicOpNot, Value: reg}, expr)
+	default:
+		return errors.Errorf("unsupported unary operator: %s", expr.Op)
 	}
 	return nil
 }

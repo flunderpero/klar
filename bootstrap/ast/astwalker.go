@@ -18,6 +18,7 @@ type Visitor interface {
 	VisitMemberExpression(expr *MemberExpression, w Walker) error
 	VisitIfExpression(expr *IfExpression, w Walker) error
 	VisitBinaryExpression(expr *BinaryExpression, w Walker) error
+	VisitUnaryExpression(expr *UnaryExpression, w Walker) error
 	VisitTraitDeclaration(impl *TraitDeclaration, w Walker) error
 	VisitImplDefinition(impl *ImplDefinition, w Walker) error
 	VisitIdentExpression(expr *IdentExpression) error
@@ -45,6 +46,7 @@ type Walker interface {
 	WalkMemberExpression(expr *MemberExpression) error
 	WalkIfExpression(expr *IfExpression) error
 	WalkBinaryExpression(expr *BinaryExpression) error
+	WalkUnaryExpression(expr *UnaryExpression) error
 	WalkAssignmentStatement(stmt *AssignmentStatement) error
 	WalkLoopStatement(stmt *LoopStatement) error
 }
@@ -85,6 +87,10 @@ func (_ *DefaultVisitor) VisitIfExpression(expr *IfExpression, w Walker) error {
 
 func (_ *DefaultVisitor) VisitBinaryExpression(expr *BinaryExpression, w Walker) error {
 	return w.WalkBinaryExpression(expr)
+}
+
+func (_ *DefaultVisitor) VisitUnaryExpression(expr *UnaryExpression, w Walker) error {
+	return w.WalkUnaryExpression(expr)
 }
 
 func (_ *DefaultVisitor) VisitBlockExpression(expr *BlockExpression, w Walker) error {
@@ -164,6 +170,8 @@ func (w *DefaultWalker) WalkExpression(expr Expression) error {
 		err = w.Visitor.VisitBoolLiteralExpression(expr)
 	case *BinaryExpression:
 		err = w.Visitor.VisitBinaryExpression(expr, w)
+	case *UnaryExpression:
+		err = w.Visitor.VisitUnaryExpression(expr, w)
 	case *CallExpression:
 		err = w.Visitor.VisitCallExpression(expr, w)
 	case *MemberExpression:
@@ -185,6 +193,10 @@ func (w *DefaultWalker) WalkBinaryExpression(expr *BinaryExpression) error {
 		return err
 	}
 	return w.Visitor.VisitNode(expr.Rhs, w)
+}
+
+func (w *DefaultWalker) WalkUnaryExpression(expr *UnaryExpression) error {
+	return w.Visitor.VisitNode(expr.Value, w)
 }
 
 func (w *DefaultWalker) WalkCallExpression(expr *CallExpression) error {

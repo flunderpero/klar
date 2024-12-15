@@ -19,11 +19,12 @@ type Type interface {
 type BuiltInType string
 
 const (
-	NoneType  BuiltInType = "none"
-	Int1Type  BuiltInType = "i1"
-	Int8Type  BuiltInType = "i8"
-	Int32Type BuiltInType = "i32"
-	Int64Type BuiltInType = "i64"
+	NoneType   BuiltInType = "none"
+	Int1Type   BuiltInType = "i1"
+	Int8Type   BuiltInType = "i8"
+	Int32Type  BuiltInType = "i32"
+	Int64Type  BuiltInType = "i64"
+	UInt64Type BuiltInType = "u64"
 )
 
 func (t BuiltInType) String() string {
@@ -270,29 +271,31 @@ func (i StrConst) String() string {
 
 func (i StrConst) getPointerSourceMarker() {}
 
-type Int64Const struct {
-	register Register
-	Value    int64
+type IntConst struct {
+	register  Register
+	Value     int64
+	ValueType BuiltInType
 }
 
-func (i Int64Const) String() string {
-	return fmt.Sprintf("%s = i64 %d", i.register, i.Value)
+func (i IntConst) String() string {
+	return fmt.Sprintf("%s = %s %d", i.register, i.ValueType, i.Value)
 }
 
-func (i *Int64Const) Register() Register {
+func (i *IntConst) Register() Register {
 	return i.register
 }
 
-type Int32Const struct {
-	register Register
-	Value    int64
+type UIntConst struct {
+	register  Register
+	Value     uint64
+	ValueType BuiltInType
 }
 
-func (i Int32Const) String() string {
-	return fmt.Sprintf("%s = i32 %d", i.register, i.Value)
+func (i UIntConst) String() string {
+	return fmt.Sprintf("%s = %s %d", i.register, i.ValueType, i.Value)
 }
 
-func (i *Int32Const) Register() Register {
+func (i *UIntConst) Register() Register {
 	return i.register
 }
 
@@ -763,9 +766,16 @@ func (g *generator) VisitStringLiteralExpression(expr *ast.StringLiteralExpressi
 }
 
 func (g *generator) VisitIntLiteralExpression(expr *ast.IntLiteralExpression) error {
-	g.append(&Int64Const{
+	if expr.IsUInt64 {
+		g.append(&UIntConst{
+			register: g.nextRegister(Int64Type),
+			Value:    expr.UInt64,
+		}, expr)
+		return nil
+	}
+	g.append(&IntConst{
 		register: g.nextRegister(Int64Type),
-		Value:    expr.Value,
+		Value:    expr.Int64,
 	}, expr)
 	return nil
 }
@@ -820,7 +830,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		mallocReg := g.nextRegister(Int64Type)
 		mallocFuncType := g.declaredTypes.MustLookup(typed.BuiltInInternalMallocFunction).(*FunctionType)
 		mallocFuncDef := g.definedFunctions[typed.BuiltInInternalMallocFunction.Id()]
-		g.append(&Int64Const{
+		g.append(&IntConst{
 			register: sizeReg,
 			Value:    int64(g.dataLayout.SizeOf(structType)),
 		}, nil)
@@ -866,7 +876,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 				size = g.dataLayout.SizeOf(ty)
 			}
 			reg := g.nextRegister(Int64Type)
-			g.append(&Int64Const{register: reg, Value: int64(size)}, expr)
+			g.append(&IntConst{register: reg, Value: int64(size)}, expr)
 			return nil
 		}
 		var callee Callee

@@ -1138,6 +1138,9 @@ func (tc *typeChecker) VisitStringLiteralExpression(expr *ast.StringLiteralExpre
 }
 
 func (tc *typeChecker) VisitIntLiteralExpression(expr *ast.IntLiteralExpression) error {
+	if expr.IsUInt64 {
+		return errors.Errorf("%s: int literal exceeds int64 range: %d", expr.Span(), expr.UInt64)
+	}
 	tc.typeInfo.Set(expr, int64Type)
 	return nil
 }

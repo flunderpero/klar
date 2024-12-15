@@ -181,11 +181,19 @@ func (expr *StringLiteralExpression) String() string {
 
 type IntLiteralExpression struct {
 	nodeBase
-	Value int64
+	Int64    int64
+	UInt64   uint64
+	IsUInt64 bool
 }
 
 func (expr *IntLiteralExpression) String() string {
-	return fmt.Sprintf("IntLiteralExpression \"%d\"", expr.Value)
+	var value string
+	if expr.IsUInt64 {
+		value = fmt.Sprintf("%d", expr.UInt64)
+	} else {
+		value = fmt.Sprintf("%d", expr.Int64)
+	}
+	return fmt.Sprintf("IntLiteralExpression %q", value)
 }
 
 type BoolLiteralExpression struct {
@@ -1158,6 +1166,24 @@ func (p *Parser) parseIdentExpression(token token.Token) (*IdentExpression, erro
 	return &IdentExpression{nodeBase: p.newNodeBase(token.Span), Ident: Ident(token.Value), TypeArgs: typeArgs}, nil
 }
 
+func (p *Parser) parseIntLiteralExpression() (*IntLiteralExpression, error) {
+	strValue := ""
+	if p.peek().Kind == token.Minus {
+		p.consumeAny()
+		strValue = "-"
+	}
+	strValue += p.consumeAny().Value
+	int64Value, err := strconv.ParseInt(strValue, 10, 64)
+	if err != nil {
+		uint64Value, err2 := strconv.ParseUint(strValue, 10, 64)
+		if err2 != nil {
+			return nil, errors.Errorf("failed to parse int literal: %v", err)
+		}
+		return &IntLiteralExpression{nodeBase: p.newNodeBase(p.span()), UInt64: uint64Value, IsUInt64: true}, nil
+	}
+	return &IntLiteralExpression{nodeBase: p.newNodeBase(p.span()), Int64: int64Value, IsUInt64: false}, nil
+}
+
 func (p *Parser) parsePrimaryExpression() (Expression, error) {
 	from := p.span()
 	t := p.peek()
@@ -1172,12 +1198,12 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 		p.consumeAny()
 		return &StringLiteralExpression{nodeBase: p.newNodeBase(from), Value: t.Value}, nil
 	case token.Int:
-		p.consumeAny()
-		value, err := strconv.ParseInt(t.Value, 10, 64)
-		if err != nil {
-			return nil, errors.Errorf("failed to parse int literal: %v", err)
+		return p.parseIntLiteralExpression()
+	case token.Minus:
+		t1 := p.peek1()
+		if t1.Kind == token.Int {
+			return p.parseIntLiteralExpression()
 		}
-		return &IntLiteralExpression{nodeBase: p.newNodeBase(from), Value: value}, nil
 	case token.True:
 		p.consumeAny()
 		return &BoolLiteralExpression{nodeBase: p.newNodeBase(from), Value: true}, nil

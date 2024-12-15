@@ -1,9 +1,14 @@
 -- expect.stdout {
--- 429223372036854775805
+-- 42, 9223372036854775807, -1, -9223372036854775808
 -- } expect.stdout
 -- expect.exit_code: 0
 
 fn main() {
     print_int(42)
-    print_int(9223372036854775805)
+    print(", ")
+    print_int(9223372036854775807)
+    print(", ")
+    print_int(-1)
+    print(", ")
+    print_int(-9223372036854775808)
 }

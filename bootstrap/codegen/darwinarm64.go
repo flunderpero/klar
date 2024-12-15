@@ -416,11 +416,11 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
 			c.emit("mov %s, #%d", reg, inst.Value)
 			c.values[inst.Register().Id] = reg
-		case *ir.Int32Const:
+		case *ir.UIntConst:
 			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
-			c.generateIntImmediate(reg.reg, inst.Value)
+			c.generateIntImmediate(reg.reg, int64(inst.Value))
 			c.values[inst.Register().Id] = reg
-		case *ir.Int64Const:
+		case *ir.IntConst:
 			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
 			c.generateIntImmediate(reg.reg, inst.Value)
 			c.values[inst.Register().Id] = reg

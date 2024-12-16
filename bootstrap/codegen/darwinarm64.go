@@ -687,6 +687,23 @@ func defineBuiltInPrintFunction(asm *ASMText) {
     ret`)
 }
 
+func defineBuiltInPrintCharFunction(asm *ASMText) {
+	asm.emit(
+		`
+.print_char:
+    stp fp, lr, [sp, #-32]!
+    mov fp, sp
+    str x0, [sp]
+    adrp x0, _print_char_format@PAGE
+    add x0, x0, _print_char_format@PAGEOFF+0
+    bl _printf
+    mov x0, 0
+    bl _fflush
+    ldp fp, lr, [sp], #32
+    mov x0, xzr
+    ret`)
+}
+
 func defineBuiltInPrintIntFunction(asm *ASMText) {
 	asm.emit(
 		`
@@ -793,6 +810,7 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (*ASMText, error) {
 	defineBuiltInInternalFree(asm)
 	defineBuiltInInternalExit(asm)
 	defineBuiltInPrintFunction(asm)
+	defineBuiltInPrintCharFunction(asm)
 	defineBuiltInPrintIntFunction(asm)
 	defineBuiltInPrintUIntFunction(asm)
 	defineBuiltInPrintBoolFunction(asm)
@@ -826,6 +844,9 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (*ASMText, error) {
 	asm.emit(".align 3")
 	asm.emit("_print_uint_format:")
 	asm.incIndent().emit(".asciz \"%%llu\"").decIndent()
+	asm.emit(".align 3")
+	asm.emit("_print_char_format:")
+	asm.incIndent().emit(".asciz \"%%c\"").decIndent()
 	asm.emit(".align 3")
 	asm.emit("_print_bool_true:")
 	asm.incIndent().emit(".asciz \"true\"").decIndent()

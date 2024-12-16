@@ -818,6 +818,15 @@ func (g *generator) VisitIntLiteralExpression(expr *ast.IntLiteralExpression) er
 	return nil
 }
 
+func (g *generator) VisitCharLiteralExpression(expr *ast.CharLiteralExpression) error {
+	g.append(&UIntConst{
+		register: g.nextRegister(UInt32Type),
+		Value:    uint64(expr.Value),
+		Type:     UInt32Type,
+	}, expr)
+	return nil
+}
+
 func (g *generator) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) error {
 	value := 0
 	if expr.Value {
@@ -1265,7 +1274,7 @@ func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
 		return UInt8Type
 	case *typed.UInt16Type:
 		return UInt16Type
-	case *typed.UInt32Type:
+	case *typed.UInt32Type, *typed.CharType:
 		return UInt32Type
 	case *typed.UInt64Type:
 		return UInt64Type
@@ -1361,6 +1370,7 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 		definedFunctions[f.Id()] = DefinedFunction{Id: f.Id(), FQN: symbol.FQN()}
 	}
 	declareBuiltInFunction(typed.BuiltInPrintFunction, true)
+	declareBuiltInFunction(typed.BuiltInPrintCharFunction, true)
 	declareBuiltInFunction(typed.BuiltInPrintIntFunction, true)
 	declareBuiltInFunction(typed.BuiltInPrintUIntFunction, true)
 	declareBuiltInFunction(typed.BuiltInPrintBoolFunction, true)

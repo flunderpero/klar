@@ -179,6 +179,15 @@ func (expr *StringLiteralExpression) String() string {
 	return fmt.Sprintf("StringLiteralExpression %q", expr.Value)
 }
 
+type CharLiteralExpression struct {
+	nodeBase
+	Value uint32
+}
+
+func (expr *CharLiteralExpression) String() string {
+	return fmt.Sprintf("CharLiteralExpression '%s'", string(rune(expr.Value)))
+}
+
 type IntLiteralExpression struct {
 	nodeBase
 	Int64    int64
@@ -1184,6 +1193,16 @@ func (p *Parser) parseIntLiteralExpression() (*IntLiteralExpression, error) {
 	return &IntLiteralExpression{nodeBase: p.newNodeBase(p.span()), Int64: int64Value, IsUInt64: false}, nil
 }
 
+func (p *Parser) parseCharLiteralExpression() (*CharLiteralExpression, error) {
+	t, err := p.consume(token.Char)
+	if err != nil {
+		return nil, err
+	}
+	runes := []rune(t.Value)
+	value := uint32(runes[0])
+	return &CharLiteralExpression{nodeBase: p.newNodeBase(t.Span), Value: value}, nil
+}
+
 func (p *Parser) parsePrimaryExpression() (Expression, error) {
 	from := p.span()
 	t := p.peek()
@@ -1197,6 +1216,8 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 	case token.Str:
 		p.consumeAny()
 		return &StringLiteralExpression{nodeBase: p.newNodeBase(from), Value: t.Value}, nil
+	case token.Char:
+		return p.parseCharLiteralExpression()
 	case token.Int:
 		return p.parseIntLiteralExpression()
 	case token.Minus:

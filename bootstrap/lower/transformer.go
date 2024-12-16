@@ -33,6 +33,7 @@ type Transformer interface {
 	VisitUnaryExpression(expr *ast.UnaryExpression, w TransformWalker) (ast.Expression, bool)
 	VisitIdentExpression(expr *ast.IdentExpression) (ast.Expression, bool)
 	VisitStringLiteralExpression(expr *ast.StringLiteralExpression) (ast.Expression, bool)
+	VisitCharLiteralExpression(expr *ast.CharLiteralExpression) (ast.Expression, bool)
 	VisitIntLiteralExpression(expr *ast.IntLiteralExpression) (ast.Expression, bool)
 	VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) (ast.Expression, bool)
 	VisitTupleLiteralExpression(expr *ast.TupleLiteralExpression, w TransformWalker) (ast.Expression, bool)
@@ -68,6 +69,10 @@ func (_ *DefaultTransformer) VisitIdentExpression(expr *ast.IdentExpression) (as
 }
 
 func (_ *DefaultTransformer) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) (ast.Expression, bool) {
+	return expr, true
+}
+
+func (_ *DefaultTransformer) VisitCharLiteralExpression(expr *ast.CharLiteralExpression) (ast.Expression, bool) {
 	return expr, true
 }
 
@@ -173,6 +178,8 @@ func (w *DefaultTransformWalker) WalkExpression(expr ast.Expression) (ast.Expres
 		return w.Transformer.VisitIdentExpression(expr)
 	case *ast.StringLiteralExpression:
 		return w.Transformer.VisitStringLiteralExpression(expr)
+	case *ast.CharLiteralExpression:
+		return w.Transformer.VisitCharLiteralExpression(expr)
 	case *ast.IntLiteralExpression:
 		return w.Transformer.VisitIntLiteralExpression(expr)
 	case *ast.BoolLiteralExpression:

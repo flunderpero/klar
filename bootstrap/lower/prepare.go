@@ -265,6 +265,7 @@ func (self *prepare) replaceTupleTypeWithStructType(ty typed.Type) typed.Type {
 		*typed.UInt16Type,
 		*typed.UInt8Type,
 		*typed.StrType,
+		*typed.CharType,
 		*typed.NoneType,
 		*typed.NeverType,
 		*typed.RawPtr,

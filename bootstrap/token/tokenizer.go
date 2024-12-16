@@ -62,6 +62,7 @@ const (
 	Pipe               TokenKind = "|"
 	EqualEqual         TokenKind = "=="
 	Str                TokenKind = "Str"
+	Char               TokenKind = "Char"
 	Int                TokenKind = "Int"
 	True               TokenKind = "true"
 	False              TokenKind = "false"
@@ -92,6 +93,8 @@ func (t Token) String() string {
 	switch t.Kind {
 	case Str:
 		return fmt.Sprintf("%q", t.Value)
+	case Char:
+		return fmt.Sprintf("'%s'", t.Value)
 	case Ident, TypeIdent, LineComment:
 		return fmt.Sprintf("%s(%s)", kind, t.Value)
 	default:
@@ -182,6 +185,21 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			i += 1
 			span.End += 1
 			tokens = append(tokens, Token{Kind: NotEqual, Value: "", Span: span})
+		} else if c == '\'' {
+			// Parse char.
+			value := []byte{}
+			for i < len(src) {
+				c = src[i]
+				if c != '\'' {
+					i += 1
+					value = append(value, c)
+				} else {
+					i += 1 // Consume the closing '\''.
+					break
+				}
+			}
+			span.End = i
+			tokens = append(tokens, Token{Kind: Char, Value: string(value), Span: span})
 		} else if c == '"' {
 			// Parse string.
 			value := []byte{}

@@ -86,49 +86,54 @@ var BuiltInPrintFunction = &FunctionType{
 	Params:   []FunctionParam{{Name: "value", Type: strType}},
 	Result:   noneType,
 }
-var BuiltInPrintIntFunction = &FunctionType{
+var BuiltInPrintCharFunction = &FunctionType{
 	typeBase: typeBase{TypeId(101)},
+	Params:   []FunctionParam{{Name: "value", Type: charType}},
+	Result:   noneType,
+}
+var BuiltInPrintIntFunction = &FunctionType{
+	typeBase: typeBase{TypeId(102)},
 	Params:   []FunctionParam{{Name: "value", Type: int64Type}},
 	Result:   noneType,
 }
 var BuiltInPrintUIntFunction = &FunctionType{
-	typeBase: typeBase{TypeId(102)},
+	typeBase: typeBase{TypeId(103)},
 	Params:   []FunctionParam{{Name: "value", Type: uint64Type}},
 	Result:   noneType,
 }
 var BuiltInPrintBoolFunction = &FunctionType{
-	typeBase: typeBase{TypeId(103)},
+	typeBase: typeBase{TypeId(104)},
 	Params:   []FunctionParam{{Name: "value", Type: boolType}},
 	Result:   noneType,
 }
 var BuiltInInternalMallocFunction = &FunctionType{
-	typeBase: typeBase{TypeId(104)},
+	typeBase: typeBase{TypeId(105)},
 	Params:   []FunctionParam{{Name: "size", Type: int64Type}},
 	Result:   int64Type,
 }
 var BuiltInInternalFreeFunction = &FunctionType{
-	typeBase: typeBase{TypeId(105)},
+	typeBase: typeBase{TypeId(106)},
 	Params:   []FunctionParam{{Name: "ptr", Type: rawPtr}},
 	Result:   noneType,
 }
 var BuiltInSizeOfFunctionTypeParam = &TypeParam{
-	typeBase:    typeBase{TypeId(106)},
+	typeBase:    typeBase{TypeId(107)},
 	GenericType: BuiltInSizeOfFunction,
 	Name:        ast.Ident("T"),
 	Index:       0,
 }
 var BuiltInSizeOfFunction = &FunctionType{
-	typeBase: typeBase{TypeId(107)},
+	typeBase: typeBase{TypeId(108)},
 	Params:   []FunctionParam{},
 	Result:   int64Type,
 }
 var BuiltInInternalWritePtrFunctionTypeParam = &TypeParam{
-	typeBase: typeBase{TypeId(108)},
+	typeBase: typeBase{TypeId(109)},
 	Name:     ast.Ident("T"),
 	Index:    0,
 }
 var BuiltInInternalWritePtrFunction = &FunctionType{
-	typeBase: typeBase{TypeId(109)},
+	typeBase: typeBase{TypeId(110)},
 	Params: []FunctionParam{
 		{Name: "ptr", Type: rawPtr},
 		{Name: "value", Type: BuiltInInternalWritePtrFunctionTypeParam},
@@ -136,17 +141,17 @@ var BuiltInInternalWritePtrFunction = &FunctionType{
 	Result: noneType,
 }
 var BuiltInInternalReadPtrFunctionTypeParam = &TypeParam{
-	typeBase:    typeBase{TypeId(110)},
+	typeBase:    typeBase{TypeId(111)},
 	GenericType: BuiltInInternalReadPtrFunction,
 	Name:        ast.Ident("T"),
 	Index:       0,
 }
 var BuiltInInternalReadPtrFunction = &FunctionType{
-	typeBase: typeBase{TypeId(111)},
+	typeBase: typeBase{TypeId(112)},
 	Params:   []FunctionParam{{Name: "ptr", Type: rawPtr}},
 }
 var BuiltInInternalExitFunction = &FunctionType{
-	typeBase: typeBase{TypeId(112)},
+	typeBase: typeBase{TypeId(113)},
 	Params:   []FunctionParam{{Name: "code", Type: int64Type}},
 	Result:   neverType,
 }
@@ -163,6 +168,7 @@ func IsBuiltInFunction(funcType *FunctionType) bool {
 }
 
 var builtInSpan = token.Span{File: new(string), Src: &[]byte{}, Start: 0, End: 0}
+var charType = &CharType{}
 var strType = &StrType{}
 var boolType = &BoolType{}
 var int64Type = &Int64Type{}
@@ -220,12 +226,32 @@ func (ty *StrType) Traits() []*TraitType {
 	return ty.traits
 }
 
+type CharType struct {
+	traits []*TraitType
+}
+
+func (ty CharType) Id() TypeId {
+	return 2
+}
+
+func (ty CharType) IsAssignableFrom(other Type) bool {
+	return ty.Id() == other.Id()
+}
+
+func (ty CharType) String() string {
+	return "CharType"
+}
+
+func (ty *CharType) Traits() []*TraitType {
+	return ty.traits
+}
+
 type BoolType struct {
 	traits []*TraitType
 }
 
 func (ty BoolType) Id() TypeId {
-	return 2
+	return 3
 }
 
 func (ty BoolType) IsAssignableFrom(other Type) bool {
@@ -258,7 +284,7 @@ func (ty Int8Type) Bits() int {
 }
 
 func (ty Int8Type) Id() TypeId {
-	return 3
+	return 4
 }
 
 func (ty Int8Type) IsAssignableFrom(other Type) bool {
@@ -286,7 +312,7 @@ func (ty Int16Type) Bits() int {
 }
 
 func (ty Int16Type) Id() TypeId {
-	return 4
+	return 5
 }
 
 func (ty Int16Type) IsAssignableFrom(other Type) bool {
@@ -314,7 +340,7 @@ func (ty Int32Type) Bits() int {
 }
 
 func (ty Int32Type) Id() TypeId {
-	return 5
+	return 6
 }
 
 func (ty Int32Type) IsAssignableFrom(other Type) bool {
@@ -342,7 +368,7 @@ func (ty Int64Type) Bits() int {
 }
 
 func (ty Int64Type) Id() TypeId {
-	return 6
+	return 7
 }
 
 func (ty Int64Type) IsAssignableFrom(other Type) bool {
@@ -370,7 +396,7 @@ func (ty UInt8Type) Bits() int {
 }
 
 func (ty UInt8Type) Id() TypeId {
-	return 7
+	return 8
 }
 
 func (ty UInt8Type) IsAssignableFrom(other Type) bool {
@@ -398,7 +424,7 @@ func (ty UInt16Type) Bits() int {
 }
 
 func (ty UInt16Type) Id() TypeId {
-	return 8
+	return 9
 }
 
 func (ty UInt16Type) IsAssignableFrom(other Type) bool {
@@ -426,7 +452,7 @@ func (ty UInt32Type) Bits() int {
 }
 
 func (ty UInt32Type) Id() TypeId {
-	return 9
+	return 10
 }
 
 func (ty UInt32Type) IsAssignableFrom(other Type) bool {
@@ -454,7 +480,7 @@ func (ty UInt64Type) Bits() int {
 }
 
 func (ty UInt64Type) Id() TypeId {
-	return 10
+	return 11
 }
 
 func (ty UInt64Type) IsAssignableFrom(other Type) bool {
@@ -473,7 +499,7 @@ type NoneType struct {
 }
 
 func (ty NoneType) Id() TypeId {
-	return 11
+	return 12
 }
 
 func (ty NoneType) IsAssignableFrom(other Type) bool {
@@ -487,7 +513,7 @@ func (ty NoneType) String() string {
 type RawPtr struct{}
 
 func (ty RawPtr) Id() TypeId {
-	return 12
+	return 13
 }
 
 func (ty RawPtr) IsAssignableFrom(other Type) bool {
@@ -502,7 +528,7 @@ type NeverType struct {
 }
 
 func (ty NeverType) Id() TypeId {
-	return 13
+	return 14
 }
 
 func (ty NeverType) IsAssignableFrom(other Type) bool {
@@ -1359,6 +1385,11 @@ func (tc *typeChecker) VisitStringLiteralExpression(expr *ast.StringLiteralExpre
 	return nil
 }
 
+func (tc *typeChecker) VisitCharLiteralExpression(expr *ast.CharLiteralExpression) error {
+	tc.typeInfo.Set(expr, charType)
+	return nil
+}
+
 func (tc *typeChecker) VisitIntLiteralExpression(expr *ast.IntLiteralExpression) error {
 	if expr.IsUInt64 {
 		tc.typeInfo.Set(expr, uint64Type)
@@ -2126,6 +2157,7 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 	}
 	declareBuiltIn("None", noneType)
 	declareBuiltIn("Str", strType)
+	declareBuiltIn("Char", charType)
 	declareBuiltIn("Bool", boolType)
 	declareBuiltIn("Int", int64Type)
 	declareBuiltIn("I64", int64Type)
@@ -2139,6 +2171,7 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 	declareBuiltIn("RawPtr", rawPtr)
 	declareBuiltIn("Never", neverType)
 	declareBuiltIn("print", BuiltInPrintFunction)
+	declareBuiltIn("print_char", BuiltInPrintCharFunction)
 	declareBuiltIn("print_int", BuiltInPrintIntFunction)
 	declareBuiltIn("print_uint", BuiltInPrintUIntFunction)
 	declareBuiltIn("print_bool", BuiltInPrintBoolFunction)

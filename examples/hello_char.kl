@@ -1,0 +1,9 @@
+-- expect.stdout {
+-- c
+-- } expect.stdout
+-- expect.exit_code: 0
+
+fn main() {
+    let c = 'c'
+    print_char(c)
+}

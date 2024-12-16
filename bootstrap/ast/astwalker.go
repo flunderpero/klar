@@ -23,6 +23,7 @@ type Visitor interface {
 	VisitImplDefinition(impl *ImplDefinition, w Walker) error
 	VisitIdentExpression(expr *IdentExpression) error
 	VisitStringLiteralExpression(expr *StringLiteralExpression) error
+	VisitCharLiteralExpression(expr *CharLiteralExpression) error
 	VisitIntLiteralExpression(expr *IntLiteralExpression) error
 	VisitBoolLiteralExpression(expr *BoolLiteralExpression) error
 	VisitTupleLiteralExpression(expr *TupleLiteralExpression, w Walker) error
@@ -58,6 +59,10 @@ func (_ *DefaultVisitor) VisitIdentExpression(expr *IdentExpression) error {
 }
 
 func (_ *DefaultVisitor) VisitStringLiteralExpression(expr *StringLiteralExpression) error {
+	return nil
+}
+
+func (_ *DefaultVisitor) VisitCharLiteralExpression(expr *CharLiteralExpression) error {
 	return nil
 }
 
@@ -164,6 +169,8 @@ func (w *DefaultWalker) WalkExpression(expr Expression) error {
 		err = w.Visitor.VisitIdentExpression(expr)
 	case *StringLiteralExpression:
 		err = w.Visitor.VisitStringLiteralExpression(expr)
+	case *CharLiteralExpression:
+		err = w.Visitor.VisitCharLiteralExpression(expr)
 	case *IntLiteralExpression:
 		err = w.Visitor.VisitIntLiteralExpression(expr)
 	case *BoolLiteralExpression:

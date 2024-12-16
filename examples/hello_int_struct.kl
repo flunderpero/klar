@@ -1,0 +1,23 @@
+-- expect.stdout {
+-- 127, 32767, 2147483647, 9223372036854775807
+-- } expect.stdout
+-- expect.exit_code: 0
+
+-- Test that all int types can be used in structs.
+struct All {
+    i8 I8
+    i16 I16
+    i32 I32
+    i64 I64
+}
+
+fn main() {
+    let a = All(127, 32767, i64=9223372036854775807, i32=2147483647)
+    print_int(a.i8)
+    print(", ")
+    print_int(a.i16)
+    print(", ")
+    print_int(a.i32)
+    print(", ")
+    print_int(a.i64)
+}

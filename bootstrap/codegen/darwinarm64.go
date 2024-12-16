@@ -14,21 +14,23 @@ type DataLayout struct{}
 
 func (self DataLayout) SizeOf(ty ir.Type) int {
 	switch ty := ty.(type) {
-	case ir.BuiltInType:
+	case ir.IntType:
 		switch ty {
-		case ir.NoneType:
-			return 0
 		case ir.Int1Type:
 			return 1
 		case ir.Int8Type:
 			return 1
+		case ir.Int16Type:
+			return 2
 		case ir.Int32Type:
 			return 4
 		case ir.Int64Type:
 			return 8
 		default:
-			panic(fmt.Sprintf("Unknown basic type: %s", ty))
+			panic(fmt.Sprintf("Unknown integer type: %s", ty))
 		}
+	case ir.NoneType:
+		return 0
 	case *ir.PointerType:
 		return 8
 	case *ir.StructType:
@@ -46,7 +48,7 @@ func (self DataLayout) SizeOf(ty ir.Type) int {
 
 func (self DataLayout) Alignment(ty ir.Type) int {
 	switch ty := ty.(type) {
-	case ir.BuiltInType, *ir.PointerType:
+	case ir.IntType, ir.NoneType, *ir.PointerType:
 		return self.SizeOf(ty)
 	}
 	panic(fmt.Sprintf("Unknown type: %T", ty))
@@ -407,6 +409,21 @@ func (c *Code) generateIntImmediate(target register, value int64) {
 	c.emit("%s %s, #%d", mov, target, chunk0)
 }
 
+func (c *Code) sign_extend_or_zero_extend(reg register, ty ir.IntType) {
+	switch ty {
+	case ir.Int1Type, ir.Int8Type:
+		c.emit("sxtb %s, %s", reg, reg.to32bit())
+	case ir.Int16Type:
+		c.emit("sxth %s, %s", reg, reg.to32bit())
+	case ir.Int32Type:
+		c.emit("sxtw %s, %s", reg, reg)
+	case ir.Int64Type:
+	// Nothing to do.
+	default:
+		panic(fmt.Sprintf("we don't know how to sign extend or zero extend a value of type %q yet", ty))
+	}
+}
+
 func (c *Code) generateBlock(block *ir.Block) error {
 	c.emit("%s:", c.blockLabel(block))
 	c.incIndent()
@@ -424,14 +441,16 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
 			c.generateIntImmediate(reg.reg, inst.Value)
 			c.values[inst.Register().Id] = reg
-		case *ir.SignedInt64AddWithOverflow:
+		case *ir.SignedIntAddWithOverflow:
 			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
 			c.emit("adds %s, %s, %s", reg, lhs, rhs)
 			c.values[inst.Register().Id] = reg
-		case *ir.SignedInt64MultiplyWithOverflow:
+			c.sign_extend_or_zero_extend(reg.reg, inst.Type)
+		case *ir.SignedIntMultiplyWithOverflow:
 			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
 			c.emit("mul %s, %s, %s", reg, lhs, rhs)
 			c.values[inst.Register().Id] = reg
+			c.sign_extend_or_zero_extend(reg.reg, inst.Type)
 		case *ir.IntCompare:
 			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
 			c.values[inst.Register().Id] = reg
@@ -489,10 +508,14 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			source := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Source))
 			reg := c.registerAllocator.allocateScratchRegister(inst.Register())
 			switch ty := inst.TargetType.(type) {
-			case ir.BuiltInType:
+			case ir.IntType:
 				switch ty {
 				case ir.Int1Type, ir.Int8Type:
 					c.emit("ldrb %s, [%s] ; %s", reg.reg.to32bit(), source, inst.Register())
+				case ir.Int16Type:
+					c.emit("ldrh %s, [%s] ; %s", reg.reg.to32bit(), source, inst.Register())
+				case ir.Int32Type:
+					c.emit("ldr %s, [%s] ; %s", reg.reg.to32bit(), source, inst.Register())
 				case ir.Int64Type:
 					c.emit("ldr %s, [%s] ; %s", reg, source, inst.Register())
 				default:
@@ -507,15 +530,19 @@ func (c *Code) generateBlock(block *ir.Block) error {
 		case *ir.Store:
 			target := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Target))
 			value := c.registerAllocator.ensureInRegister(c.mustLookupRegisterAllocation(inst.Value))
-			switch ty := inst.ValueType.(type) {
-			case ir.BuiltInType:
+			switch ty := inst.Type.(type) {
+			case ir.IntType:
 				switch ty {
 				case ir.Int1Type, ir.Int8Type:
 					c.emit("strb %s, [%s]", value.to32bit(), target)
+				case ir.Int16Type:
+					c.emit("strh %s, [%s]", value.to32bit(), target)
+				case ir.Int32Type:
+					c.emit("str %s, [%s]", value.to32bit(), target)
 				case ir.Int64Type:
 					c.emit("str %s, [%s]", value, target)
 				default:
-					return errors.Errorf("we don't know how to store a value of type %q yet", inst.ValueType)
+					return errors.Errorf("we don't know how to store a value of type %q yet", inst.Type)
 				}
 			case *ir.PointerType:
 				c.emit("str %s, [%s]", value, target)
@@ -539,7 +566,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 				panic(fmt.Sprintf("unknown callee type: %T", callee))
 			}
 			c.registerAllocator.restoreCallerSavedRegisters(savedCallerRegisters)
-			if inst.FunctionType.Result != ir.NoneType {
+			if _, ok := inst.FunctionType.Result.(ir.NoneType); !ok {
 				allocation := c.registerAllocator.saveCallResultRegister(inst.Register())
 				c.values[inst.Register().Id] = allocation
 			}
@@ -547,7 +574,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			return errors.Errorf("unknown instruction: %T", inst)
 		}
 	}
-	if block.Result.Type != ir.NoneType {
+	if _, ok := block.Result.Type.(ir.NoneType); !ok {
 		// Move the value of the block expression to x0.
 		resultAllocation := c.mustLookupRegisterAllocation(block.Result)
 		c.registerAllocator.move(x0, resultAllocation)

@@ -161,6 +161,9 @@ var builtInSpan = token.Span{File: new(string), Src: &[]byte{}, Start: 0, End: 0
 var strType = &StrType{}
 var boolType = &BoolType{}
 var int64Type = &Int64Type{}
+var int32Type = &Int32Type{}
+var int16Type = &Int16Type{}
+var int8Type = &Int8Type{}
 var noneType = &NoneType{}
 var neverType = &NeverType{}
 var rawPtr = &RawPtr{}
@@ -228,16 +231,113 @@ func (ty BoolType) String() string {
 	return "BoolType"
 }
 
+type IntType interface {
+	IsSigned() bool
+	Bits() int
+}
+
+type Int8Type struct {
+	traits []*TraitType
+}
+
+func (ty Int8Type) IsSigned() bool {
+	return true
+}
+
+func (ty Int8Type) Bits() int {
+	return 8
+}
+
+func (ty Int8Type) Id() TypeId {
+	return 3
+}
+
+func (ty Int8Type) IsAssignableFrom(other Type) bool {
+	return other.Id() == int8Type.Id()
+}
+
+func (ty *Int8Type) Traits() []*TraitType {
+	return ty.traits
+}
+
+func (ty Int8Type) String() string {
+	return "Int8Type"
+}
+
+type Int16Type struct {
+	traits []*TraitType
+}
+
+func (ty Int16Type) IsSigned() bool {
+	return true
+}
+
+func (ty Int16Type) Bits() int {
+	return 16
+}
+
+func (ty Int16Type) Id() TypeId {
+	return 4
+}
+
+func (ty Int16Type) IsAssignableFrom(other Type) bool {
+	return other.Id() == int16Type.Id() || other.Id() == int8Type.Id()
+}
+
+func (ty *Int16Type) Traits() []*TraitType {
+	return ty.traits
+}
+
+func (ty Int16Type) String() string {
+	return "Int16Type"
+}
+
+type Int32Type struct {
+	traits []*TraitType
+}
+
+func (ty Int32Type) IsSigned() bool {
+	return true
+}
+
+func (ty Int32Type) Bits() int {
+	return 32
+}
+
+func (ty Int32Type) Id() TypeId {
+	return 5
+}
+
+func (ty Int32Type) IsAssignableFrom(other Type) bool {
+	return other.Id() == int32Type.Id() || other.Id() == int16Type.Id() || other.Id() == int8Type.Id()
+}
+
+func (ty *Int32Type) Traits() []*TraitType {
+	return ty.traits
+}
+
+func (ty Int32Type) String() string {
+	return "Int32Type"
+}
+
 type Int64Type struct {
 	traits []*TraitType
 }
 
+func (ty Int64Type) IsSigned() bool {
+	return true
+}
+
+func (ty Int64Type) Bits() int {
+	return 64
+}
+
 func (ty Int64Type) Id() TypeId {
-	return 3
+	return 6
 }
 
 func (ty Int64Type) IsAssignableFrom(other Type) bool {
-	return ty.Id() == other.Id()
+	return other.Id() == int64Type.Id() || other.Id() == int32Type.Id() || other.Id() == int16Type.Id() || other.Id() == int8Type.Id()
 }
 
 func (ty *Int64Type) Traits() []*TraitType {
@@ -252,7 +352,7 @@ type NoneType struct {
 }
 
 func (ty NoneType) Id() TypeId {
-	return 4
+	return 7
 }
 
 func (ty NoneType) IsAssignableFrom(other Type) bool {
@@ -266,7 +366,7 @@ func (ty NoneType) String() string {
 type RawPtr struct{}
 
 func (ty RawPtr) Id() TypeId {
-	return 5
+	return 8
 }
 
 func (ty RawPtr) IsAssignableFrom(other Type) bool {
@@ -281,7 +381,7 @@ type NeverType struct {
 }
 
 func (ty NeverType) Id() TypeId {
-	return 6
+	return 9
 }
 
 func (ty NeverType) IsAssignableFrom(other Type) bool {
@@ -1004,6 +1104,7 @@ type typeChecker struct {
 	loopDepth        int
 	checkingMode     checkingMode
 	typeCreator      *TypeCreator
+	contextualType   Type
 }
 
 func (tc *typeChecker) newTypeBase() typeBase {
@@ -1141,7 +1242,28 @@ func (tc *typeChecker) VisitIntLiteralExpression(expr *ast.IntLiteralExpression)
 	if expr.IsUInt64 {
 		return errors.Errorf("%s: int literal exceeds int64 range: %d", expr.Span(), expr.UInt64)
 	}
-	tc.typeInfo.Set(expr, int64Type)
+	v := expr.Int64
+	var ty Type
+	switch tc.contextualType {
+	case int8Type:
+		if v < -128 || v > 127 {
+			return errors.Errorf("%s: value %d out of range for Int8Type", expr.Span(), v)
+		}
+		ty = int8Type
+	case int16Type:
+		if v < -32768 || v > 32767 {
+			return errors.Errorf("%s: value %d out of range for Int16Type", expr.Span(), v)
+		}
+		ty = int16Type
+	case int32Type:
+		if v < -2147483648 || v > 2147483647 {
+			return errors.Errorf("%s: value %d out of range for Int32Type", expr.Span(), v)
+		}
+		ty = int32Type
+	default:
+		ty = int64Type
+	}
+	tc.typeInfo.Set(expr, ty)
 	return nil
 }
 
@@ -1201,29 +1323,40 @@ func (tc *typeChecker) VisitIdentExpression(expr *ast.IdentExpression) error {
 }
 
 func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walker) error {
-	if err := w.WalkBinaryExpression(expr); err != nil {
+	if err := w.WalkNode(expr.Lhs); err != nil {
 		return err
 	}
 	lhs := tc.typeInfo.MustLookup(expr.Lhs)
+	tc.contextualType = lhs
+	if err := w.WalkNode(expr.Rhs); err != nil {
+		return err
+	}
 	rhs := tc.typeInfo.MustLookup(expr.Rhs)
 	switch expr.Op {
 	case ast.OpAdd, ast.OpMultiply:
-		if !lhs.IsAssignableFrom(int64Type) {
+		switch lhs.(type) {
+		case IntType, *RawPtr:
+		default:
 			return errors.Errorf(
-				"%s: lhs of arithmetic expression must be assignable to Int64Type, got %s", expr.Span(), lhs)
+				"%s: lhs of arithmetic expression must be an integer type, got %s", expr.Span(), lhs)
 		}
-		if !rhs.IsAssignableFrom(int64Type) {
+		if !lhs.IsAssignableFrom(rhs) {
 			return errors.Errorf(
-				"%s: rhs of arithmetic expression must be assignable to Int64Type, got %s", expr.Span(), rhs)
+				"%s: rhs of arithmetic expression must be assignable to lhs, expected %q got %q", expr.Span(), lhs, rhs)
 		}
-		tc.typeInfo.Set(expr, int64Type)
+		tc.typeInfo.Set(expr, lhs)
 	case ast.OpEqual, ast.OpNotEqual, ast.OpGreaterThan, ast.OpGreaterThanOrEqual, ast.OpLessThan, ast.OpLessThanOrEqual:
-		// For now, we only support equality of Int (alias for Int64) and Bool.
-		if lhs != int64Type && lhs != boolType {
-			return errors.Errorf("%s: lhs of comparison expression must be of type Int64Type, got %s", expr.Span(), lhs)
+		switch lhs.(type) {
+		case IntType, *RawPtr:
+		case *BoolType:
+			if expr.Op != ast.OpEqual && expr.Op != ast.OpNotEqual {
+				return errors.Errorf("%s: only == and != are supported for bool types", expr.Span())
+			}
+		default:
+			return errors.Errorf("%s: lhs of comparison expression must be an int or bool type, got %s", expr.Span(), lhs)
 		}
-		if rhs != lhs {
-			return errors.Errorf("%s: rhs of comparison expression must match lhs, expected %q got %q", expr.Span(), lhs, rhs)
+		if !lhs.IsAssignableFrom(rhs) {
+			return errors.Errorf("%s: rhs of comparison expression must be assignable to lhs, expected %q got %q", expr.Span(), lhs, rhs)
 		}
 		tc.typeInfo.Set(expr, boolType)
 	case ast.OpAnd, ast.OpOr:
@@ -1259,7 +1392,7 @@ func (tc *typeChecker) VisitUnaryExpression(expr *ast.UnaryExpression, w ast.Wal
 }
 
 func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) error {
-	if err := w.WalkCallExpression(expr); err != nil {
+	if err := tc.VisitNode(expr.Callee, w); err != nil {
 		return err
 	}
 	calleeType, ok := tc.typeInfo.MustLookup(expr.Callee).(CallableType)
@@ -1279,7 +1412,6 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 	}
 	seenParamIndexes := []int{}
 	for i, arg := range expr.Args {
-		argType := tc.typeInfo.MustLookup(arg.Value)
 		var paramIndex = i
 		if arg.Name != "" {
 			paramIndex = slices.IndexFunc(params, func(p TypeAndName[Type]) bool { return p.Name == arg.Name })
@@ -1292,6 +1424,11 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 		}
 		seenParamIndexes = append(seenParamIndexes, paramIndex)
 		param := params[paramIndex]
+		tc.contextualType = param.Type
+		if err := tc.VisitNode(arg.Value, w); err != nil {
+			return err
+		}
+		argType := tc.typeInfo.MustLookup(arg.Value)
 		if !param.Type.IsAssignableFrom(argType) {
 			return errors.Errorf(
 				"%s: expected argument %d to be of type %s, got %s", expr.Span(), paramIndex, param.Type, argType)
@@ -1624,6 +1761,15 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 }
 
 func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.Walker) error {
+	var variableType Type
+	if v.Type != nil {
+		variableType_, err := tc.lookupTypeOfNode(v.Type)
+		if err != nil {
+			return err
+		}
+		variableType = variableType_
+		tc.contextualType = variableType
+	}
 	if err := w.WalkNode(v.Value); err != nil {
 		return err
 	}
@@ -1631,17 +1777,13 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 	if _, ok := valueType.(*NoneType); ok {
 		return errors.Errorf("%s: variable %s must have a type that is not None", v.Span(), v.Name)
 	}
-	variableType := valueType
-	if v.Type != nil {
-		variableType_, err := tc.lookupTypeOfNode(v.Type)
-		if err != nil {
-			return err
-		}
-		if !variableType_.IsAssignableFrom(valueType) {
+	if variableType != nil {
+		if !variableType.IsAssignableFrom(valueType) {
 			return errors.Errorf(
 				"%s: variable %q must be assignable to type %s, got %s", v.Span(), v.Name, variableType, valueType)
 		}
-		variableType = variableType_
+	} else {
+		variableType = valueType
 	}
 	varInfo := variableInfo{type_: variableType, mutable: true, span: v.Span()}
 	if err := tc.typeScope.declareVariable(string(v.Name), varInfo); err != nil {
@@ -1794,6 +1936,13 @@ func (tc *typeChecker) VisitStructTypeDeclaration(decl *ast.StructTypeDeclaratio
 	return nil
 }
 
+func (tc *typeChecker) VisitNode(node ast.Node, w ast.Walker) error {
+	res := w.WalkNode(node)
+	// Reset the contextual type.
+	tc.contextualType = nil
+	return res
+}
+
 func (tc *typeChecker) VisitModule(module *ast.Module, w ast.Walker) error {
 	tc.typeInfo.Set(module, noneType)
 	return w.WalkModule(module)
@@ -1837,6 +1986,10 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 	declareBuiltIn("Str", strType)
 	declareBuiltIn("Bool", boolType)
 	declareBuiltIn("Int", int64Type)
+	declareBuiltIn("I64", int64Type)
+	declareBuiltIn("I32", int32Type)
+	declareBuiltIn("I16", int16Type)
+	declareBuiltIn("I8", int8Type)
 	declareBuiltIn("RawPtr", rawPtr)
 	declareBuiltIn("Never", neverType)
 	declareBuiltIn("print", BuiltInPrintFunction)

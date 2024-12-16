@@ -255,7 +255,16 @@ func (self *prepare) replaceTupleTypeWithStructType(ty typed.Type) typed.Type {
 				variant.Named.Type = self.replaceTupleTypeWithStructType(variant.Named.Type)
 			}
 		}
-	case *typed.BoolType, *typed.Int64Type, *typed.StrType, *typed.NoneType, *typed.NeverType, *typed.RawPtr, *typed.TypeParam:
+	case *typed.BoolType,
+		*typed.Int64Type,
+		*typed.Int32Type,
+		*typed.Int16Type,
+		*typed.Int8Type,
+		*typed.StrType,
+		*typed.NoneType,
+		*typed.NeverType,
+		*typed.RawPtr,
+		*typed.TypeParam:
 	default:
 		panic(fmt.Sprintf("unexpected type: %T", ty))
 	}

@@ -16,19 +16,27 @@ type Type interface {
 	String() string
 }
 
-type BuiltInType string
+type IntType string
 
 const (
-	NoneType   BuiltInType = "none"
-	Int1Type   BuiltInType = "i1"
-	Int8Type   BuiltInType = "i8"
-	Int32Type  BuiltInType = "i32"
-	Int64Type  BuiltInType = "i64"
-	UInt64Type BuiltInType = "u64"
+	Int1Type   IntType = "i1"
+	Int8Type   IntType = "i8"
+	Int16Type  IntType = "i16"
+	Int32Type  IntType = "i32"
+	Int64Type  IntType = "i64"
+	UInt64Type IntType = "u64"
 )
 
-func (t BuiltInType) String() string {
+func (t IntType) String() string {
 	return string(t)
+}
+
+type NoneType struct{}
+
+var noneType = NoneType{}
+
+func (t NoneType) String() string {
+	return "none"
 }
 
 type PointerType struct {
@@ -41,7 +49,7 @@ func (t PointerType) String() string {
 
 func isValueType(ty Type) bool {
 	switch ty.(type) {
-	case BuiltInType, *PointerType:
+	case IntType, *PointerType:
 		return true
 	}
 	return false
@@ -249,7 +257,7 @@ func newRegister(id int, ty Type) Register {
 	return Register{Id: RegisterId(fmt.Sprintf("%%%d", id)), Type: ty}
 }
 
-var NoneRegister = Register{Id: "none", Type: NoneType}
+var NoneRegister = Register{Id: "none", Type: noneType}
 
 type Instruction interface {
 	String() string
@@ -272,13 +280,13 @@ func (i StrConst) String() string {
 func (i StrConst) getPointerSourceMarker() {}
 
 type IntConst struct {
-	register  Register
-	Value     int64
-	ValueType BuiltInType
+	register Register
+	Value    int64
+	Type     IntType
 }
 
 func (i IntConst) String() string {
-	return fmt.Sprintf("%s = %s %d", i.register, i.ValueType, i.Value)
+	return fmt.Sprintf("%s = %s %d", i.register, i.Type, i.Value)
 }
 
 func (i *IntConst) Register() Register {
@@ -286,13 +294,13 @@ func (i *IntConst) Register() Register {
 }
 
 type UIntConst struct {
-	register  Register
-	Value     uint64
-	ValueType BuiltInType
+	register Register
+	Value    uint64
+	Type     IntType
 }
 
 func (i UIntConst) String() string {
-	return fmt.Sprintf("%s = %s %d", i.register, i.ValueType, i.Value)
+	return fmt.Sprintf("%s = %s %d", i.register, i.Type, i.Value)
 }
 
 func (i *UIntConst) Register() Register {
@@ -346,9 +354,9 @@ func (i Load) String() string {
 }
 
 type Store struct {
-	Target    Register
-	Value     Register
-	ValueType Type
+	Target Register
+	Value  Register
+	Type   Type
 }
 
 func (s *Store) Register() Register {
@@ -356,35 +364,37 @@ func (s *Store) Register() Register {
 }
 
 func (s Store) String() string {
-	return fmt.Sprintf("store %s %s, %s", s.ValueType, s.Value, s.Target)
+	return fmt.Sprintf("store %s %s, %s", s.Type, s.Value, s.Target)
 }
 
-type SignedInt64AddWithOverflow struct {
+type SignedIntAddWithOverflow struct {
 	register Register
+	Type     IntType
 	Lhs      Register
 	Rhs      Register
 }
 
-func (i *SignedInt64AddWithOverflow) Register() Register {
+func (i *SignedIntAddWithOverflow) Register() Register {
 	return i.register
 }
 
-func (i SignedInt64AddWithOverflow) String() string {
-	return fmt.Sprintf("%s = iaddo i64 %s, i64 %s", i.register, i.Lhs, i.Rhs)
+func (i SignedIntAddWithOverflow) String() string {
+	return fmt.Sprintf("%s = iaddo %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
 }
 
-type SignedInt64MultiplyWithOverflow struct {
+type SignedIntMultiplyWithOverflow struct {
 	register Register
+	Type     IntType
 	Lhs      Register
 	Rhs      Register
 }
 
-func (i *SignedInt64MultiplyWithOverflow) Register() Register {
+func (i *SignedIntMultiplyWithOverflow) Register() Register {
 	return i.register
 }
 
-func (i SignedInt64MultiplyWithOverflow) String() string {
-	return fmt.Sprintf("%s = imulo i64 %s, i64 %s", i.register, i.Lhs, i.Rhs)
+func (i SignedIntMultiplyWithOverflow) String() string {
+	return fmt.Sprintf("%s = imulo %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
 }
 
 type IntCompOp string
@@ -403,7 +413,7 @@ type IntCompare struct {
 	Lhs      Register
 	Rhs      Register
 	Op       IntCompOp
-	IntType  BuiltInType
+	Type     IntType
 }
 
 func (i IntCompare) Register() Register {
@@ -411,7 +421,7 @@ func (i IntCompare) Register() Register {
 }
 
 func (i IntCompare) String() string {
-	return fmt.Sprintf("%s = icmp %s %s %s, %s", i.register, i.Op, i.IntType, i.Lhs, i.Rhs)
+	return fmt.Sprintf("%s = icmp %s %s %s, %s", i.register, i.Op, i.Type, i.Lhs, i.Rhs)
 }
 
 type BinaryLogicOp string
@@ -491,7 +501,7 @@ func (inst Call) String() string {
 		args += fmt.Sprintf("%s %s", arg.Type, reg)
 	}
 	assign := ""
-	if inst.register.Type != NoneType {
+	if inst.register.Type != noneType {
 		assign = fmt.Sprintf("%s = ", inst.register)
 	}
 	prefix := ""
@@ -768,14 +778,16 @@ func (g *generator) VisitStringLiteralExpression(expr *ast.StringLiteralExpressi
 func (g *generator) VisitIntLiteralExpression(expr *ast.IntLiteralExpression) error {
 	if expr.IsUInt64 {
 		g.append(&UIntConst{
-			register: g.nextRegister(Int64Type),
+			register: g.nextRegister(UInt64Type),
 			Value:    expr.UInt64,
+			Type:     g.lookupType(expr).(IntType),
 		}, expr)
 		return nil
 	}
 	g.append(&IntConst{
 		register: g.nextRegister(Int64Type),
 		Value:    expr.Int64,
+		Type:     g.lookupType(expr).(IntType),
 	}, expr)
 	return nil
 }
@@ -833,6 +845,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		g.append(&IntConst{
 			register: sizeReg,
 			Value:    int64(g.dataLayout.SizeOf(structType)),
+			Type:     Int64Type,
 		}, nil)
 		g.append(&Call{
 			register:     mallocReg,
@@ -843,9 +856,9 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		for i, callArg := range expr.Args {
 			fieldType := structType.Fields[i]
 			switch fieldType.(type) {
-			case BuiltInType, *PointerType:
+			case IntType, *PointerType:
 			default:
-				return errors.Errorf("only BuiltInType and PointerType can be stored in struct fields, got %q", fieldType)
+				return errors.Errorf("only IntType and PointerType can be stored in struct fields, got %q", fieldType)
 			}
 			fieldValueReg := g.lookupRegisterByNode(callArg.Value)
 			fieldPtrReg := g.nextRegister(PointerType{fieldType})
@@ -856,9 +869,9 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 				SourceType: structType,
 			}, nil)
 			g.append(&Store{
-				Target:    fieldPtrReg,
-				Value:     fieldValueReg,
-				ValueType: fieldType,
+				Target: fieldPtrReg,
+				Value:  fieldValueReg,
+				Type:   fieldType,
 			}, nil)
 		}
 		g.registerByNodeId[expr.Id()] = mallocReg
@@ -876,7 +889,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 				size = g.dataLayout.SizeOf(ty)
 			}
 			reg := g.nextRegister(Int64Type)
-			g.append(&IntConst{register: reg, Value: int64(size)}, expr)
+			g.append(&IntConst{register: reg, Value: int64(size), Type: Int64Type}, expr)
 			return nil
 		}
 		var callee Callee
@@ -905,9 +918,9 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 				valueType = &PointerType{ElementType: valueType}
 			}
 			g.append(&Store{
-				Target:    args[0],
-				Value:     args[1],
-				ValueType: valueType,
+				Target: args[0],
+				Value:  args[1],
+				Type:   valueType,
 			}, expr)
 			return nil
 		}
@@ -927,7 +940,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		ty := g.typeInfo.MustLookup(expr.Callee)
 		funcType := g.declaredTypes.MustLookup(ty).(*FunctionType)
 		var reg Register = NoneRegister
-		if funcType.Result != NoneType {
+		if funcType.Result != noneType {
 			reg = g.nextRegister(funcType.Result)
 		}
 		g.append(&Call{
@@ -950,23 +963,13 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 	rhs := g.lookupRegisterByNode(expr.Rhs)
 	switch expr.Op {
 	case ast.OpAdd:
-		if ty, ok := g.typeInfo.MustLookup(expr).(*typed.Int64Type); !ok {
-			// For now we only support 64 bit integers.
-			return errors.Errorf("add expression must be of type Int64Type, got %s", ty)
-		}
-		g.append(&SignedInt64AddWithOverflow{register: g.nextRegister(Int64Type), Lhs: lhs, Rhs: rhs}, expr)
+		valueType := g.lookupType(expr).(IntType)
+		g.append(&SignedIntAddWithOverflow{register: g.nextRegister(Int64Type), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
 	case ast.OpMultiply:
-		if ty, ok := g.typeInfo.MustLookup(expr).(*typed.Int64Type); !ok {
-			// For now we only support 64 bit integers.
-			return errors.Errorf("multiply expression must be of type Int64Type, got %s", ty)
-		}
-		g.append(&SignedInt64MultiplyWithOverflow{register: g.nextRegister(Int64Type), Lhs: lhs, Rhs: rhs}, expr)
+		valueType := g.lookupType(expr).(IntType)
+		g.append(&SignedIntMultiplyWithOverflow{register: g.nextRegister(Int64Type), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
 	case ast.OpEqual, ast.OpNotEqual, ast.OpLessThan, ast.OpLessThanOrEqual, ast.OpGreaterThan, ast.OpGreaterThanOrEqual:
-		// For now, we only know how to compare 64 and 1 bit integers.
-		ty := g.lookupType(expr.Lhs).(BuiltInType)
-		if ty != Int64Type && ty != Int1Type {
-			return errors.Errorf("type of lhs is not a supported int type, but %s", ty)
-		}
+		ty := g.lookupType(expr.Lhs).(IntType)
 		ops := map[ast.BinaryOperator]IntCompOp{
 			ast.OpEqual:              IntCompOpEQ,
 			ast.OpNotEqual:           IntCompOpNEQ,
@@ -979,9 +982,9 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 		if !ok {
 			panic(fmt.Sprintf("unknown binary operator: %s", expr.Op))
 		}
-		g.append(&IntCompare{register: g.nextRegister(Int1Type), Op: op, IntType: ty, Lhs: lhs, Rhs: rhs}, expr)
+		g.append(&IntCompare{register: g.nextRegister(Int1Type), Op: op, Type: ty, Lhs: lhs, Rhs: rhs}, expr)
 	case ast.OpOr, ast.OpAnd:
-		ty := g.lookupType(expr.Lhs).(BuiltInType)
+		ty := g.lookupType(expr.Lhs).(IntType)
 		if ty != Int1Type {
 			return errors.Errorf("type of lhs is not a supported int type, but %s", ty)
 		}
@@ -1007,7 +1010,7 @@ func (g *generator) VisitUnaryExpression(expr *ast.UnaryExpression, w ast.Walker
 	}
 	switch expr.Op {
 	case ast.OpNot:
-		ty := g.lookupType(expr).(BuiltInType)
+		ty := g.lookupType(expr).(IntType)
 		if ty != Int1Type {
 			return errors.Errorf("type of expression is not a supported int type, but %s", ty)
 		}
@@ -1157,9 +1160,9 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 			FieldIndex: fieldIndex,
 		}, nil)
 		g.append(&Store{
-			Target:    getPtrReg,
-			Value:     reg,
-			ValueType: fieldType,
+			Target: getPtrReg,
+			Value:  reg,
+			Type:   fieldType,
 		}, stmt)
 	} else {
 		g.symbolTable.assign(stmt.Variable.Ident, reg)
@@ -1212,11 +1215,17 @@ type DeclaredTypes struct {
 func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
 	switch ty := ty.(type) {
 	case *typed.NoneType, *typed.NeverType:
-		return NoneType
+		return noneType
 	case *typed.StrType:
 		return StrType
 	case *typed.BoolType:
 		return Int1Type
+	case *typed.Int8Type:
+		return Int8Type
+	case *typed.Int16Type:
+		return Int16Type
+	case *typed.Int32Type:
+		return Int32Type
 	case *typed.Int64Type, *typed.RawPtr:
 		return Int64Type
 	case *typed.StructType, *typed.FunctionType:

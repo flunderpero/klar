@@ -1,5 +1,5 @@
 -- expect.stdout {
--- 8, 1, 8, 8, 1, 8
+-- 8, 1, 2, 4, 8, 1, 8, 8, 1, 8
 -- } expect.stdout
 -- expect.exit_code: 0
 
@@ -17,6 +17,14 @@ fn generic<T>() Int => sizeof<T>()
 
 fn main() {
     print_int(sizeof<Str>())
+    print(", ")
+    print_int(sizeof<I8>())
+    print(", ")
+    print_int(sizeof<I16>())
+    print(", ")
+    print_int(sizeof<I32>())
+    print(", ")
+    print_int(sizeof<I64>())
     print(", ")
     print_int(generic<Bool>())
     print(", ")

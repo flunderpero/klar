@@ -1,0 +1,27 @@
+-- expect.stdout {
+-- 255, 1, 65500, 219, 4294967295, 218, 18446744073709551615, 217, 
+-- } expect.stdout
+-- expect.exit_code: 0
+
+fn main() {
+    let u8 U8 = 255
+    print_int(u8)
+    print(", ")
+    print_int(u8 + 2)
+    print(", ")
+    let u16 U16 = 65500
+    print_int(u16)
+    print(", ")
+    print_int(u16 + u8)
+    print(", ")
+    let u32 U32 = 4294967295
+    print_int(u32)
+    print(", ")
+    print_int(u32 + u16 + u8)
+    print(", ")
+    let u64 U64 = 18446744073709551615
+    print_uint(u64) 
+    print(", ")
+    print_uint(u64 + u32 + u16 + u8)
+    print(", ")
+}

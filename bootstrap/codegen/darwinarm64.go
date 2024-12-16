@@ -18,13 +18,13 @@ func (self DataLayout) SizeOf(ty ir.Type) int {
 		switch ty {
 		case ir.Int1Type:
 			return 1
-		case ir.Int8Type:
+		case ir.Int8Type, ir.UInt8Type:
 			return 1
-		case ir.Int16Type:
+		case ir.Int16Type, ir.UInt16Type:
 			return 2
-		case ir.Int32Type:
+		case ir.Int32Type, ir.UInt32Type:
 			return 4
-		case ir.Int64Type:
+		case ir.Int64Type, ir.UInt64Type:
 			return 8
 		default:
 			panic(fmt.Sprintf("Unknown integer type: %s", ty))
@@ -418,7 +418,15 @@ func (c *Code) sign_extend_or_zero_extend(reg register, ty ir.IntType) {
 	case ir.Int32Type:
 		c.emit("sxtw %s, %s", reg, reg)
 	case ir.Int64Type:
-	// Nothing to do.
+		// Nothing to do.
+	case ir.UInt8Type:
+		c.emit("uxtb %s, %s", reg, reg.to32bit())
+	case ir.UInt16Type:
+		c.emit("uxth %s, %s", reg, reg.to32bit())
+	case ir.UInt32Type:
+		c.emit("uxtw %s, %s", reg, reg)
+	case ir.UInt64Type:
+		// Nothing to do.
 	default:
 		panic(fmt.Sprintf("we don't know how to sign extend or zero extend a value of type %q yet", ty))
 	}
@@ -446,7 +454,12 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			c.emit("adds %s, %s, %s", reg, lhs, rhs)
 			c.values[inst.Register().Id] = reg
 			c.sign_extend_or_zero_extend(reg.reg, inst.Type)
-		case *ir.SignedIntMultiplyWithOverflow:
+		case *ir.UnsignedIntAddWithOverflow:
+			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
+			c.emit("add %s, %s, %s", reg, lhs, rhs)
+			c.values[inst.Register().Id] = reg
+			c.sign_extend_or_zero_extend(reg.reg, inst.Type)
+		case *ir.IntMultiplicationWithOverflow:
 			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
 			c.emit("mul %s, %s, %s", reg, lhs, rhs)
 			c.values[inst.Register().Id] = reg
@@ -510,13 +523,13 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			switch ty := inst.TargetType.(type) {
 			case ir.IntType:
 				switch ty {
-				case ir.Int1Type, ir.Int8Type:
+				case ir.Int1Type, ir.Int8Type, ir.UInt8Type:
 					c.emit("ldrb %s, [%s] ; %s", reg.reg.to32bit(), source, inst.Register())
-				case ir.Int16Type:
+				case ir.Int16Type, ir.UInt16Type:
 					c.emit("ldrh %s, [%s] ; %s", reg.reg.to32bit(), source, inst.Register())
-				case ir.Int32Type:
+				case ir.Int32Type, ir.UInt32Type:
 					c.emit("ldr %s, [%s] ; %s", reg.reg.to32bit(), source, inst.Register())
-				case ir.Int64Type:
+				case ir.Int64Type, ir.UInt64Type:
 					c.emit("ldr %s, [%s] ; %s", reg, source, inst.Register())
 				default:
 					return errors.Errorf("we don't know how to load a value of type %q yet", inst.TargetType)
@@ -533,13 +546,13 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			switch ty := inst.Type.(type) {
 			case ir.IntType:
 				switch ty {
-				case ir.Int1Type, ir.Int8Type:
+				case ir.Int1Type, ir.Int8Type, ir.UInt8Type:
 					c.emit("strb %s, [%s]", value.to32bit(), target)
-				case ir.Int16Type:
+				case ir.Int16Type, ir.UInt16Type:
 					c.emit("strh %s, [%s]", value.to32bit(), target)
-				case ir.Int32Type:
+				case ir.Int32Type, ir.UInt32Type:
 					c.emit("str %s, [%s]", value.to32bit(), target)
-				case ir.Int64Type:
+				case ir.Int64Type, ir.UInt64Type:
 					c.emit("str %s, [%s]", value, target)
 				default:
 					return errors.Errorf("we don't know how to store a value of type %q yet", inst.Type)
@@ -691,6 +704,23 @@ func defineBuiltInPrintIntFunction(asm *ASMText) {
     ret`)
 }
 
+func defineBuiltInPrintUIntFunction(asm *ASMText) {
+	asm.emit(
+		`
+.print_uint:
+    stp fp, lr, [sp, #-32]!
+    mov fp, sp
+    str x0, [sp]
+    adrp x0, _print_uint_format@PAGE
+    add x0, x0, _print_uint_format@PAGEOFF+0
+    bl _printf
+    mov x0, 0
+    bl _fflush
+    ldp fp, lr, [sp], #32
+    mov x0, xzr
+    ret`)
+}
+
 func defineBuiltInPrintBoolFunction(asm *ASMText) {
 	asm.emit(
 		`
@@ -764,6 +794,7 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (*ASMText, error) {
 	defineBuiltInInternalExit(asm)
 	defineBuiltInPrintFunction(asm)
 	defineBuiltInPrintIntFunction(asm)
+	defineBuiltInPrintUIntFunction(asm)
 	defineBuiltInPrintBoolFunction(asm)
 	for _, function := range irModule.Functions {
 		code, err := generateFunction(function, irModule, function == irModule.Main)
@@ -792,6 +823,9 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (*ASMText, error) {
 	asm.emit(".align 3")
 	asm.emit("_print_int_format:")
 	asm.incIndent().emit(".asciz \"%%lld\"").decIndent()
+	asm.emit(".align 3")
+	asm.emit("_print_uint_format:")
+	asm.incIndent().emit(".asciz \"%%llu\"").decIndent()
 	asm.emit(".align 3")
 	asm.emit("_print_bool_true:")
 	asm.incIndent().emit(".asciz \"true\"").decIndent()

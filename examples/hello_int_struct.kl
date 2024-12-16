@@ -1,5 +1,5 @@
 -- expect.stdout {
--- 127, 32767, 2147483647, 9223372036854775807
+-- 127, 32767, 2147483647, 9223372036854775807, 255, 65535, 4294967295, 18446744073709551615
 -- } expect.stdout
 -- expect.exit_code: 0
 
@@ -9,10 +9,15 @@ struct All {
     i16 I16
     i32 I32
     i64 I64
+    u8 U8
+    u16 U16
+    u32 U32
+    u64 U64
 }
 
 fn main() {
-    let a = All(127, 32767, i64=9223372036854775807, i32=2147483647)
+    let a = All(
+        127, 32767, i64=9223372036854775807, i32=2147483647, u8=255, u16=65535, u32=4294967295, u64=18446744073709551615)
     print_int(a.i8)
     print(", ")
     print_int(a.i16)
@@ -20,4 +25,12 @@ fn main() {
     print_int(a.i32)
     print(", ")
     print_int(a.i64)
+    print(", ")
+    print_uint(a.u8)
+    print(", ")
+    print_uint(a.u16)
+    print(", ")
+    print_uint(a.u32)
+    print(", ")
+    print_uint(a.u64)
 }

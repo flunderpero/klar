@@ -24,11 +24,22 @@ const (
 	Int16Type  IntType = "i16"
 	Int32Type  IntType = "i32"
 	Int64Type  IntType = "i64"
+	UInt8Type  IntType = "u8"
+	UInt16Type IntType = "u16"
+	UInt32Type IntType = "u32"
 	UInt64Type IntType = "u64"
 )
 
 func (t IntType) String() string {
 	return string(t)
+}
+
+func (t IntType) IsSigned() bool {
+	switch t {
+	case Int1Type, Int8Type, Int16Type, Int32Type, Int64Type:
+		return true
+	}
+	return false
 }
 
 type NoneType struct{}
@@ -382,19 +393,34 @@ func (i SignedIntAddWithOverflow) String() string {
 	return fmt.Sprintf("%s = iaddo %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
 }
 
-type SignedIntMultiplyWithOverflow struct {
+type IntMultiplicationWithOverflow struct {
 	register Register
 	Type     IntType
 	Lhs      Register
 	Rhs      Register
 }
 
-func (i *SignedIntMultiplyWithOverflow) Register() Register {
+func (i *IntMultiplicationWithOverflow) Register() Register {
 	return i.register
 }
 
-func (i SignedIntMultiplyWithOverflow) String() string {
+func (i IntMultiplicationWithOverflow) String() string {
 	return fmt.Sprintf("%s = imulo %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
+}
+
+type UnsignedIntAddWithOverflow struct {
+	register Register
+	Type     IntType
+	Lhs      Register
+	Rhs      Register
+}
+
+func (i *UnsignedIntAddWithOverflow) Register() Register {
+	return i.register
+}
+
+func (i UnsignedIntAddWithOverflow) String() string {
+	return fmt.Sprintf("%s = addo %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
 }
 
 type IntCompOp string
@@ -964,10 +990,17 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 	switch expr.Op {
 	case ast.OpAdd:
 		valueType := g.lookupType(expr).(IntType)
-		g.append(&SignedIntAddWithOverflow{register: g.nextRegister(Int64Type), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+		if valueType.IsSigned() {
+			g.append(
+				&SignedIntAddWithOverflow{register: g.nextRegister(valueType), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+		} else {
+			g.append(
+				&UnsignedIntAddWithOverflow{register: g.nextRegister(valueType), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+		}
 	case ast.OpMultiply:
 		valueType := g.lookupType(expr).(IntType)
-		g.append(&SignedIntMultiplyWithOverflow{register: g.nextRegister(Int64Type), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+		g.append(
+			&IntMultiplicationWithOverflow{register: g.nextRegister(valueType), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
 	case ast.OpEqual, ast.OpNotEqual, ast.OpLessThan, ast.OpLessThanOrEqual, ast.OpGreaterThan, ast.OpGreaterThanOrEqual:
 		ty := g.lookupType(expr.Lhs).(IntType)
 		ops := map[ast.BinaryOperator]IntCompOp{
@@ -1228,6 +1261,14 @@ func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
 		return Int32Type
 	case *typed.Int64Type, *typed.RawPtr:
 		return Int64Type
+	case *typed.UInt8Type:
+		return UInt8Type
+	case *typed.UInt16Type:
+		return UInt16Type
+	case *typed.UInt32Type:
+		return UInt32Type
+	case *typed.UInt64Type:
+		return UInt64Type
 	case *typed.StructType, *typed.FunctionType:
 		if res, found := dt.Types[ty.Id()]; found {
 			return res
@@ -1321,6 +1362,7 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 	}
 	declareBuiltInFunction(typed.BuiltInPrintFunction, true)
 	declareBuiltInFunction(typed.BuiltInPrintIntFunction, true)
+	declareBuiltInFunction(typed.BuiltInPrintUIntFunction, true)
 	declareBuiltInFunction(typed.BuiltInPrintBoolFunction, true)
 	declareBuiltInFunction(typed.BuiltInInternalMallocFunction, true)
 	declareBuiltInFunction(typed.BuiltInInternalFreeFunction, true)

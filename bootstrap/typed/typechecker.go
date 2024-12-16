@@ -91,39 +91,44 @@ var BuiltInPrintIntFunction = &FunctionType{
 	Params:   []FunctionParam{{Name: "value", Type: int64Type}},
 	Result:   noneType,
 }
-var BuiltInPrintBoolFunction = &FunctionType{
+var BuiltInPrintUIntFunction = &FunctionType{
 	typeBase: typeBase{TypeId(102)},
+	Params:   []FunctionParam{{Name: "value", Type: uint64Type}},
+	Result:   noneType,
+}
+var BuiltInPrintBoolFunction = &FunctionType{
+	typeBase: typeBase{TypeId(103)},
 	Params:   []FunctionParam{{Name: "value", Type: boolType}},
 	Result:   noneType,
 }
 var BuiltInInternalMallocFunction = &FunctionType{
-	typeBase: typeBase{TypeId(103)},
+	typeBase: typeBase{TypeId(104)},
 	Params:   []FunctionParam{{Name: "size", Type: int64Type}},
 	Result:   int64Type,
 }
 var BuiltInInternalFreeFunction = &FunctionType{
-	typeBase: typeBase{TypeId(104)},
+	typeBase: typeBase{TypeId(105)},
 	Params:   []FunctionParam{{Name: "ptr", Type: rawPtr}},
 	Result:   noneType,
 }
 var BuiltInSizeOfFunctionTypeParam = &TypeParam{
-	typeBase:    typeBase{TypeId(105)},
+	typeBase:    typeBase{TypeId(106)},
 	GenericType: BuiltInSizeOfFunction,
 	Name:        ast.Ident("T"),
 	Index:       0,
 }
 var BuiltInSizeOfFunction = &FunctionType{
-	typeBase: typeBase{TypeId(106)},
+	typeBase: typeBase{TypeId(107)},
 	Params:   []FunctionParam{},
 	Result:   int64Type,
 }
 var BuiltInInternalWritePtrFunctionTypeParam = &TypeParam{
-	typeBase: typeBase{TypeId(107)},
+	typeBase: typeBase{TypeId(108)},
 	Name:     ast.Ident("T"),
 	Index:    0,
 }
 var BuiltInInternalWritePtrFunction = &FunctionType{
-	typeBase: typeBase{TypeId(108)},
+	typeBase: typeBase{TypeId(109)},
 	Params: []FunctionParam{
 		{Name: "ptr", Type: rawPtr},
 		{Name: "value", Type: BuiltInInternalWritePtrFunctionTypeParam},
@@ -131,17 +136,17 @@ var BuiltInInternalWritePtrFunction = &FunctionType{
 	Result: noneType,
 }
 var BuiltInInternalReadPtrFunctionTypeParam = &TypeParam{
-	typeBase:    typeBase{TypeId(109)},
+	typeBase:    typeBase{TypeId(110)},
 	GenericType: BuiltInInternalReadPtrFunction,
 	Name:        ast.Ident("T"),
 	Index:       0,
 }
 var BuiltInInternalReadPtrFunction = &FunctionType{
-	typeBase: typeBase{TypeId(110)},
+	typeBase: typeBase{TypeId(111)},
 	Params:   []FunctionParam{{Name: "ptr", Type: rawPtr}},
 }
 var BuiltInInternalExitFunction = &FunctionType{
-	typeBase: typeBase{TypeId(111)},
+	typeBase: typeBase{TypeId(112)},
 	Params:   []FunctionParam{{Name: "code", Type: int64Type}},
 	Result:   neverType,
 }
@@ -164,6 +169,10 @@ var int64Type = &Int64Type{}
 var int32Type = &Int32Type{}
 var int16Type = &Int16Type{}
 var int8Type = &Int8Type{}
+var uint64Type = &UInt64Type{}
+var uint32Type = &UInt32Type{}
+var uint16Type = &UInt16Type{}
+var uint8Type = &UInt8Type{}
 var noneType = &NoneType{}
 var neverType = &NeverType{}
 var rawPtr = &RawPtr{}
@@ -281,7 +290,7 @@ func (ty Int16Type) Id() TypeId {
 }
 
 func (ty Int16Type) IsAssignableFrom(other Type) bool {
-	return other.Id() == int16Type.Id() || other.Id() == int8Type.Id()
+	return other.Id() == int16Type.Id() || other.Id() == int8Type.Id() || other.Id() == uint8Type.Id()
 }
 
 func (ty *Int16Type) Traits() []*TraitType {
@@ -309,7 +318,7 @@ func (ty Int32Type) Id() TypeId {
 }
 
 func (ty Int32Type) IsAssignableFrom(other Type) bool {
-	return other.Id() == int32Type.Id() || other.Id() == int16Type.Id() || other.Id() == int8Type.Id()
+	return other.Id() == int32Type.Id() || other.Id() == int16Type.Id() || other.Id() == int8Type.Id() || other.Id() == uint8Type.Id() || other.Id() == uint16Type.Id()
 }
 
 func (ty *Int32Type) Traits() []*TraitType {
@@ -337,7 +346,7 @@ func (ty Int64Type) Id() TypeId {
 }
 
 func (ty Int64Type) IsAssignableFrom(other Type) bool {
-	return other.Id() == int64Type.Id() || other.Id() == int32Type.Id() || other.Id() == int16Type.Id() || other.Id() == int8Type.Id()
+	return other.Id() == int64Type.Id() || other.Id() == int32Type.Id() || other.Id() == int16Type.Id() || other.Id() == int8Type.Id() || other.Id() == uint8Type.Id() || other.Id() == uint16Type.Id() || other.Id() == uint32Type.Id()
 }
 
 func (ty *Int64Type) Traits() []*TraitType {
@@ -348,11 +357,123 @@ func (ty Int64Type) String() string {
 	return "Int64Type"
 }
 
+type UInt8Type struct {
+	traits []*TraitType
+}
+
+func (ty UInt8Type) IsSigned() bool {
+	return false
+}
+
+func (ty UInt8Type) Bits() int {
+	return 8
+}
+
+func (ty UInt8Type) Id() TypeId {
+	return 7
+}
+
+func (ty UInt8Type) IsAssignableFrom(other Type) bool {
+	return other.Id() == uint8Type.Id()
+}
+
+func (ty *UInt8Type) Traits() []*TraitType {
+	return ty.traits
+}
+
+func (ty UInt8Type) String() string {
+	return "UInt8Type"
+}
+
+type UInt16Type struct {
+	traits []*TraitType
+}
+
+func (ty UInt16Type) IsSigned() bool {
+	return false
+}
+
+func (ty UInt16Type) Bits() int {
+	return 16
+}
+
+func (ty UInt16Type) Id() TypeId {
+	return 8
+}
+
+func (ty UInt16Type) IsAssignableFrom(other Type) bool {
+	return other.Id() == uint16Type.Id() || other.Id() == uint8Type.Id()
+}
+
+func (ty *UInt16Type) Traits() []*TraitType {
+	return ty.traits
+}
+
+func (ty UInt16Type) String() string {
+	return "UInt16Type"
+}
+
+type UInt32Type struct {
+	traits []*TraitType
+}
+
+func (ty UInt32Type) IsSigned() bool {
+	return false
+}
+
+func (ty UInt32Type) Bits() int {
+	return 32
+}
+
+func (ty UInt32Type) Id() TypeId {
+	return 9
+}
+
+func (ty UInt32Type) IsAssignableFrom(other Type) bool {
+	return other.Id() == uint32Type.Id() || other.Id() == uint16Type.Id() || other.Id() == uint8Type.Id()
+}
+
+func (ty *UInt32Type) Traits() []*TraitType {
+	return ty.traits
+}
+
+func (ty UInt32Type) String() string {
+	return "UInt32Type"
+}
+
+type UInt64Type struct {
+	traits []*TraitType
+}
+
+func (ty UInt64Type) IsSigned() bool {
+	return false
+}
+
+func (ty UInt64Type) Bits() int {
+	return 64
+}
+
+func (ty UInt64Type) Id() TypeId {
+	return 10
+}
+
+func (ty UInt64Type) IsAssignableFrom(other Type) bool {
+	return other.Id() == uint64Type.Id() || other.Id() == uint32Type.Id() || other.Id() == uint16Type.Id() || other.Id() == uint8Type.Id()
+}
+
+func (ty *UInt64Type) Traits() []*TraitType {
+	return ty.traits
+}
+
+func (ty UInt64Type) String() string {
+	return "UInt64Type"
+}
+
 type NoneType struct {
 }
 
 func (ty NoneType) Id() TypeId {
-	return 7
+	return 11
 }
 
 func (ty NoneType) IsAssignableFrom(other Type) bool {
@@ -366,7 +487,7 @@ func (ty NoneType) String() string {
 type RawPtr struct{}
 
 func (ty RawPtr) Id() TypeId {
-	return 8
+	return 12
 }
 
 func (ty RawPtr) IsAssignableFrom(other Type) bool {
@@ -381,7 +502,7 @@ type NeverType struct {
 }
 
 func (ty NeverType) Id() TypeId {
-	return 9
+	return 13
 }
 
 func (ty NeverType) IsAssignableFrom(other Type) bool {
@@ -1240,7 +1361,8 @@ func (tc *typeChecker) VisitStringLiteralExpression(expr *ast.StringLiteralExpre
 
 func (tc *typeChecker) VisitIntLiteralExpression(expr *ast.IntLiteralExpression) error {
 	if expr.IsUInt64 {
-		return errors.Errorf("%s: int literal exceeds int64 range: %d", expr.Span(), expr.UInt64)
+		tc.typeInfo.Set(expr, uint64Type)
+		return nil
 	}
 	v := expr.Int64
 	var ty Type
@@ -1260,6 +1382,26 @@ func (tc *typeChecker) VisitIntLiteralExpression(expr *ast.IntLiteralExpression)
 			return errors.Errorf("%s: value %d out of range for Int32Type", expr.Span(), v)
 		}
 		ty = int32Type
+	case uint8Type:
+		if v < 0 || v > 255 {
+			return errors.Errorf("%s: value %d out of range for UInt8Type", expr.Span(), v)
+		}
+		ty = uint8Type
+	case uint16Type:
+		if v < 0 || v > 65535 {
+			return errors.Errorf("%s: value %d out of range for UInt16Type", expr.Span(), v)
+		}
+		ty = uint16Type
+	case uint32Type:
+		if v < 0 || v > 4294967295 {
+			return errors.Errorf("%s: value %d out of range for UInt32Type", expr.Span(), v)
+		}
+		ty = uint32Type
+	case uint64Type:
+		if v < 0 {
+			return errors.Errorf("%s: value %d out of range for UInt64Type", expr.Span(), v)
+		}
+		ty = uint64Type
 	default:
 		ty = int64Type
 	}
@@ -1990,10 +2132,15 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 	declareBuiltIn("I32", int32Type)
 	declareBuiltIn("I16", int16Type)
 	declareBuiltIn("I8", int8Type)
+	declareBuiltIn("U64", uint64Type)
+	declareBuiltIn("U32", uint32Type)
+	declareBuiltIn("U16", uint16Type)
+	declareBuiltIn("U8", uint8Type)
 	declareBuiltIn("RawPtr", rawPtr)
 	declareBuiltIn("Never", neverType)
 	declareBuiltIn("print", BuiltInPrintFunction)
 	declareBuiltIn("print_int", BuiltInPrintIntFunction)
+	declareBuiltIn("print_uint", BuiltInPrintUIntFunction)
 	declareBuiltIn("print_bool", BuiltInPrintBoolFunction)
 	declareBuiltIn("internal_exit", BuiltInInternalExitFunction)
 	declareBuiltIn("internal_malloc", BuiltInInternalMallocFunction)

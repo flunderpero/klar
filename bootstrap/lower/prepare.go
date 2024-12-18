@@ -55,6 +55,25 @@ func (self *prepare) mergeReceiverGenericsIntoFunction(funcType *typed.FunctionT
 	return res
 }
 
+func (self *prepare) mergeMethodMemberExpression(expr *ast.MemberExpression, funcType *typed.FunctionType) *ast.IdentExpression {
+	receiver := expr.Target
+	receiverType_ := self.typeInfo.MustLookup(receiver)
+	var receiverType typed.GenericType
+	if typeParam, ok := receiverType_.(*typed.TypeParam); ok {
+		receiverType = typeParam.TraitBound
+	} else {
+		receiverType = receiverType_.(typed.GenericType)
+	}
+	if typed.HasTypeParams(receiverType) {
+		funcType = self.mergeReceiverGenericsIntoFunction(funcType, receiverType)
+	}
+	res := self.convertToTypeIdIdentExpression(expr, funcType)
+	if typeParam, ok := self.typeInfo.LookupTraitBoundTypeParam(expr); ok {
+		self.typeInfo.SetTraitBoundTypeParam(res, typeParam)
+	}
+	return res
+}
+
 func (self *prepare) VisitMemberExpression(expr *ast.MemberExpression, w TransformWalker) (ast.Expression, bool) {
 	newExpr, ok := w.WalkMemberExpression(expr)
 	if !ok {
@@ -69,13 +88,7 @@ func (self *prepare) VisitMemberExpression(expr *ast.MemberExpression, w Transfo
 		if !ty.IsStaticMethod() {
 			return expr, true
 		}
-		receiver := expr.Target
-		receiverType := self.typeInfo.MustLookup(receiver).(typed.GenericType)
-		if typed.HasTypeParams(receiverType) {
-			ty = self.mergeReceiverGenericsIntoFunction(ty, receiverType)
-		}
-		res := self.convertToTypeIdIdentExpression(expr, ty)
-		return res, true
+		return self.mergeMethodMemberExpression(expr, ty), true
 	}
 	return expr, true
 }
@@ -114,14 +127,9 @@ func (self *prepare) VisitCallExpression(expr *ast.CallExpression, w TransformWa
 			return expr, true
 		}
 		receiver := expr.Callee.(*ast.MemberExpression).Target
-		receiverType := self.typeInfo.MustLookup(receiver).(typed.GenericType)
-		if typed.HasTypeParams(receiverType) {
-			// Propagate the type parameters and arguments from the receiver type to the callee.
-			calleeType = self.mergeReceiverGenericsIntoFunction(calleeType, receiverType)
-		}
 		receiverCallArg := ast.CallArg{Name: "self", Value: receiver, Span: expr.Span()}
 		expr.Args = append([]ast.CallArg{receiverCallArg}, expr.Args...)
-		expr.Callee = self.convertToTypeIdIdentExpression(expr.Callee, calleeType)
+		expr.Callee = self.mergeMethodMemberExpression(expr.Callee.(*ast.MemberExpression), calleeType)
 		return expr, true
 	case *typed.StructType:
 		expr.Callee = self.convertToTypeIdIdentExpression(expr.Callee, calleeType)
@@ -269,6 +277,7 @@ func (self *prepare) replaceTupleTypeWithStructType(ty typed.Type) typed.Type {
 		*typed.NoneType,
 		*typed.NeverType,
 		*typed.RawPtr,
+		*typed.TraitType,
 		*typed.TypeParam:
 	default:
 		panic(fmt.Sprintf("unexpected type: %T", ty))

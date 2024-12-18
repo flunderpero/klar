@@ -1,0 +1,69 @@
+-- expect.stdout {
+-- Bar, Baz, Bar, BarBaz, BarBaz Another one bites the Baz
+-- } expect.stdout
+-- expect.exit_code: 0
+
+trait Foo {
+    fn foo(self) Str
+}
+
+struct Bar {}
+
+impl Foo for Bar {
+    fn foo(self) Str => "Bar"
+}
+
+struct Baz {
+    name Str
+}
+
+impl Foo for Baz {
+    fn foo(self) Str => self.name
+}
+
+fn do_foo<T impl Foo>(foo T) {
+    print(foo.foo())
+}
+
+fn do_foo_with_extra_steps<T impl Foo>(foo T) => do_foo<T>(foo)
+
+struct Container<T> {
+    value T
+}
+
+struct Fizz<T impl Foo, U impl Foo> {
+    the_foo T
+    foo_container Container<U>
+}
+
+impl Fizz {
+    fn fizz(self) {
+        print(self.the_foo.foo())
+        print(self.foo_container.value.foo())
+    }
+}
+
+-- todo: Combine these two `impl` once we have proper forward declaration and 
+--       `self.fizz()` is visible in `self.fizz_foo()`
+impl Fizz {
+    fn fizz_foo<V impl Foo>(self, foo V) {
+        self.fizz()
+        print(" ")
+        print(foo.foo())
+    }
+}
+
+fn main() {
+    let bar = Bar()
+    do_foo<Bar>(bar)
+    print(", ")
+    let baz = Baz("Baz")
+    do_foo<Baz>(baz)
+    print(", ")
+    do_foo_with_extra_steps<Bar>(bar)
+    print(", ")
+    let fizz = Fizz<Bar, Baz>(bar, Container<Baz>(baz))
+    fizz.fizz()
+    print(", ")
+    fizz.fizz_foo<Baz>(Baz("Another one bites the Baz"))
+}

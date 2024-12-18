@@ -62,11 +62,16 @@ type Ident string
 
 type TypeParam struct {
 	nodeBase
-	Name Ident
+	Name       Ident
+	TraitBound Type
 }
 
 func (t TypeParam) String() string {
-	return fmt.Sprintf("TypeParam %q", t.Name)
+	traitBound := ""
+	if t.TraitBound != nil {
+		traitBound = fmt.Sprintf("\n(TraitBound)\n%s", base.Indent(t.TraitBound, 1))
+	}
+	return fmt.Sprintf("TypeParam %q%s", t.Name, traitBound)
 }
 
 func (t TypeParam) TypeName() string {
@@ -550,9 +555,9 @@ func (impl *ImplDefinition) ImplementsTrait() bool {
 func (impl ImplDefinition) String() string {
 	trait := ""
 	if impl.Trait != "" {
-		trait = fmt.Sprintf("(Trait)\n%s%s", impl.Trait, base.IndentString(typeArgsString(impl.TraitTypeArgs), 1))
+		trait = fmt.Sprintf("\n(Trait)\n%s%s", base.IndentString(impl.Trait.String(), 1), base.IndentString(typeArgsString(impl.TraitTypeArgs), 1))
 	}
-	return fmt.Sprintf("ImplDefinition\n%s%s%s", base.Indent(impl.Target, 1), trait, base.IndentSlice(impl.Methods, 1))
+	return fmt.Sprintf("ImplDefinition\n%s%s%s", base.Indent(impl.Target, 1), base.IndentString(trait, 1), base.IndentSlice(impl.Methods, 1))
 }
 
 type TraitDeclaration struct {
@@ -908,7 +913,16 @@ func (p *Parser) parseTypeParams() ([]TypeParam, error) {
 		if err != nil {
 			return nil, err
 		}
-		param := TypeParam{nodeBase: p.newNodeBase(typeIdent.Span), Name: Ident(typeIdent.Value)}
+		var trait_bound Type
+		if p.peek().Kind == token.Impl {
+			p.consumeAny()
+			trait_bound_, err := p.parseType()
+			if err != nil {
+				return nil, err
+			}
+			trait_bound = trait_bound_
+		}
+		param := TypeParam{nodeBase: p.newNodeBase(typeIdent.Span), Name: Ident(typeIdent.Value), TraitBound: trait_bound}
 		params = append(params, param)
 		switch p.peek().Kind {
 		case token.Comma:

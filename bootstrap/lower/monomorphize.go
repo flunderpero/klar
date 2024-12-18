@@ -75,16 +75,15 @@ type mono struct {
 	genericsResolver *typed.GenericsResolver
 }
 
-func (self *mono) VisitNode(expr ast.Node, w ast.Walker) error {
-	if err := w.WalkNode(expr); err != nil {
+func (self *mono) VisitNode(node ast.Node, w ast.Walker) error {
+	if err := w.WalkNode(node); err != nil {
 		return err
 	}
-	ty := self.current.typeInfo.MustLookup(expr)
-	ty = self.resolve(ty)
+	ty := self.resolve(node)
 	if specialized, ok := self.lookupOrCreateSpecializedFunction(ty); ok {
-		self.current.typeInfo.set(expr, specialized)
+		self.current.typeInfo.set(node, specialized)
 	} else {
-		self.current.typeInfo.set(expr, ty)
+		self.current.typeInfo.set(node, ty)
 	}
 	return nil
 }
@@ -97,17 +96,46 @@ func (self *mono) newWorkItem(info *funcInfo, specialized *typed.FunctionType) *
 	}
 }
 
-func (self *mono) resolve(ty typed.Type) typed.Type {
+func (self *mono) resolve(node ast.Node) typed.Type {
+	ty := self.current.typeInfo.MustLookup(node)
 	typeParams := self.current.specialized.TypeParams()
 	typeArgs := self.current.specialized.TypeArgs()
 	switch ty := ty.(type) {
 	case *typed.FunctionType:
-		// There are no more methods, everything is a plain function.
-		ty.Receiver = nil
-	case *typed.StructType:
-		// Structs are just data holders at this point, because we converted
-		// all methods to plain functions.
-		ty.Methods = []typed.TypeAndName[*typed.FunctionType]{}
+		if traitType, ok := ty.Receiver.(*typed.TraitType); ok {
+			// We know that a `TraitType` can only come from a type parameter.
+			// So we first look up the name of the function and then we find
+			// the struct that is set as the type-arg for the type-param with the
+			// trait-bound.
+			// And finally, we substitute the TraitType's function we got here with
+			// the struct's function.
+			var funcName *ast.Ident = nil
+			for _, method := range traitType.Methods {
+				if method.Type.Id() == ty.Id() {
+					funcName = &method.Name
+					break
+				}
+			}
+			if funcName == nil {
+				panic(fmt.Sprintf("method not found in trait: %s", ty))
+			}
+			traitBoundTypeParam := self.globalTypeInfo.MustLookupTraitBoundTypeParam(node)
+			var structType *typed.StructType = nil
+			for i, typeParam := range typeParams {
+				if traitBoundTypeParam.Id() == typeParam.Id() {
+					structType = typeArgs[i].(*typed.StructType)
+					break
+				}
+			}
+			if structType == nil {
+				panic(fmt.Sprintf("struct type not found for trait bound type param: %s", traitBoundTypeParam))
+			}
+			ty, ok = structType.FindMethod(*funcName, node.Span())
+			if !ok {
+				panic(fmt.Sprintf("method %q not found in struct: %s", funcName, structType))
+			}
+			return ty
+		}
 	case *typed.DeclaredType:
 		return ty
 	}
@@ -132,14 +160,14 @@ func (self *mono) lookupOrCreateSpecializedFunction(ty typed.Type) (*typed.Funct
 	}
 	for _, queued := range self.queue {
 		if queued.funcInfo == funcInfo {
-			if queued.specialized.Id() == funcType.Id() {
+			if typed.MatchTypeArgs(queued.specialized, funcType.TypeArgs()) {
 				return queued.specialized, true
 			}
 		}
 	}
 	for _, spec := range self.funcSpecs {
 		if spec.Base.Id() == baseType.Id() {
-			if spec.Specialized.Id() == funcType.Id() {
+			if typed.MatchTypeArgs(spec.Specialized, funcType.TypeArgs()) {
 				return spec.Specialized, true
 			}
 		}

@@ -578,10 +578,15 @@ type TypeParam struct {
 	GenericType GenericType
 	Name        ast.Ident
 	Index       int
+	TraitBound  *TraitType
 }
 
 func (ty TypeParam) String() string {
-	return fmt.Sprintf("TypeParam %s #%s of %s[%d]", ty.Name, ty.Id(), ty.GenericType.Id(), ty.Index)
+	traitBound := ""
+	if ty.TraitBound != nil {
+		traitBound = fmt.Sprintf("\n(TraitBound)\n%s", base.Indent(ty.TraitBound, 1))
+	}
+	return fmt.Sprintf("TypeParam %s #%s of %s[%d]%s", ty.Name, ty.Id(), ty.GenericType.Id(), ty.Index, traitBound)
 }
 
 func (t TypeParam) Equal(other TypeParam) bool {
@@ -596,6 +601,10 @@ func (t TypeParam) IsAssignableFrom(other Type) bool {
 		return t.Equal(other)
 	}
 	return false
+}
+
+func (t TypeParam) Traits() []*TraitType {
+	return []*TraitType{t.TraitBound}
 }
 
 func typeArgsString(args []Type) string {
@@ -881,20 +890,20 @@ func (ty TraitType) String() string {
 		base.IndentString(typeArgsString(ty.typeArgs), 1))
 }
 
-func (ty *TraitType) FindMethod(name ast.Ident, span token.Span) (*FunctionType, error) {
+func (ty *TraitType) FindMethod(name ast.Ident, span token.Span) (*FunctionType, bool) {
 	for _, method := range ty.Methods {
 		if method.Name == name {
-			return method.Type, nil
+			return method.Type, true
 		}
 	}
-	return nil, errors.Errorf("%s: method %q not found in trait type %q", span, name, ty)
+	return nil, false
 }
 
-func (ty *TraitType) TypeParams() []TypeParam {
+func (ty TraitType) TypeParams() []TypeParam {
 	return ty.typeParams
 }
 
-func (ty *TraitType) TypeArgs() []Type {
+func (ty TraitType) TypeArgs() []Type {
 	return ty.typeArgs
 }
 
@@ -903,6 +912,22 @@ func (ty TraitType) GenericBase() (GenericType, bool) {
 		return nil, false
 	}
 	return ty.genericBase, true
+}
+
+func (self TraitType) IsAssignableFrom(other Type) bool {
+	if other.Id() == self.Id() {
+		return true
+	}
+	typeWithTraits, ok := other.(TypeWithTraits)
+	if !ok {
+		return false
+	}
+	for _, trait := range typeWithTraits.Traits() {
+		if self.IsAssignableFrom(trait) {
+			return true
+		}
+	}
+	return false
 }
 
 type ImplType struct {
@@ -1183,7 +1208,26 @@ type TypeInfo struct {
 	symbols map[string]*Symbol
 	// The type an `IdentExpression` points to if it does not refer to a variable.
 	typeBindings map[*ast.IdentExpression]Type
-	Main         *FunctionType
+	// The type parameter a trait bound belongs to.
+	traitBoundsTypeParam map[ast.Node]*TypeParam
+	Main                 *FunctionType
+}
+
+func (m *TypeInfo) LookupTraitBoundTypeParam(expr ast.Node) (*TypeParam, bool) {
+	typeParam, found := m.traitBoundsTypeParam[expr]
+	return typeParam, found
+}
+
+func (m *TypeInfo) MustLookupTraitBoundTypeParam(expr ast.Node) *TypeParam {
+	typeParam, found := m.LookupTraitBoundTypeParam(expr)
+	if !found {
+		panic(fmt.Sprintf("trait bound type param not found for key %q", expr))
+	}
+	return typeParam
+}
+
+func (m *TypeInfo) SetTraitBoundTypeParam(expr ast.Node, typeParam *TypeParam) {
+	m.traitBoundsTypeParam[expr] = typeParam
 }
 
 func (m *TypeInfo) LookupTypeBinding(expr *ast.IdentExpression) (Type, bool) {
@@ -1471,6 +1515,13 @@ func (tc *typeChecker) resolveGenericType(ty GenericType, astTypeArgs []ast.Type
 		if err != nil {
 			return nil, err
 		}
+		typeParam := typeParams[i]
+		if typeParam.TraitBound != nil {
+			if !typeParam.TraitBound.IsAssignableFrom(typeArg) {
+				return nil, errors.Errorf(
+					"%s: type argument %q does not satisfy trait bound %q", span, typeArg, typeParam.TraitBound)
+			}
+		}
 		typeArgs[i] = typeArg
 	}
 	return tc.genericsResolver.ResolveTypeArgs(ty, typeParams, typeArgs), nil
@@ -1643,6 +1694,18 @@ func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.W
 				return errors.Errorf("%s: variant %q not found in union type %q", expr.Span(), expr.Field, unionSymbol.Name)
 			}
 			memberType = variant.Type
+		case *TypeParam:
+			if ty.TraitBound == nil {
+				return errors.Errorf("%s: type parameter %q does not have a trait bound", expr.Span(), ty.Name)
+			}
+			traitType := ty.TraitBound
+			method, found := traitType.FindMethod(expr.Field.AsIdent(), expr.Span())
+			if !found {
+				return errors.Errorf("%s: method %q not found in trait type %q", expr.Span(), expr.Field, traitType)
+			}
+			memberType = method
+			tc.typeInfo.Set(expr, ty)
+			tc.typeInfo.SetTraitBoundTypeParam(expr, ty)
 		default:
 			panic(fmt.Sprintf("unexpected type %T", ty))
 		}
@@ -1689,7 +1752,19 @@ func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) e
 func (tc *typeChecker) resolveTypeParams(genericType GenericType, astParams []ast.TypeParam) ([]TypeParam, error) {
 	typeParams := make([]TypeParam, len(astParams))
 	for i, astParam := range astParams {
-		typeParam := TypeParam{typeBase: tc.newTypeBase(), GenericType: genericType, Name: astParam.Name, Index: i}
+		var traitBound *TraitType
+		if astParam.TraitBound != nil {
+			traitBoundType, err := tc.lookupTypeOfNode(astParam.TraitBound)
+			if err != nil {
+				return nil, err
+			}
+			traitBound_, ok := traitBoundType.(*TraitType)
+			if !ok {
+				return nil, errors.Errorf("%s: expected trait type, got %s", astParam.TraitBound.Span(), traitBoundType)
+			}
+			traitBound = traitBound_
+		}
+		typeParam := TypeParam{typeBase: tc.newTypeBase(), GenericType: genericType, TraitBound: traitBound, Name: astParam.Name, Index: i}
 		typeParams[i] = typeParam
 		if err := tc.genericScope.declareTypeParam(typeParam.Name.String(), &typeParam, astParams[i].Span()); err != nil {
 			return nil, err
@@ -1892,8 +1967,8 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 		}
 		methodType.Receiver = structType
 		if traitType != nil {
-			traitMethodType, err := traitType.FindMethod(decl.Name, decl.Span())
-			if err != nil {
+			traitMethodType, ok := traitType.FindMethod(decl.Name, decl.Span())
+			if !ok {
 				traitSymbol := tc.typeInfo.MustLookupSymbol(traitType.Id())
 				return errors.Errorf("%s: method %q not found in trait %q", decl.Span(), decl.Name, traitSymbol.Name)
 			}
@@ -1928,6 +2003,9 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 			traitSymbol.Name,
 			strings.Join(missingTraitMethods, ", "),
 		)
+	}
+	if traitType != nil {
+		structType.traits = append(structType.traits, traitType)
 	}
 	tc.typeInfo.Set(impl, &ImplType{typeBase: tc.newTypeBase(), ReceiverType: structType})
 	return nil
@@ -2134,9 +2212,10 @@ func (tc *typeChecker) check(node ast.Node, w ast.Walker) (Type, error) {
 
 func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *GenericsResolver, error) {
 	typeInfo := &TypeInfo{
-		types:        make(map[ast.NodeId]Type),
-		symbols:      make(map[string]*Symbol),
-		typeBindings: make(map[*ast.IdentExpression]Type),
+		types:                make(map[ast.NodeId]Type),
+		symbols:              make(map[string]*Symbol),
+		typeBindings:         make(map[*ast.IdentExpression]Type),
+		traitBoundsTypeParam: make(map[ast.Node]*TypeParam),
 	}
 	tc := &typeChecker{
 		DefaultVisitor:   ast.DefaultVisitor{},

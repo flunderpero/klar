@@ -1501,7 +1501,7 @@ func (p *Parser) ParseNode() (Node, error) {
 			return p.parseImplDefinition()
 		case token.Trait:
 			return p.parseTraitDeclaration()
-		case token.Ident, token.TypeIdent, token.LCurly, token.LParen, token.If, token.True, token.False, token.Str, token.Int, token.Self:
+		case token.Ident, token.TypeIdent, token.LCurly, token.LParen, token.If, token.True, token.False, token.Str, token.Char, token.Int, token.Self:
 			return p.parseExpression()
 		default:
 			return nil, errors.Errorf("unexpected token: %s", t)

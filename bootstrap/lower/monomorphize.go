@@ -206,7 +206,11 @@ func Monomorphize(
 ) []*FunctionSpecialization {
 	main, ok := funcInfos[typeInfo.Main.Id()]
 	if !ok {
-		panic("Main function not found")
+		panic("`main` function not found")
+	}
+	panicFunc, ok := funcInfos[typeInfo.Panic.Id()]
+	if !ok {
+		panic("`panic` function not found")
 	}
 	m := mono{
 		funcInfos:        funcInfos,
@@ -215,6 +219,7 @@ func Monomorphize(
 		funcSpecs:        []*FunctionSpecialization{},
 		genericsResolver: genericsResolver,
 	}
+	m.lookupOrCreateSpecializedFunction(panicFunc.funcType)
 	m.lookupOrCreateSpecializedFunction(main.funcType)
 	m.run()
 	return m.funcSpecs

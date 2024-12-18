@@ -167,7 +167,7 @@ func IsBuiltInFunction(funcType *FunctionType) bool {
 	return res
 }
 
-var builtInSpan = token.Span{File: new(string), Src: &[]byte{}, Start: 0, End: 0}
+var builtInSpan = token.Span{File: "<builtin>", Src: &[]byte{}, Start: 0, End: 0}
 var charType = &CharType{}
 var strType = &StrType{}
 var boolType = &BoolType{}
@@ -1211,6 +1211,7 @@ type TypeInfo struct {
 	// The type parameter a trait bound belongs to.
 	traitBoundsTypeParam map[ast.Node]*TypeParam
 	Main                 *FunctionType
+	Panic                *FunctionType
 }
 
 func (m *TypeInfo) LookupTraitBoundTypeParam(expr ast.Node) (*TypeParam, bool) {
@@ -1557,7 +1558,7 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 	}
 	rhs := tc.typeInfo.MustLookup(expr.Rhs)
 	switch expr.Op {
-	case ast.OpAdd, ast.OpMultiply:
+	case ast.OpAdd, ast.OpMultiply, ast.OpDivide, ast.OpModulo:
 		switch lhs.(type) {
 		case IntType, *RawPtr:
 		default:
@@ -1822,6 +1823,9 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 				return errors.Errorf("%s: main function must return () (no return value)", decl.Span())
 			}
 			tc.typeInfo.Main = funcType
+		}
+		if decl.Name == "panic" {
+			tc.typeInfo.Panic = funcType
 		}
 		if err := tc.typeScope.declareType(string(decl.Name), funcType, decl.Span()); err != nil {
 			return err

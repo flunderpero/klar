@@ -408,6 +408,66 @@ func (i IntMultiplicationWithOverflow) String() string {
 	return fmt.Sprintf("%s = imulo %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
 }
 
+type SignedIntDivision struct {
+	register Register
+	Type     IntType
+	Lhs      Register
+	Rhs      Register
+}
+
+func (i *SignedIntDivision) Register() Register {
+	return i.register
+}
+
+func (i SignedIntDivision) String() string {
+	return fmt.Sprintf("%s = sidiv %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
+}
+
+type UnsignedIntDivision struct {
+	register Register
+	Type     IntType
+	Lhs      Register
+	Rhs      Register
+}
+
+func (i *UnsignedIntDivision) Register() Register {
+	return i.register
+}
+
+func (i UnsignedIntDivision) String() string {
+	return fmt.Sprintf("%s = idiv %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
+}
+
+type SignedIntModulo struct {
+	register Register
+	Type     IntType
+	Lhs      Register
+	Rhs      Register
+}
+
+func (i *SignedIntModulo) Register() Register {
+	return i.register
+}
+
+func (i SignedIntModulo) String() string {
+	return fmt.Sprintf("%s = simod %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
+}
+
+type UnsignedIntModulo struct {
+	register Register
+	Type     IntType
+	Lhs      Register
+	Rhs      Register
+}
+
+func (i *UnsignedIntModulo) Register() Register {
+	return i.register
+}
+
+func (i UnsignedIntModulo) String() string {
+	return fmt.Sprintf("%s = imod %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
+}
+
 type UnsignedIntAddWithOverflow struct {
 	register Register
 	Type     IntType
@@ -1010,6 +1070,24 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 		valueType := g.lookupType(expr).(IntType)
 		g.append(
 			&IntMultiplicationWithOverflow{register: g.nextRegister(valueType), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+	case ast.OpDivide:
+		valueType := g.lookupType(expr).(IntType)
+		if valueType.IsSigned() {
+			g.append(
+				&SignedIntDivision{register: g.nextRegister(valueType), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+		} else {
+			g.append(
+				&UnsignedIntDivision{register: g.nextRegister(valueType), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+		}
+	case ast.OpModulo:
+		valueType := g.lookupType(expr).(IntType)
+		if valueType.IsSigned() {
+			g.append(
+				&SignedIntModulo{register: g.nextRegister(valueType), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+		} else {
+			g.append(
+				&UnsignedIntModulo{register: g.nextRegister(valueType), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+		}
 	case ast.OpEqual, ast.OpNotEqual, ast.OpLessThan, ast.OpLessThanOrEqual, ast.OpGreaterThan, ast.OpGreaterThanOrEqual:
 		ty := g.lookupType(expr.Lhs).(IntType)
 		ops := map[ast.BinaryOperator]IntCompOp{

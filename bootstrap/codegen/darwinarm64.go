@@ -329,6 +329,11 @@ func (c *ASMText) decIndent() *ASMText {
 	return c
 }
 
+func funcName(id typed.TypeId, typeInfo *typed.TypeInfo) string {
+	fqn := typeInfo.MustLookupSymbol(id).FQN()
+	return "." + strings.ReplaceAll(fqn, "::", "$$")
+}
+
 type Code struct {
 	ASMText
 	function          *ir.FunctionDefinition
@@ -350,8 +355,7 @@ func (c *Code) emitAtOffset(offset int, s string, args ...any) *Code {
 }
 
 func (c *Code) funcName(id typed.TypeId) string {
-	fqn := c.typeInfo.MustLookupSymbol(id).FQN()
-	return "." + strings.ReplaceAll(fqn, "::", "$$")
+	return funcName(id, c.typeInfo)
 }
 
 func (c *Code) mustLookupRegisterAllocation(reg ir.Register) *registerAllocation {
@@ -464,6 +468,36 @@ func (c *Code) generateBlock(block *ir.Block) error {
 			c.emit("mul %s, %s, %s", reg, lhs, rhs)
 			c.values[inst.Register().Id] = reg
 			c.sign_extend_or_zero_extend(reg.reg, inst.Type)
+		case *ir.SignedIntDivision:
+			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
+			// Check if inst.RHS is zero and panic.
+			c.emit("cmp %s, #0", rhs)
+			c.emit("b.eq .internal_panic_divide_by_zero")
+			c.emit("sdiv %s, %s, %s", reg, lhs, rhs)
+			c.values[inst.Register().Id] = reg
+		case *ir.UnsignedIntDivision:
+			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
+			// Check if inst.RHS is zero and panic.
+			c.emit("cmp %s, #0", rhs)
+			c.emit("b.eq .internal_panic_divide_by_zero")
+			c.emit("udiv %s, %s, %s", reg, lhs, rhs)
+			c.values[inst.Register().Id] = reg
+		case *ir.SignedIntModulo:
+			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
+			// Check if inst.RHS is zero and panic.
+			c.emit("cmp %s, #0", rhs)
+			c.emit("b.eq .internal_panic_divide_by_zero")
+			c.emit("sdiv %s, %s, %s", reg, lhs, rhs)
+			c.emit("msub %s, %s, %s, %s", reg, reg, rhs, lhs)
+			c.values[inst.Register().Id] = reg
+		case *ir.UnsignedIntModulo:
+			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
+			// Check if inst.RHS is zero and panic.
+			c.emit("cmp %s, #0", rhs)
+			c.emit("b.eq .internal_panic_divide_by_zero")
+			c.emit("udiv %s, %s, %s", reg, lhs, rhs)
+			c.emit("msub %s, %s, %s, %s", reg, reg, rhs, lhs)
+			c.values[inst.Register().Id] = reg
 		case *ir.IntCompare:
 			reg, lhs, rhs := c.prepareBinaryOperation(inst.Register(), inst.Lhs, inst.Rhs)
 			c.values[inst.Register().Id] = reg
@@ -799,6 +833,17 @@ func defineBuiltInInternalExit(asm *ASMText) {
     `)
 }
 
+func definePanicDivideByZero(asm *ASMText, typeInfo *typed.TypeInfo) {
+	panicFuncName := funcName(typeInfo.Panic.Id(), typeInfo)
+	asm.emit(
+		`
+.internal_panic_divide_by_zero:
+    adrp x0, _internal_divide_by_zero@PAGE
+    add x0, x0, _internal_divide_by_zero@PAGEOFF
+    bl %s
+    `, panicFuncName)
+}
+
 func GenerateDarwinArm64ASM(irModule *ir.Module) (*ASMText, error) {
 	if irModule.Main == nil {
 		panic("no main function found")
@@ -814,6 +859,7 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (*ASMText, error) {
 	defineBuiltInPrintIntFunction(asm)
 	defineBuiltInPrintUIntFunction(asm)
 	defineBuiltInPrintBoolFunction(asm)
+	definePanicDivideByZero(asm, irModule.TypeInfo)
 	for _, function := range irModule.Functions {
 		code, err := generateFunction(function, irModule, function == irModule.Main)
 		if err != nil {
@@ -824,7 +870,8 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (*ASMText, error) {
 	}
 	asm.emit("")
 	asm.emit(".data")
-	for _, constant := range irModule.Constants {
+	constants := append(irModule.Constants, &ir.StrConst{Id: "_internal_divide_by_zero", Value: "divide by zero"})
+	for _, constant := range constants {
 		asm.emit(".align 3")
 		asm.emit("%s_bytes:", constant.Id)
 		asm.incIndent()

@@ -8,7 +8,7 @@ import (
 )
 
 type Span struct {
-	File  *string
+	File  string
 	Src   *[]byte
 	Start int
 	End   int
@@ -30,7 +30,7 @@ func (span Span) Pos() (row int, col int) {
 
 func (span Span) String() string {
 	row, col := span.Pos()
-	return fmt.Sprintf("%s:%d:%d", *span.File, row, col)
+	return fmt.Sprintf("%s:%d:%d", span.File, row, col)
 }
 
 type Token struct {
@@ -56,6 +56,8 @@ const (
 	Dot                TokenKind = "."
 	Plus               TokenKind = "+"
 	Star               TokenKind = "*"
+	Slash              TokenKind = "/"
+	Percent            TokenKind = "%"
 	Equal              TokenKind = "="
 	NotEqual           TokenKind = "!="
 	FatArrow           TokenKind = "=>"
@@ -112,7 +114,7 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 	var i = 0
 	for i < len(src) {
 		c := src[i]
-		span := Span{&file, &src, i, i}
+		span := Span{file, &src, i, i}
 		i += 1
 		if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
 			// Skip whitespace.
@@ -146,6 +148,10 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			tokens = append(tokens, Token{Kind: Plus, Value: "", Span: span})
 		} else if c == '*' {
 			tokens = append(tokens, Token{Kind: Star, Value: "", Span: span})
+		} else if c == '/' {
+			tokens = append(tokens, Token{Kind: Slash, Value: "", Span: span})
+		} else if c == '%' {
+			tokens = append(tokens, Token{Kind: Percent, Value: "", Span: span})
 		} else if c == '.' {
 			tokens = append(tokens, Token{Kind: Dot, Value: "", Span: span})
 		} else if c == '|' {
@@ -296,6 +302,6 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			return tokens, errors.Errorf("unexpected character: %c", c)
 		}
 	}
-	tokens = append(tokens, Token{Kind: EOF, Value: "", Span: Span{&file, &src, i, i}})
+	tokens = append(tokens, Token{Kind: EOF, Value: "", Span: Span{file, &src, i, i}})
 	return tokens, nil
 }

@@ -1,0 +1,9 @@
+-- expect.stdout {
+-- divide by zero
+-- } expect.stdout
+-- expect.exit_code: 1
+
+fn main() {
+    -- On ARM64 the `idiv` and `udiv` instructions just return 0 when dividing by 0.
+    5 / 0
+}

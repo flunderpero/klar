@@ -1,13 +1,14 @@
 /*
 # Monomorphization (And Dead Code Elimination)
 
-This pass walks from the AST starting at the  `main` function and collects all references to
+This pass walks the AST starting at the  `main` function and collects all references to
 functions and creates specialized versions if they are generic.
 
 The result is a set of `FunctionSpecializations` that represents all reachable and specialized
 functions in the AST.
 
-Because only reachable functions are collected, this pass also performs dead code elimination.
+Because only reachable functions are collected, this pass also performs dead code elimination
+on the function level.
 */
 package lower
 
@@ -18,6 +19,11 @@ import (
 	"github.com/flunderpero/klar/bootstrap/base"
 	"github.com/flunderpero/klar/bootstrap/typed"
 )
+
+type funcInfo struct {
+	funcDef  *ast.FunctionDefinition
+	funcType *typed.FunctionType
+}
 
 type SpecializedTypeInfo struct {
 	base         *typed.TypeInfo
@@ -198,12 +204,35 @@ func (self *mono) run() {
 	}
 }
 
-func Monomorphize(
+type collectFuncInfos struct {
+	ast.DefaultVisitor
+	funcInfos map[typed.TypeId]*funcInfo
+	typeInfo  *typed.TypeInfo
+}
+
+func (self *collectFuncInfos) VisitFunctionDefinition(def *ast.FunctionDefinition, w ast.Walker) error {
+	funcType := self.typeInfo.MustLookup(def.Decl).(*typed.DeclaredType).Type.(*typed.FunctionType)
+	funcInfo := &funcInfo{funcDef: def, funcType: funcType}
+	self.funcInfos[funcType.Id()] = funcInfo
+	if err := w.WalkFunctionDefinition(def); err != nil {
+		return err
+	}
+	return nil
+}
+
+func Monomorphization(
 	module *ast.Module,
 	typeInfo *typed.TypeInfo,
-	funcInfos map[typed.TypeId]*funcInfo,
 	genericsResolver *typed.GenericsResolver,
 ) []*FunctionSpecialization {
+	collectVisitor := &collectFuncInfos{
+		DefaultVisitor: ast.DefaultVisitor{},
+		funcInfos:      make(map[typed.TypeId]*funcInfo), typeInfo: typeInfo}
+	collectWalker := ast.DefaultWalker{Visitor: collectVisitor}
+	if err := collectWalker.WalkNode(module); err != nil {
+		panic(err)
+	}
+	funcInfos := collectVisitor.funcInfos
 	main, ok := funcInfos[typeInfo.Main.Id()]
 	if !ok {
 		panic("`main` function not found")

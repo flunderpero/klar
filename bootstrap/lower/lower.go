@@ -1,24 +1,3 @@
-/*
-# Lowering
-
-Lowering will:
-
-  - convert `MemberExpression` to `IdentExpression` if it points to a static method. (see `prepare`)
-
-  - convert all calls to methods to regular function calls with the receiver
-    as the first argument if the method is not static. (see `prepare`)
-
-  - re-order the arguments in a `CallExpression` to be in the order of the function
-    parameters. (see `prepare`)
-
-  - convert all tuple literals to anonymous struct initializations so that they can be treated as
-    regular structs from here on.
-
-  - remove all trait and impl declarations after collection all function
-    definitions. (see `prepare`)
-
-  - monomorphize generic functions and structs.
-*/
 package lower
 
 import (
@@ -47,7 +26,9 @@ func Lower(
 	nodeCreator *ast.NodeCreator,
 	typeCreator *typed.TypeCreator,
 ) *LoweredAST {
-	module, funcInfos := Prepare(module, typeInfo, genericsResolver, nodeCreator, typeCreator)
-	funcSpecs := Monomorphize(module, typeInfo, funcInfos, genericsResolver)
+	module = ReceiverLowering(module, typeInfo, genericsResolver, nodeCreator)
+	module = TupleLowering(module, typeInfo, typeCreator, nodeCreator)
+	funcSpecs := Monomorphization(module, typeInfo, genericsResolver)
+	module = RemoveUnused(module)
 	return &LoweredAST{Module: module, FuncSpecs: funcSpecs, TypeInfo: typeInfo}
 }

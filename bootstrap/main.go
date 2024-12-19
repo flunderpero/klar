@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"time"
 
 	"github.com/flunderpero/klar/bootstrap/ast"
 	"github.com/flunderpero/klar/bootstrap/codegen"
@@ -81,6 +82,7 @@ func main() {
 		fmt.Printf("Failed to read file: %+v\n", err)
 		os.Exit(1)
 	}
+	t0 := time.Now()
 	var astModule *ast.Module
 	compiler := Compiler{
 		OnTokenize: func(tokens []token.Token) bool {
@@ -145,7 +147,8 @@ func main() {
 			os.Exit(1)
 		}
 		if cmd == "build" {
-			fmt.Println("Done.")
+			duration := time.Since(t0)
+			fmt.Printf("Done in %dms\n", duration.Abs().Milliseconds())
 			os.Exit(0)
 		}
 	}

@@ -689,7 +689,24 @@ const (
 	UnionVariantKindType  UnionVariantKind = 2
 )
 
-type NamedUnionVariant = TypeAndName[Type]
+type NamedUnionVariant struct {
+	typeBase
+	Name      ast.Ident
+	Type      CallableType
+	UnionType *UnionType
+}
+
+func (self NamedUnionVariant) String() string {
+	return fmt.Sprintf("NamedUnionVariant %s\n%s", self.Name, base.Indent(self.Type, 1))
+}
+
+func (self NamedUnionVariant) CallParams() []FunctionParam {
+	return self.Type.CallParams()
+}
+
+func (self NamedUnionVariant) CallResult() Type {
+	return &self
+}
 
 type UnionVariant struct {
 	Kind  UnionVariantKind
@@ -713,7 +730,7 @@ func (self UnionVariant) AsType() Type {
 	case UnionVariantKindType:
 		return self.Type
 	case UnionVariantKindNamed:
-		return self.Named.Type
+		return self.Named
 	default:
 		panic(fmt.Sprintf("unexpected union variant kind: %d", self.Kind))
 	}
@@ -1086,23 +1103,43 @@ func (self *genericScope) declareTypeParam(name string, param *TypeParam, span t
 	return nil
 }
 
-type variableInfo struct {
-	type_           Type
-	isFunctionParam bool
-	mutable         bool
-	span            token.Span
+type VariableType struct {
+	Type            Type
+	IsFunctionParam bool
+	IsMutable       bool
+	Span            token.Span
+}
+
+func (self VariableType) String() string {
+	mutable := ""
+	if self.IsMutable {
+		mutable = "\n    (mutable)"
+	}
+	functionParam := ""
+	if self.IsFunctionParam {
+		functionParam = "\n    (function parameter)"
+	}
+	return fmt.Sprintf("VariableType%s%s\n%s", mutable, functionParam, base.Indent(self.Type, 1))
+}
+
+func (self VariableType) Id() TypeId {
+	return self.Type.Id()
+}
+
+func (self VariableType) IsAssignableFrom(other Type) bool {
+	return false
 }
 
 type typeScope struct {
 	types     map[string]Type
-	variables map[string]variableInfo
+	variables map[string]VariableType
 	parent    *typeScope
 }
 
 func newTypeScope(parent *typeScope) *typeScope {
 	return &typeScope{
 		types:     make(map[string]Type),
-		variables: make(map[string]variableInfo),
+		variables: make(map[string]VariableType),
 		parent:    parent,
 	}
 }
@@ -1115,7 +1152,7 @@ func (te *typeScope) lookupType(name string) (Type, bool) {
 	return ty, found
 }
 
-func (te *typeScope) lookupVariable(name ast.Ident) (Type, *variableInfo, bool) {
+func (te *typeScope) lookupVariable(name ast.Ident) (Type, *VariableType, bool) {
 	ty, found := te.lookupType(string(name))
 	if !found {
 		return nil, nil, false
@@ -1135,11 +1172,11 @@ func (te *typeScope) declareType(name string, ty Type, span token.Span) error {
 	return nil
 }
 
-func (te *typeScope) declareVariable(name string, info variableInfo) error {
-	if err := te.declareType(name, info.type_, info.span); err != nil {
+func (te *typeScope) declareVariable(name string, ty VariableType) error {
+	if err := te.declareType(name, ty.Type, ty.Span); err != nil {
 		return err
 	}
-	te.variables[name] = info
+	te.variables[name] = ty
 	return nil
 }
 
@@ -1694,7 +1731,7 @@ func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.W
 				unionSymbol := tc.typeInfo.MustLookupSymbol(ty.Id())
 				return errors.Errorf("%s: variant %q not found in union type %q", expr.Span(), expr.Field, unionSymbol.Name)
 			}
-			memberType = variant.Type
+			memberType = variant
 		case *TypeParam:
 			if ty.TraitBound == nil {
 				return errors.Errorf("%s: type parameter %q does not have a trait bound", expr.Span(), ty.Name)
@@ -1849,8 +1886,8 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 	params := functionType.Params
 	for i, astParam := range fn.Decl.Params {
 		param := params[i]
-		varInfo := variableInfo{type_: param.Type, isFunctionParam: true, mutable: false, span: astParam.Span}
-		if err := tc.typeScope.declareVariable(string(param.Name), varInfo); err != nil {
+		varType := VariableType{Type: param.Type, IsFunctionParam: true, IsMutable: false, Span: astParam.Span}
+		if err := tc.typeScope.declareVariable(string(param.Name), varType); err != nil {
 			return err
 		}
 	}
@@ -2040,11 +2077,11 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 	} else {
 		variableType = valueType
 	}
-	varInfo := variableInfo{type_: variableType, mutable: true, span: v.Span()}
-	if err := tc.typeScope.declareVariable(string(v.Name), varInfo); err != nil {
+	varType := VariableType{Type: variableType, IsMutable: v.Mutable, Span: v.Span()}
+	if err := tc.typeScope.declareVariable(string(v.Name), varType); err != nil {
 		return err
 	}
-	tc.typeInfo.Set(v, noneType)
+	tc.typeInfo.Set(v, &varType)
 	return nil
 }
 
@@ -2057,7 +2094,7 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 	if !ok {
 		return errors.Errorf("%s: unknown variable %q", s.Span(), s.Variable.Ident)
 	}
-	if !varInfo.mutable {
+	if !varInfo.IsMutable {
 		return errors.Errorf("%s: variable %q is not mutable", s.Span(), s.Variable.Ident)
 	}
 	if s.IsAssignToMember() {
@@ -2147,8 +2184,9 @@ func (tc *typeChecker) VisitUnionTypeDeclaration(decl *ast.UnionTypeDeclaration)
 			}
 			tc.declareSymbol(variantType.Id(), astVariant.Named.Name.String())
 			variant = UnionVariant{
-				Kind:  UnionVariantKindNamed,
-				Named: NamedUnionVariant{Name: astVariant.Named.Name, Type: variantType}}
+				Kind: UnionVariantKindNamed,
+				Named: NamedUnionVariant{
+					typeBase: tc.newTypeBase(), Name: astVariant.Named.Name, Type: variantType, UnionType: unionType}}
 		default:
 			panic(fmt.Sprintf("unexpected variant kind: %d", astVariant.Kind))
 		}

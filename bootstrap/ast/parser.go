@@ -45,6 +45,10 @@ func (self *NodeCreator) NewCallExpression(callee Expression, args []CallArg, sp
 	return &CallExpression{nodeBase: self.newNodeBase(span), Callee: callee, Args: args}
 }
 
+func (self *NodeCreator) NewSignedIntLiteralExpression(value int64, span token.Span) *IntLiteralExpression {
+	return &IntLiteralExpression{nodeBase: self.newNodeBase(span), Int64: value, IsUInt64: false}
+}
+
 type nodeBase struct {
 	id   NodeId
 	span token.Span
@@ -1504,7 +1508,7 @@ func (p *Parser) ParseNode() (Node, error) {
 		case token.Ident, token.TypeIdent, token.LCurly, token.LParen, token.If, token.True, token.False, token.Str, token.Char, token.Int, token.Self:
 			return p.parseExpression()
 		default:
-			return nil, errors.Errorf("unexpected token: %s", t)
+			return nil, errors.Errorf("%s: unexpected token: %s", t.Span, t)
 		}
 	}
 	return nil, errors.Errorf("unexpected end of file")

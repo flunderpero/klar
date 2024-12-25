@@ -62,7 +62,7 @@ func (self *tupleLowering) VisitTupleLiteralExpression(expr *ast.TupleLiteralExp
 		self.typeInfo.Set(value, structType.Fields[i].Type)
 		callArgs[i] = ast.CallArg{Value: value, Span: value.Span()}
 	}
-	calleeExpr := self.nodeCreator.NewIdentExpression(ast.Ident("$Tuple"), expr.Span())
+	calleeExpr := self.nodeCreator.NewIdentExpression(ast.Ident("$TupleLowering"), expr.Span())
 	self.typeInfo.Set(calleeExpr, structType)
 	callExpr := self.nodeCreator.NewCallExpression(calleeExpr, callArgs, expr.Span())
 	self.typeInfo.Set(callExpr, structType)
@@ -102,7 +102,6 @@ func (self *tupleLowering) replaceTupleTypeWithStructType(ty typed.Type) typed.T
 		if tyKind.Receiver != nil {
 			tyKind.Receiver = self.replaceTupleTypeWithStructType(tyKind.Receiver)
 		}
-		self.replaceTupleTypeWithStructTypeSeen[ty.Id()] = ty
 	case *typed.StructType:
 		self.replaceTupleTypeWithStructTypeSeen[ty.Id()] = ty
 		for i, field := range tyKind.Fields {
@@ -120,11 +119,14 @@ func (self *tupleLowering) replaceTupleTypeWithStructType(ty typed.Type) typed.T
 			case typed.UnionVariantKindType:
 				variant.Type = self.replaceTupleTypeWithStructType(variant.Type)
 			case typed.UnionVariantKindNamed:
-				variant.Named.Type = self.replaceTupleTypeWithStructType(variant.Named.Type)
+				variant.Named.Type = self.replaceTupleTypeWithStructType(variant.Named.Type).(typed.CallableType)
 			default:
 				panic(fmt.Sprintf("unexpected union variant kind: %d", variant.Kind))
 			}
 		}
+	case *typed.NamedUnionVariant:
+		self.replaceTupleTypeWithStructTypeSeen[ty.Id()] = ty
+		tyKind.Type = self.replaceTupleTypeWithStructType(tyKind.Type).(typed.CallableType)
 	case *typed.BoolType,
 		*typed.Int64Type,
 		*typed.Int32Type,
@@ -139,6 +141,7 @@ func (self *tupleLowering) replaceTupleTypeWithStructType(ty typed.Type) typed.T
 		*typed.NoneType,
 		*typed.NeverType,
 		*typed.RawPtr,
+		*typed.VariableType,
 		*typed.TraitType,
 		*typed.ImplType,
 		*typed.TypeParam:

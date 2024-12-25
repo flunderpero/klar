@@ -3,9 +3,16 @@
 -- } expect.stdout
 -- expect.exit_code: 0
 
-union StrIntBoolColor = Str | Int | Bool | RGB(Int, Int, Int)
+union StrIntBoolColor = Str | Int | Bool | RGB(Int, Int, Int) 
+
+fn print_union(v StrIntBoolColor) {
+    -- todo: Currently, we cannot do anything with union types.
+}
 
 fn main() {
     let str StrIntBoolColor = "str"
-    let color StrIntBoolColor = StrIntBoolColor.RGB(1, 2, 3)
+    mut color StrIntBoolColor = StrIntBoolColor.RGB(1, 2, 3)
+    print_union(str)
+    color = 42
+    print_union(color)
 }

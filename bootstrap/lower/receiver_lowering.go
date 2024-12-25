@@ -127,9 +127,7 @@ func (self *receiverLowering) VisitCallExpression(expr *ast.CallExpression, w Tr
 		expr.Args = append([]ast.CallArg{receiverCallArg}, expr.Args...)
 		expr.Callee = self.mergeMethodMemberExpression(expr.Callee.(*ast.MemberExpression), calleeType)
 		return expr, true
-	case *typed.StructType:
-		return expr, true
-	case *typed.TupleType:
+	case *typed.StructType, *typed.TupleType, *typed.NamedUnionVariant:
 		return expr, true
 	default:
 		panic(fmt.Sprintf("unexpected callable type: %T", calleeType))

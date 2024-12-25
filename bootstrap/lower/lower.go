@@ -26,7 +26,9 @@ func Lower(
 	nodeCreator *ast.NodeCreator,
 	typeCreator *typed.TypeCreator,
 ) *LoweredAST {
+	// Note: The order of passes is important.
 	module = ReceiverLowering(module, typeInfo, genericsResolver, nodeCreator)
+	module = UnionLowering(module, typeInfo, typeCreator, nodeCreator)
 	module = TupleLowering(module, typeInfo, typeCreator, nodeCreator)
 	funcSpecs := Monomorphization(module, typeInfo, genericsResolver)
 	module = RemoveUnused(module)

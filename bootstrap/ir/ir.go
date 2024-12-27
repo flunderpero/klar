@@ -1177,11 +1177,17 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) erro
 	if err := g.VisitBlockExpression(expr.TrueBody, w); err != nil {
 		return err
 	}
+	if g.currentBlock.Terminator == nil {
+		g.currentBlock.Terminator = &Jump{Target: mergeBlock}
+	}
 	g.updateRegisterConstraints(symbolTableBeforeBodies)
 	if expr.FalseBody != nil {
 		g.currentBlock = falseBlock
 		if err := g.VisitBlockExpression(expr.FalseBody, w); err != nil {
 			return err
+		}
+		if g.currentBlock.Terminator == nil {
+			g.currentBlock.Terminator = &Jump{Target: mergeBlock}
 		}
 		g.updateRegisterConstraints(symbolTableBeforeBodies)
 	}

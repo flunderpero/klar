@@ -1,5 +1,5 @@
 -- expect.stdout {
--- OK: true then, OK: false else, OK: 2 > 1, OK: 2 >= 2, OK: 2 == 2, OK: 1 != 2, OK: 1 < 2, OK: 1 <= 2, OK: 1 == 2 or 2 == 2, OK: 1 == 1 and 2 == 2, OK: not false, 
+-- OK: true then, OK: false else, OK: 2 > 1, OK: 2 >= 2, OK: 2 == 2, OK: 1 != 2, OK: 1 < 2, OK: 1 <= 2, OK: 1 == 2 or 2 == 2, OK: 1 == 1 and 2 == 2, OK: not false, OK: nested
 -- } expect.stdout
 -- expect.exit_code: 0
 
@@ -28,4 +28,7 @@ fn main() {
     if 1 == 2 and 2 == 2 => panic("FAIL: 1 == 2 and 2 == 2")
     if not false => print("OK: not false, ")
     if not true => panic("FAIL: not true")
+    -- Nested if expressions.
+    if false => print("FAIL: nested")
+    else => if true => if true => print("OK: nested")
 }

@@ -634,7 +634,7 @@ func (c *Code) generateBlock(block *ir.Block) error {
 		c.emit("cbnz %s, %s", condRegister, c.blockLabel(terminator.TrueBlock))
 		c.emit("b %s", c.blockLabel(terminator.FalseBlock))
 	case *ir.Return:
-		// Nothing to do, this is handled in `generateFunction`.
+		c.emit("b %s_ret", c.funcName(c.function.Id))
 	default:
 		return errors.Errorf("unknown terminator: %T", terminator)
 	}
@@ -673,6 +673,7 @@ func generateFunction(function *ir.FunctionDefinition, module *ir.Module, isMain
 	if err := ir.WalkBlock(function.Entry, c.generateBlock); err != nil {
 		return c, err
 	}
+	c.emit("%s_ret:", c.funcName(c.function.Id))
 	c.incIndent()
 	// Setup and clean up the stack frame.
 	// First we have to preserve the callee saved registers (x19 .. x28).

@@ -21,19 +21,24 @@ type unionLowering struct {
 	replaceUnionTypeWithStructTypeSeen map[typed.TypeId]typed.Type
 }
 
-// Create a `ast.CallExpression` that creates the `self.unionStructType` from the given valueExpr.
-func (self *unionLowering) createUnionStructCallExpression(unionType *typed.UnionType, valueExpr ast.Expression) *ast.CallExpression {
-	valueType := self.typeInfo.MustLookup(valueExpr)
+func FindUnionVariantTag(unionType *typed.UnionType, variantType typed.Type) int {
 	tag := -1
 	for i, variant := range unionType.Variants {
-		if valueType.Id() == variant.AsType().Id() {
+		if variantType.Id() == variant.AsType().Id() {
 			tag = i
 			break
 		}
 	}
 	if tag == -1 {
-		panic(fmt.Sprintf("unexpected union variant %s for union type %s", valueType, unionType))
+		panic(fmt.Sprintf("unexpected union variant %s for union type %s", variantType, unionType))
 	}
+	return tag
+}
+
+// Create a `ast.CallExpression` that creates the `self.unionStructType` from the given valueExpr.
+func (self *unionLowering) createUnionStructCallExpression(unionType *typed.UnionType, valueExpr ast.Expression) *ast.CallExpression {
+	valueType := self.typeInfo.MustLookup(valueExpr)
+	tag := FindUnionVariantTag(unionType, valueType)
 	callArgs := make([]ast.CallArg, 2)
 	tagExpr := self.nodeCreator.NewSignedIntLiteralExpression(int64(tag), valueExpr.Span())
 	self.typeInfo.Set(tagExpr, &typed.Int64Type{})
@@ -44,7 +49,6 @@ func (self *unionLowering) createUnionStructCallExpression(unionType *typed.Unio
 	callExpr := self.nodeCreator.NewCallExpression(calleeExpr, callArgs, valueExpr.Span())
 	self.typeInfo.Set(callExpr, self.unionStructType)
 	return callExpr
-
 }
 
 func (self *unionLowering) VisitVariableDefinition(v *ast.VariableDefinition, w TransformWalker) (*ast.VariableDefinition, bool) {
@@ -193,21 +197,16 @@ func (self *unionLowering) replaceUnionTypeWithStructType(ty typed.Type) typed.T
 }
 
 func UnionLowering(
-	module *ast.Module, typeInfo *typed.TypeInfo, typeCreator *typed.TypeCreator, nodeCreator *ast.NodeCreator) *ast.Module {
+	module *ast.Module,
+	typeInfo *typed.TypeInfo,
+	typeCreator *typed.TypeCreator,
+	nodeCreator *ast.NodeCreator,
+	unionStructType *typed.StructType) *ast.Module {
 	transformer := &unionLowering{
-		typeInfo:    typeInfo,
-		typeCreator: typeCreator,
-		nodeCreator: nodeCreator,
-		unionStructType: typeCreator.NewStructType(
-			nil,
-			[]typed.TypeParam{},
-			[]typed.Type{},
-			[]typed.TypeAndName[typed.Type]{
-				{Type: &typed.Int64Type{}, Name: "tag"},
-				{Type: &typed.RawPtr{}, Name: "data"},
-			},
-			[]typed.TypeAndName[*typed.FunctionType]{},
-			[]*typed.TraitType{}),
+		typeInfo:                           typeInfo,
+		typeCreator:                        typeCreator,
+		nodeCreator:                        nodeCreator,
+		unionStructType:                    unionStructType,
 		replaceUnionTypeWithStructTypeSeen: map[typed.TypeId]typed.Type{},
 	}
 	walker := DefaultTransformWalker{Transformer: transformer}

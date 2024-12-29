@@ -29,6 +29,7 @@ type Transformer interface {
 	VisitCallExpression(expr *ast.CallExpression, w TransformWalker) (ast.Expression, bool)
 	VisitMemberExpression(expr *ast.MemberExpression, w TransformWalker) (ast.Expression, bool)
 	VisitIfExpression(expr *ast.IfExpression, w TransformWalker) (ast.Expression, bool)
+	VisitMatchExpression(expr *ast.MatchExpression, w TransformWalker) (ast.Expression, bool)
 	VisitBinaryExpression(expr *ast.BinaryExpression, w TransformWalker) (ast.Expression, bool)
 	VisitUnaryExpression(expr *ast.UnaryExpression, w TransformWalker) (ast.Expression, bool)
 	VisitIdentExpression(expr *ast.IdentExpression) (ast.Expression, bool)
@@ -56,6 +57,7 @@ type TransformWalker interface {
 	WalkTupleLiteralExpression(expr *ast.TupleLiteralExpression) (ast.Expression, bool)
 	WalkMemberExpression(expr *ast.MemberExpression) (ast.Expression, bool)
 	WalkIfExpression(expr *ast.IfExpression) (ast.Expression, bool)
+	WalkMatchExpression(expr *ast.MatchExpression) (ast.Expression, bool)
 	WalkBinaryExpression(expr *ast.BinaryExpression) (ast.Expression, bool)
 	WalkUnaryExpression(expr *ast.UnaryExpression) (ast.Expression, bool)
 	WalkAssignmentStatement(stmt *ast.AssignmentStatement) (*ast.AssignmentStatement, bool)
@@ -98,6 +100,10 @@ func (_ *DefaultTransformer) VisitMemberExpression(expr *ast.MemberExpression, w
 
 func (_ *DefaultTransformer) VisitIfExpression(expr *ast.IfExpression, w TransformWalker) (ast.Expression, bool) {
 	return w.WalkIfExpression(expr)
+}
+
+func (_ *DefaultTransformer) VisitMatchExpression(expr *ast.MatchExpression, w TransformWalker) (ast.Expression, bool) {
+	return w.WalkMatchExpression(expr)
 }
 
 func (_ *DefaultTransformer) VisitUnaryExpression(expr *ast.UnaryExpression, w TransformWalker) (ast.Expression, bool) {
@@ -196,6 +202,8 @@ func (w *DefaultTransformWalker) WalkExpression(expr ast.Expression) (ast.Expres
 		return w.Transformer.VisitTupleLiteralExpression(expr, w)
 	case *ast.IfExpression:
 		return w.Transformer.VisitIfExpression(expr, w)
+	case *ast.MatchExpression:
+		return w.Transformer.VisitMatchExpression(expr, w)
 	case *ast.BlockExpression:
 		return w.Transformer.VisitBlockExpression(expr, w)
 	default:
@@ -260,6 +268,22 @@ func (w *DefaultTransformWalker) WalkIfExpression(expr *ast.IfExpression) (ast.E
 	}
 	expr.Condition = condition
 	expr.TrueBody = trueBody.(*ast.BlockExpression)
+	return expr, true
+}
+
+func (w *DefaultTransformWalker) WalkMatchExpression(expr *ast.MatchExpression) (ast.Expression, bool) {
+	expression, ok := w.Transformer.VisitNode(expr.Expression, w)
+	if !ok {
+		return nil, false
+	}
+	expr.Expression = expression
+	for _, arm := range expr.Arms {
+		body, ok := w.Transformer.VisitBlockExpression(arm.Body, w)
+		if !ok {
+			return nil, false
+		}
+		arm.Body = body.(*ast.BlockExpression)
+	}
 	return expr, true
 }
 

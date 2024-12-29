@@ -1,0 +1,29 @@
+-- expect.stdout {
+-- Hello (10, 20, 255) 
+-- } expect.stdout
+-- expect.exit_code: 0
+
+union UnionType = Str | RGB(Int, Int, Int)
+
+fn match_union_type(v UnionType) {
+    match v {
+        case Str as s => print(s)
+        case UnionType.RGB as rgb {
+            print("(")
+            print_int(rgb.0)
+            print(", ")
+            print_int(rgb.1)
+            print(", ")
+            print_int(rgb.2)
+            print(")")
+        } 
+    }
+    print(" ")
+}
+
+fn main() {
+    let str UnionType = "Hello"
+    let blue = UnionType.RGB(10, 20, 255)
+    match_union_type(str)
+    match_union_type(blue)
+}

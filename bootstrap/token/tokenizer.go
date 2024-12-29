@@ -88,6 +88,9 @@ const (
 	And                TokenKind = "and"
 	Not                TokenKind = "not"
 	Or                 TokenKind = "or"
+	Match              TokenKind = "match"
+	Case               TokenKind = "case"
+	As                 TokenKind = "as"
 )
 
 func (t Token) String() string {
@@ -288,6 +291,12 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 				token = Token{Kind: And, Value: ""}
 			case "not":
 				token = Token{Kind: Not, Value: ""}
+			case "match":
+				token = Token{Kind: Match, Value: ""}
+			case "case":
+				token = Token{Kind: Case, Value: ""}
+			case "as":
+				token = Token{Kind: As, Value: ""}
 			default:
 				kind := Ident
 				if isTypeIdentifier(string(value)) {

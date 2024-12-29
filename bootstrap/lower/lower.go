@@ -26,9 +26,20 @@ func Lower(
 	nodeCreator *ast.NodeCreator,
 	typeCreator *typed.TypeCreator,
 ) *LoweredAST {
+	unionStructType := typeCreator.NewStructType(
+		nil,
+		[]typed.TypeParam{},
+		[]typed.Type{},
+		[]typed.TypeAndName[typed.Type]{
+			{Type: &typed.Int64Type{}, Name: "tag"},
+			{Type: &typed.RawPtr{}, Name: "data"},
+		},
+		[]typed.TypeAndName[*typed.FunctionType]{},
+		[]*typed.TraitType{})
 	// Note: The order of passes is important.
 	module = ReceiverLowering(module, typeInfo, genericsResolver, nodeCreator)
-	module = UnionLowering(module, typeInfo, typeCreator, nodeCreator)
+	module = MatchLowering(module, typeInfo, typeCreator, nodeCreator, unionStructType)
+	module = UnionLowering(module, typeInfo, typeCreator, nodeCreator, unionStructType)
 	module = TupleLowering(module, typeInfo, typeCreator, nodeCreator)
 	funcSpecs := Monomorphization(module, typeInfo, genericsResolver)
 	module = RemoveUnused(module)

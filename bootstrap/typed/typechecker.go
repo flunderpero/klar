@@ -1787,6 +1787,83 @@ func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) e
 	return nil
 }
 
+func (tc *typeChecker) VisitMatchExpression(expr *ast.MatchExpression, w ast.Walker) error {
+	if err := tc.VisitNode(expr.Expression, w); err != nil {
+		return err
+	}
+	exprType := tc.typeInfo.MustLookup(expr.Expression)
+	for _, arm := range expr.Arms {
+		pattern := arm.Pattern
+		switch pattern := pattern.(type) {
+		case *ast.UnionTypePattern:
+			ty, err := tc.lookupTypeOfNode(pattern.Type)
+			if err != nil {
+				return err
+			}
+			tc.typeInfo.Set(pattern.Type, ty)
+			if !exprType.IsAssignableFrom(ty) {
+				return errors.Errorf(
+					"%s: expected match expression type %s to be assignable to pattern type %s", pattern.Span(), exprType, ty)
+			}
+			if arm.Alias != nil {
+				tc.enterScope(arm.Body)
+				defer tc.exitScope()
+				varType := ty
+				if pattern.NamedVariant != "" {
+					unionType, ok := varType.(*UnionType)
+					if !ok {
+						return errors.Errorf("%s: expected union type, got %s", pattern.Span(), varType)
+					}
+					variantType, ok := unionType.FindNamedVariant(pattern.NamedVariant)
+					if !ok {
+						return errors.Errorf(
+							"%s: variant %q not found in union type %q", pattern.Span(), pattern.NamedVariant, unionType)
+					}
+					varType = variantType.Type
+				}
+				if err := tc.typeScope.declareVariable(
+					arm.Alias.Ident.String(),
+					VariableType{Type: varType, Span: arm.Span()}); err != nil {
+					return err
+				}
+			}
+		default:
+			return errors.Errorf("%s: pattern of type %T not implemented", arm.Span(), pattern)
+		}
+		if err := tc.VisitNode(arm.Body, w); err != nil {
+			return err
+		}
+	}
+	// Build the resulting type that is either a concrete type if all match arms
+	// have the same type or a union type of all different match arm types.
+	ty := tc.typeInfo.MustLookup(expr.Arms[0].Body)
+	for _, arm := range expr.Arms {
+		armType := tc.typeInfo.MustLookup(arm.Body)
+		if !ty.IsAssignableFrom(armType) {
+			if unionTy, ok := ty.(*UnionType); ok {
+				alreadyPartOfUnion := false
+				for _, variant := range unionTy.Variants {
+					if variant.Type.IsAssignableFrom(armType) {
+						alreadyPartOfUnion = true
+						break
+					}
+				}
+				if !alreadyPartOfUnion {
+					unionTy.Variants = append(unionTy.Variants, UnionVariant{Kind: UnionVariantKindType, Type: armType})
+					ty = unionTy
+				}
+			} else {
+				ty = &UnionType{typeBase: tc.newTypeBase(), Variants: []UnionVariant{
+					{Kind: UnionVariantKindType, Type: ty},
+					{Kind: UnionVariantKindType, Type: armType},
+				}}
+			}
+		}
+	}
+	tc.typeInfo.Set(expr, ty)
+	return nil
+}
+
 func (tc *typeChecker) resolveTypeParams(genericType GenericType, astParams []ast.TypeParam) ([]TypeParam, error) {
 	typeParams := make([]TypeParam, len(astParams))
 	for i, astParam := range astParams {

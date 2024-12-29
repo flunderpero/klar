@@ -49,6 +49,28 @@ func (self *NodeCreator) NewSignedIntLiteralExpression(value int64, span token.S
 	return &IntLiteralExpression{nodeBase: self.newNodeBase(span), Int64: value, IsUInt64: false}
 }
 
+func (self *NodeCreator) NewIfExpression(condition Expression, trueBody *BlockExpression, falseBody *BlockExpression, span token.Span) *IfExpression {
+	return &IfExpression{nodeBase: self.newNodeBase(span), Condition: condition, TrueBody: trueBody, FalseBody: falseBody}
+}
+
+func (self *NodeCreator) NewMemberExpression(target Expression, field MemberExpressionField, span token.Span) *MemberExpression {
+	return &MemberExpression{nodeBase: self.newNodeBase(span), Target: target, Field: field}
+}
+
+func (self *NodeCreator) NewBinaryExpression(lhs Expression, op BinaryOperator, rhs Expression, span token.Span) *BinaryExpression {
+	return &BinaryExpression{nodeBase: self.newNodeBase(span), Lhs: lhs, Op: op, Rhs: rhs}
+}
+
+func (self *NodeCreator) NewBlockExpression(nodes []Node, span token.Span) *BlockExpression {
+	return &BlockExpression{nodeBase: self.newNodeBase(span), Nodes: nodes}
+}
+
+func (self *NodeCreator) NewVariableDefinition(
+	name Ident, ty Type, mutable bool, value Expression, span token.Span) *VariableDefinition {
+	return &VariableDefinition{
+		nodeBase: self.newNodeBase(span), Name: name, Type: ty, Mutable: mutable, Value: value}
+}
+
 type nodeBase struct {
 	id   NodeId
 	span token.Span
@@ -371,7 +393,59 @@ func (expr *IfExpression) String() string {
 			base.Indent(expr.FalseBody, 1))
 	}
 	return fmt.Sprintf("IfExpression\n%s\n%s", base.Indent(expr.Condition, 1), base.Indent(expr.TrueBody, 1))
+}
 
+type MatchExpression struct {
+	nodeBase
+	Expression Expression
+	Arms       []*MatchArm
+}
+
+func (self *MatchExpression) String() string {
+	return fmt.Sprintf("MatchExpression%s", base.IndentSlice(self.Arms, 1))
+}
+
+type MatchArm struct {
+	nodeBase
+	Pattern MatchPattern
+	Alias   *IdentExpression // Optional
+	Body    *BlockExpression
+}
+
+func (self *MatchArm) String() string {
+	alias := ""
+	if self.Alias != nil {
+		alias = fmt.Sprintf("\n    (Alias)\n%s", base.Indent(self.Alias, 2))
+	}
+	return fmt.Sprintf("MatchArm\n%s%s\n%s", base.Indent(self.Pattern, 1), alias, base.Indent(self.Body, 1))
+}
+
+type MatchPattern interface {
+	String() string
+	matchPattern()
+}
+
+type matchPatternBase struct{}
+
+func (self matchPatternBase) matchPattern() {}
+
+type UnionTypePattern struct {
+	matchPatternBase
+	span         token.Span
+	Type         Type
+	NamedVariant Ident // Optional, ignored if ""
+}
+
+func (self UnionTypePattern) String() string {
+	ident := ""
+	if self.NamedVariant != "" {
+		ident = fmt.Sprintf("\n%s", base.Indent(self.NamedVariant, 1))
+	}
+	return fmt.Sprintf("UnionTypePattern\n%s%s", base.Indent(self.Type, 1), ident)
+}
+
+func (self UnionTypePattern) Span() token.Span {
+	return self.span
 }
 
 type LoopStatement struct {
@@ -780,6 +854,91 @@ func (p *Parser) parseIfExpression() (*IfExpression, error) {
 	return &IfExpression{nodeBase: p.newNodeBase(from), Condition: condition, TrueBody: trueBody, FalseBody: falseBody}, nil
 }
 
+func (p *Parser) parseMatchExpression() (*MatchExpression, error) {
+	from := p.span()
+	if _, err := p.consume(token.Match); err != nil {
+		return nil, err
+	}
+	expression, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.consume(token.LCurly); err != nil {
+		return nil, err
+	}
+	arms := []*MatchArm{}
+	for {
+		switch p.peek().Kind {
+		case token.RCurly:
+			p.consumeAny()
+			if len(arms) == 0 {
+				return nil, errors.Errorf("match expression must have at least one arm")
+			}
+			return &MatchExpression{nodeBase: p.newNodeBase(from), Expression: expression, Arms: arms}, nil
+		case token.Case:
+			arm, err := p.parseMatchArm()
+			if err != nil {
+				return nil, err
+			}
+			arms = append(arms, arm)
+		default:
+			return nil, errors.Errorf("expected case or close curly, got %s", p.peek())
+		}
+	}
+
+}
+
+func (p *Parser) parseMatchArm() (*MatchArm, error) {
+	from := p.span()
+	if _, err := p.consume(token.Case); err != nil {
+		return nil, err
+	}
+	pattern, err := p.parseMatchPattern()
+	if err != nil {
+		return nil, err
+	}
+	var alias *IdentExpression = nil
+	if p.peek().Kind == token.As {
+		p.consumeAny()
+		identExpression, err := p.parseIdentExpression(p.consumeAny())
+		if err != nil {
+			return nil, err
+		}
+		alias = identExpression
+	}
+	body, err := p.parseBlockExpression()
+	if err != nil {
+		return nil, err
+	}
+	return &MatchArm{nodeBase: p.newNodeBase(from), Pattern: pattern, Alias: alias, Body: body}, nil
+}
+
+func (p *Parser) parseMatchPattern() (MatchPattern, error) {
+	from := p.span()
+	t := p.peek()
+	switch t.Kind {
+	case token.TypeIdent:
+		ty, err := p.parseType()
+		if err != nil {
+			return nil, err
+		}
+		var namedVariant Ident = ""
+		if p.peek().Kind == token.Dot {
+			p.consumeAny()
+			if err != nil {
+				return nil, err
+			}
+			namedVariant_, err := p.consume(token.TypeIdent)
+			if err != nil {
+				return nil, err
+			}
+			namedVariant = Ident(namedVariant_.Value)
+		}
+		return &UnionTypePattern{Type: ty, NamedVariant: namedVariant, span: p.spanToHere(from)}, nil
+	}
+	return nil, errors.Errorf("expected a pattern but got %q", t)
+}
+
 func (p *Parser) parseTupleLiteralExpression() (*TupleLiteralExpression, error) {
 	from := p.span()
 	if _, err := p.consume(token.LParen); err != nil {
@@ -854,6 +1013,7 @@ func (p *Parser) parseTupleType() (*TupleType, error) {
 	values := []Type{}
 	for p.index < len(p.tokens) {
 		if p.peek().Kind == token.RParen {
+			p.consumeAny()
 			break
 		}
 		value, err := p.parseType()
@@ -1261,6 +1421,8 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 		return p.parseTupleLiteralExpression()
 	case token.If:
 		return p.parseIfExpression()
+	case token.Match:
+		return p.parseMatchExpression()
 	case token.Not:
 		p.consumeAny()
 		expr, err := p.parsePrimaryExpression()
@@ -1505,7 +1667,7 @@ func (p *Parser) ParseNode() (Node, error) {
 			return p.parseImplDefinition()
 		case token.Trait:
 			return p.parseTraitDeclaration()
-		case token.Ident, token.TypeIdent, token.LCurly, token.LParen, token.If, token.True, token.False, token.Str, token.Char, token.Int, token.Self:
+		case token.Ident, token.TypeIdent, token.LCurly, token.LParen, token.If, token.Match, token.True, token.False, token.Str, token.Char, token.Int, token.Self:
 			return p.parseExpression()
 		default:
 			return nil, errors.Errorf("%s: unexpected token: %s", t.Span, t)

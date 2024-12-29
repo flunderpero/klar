@@ -17,6 +17,7 @@ type Visitor interface {
 	VisitCallExpression(expr *CallExpression, w Walker) error
 	VisitMemberExpression(expr *MemberExpression, w Walker) error
 	VisitIfExpression(expr *IfExpression, w Walker) error
+	VisitMatchExpression(expr *MatchExpression, w Walker) error
 	VisitBinaryExpression(expr *BinaryExpression, w Walker) error
 	VisitUnaryExpression(expr *UnaryExpression, w Walker) error
 	VisitTraitDeclaration(impl *TraitDeclaration, w Walker) error
@@ -46,6 +47,7 @@ type Walker interface {
 	WalkTupleLiteralExpression(expr *TupleLiteralExpression) error
 	WalkMemberExpression(expr *MemberExpression) error
 	WalkIfExpression(expr *IfExpression) error
+	WalkMatchExpression(expr *MatchExpression) error
 	WalkBinaryExpression(expr *BinaryExpression) error
 	WalkUnaryExpression(expr *UnaryExpression) error
 	WalkAssignmentStatement(stmt *AssignmentStatement) error
@@ -88,6 +90,10 @@ func (_ *DefaultVisitor) VisitMemberExpression(expr *MemberExpression, w Walker)
 
 func (_ *DefaultVisitor) VisitIfExpression(expr *IfExpression, w Walker) error {
 	return w.WalkIfExpression(expr)
+}
+
+func (_ *DefaultVisitor) VisitMatchExpression(expr *MatchExpression, w Walker) error {
+	return w.WalkMatchExpression(expr)
 }
 
 func (_ *DefaultVisitor) VisitBinaryExpression(expr *BinaryExpression, w Walker) error {
@@ -187,6 +193,8 @@ func (w *DefaultWalker) WalkExpression(expr Expression) error {
 		err = w.Visitor.VisitTupleLiteralExpression(expr, w)
 	case *IfExpression:
 		err = w.Visitor.VisitIfExpression(expr, w)
+	case *MatchExpression:
+		err = w.Visitor.VisitMatchExpression(expr, w)
 	case *BlockExpression:
 		err = w.Visitor.VisitBlockExpression(expr, w)
 	default:
@@ -228,6 +236,18 @@ func (w *DefaultWalker) WalkIfExpression(expr *IfExpression) error {
 		}
 	}
 	return w.Visitor.VisitNode(expr.TrueBody, w)
+}
+
+func (w *DefaultWalker) WalkMatchExpression(expr *MatchExpression) error {
+	if err := w.Visitor.VisitNode(expr.Expression, w); err != nil {
+		return err
+	}
+	for _, arm := range expr.Arms {
+		if err := w.Visitor.VisitNode(arm.Body, w); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (w *DefaultWalker) WalkBlockExpression(expr *BlockExpression) error {

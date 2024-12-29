@@ -1,29 +1,42 @@
 -- expect.stdout {
--- Hello, world!!!!!!
+-- 3711151923273159131721252917
 -- } expect.stdout
 -- expect.exit_code: 0
 
-fn print_hello_world() {
-    print("H")
-    print("e")
-    print("l")
-    print("l")
-    print("o")
-    print(",")
-    print(" ")
-    print("w")
-    print("o")
-    print("r")
-    print("l")
-    print("d")
-    print("!")
-    print("!")
-    print("!")
-    print("!")
-    print("!")
-    print("!")
-}
-
 fn main() {
-    print_hello_world()
+   -- Create lots of variables that need to stay alive
+    let a = 1
+    let b = 2
+    let c = 3
+    let d = 4
+    let e = 5
+    let f = 6
+    let g = 7
+    let h = 8
+    let i = 9
+    let j = 10
+    let k = 11
+    let l = 12
+    let m = 13
+    let n = 14
+    let o = 15
+    let p = 16
+    -- Use them in an interleaved pattern to prevent register reuse
+    print_int(a + b)
+    print_int(c + d)
+    print_int(e + f)
+    print_int(g + h)
+    print_int(i + j)
+    print_int(k + l)
+    print_int(m + n)
+    print_int(o + p)
+    -- Now use them again in a different order
+    print_int(b + c)
+    print_int(d + e)
+    print_int(f + g)
+    print_int(h + i)
+    print_int(j + k)
+    print_int(l + m)
+    print_int(n + o)
+    print_int(p + a)
 }

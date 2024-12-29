@@ -144,6 +144,7 @@ func (ir Block) String() string {
 type Terminator interface {
 	String() string
 	Targets() []*Block
+	Registers() []Register
 }
 
 type Jump struct {
@@ -156,6 +157,10 @@ func (ir Jump) String() string {
 
 func (ir *Jump) Targets() []*Block {
 	return []*Block{ir.Target}
+}
+
+func (ir Jump) Registers() []Register {
+	return []Register{}
 }
 
 type CondBranch struct {
@@ -172,6 +177,10 @@ func (ir *CondBranch) Targets() []*Block {
 	return []*Block{ir.TrueBlock, ir.FalseBlock}
 }
 
+func (ir CondBranch) Registers() []Register {
+	return []Register{ir.Condition}
+}
+
 type Return struct{}
 
 func (ir Return) String() string {
@@ -182,12 +191,17 @@ func (ir *Return) Targets() []*Block {
 	return []*Block{}
 }
 
+func (ir Return) Registers() []Register {
+	return []Register{}
+}
+
 type FunctionDefinition struct {
 	Id                  typed.TypeId
 	Type                FunctionType
 	TypeInfo            *lower.SpecializedTypeInfo
 	Entry               *Block
-	RegisterConstraints RegisterConstraints
+	RegisterConstraints *RegisterConstraints
+	RegisterExpirations *RegisterExpirations
 }
 
 func (t FunctionDefinition) String() string {
@@ -249,7 +263,7 @@ func (m Module) String() string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-type RegisterId string
+type RegisterId int
 
 type Register struct {
 	Id   RegisterId
@@ -261,18 +275,45 @@ func (r Register) getPointerSourceMarker() {}
 func (r Register) calleeMarker() {}
 
 func (r Register) String() string {
-	return string(r.Id)
+	if r.Id == 0 {
+		return "none"
+	}
+	return fmt.Sprintf("%%%d", r.Id)
 }
 
 func newRegister(id int, ty Type) Register {
-	return Register{Id: RegisterId(fmt.Sprintf("%%%d", id)), Type: ty}
+	return Register{Id: RegisterId(id), Type: ty}
 }
 
-var NoneRegister = Register{Id: "none", Type: noneType}
+var NoneRegister = Register{Id: 0, Type: noneType}
 
 type Instruction interface {
 	String() string
 	Register() Register
+	ParamRegisters() []Register
+}
+
+type KeepAlive struct {
+	params []Register
+}
+
+func (i KeepAlive) String() string {
+	params := ""
+	for _, param := range i.params {
+		if len(params) > 0 {
+			params += ", "
+		}
+		params += param.String()
+	}
+	return fmt.Sprintf("keepalive %s", params)
+}
+
+func (i *KeepAlive) Register() Register {
+	return NoneRegister
+}
+
+func (i KeepAlive) ParamRegisters() []Register {
+	return i.params
 }
 
 type StrConst struct {
@@ -304,6 +345,10 @@ func (i *IntConst) Register() Register {
 	return i.register
 }
 
+func (i IntConst) ParamRegisters() []Register {
+	return []Register{}
+}
+
 type UIntConst struct {
 	register Register
 	Value    uint64
@@ -318,6 +363,10 @@ func (i *UIntConst) Register() Register {
 	return i.register
 }
 
+func (i UIntConst) ParamRegisters() []Register {
+	return []Register{}
+}
+
 type BoolConst struct {
 	register Register
 	Value    int
@@ -329,6 +378,10 @@ func (i BoolConst) String() string {
 
 func (i *BoolConst) Register() Register {
 	return i.register
+}
+
+func (i BoolConst) ParamRegisters() []Register {
+	return []Register{}
 }
 
 type GetPointerSource interface {
@@ -350,6 +403,13 @@ func (i *GetPointer) Register() Register {
 	return i.register
 }
 
+func (i *GetPointer) ParamRegisters() []Register {
+	if reg, ok := i.Source.(Register); ok {
+		return []Register{reg}
+	}
+	return []Register{}
+}
+
 type Load struct {
 	register   Register
 	Source     Register
@@ -358,6 +418,10 @@ type Load struct {
 
 func (i *Load) Register() Register {
 	return i.register
+}
+
+func (i *Load) ParamRegisters() []Register {
+	return []Register{i.Source}
 }
 
 func (i Load) String() string {
@@ -374,113 +438,110 @@ func (s *Store) Register() Register {
 	return NoneRegister
 }
 
+func (s *Store) ParamRegisters() []Register {
+	return []Register{s.Target, s.Value}
+}
+
 func (s Store) String() string {
 	return fmt.Sprintf("store %s %s, %s", s.Type, s.Value, s.Target)
 }
 
-type SignedIntAddWithOverflow struct {
-	register Register
-	Type     IntType
-	Lhs      Register
-	Rhs      Register
+type BinaryInst interface {
+	Instruction
+	binaryInstructionMarker()
+	Lhs() Register
+	Rhs() Register
 }
 
-func (i *SignedIntAddWithOverflow) Register() Register {
+type binaryInst struct {
+	register Register
+	lhs      Register
+	rhs      Register
+}
+
+func (i *binaryInst) binaryInstructionMarker() {}
+
+func (i *binaryInst) Lhs() Register {
+	return i.lhs
+}
+
+func (i *binaryInst) Rhs() Register {
+	return i.rhs
+}
+
+func (i *binaryInst) Register() Register {
 	return i.register
+}
+
+func (i *binaryInst) ParamRegisters() []Register {
+	return []Register{i.lhs, i.rhs}
+}
+
+func (i *binaryInst) String() string {
+	panic("not implemented")
+}
+
+type SignedIntAddWithOverflow struct {
+	binaryInst
+	Type IntType
 }
 
 func (i SignedIntAddWithOverflow) String() string {
-	return fmt.Sprintf("%s = iaddo %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
+	return fmt.Sprintf("%s = iaddo %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
 }
 
 type IntMultiplicationWithOverflow struct {
-	register Register
-	Type     IntType
-	Lhs      Register
-	Rhs      Register
-}
-
-func (i *IntMultiplicationWithOverflow) Register() Register {
-	return i.register
+	binaryInst
+	Type IntType
 }
 
 func (i IntMultiplicationWithOverflow) String() string {
-	return fmt.Sprintf("%s = imulo %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
+	return fmt.Sprintf("%s = imulo %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
 }
 
 type SignedIntDivision struct {
-	register Register
-	Type     IntType
-	Lhs      Register
-	Rhs      Register
-}
-
-func (i *SignedIntDivision) Register() Register {
-	return i.register
+	binaryInst
+	Type IntType
 }
 
 func (i SignedIntDivision) String() string {
-	return fmt.Sprintf("%s = sidiv %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
+	return fmt.Sprintf("%s = sidiv %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
 }
 
 type UnsignedIntDivision struct {
-	register Register
-	Type     IntType
-	Lhs      Register
-	Rhs      Register
-}
-
-func (i *UnsignedIntDivision) Register() Register {
-	return i.register
+	binaryInst
+	Type IntType
 }
 
 func (i UnsignedIntDivision) String() string {
-	return fmt.Sprintf("%s = idiv %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
+	return fmt.Sprintf("%s = idiv %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
 }
 
 type SignedIntModulo struct {
-	register Register
-	Type     IntType
-	Lhs      Register
-	Rhs      Register
-}
-
-func (i *SignedIntModulo) Register() Register {
-	return i.register
+	binaryInst
+	Type IntType
 }
 
 func (i SignedIntModulo) String() string {
-	return fmt.Sprintf("%s = simod %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
+	return fmt.Sprintf("%s = simod %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
 }
 
 type UnsignedIntModulo struct {
-	register Register
-	Type     IntType
-	Lhs      Register
-	Rhs      Register
-}
-
-func (i *UnsignedIntModulo) Register() Register {
-	return i.register
+	binaryInst
+	Type IntType
 }
 
 func (i UnsignedIntModulo) String() string {
-	return fmt.Sprintf("%s = imod %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
+	return fmt.Sprintf("%s = imod %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
 }
 
 type UnsignedIntAddWithOverflow struct {
-	register Register
-	Type     IntType
-	Lhs      Register
-	Rhs      Register
-}
-
-func (i *UnsignedIntAddWithOverflow) Register() Register {
-	return i.register
+	binaryInst
+	Type IntType
 }
 
 func (i UnsignedIntAddWithOverflow) String() string {
-	return fmt.Sprintf("%s = addo %s %s, %s", i.register, i.Type, i.Lhs, i.Rhs)
+	return fmt.Sprintf("%s = addo %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
 }
 
 type IntCompOp string
@@ -495,19 +556,13 @@ const (
 )
 
 type IntCompare struct {
-	register Register
-	Lhs      Register
-	Rhs      Register
-	Op       IntCompOp
-	Type     IntType
-}
-
-func (i IntCompare) Register() Register {
-	return i.register
+	binaryInst
+	Op   IntCompOp
+	Type IntType
 }
 
 func (i IntCompare) String() string {
-	return fmt.Sprintf("%s = icmp %s %s %s, %s", i.register, i.Op, i.Type, i.Lhs, i.Rhs)
+	return fmt.Sprintf("%s = icmp %s %s %s, %s", i.register, i.Op, i.Type, i.lhs, i.rhs)
 }
 
 type BinaryLogicOp string
@@ -518,18 +573,12 @@ const (
 )
 
 type BinaryLogic struct {
-	register Register
-	Lhs      Register
-	Rhs      Register
-	Op       BinaryLogicOp
-}
-
-func (self BinaryLogic) Register() Register {
-	return self.register
+	binaryInst
+	Op BinaryLogicOp
 }
 
 func (self BinaryLogic) String() string {
-	return fmt.Sprintf("%s = %s i1 %s, %s", self.register, self.Op, self.Lhs, self.Rhs)
+	return fmt.Sprintf("%s = %s i1 %s, %s", self.register, self.Op, self.lhs, self.rhs)
 }
 
 type UnaryLogicOp string
@@ -546,6 +595,10 @@ type UnaryLogic struct {
 
 func (self UnaryLogic) Register() Register {
 	return self.register
+}
+
+func (self UnaryLogic) ParamRegisters() []Register {
+	return []Register{self.Value}
 }
 
 func (self UnaryLogic) String() string {
@@ -599,6 +652,13 @@ func (inst Call) String() string {
 
 func (inst Call) Register() Register {
 	return inst.register
+}
+
+func (inst Call) ParamRegisters() []Register {
+	if reg, ok := inst.Callee.(Register); ok {
+		return append([]Register{reg}, inst.Args...)
+	}
+	return inst.Args
 }
 
 /*
@@ -761,8 +821,10 @@ func (s *symbolTable) copy() map[ast.Ident]Register {
 }
 
 type loopScope struct {
-	loopBlock *Block
-	exitBlock *Block
+	loopBlock     *Block
+	exitBlock     *Block
+	registerMark  int
+	usedRegisters map[RegisterId]Register
 }
 
 type generator struct {
@@ -789,8 +851,11 @@ func (g *generator) exitScope() {
 	g.symbolTable = g.symbolTable.parent
 }
 
-func (g *generator) enterLoop(loopBlock *Block, exitBlock *Block) {
-	g.loopScopes = append(g.loopScopes, loopScope{loopBlock: loopBlock, exitBlock: exitBlock})
+func (g *generator) enterLoop(loopBlock *Block, exitBlock *Block) *loopScope {
+	scope := loopScope{
+		loopBlock: loopBlock, exitBlock: exitBlock, registerMark: g.registerIndex, usedRegisters: make(map[RegisterId]Register)}
+	g.loopScopes = append(g.loopScopes, scope)
+	return &scope
 }
 
 func (g *generator) loopScope() loopScope {
@@ -807,6 +872,13 @@ func (g *generator) nextRegister(ty Type) Register {
 }
 
 func (g *generator) append(instruction Instruction, node ast.Node) {
+	for _, reg := range instruction.ParamRegisters() {
+		for _, loopScope := range g.loopScopes {
+			if reg.Id <= RegisterId(loopScope.registerMark) {
+				loopScope.usedRegisters[reg.Id] = reg
+			}
+		}
+	}
 	g.currentBlock.append(instruction)
 	if node != nil {
 		g.registerByNodeId[node.Id()] = instruction.Register()
@@ -828,13 +900,16 @@ func (g *generator) newBlock(predecessors ...*Block) *Block {
 	return block
 }
 
-func (g *generator) updateRegisterConstraints(symbolTableBefore map[ast.Ident]Register) {
+func (g *generator) updateRegisterConstraints(symbolTableBefore map[ast.Ident]Register) []Register {
+	result := []Register{}
 	for symbol, regBefore := range symbolTableBefore {
 		regNow := g.symbolTable.mustLookup(symbol)
 		if regNow.Id != regBefore.Id {
 			g.registerConstraints.add(regNow, regBefore)
+			result = append(result, regNow)
 		}
 	}
+	return result
 }
 
 func (g *generator) isDefinedFunction(typedTy typed.Type) (DefinedFunction, bool) {
@@ -1061,32 +1136,39 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 		valueType := g.lookupType(expr).(IntType)
 		if valueType.IsSigned() {
 			g.append(
-				&SignedIntAddWithOverflow{register: g.nextRegister(valueType), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+				&SignedIntAddWithOverflow{
+					binaryInst: binaryInst{register: g.nextRegister(valueType), lhs: lhs, rhs: rhs}, Type: valueType}, expr)
 		} else {
 			g.append(
-				&UnsignedIntAddWithOverflow{register: g.nextRegister(valueType), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+				&UnsignedIntAddWithOverflow{
+					binaryInst: binaryInst{register: g.nextRegister(valueType), lhs: lhs, rhs: rhs}, Type: valueType}, expr)
 		}
 	case ast.OpMultiply:
 		valueType := g.lookupType(expr).(IntType)
 		g.append(
-			&IntMultiplicationWithOverflow{register: g.nextRegister(valueType), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+			&IntMultiplicationWithOverflow{
+				binaryInst: binaryInst{register: g.nextRegister(valueType), lhs: lhs, rhs: rhs}, Type: valueType}, expr)
 	case ast.OpDivide:
 		valueType := g.lookupType(expr).(IntType)
 		if valueType.IsSigned() {
 			g.append(
-				&SignedIntDivision{register: g.nextRegister(valueType), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+				&SignedIntDivision{
+					binaryInst: binaryInst{register: g.nextRegister(valueType), lhs: lhs, rhs: rhs}, Type: valueType}, expr)
 		} else {
 			g.append(
-				&UnsignedIntDivision{register: g.nextRegister(valueType), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+				&UnsignedIntDivision{
+					binaryInst: binaryInst{register: g.nextRegister(valueType), lhs: lhs, rhs: rhs}, Type: valueType}, expr)
 		}
 	case ast.OpModulo:
 		valueType := g.lookupType(expr).(IntType)
 		if valueType.IsSigned() {
 			g.append(
-				&SignedIntModulo{register: g.nextRegister(valueType), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+				&SignedIntModulo{
+					binaryInst: binaryInst{register: g.nextRegister(valueType), lhs: lhs, rhs: rhs}, Type: valueType}, expr)
 		} else {
 			g.append(
-				&UnsignedIntModulo{register: g.nextRegister(valueType), Type: valueType, Lhs: lhs, Rhs: rhs}, expr)
+				&UnsignedIntModulo{
+					binaryInst: binaryInst{register: g.nextRegister(valueType), lhs: lhs, rhs: rhs}, Type: valueType}, expr)
 		}
 	case ast.OpEqual, ast.OpNotEqual, ast.OpLessThan, ast.OpLessThanOrEqual, ast.OpGreaterThan, ast.OpGreaterThanOrEqual:
 		ty := g.lookupType(expr.Lhs).(IntType)
@@ -1102,7 +1184,8 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 		if !ok {
 			panic(fmt.Sprintf("unknown binary operator: %s", expr.Op))
 		}
-		g.append(&IntCompare{register: g.nextRegister(Int1Type), Op: op, Type: ty, Lhs: lhs, Rhs: rhs}, expr)
+		g.append(&IntCompare{
+			binaryInst: binaryInst{register: g.nextRegister(Int1Type), lhs: lhs, rhs: rhs}, Op: op, Type: ty}, expr)
 	case ast.OpOr, ast.OpAnd:
 		ty := g.lookupType(expr.Lhs).(IntType)
 		if ty != Int1Type {
@@ -1117,7 +1200,8 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 		default:
 			return errors.Errorf("unsupported binary operator: %s", expr.Op)
 		}
-		g.append(&BinaryLogic{register: g.nextRegister(Int1Type), Op: op, Lhs: lhs, Rhs: rhs}, expr)
+		g.append(&BinaryLogic{
+			binaryInst: binaryInst{register: g.nextRegister(Int1Type), lhs: lhs, rhs: rhs}, Op: op}, expr)
 	default:
 		return errors.Errorf("unsupported binary operator: %s", expr.Op)
 	}
@@ -1180,7 +1264,7 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) erro
 	if g.currentBlock.Terminator == nil {
 		g.currentBlock.Terminator = &Jump{Target: mergeBlock}
 	}
-	g.updateRegisterConstraints(symbolTableBeforeBodies)
+	constraints := g.updateRegisterConstraints(symbolTableBeforeBodies)
 	if expr.FalseBody != nil {
 		g.currentBlock = falseBlock
 		if err := g.VisitBlockExpression(expr.FalseBody, w); err != nil {
@@ -1189,8 +1273,13 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) erro
 		if g.currentBlock.Terminator == nil {
 			g.currentBlock.Terminator = &Jump{Target: mergeBlock}
 		}
-		g.updateRegisterConstraints(symbolTableBeforeBodies)
+		constraints = append(constraints, g.updateRegisterConstraints(symbolTableBeforeBodies)...)
 	}
+	// We have to keep all register constraints alive.
+	if len(constraints) > 0 {
+		mergeBlock.append(&KeepAlive{params: constraints})
+	}
+
 	g.currentBlock = mergeBlock
 	// We treat if _expressions_ as statements for now.
 	condBlock.Result = NoneRegister
@@ -1302,14 +1391,27 @@ func (g *generator) VisitLoopStatement(stmt *ast.LoopStatement, w ast.Walker) er
 	g.currentBlock.Terminator = &Jump{Target: loopStartBlock}
 	g.currentBlock.Result = NoneRegister
 	g.currentBlock = loopStartBlock
-	g.enterLoop(loopStartBlock, exitBlock)
+	loopScope := g.enterLoop(loopStartBlock, exitBlock)
 	// In order to add the register constraints we need to first take a snapshot
 	// of the current symbol table.
 	symbolTableBeforeBody := g.symbolTable.copy()
 	if err := w.WalkNode(stmt.Body); err != nil {
 		return err
 	}
-	g.updateRegisterConstraints(symbolTableBeforeBody)
+	constraints := g.updateRegisterConstraints(symbolTableBeforeBody)
+	// We have to keep all register constraints alive.
+	if len(constraints) > 0 {
+		exitBlock.append(&KeepAlive{params: constraints})
+	}
+	// Also keep alive all registers that existed before the loop
+	// and are referenced within the loop.
+	if len(loopScope.usedRegisters) > 0 {
+		regs := []Register{}
+		for regId := range loopScope.usedRegisters {
+			regs = append(regs, Register{Id: regId})
+		}
+		exitBlock.append(&KeepAlive{params: regs})
+	}
 	g.exitLoop()
 	g.currentBlock.Terminator = &Jump{Target: loopStartBlock}
 	g.currentBlock.Result = NoneRegister
@@ -1481,9 +1583,11 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 			dataLayout:          dataLayout,
 		}
 		// Make function parameters visible.
+		paramRegs := []Register{}
 		for _, param := range funcSpec.Specialized.Params {
 			ty := declaredTypes.MustLookup(param.Type)
 			reg := gen.nextRegister(ty)
+			paramRegs = append(paramRegs, reg)
 			gen.symbolTable.declare(param.Name, reg)
 		}
 		block := gen.newBlock()
@@ -1497,7 +1601,8 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 		}
 		gen.currentBlock.Terminator = &Return{}
 		funcDef.Entry = block
-		funcDef.RegisterConstraints = gen.registerConstraints
+		funcDef.RegisterConstraints = &gen.registerConstraints
+		funcDef.RegisterExpirations = calculateRegisterExpirations(funcDef.Entry, paramRegs)
 	}
 	return &Module{
 		DataLayout:    dataLayout,

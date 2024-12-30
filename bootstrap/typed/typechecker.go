@@ -1846,13 +1846,24 @@ func (tc *typeChecker) VisitMatchExpression(expr *ast.MatchExpression, w ast.Wal
 					aliasType = variantType.Type
 				}
 			}
-		case *ast.IntLiteralPattern:
+		case *ast.IntPattern:
 			tc.contextualType = exprType
 			if err := tc.VisitIntLiteralExpression(&pattern.Value); err != nil {
 				return err
 			}
-			patternType = tc.typeInfo.MustLookup(&pattern.Value)
-			aliasType = patternType
+			patternType = exprType
+			aliasType = exprType
+		case *ast.IntRangePattern:
+			tc.contextualType = exprType
+			if err := tc.VisitIntLiteralExpression(&pattern.From); err != nil {
+				return err
+			}
+			tc.contextualType = exprType
+			if err := tc.VisitIntLiteralExpression(&pattern.To); err != nil {
+				return err
+			}
+			patternType = exprType
+			aliasType = exprType
 		default:
 			return errors.Errorf("%s: pattern of type %T not implemented", arm.Span(), pattern)
 		}

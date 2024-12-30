@@ -54,6 +54,8 @@ const (
 	GreaterThanOrEqual TokenKind = ">="
 	Comma              TokenKind = ","
 	Dot                TokenKind = "."
+	ClosedRange        TokenKind = ".."
+	HalfOpenRange      TokenKind = "..<"
 	Plus               TokenKind = "+"
 	Star               TokenKind = "*"
 	Slash              TokenKind = "/"
@@ -156,7 +158,18 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 		} else if c == '%' {
 			tokens = append(tokens, Token{Kind: Percent, Value: "", Span: span})
 		} else if c == '.' {
-			tokens = append(tokens, Token{Kind: Dot, Value: "", Span: span})
+			kind := Dot
+			if src[i] == '.' {
+				i += 1
+				span.End += 1
+				kind = ClosedRange
+				if src[i] == '<' {
+					i += 1
+					span.End += 1
+					kind = HalfOpenRange
+				}
+			}
+			tokens = append(tokens, Token{Kind: kind, Value: "", Span: span})
 		} else if c == '|' {
 			tokens = append(tokens, Token{Kind: Pipe, Value: "", Span: span})
 		} else if c == '-' {

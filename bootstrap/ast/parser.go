@@ -450,16 +450,35 @@ func (self UnionTypePattern) String() string {
 	if self.NamedVariant != "" {
 		ident = fmt.Sprintf("\n%s", base.Indent(self.NamedVariant, 1))
 	}
-	return fmt.Sprintf("UnionTypePattern\n%s%s", base.Indent(self.Type, 1), ident)
+	ty := ""
+	if self.Type != nil {
+		ty = fmt.Sprintf("\n%s", base.Indent(self.Type, 1))
+	}
+	return fmt.Sprintf("UnionTypePattern%s%s", ty, ident)
 }
 
-type IntLiteralPattern struct {
+type IntPattern struct {
 	matchPatternBase
 	Value IntLiteralExpression
 }
 
-func (self IntLiteralPattern) String() string {
-	return fmt.Sprintf("IntLiteralPattern%s", base.Indent(self.Value, 1))
+func (self IntPattern) String() string {
+	return fmt.Sprintf("IntPattern\n%s", base.Indent(self.Value, 1))
+}
+
+type IntRangePattern struct {
+	matchPatternBase
+	From        IntLiteralExpression
+	To          IntLiteralExpression
+	InclusiveTo bool
+}
+
+func (self IntRangePattern) String() string {
+	inclusive := " (exclusive)"
+	if self.InclusiveTo {
+		inclusive = " (inclusive)"
+	}
+	return fmt.Sprintf("IntRangePattern\n%s\n%s%s", base.Indent(self.From, 1), base.Indent(self.To, 1), inclusive)
 }
 
 type LoopStatement struct {
@@ -963,7 +982,17 @@ func (p *Parser) parseMatchPattern() (MatchPattern, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &IntLiteralPattern{matchPatternBase: p.matchPatternBase(from), Value: *literal}, nil
+		t := p.peek()
+		if t.Kind == token.ClosedRange || t.Kind == token.HalfOpenRange {
+			p.consumeAny()
+			to, err := p.parseIntLiteralExpression()
+			if err != nil {
+				return nil, err
+			}
+			return &IntRangePattern{
+				matchPatternBase: p.matchPatternBase(from), From: *literal, To: *to, InclusiveTo: t.Kind == token.ClosedRange}, nil
+		}
+		return &IntPattern{matchPatternBase: p.matchPatternBase(from), Value: *literal}, nil
 	}
 	return nil, errors.Errorf("expected a pattern but got %q", t)
 }

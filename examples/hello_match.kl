@@ -1,5 +1,5 @@
 -- expect.stdout {
--- Hello (10, 20, 255) , i + 1 == 1 2
+-- Hello, RGB(10, 20, 255), i + 1 == 1, 2, i + 1 in 3..5, 7, 
 -- } expect.stdout
 -- expect.exit_code: 0
 
@@ -9,7 +9,7 @@ fn match_union_type(v UnionType) {
     match v {
         case Str as s => print(s)
         case .RGB as rgb {
-            print("(")
+            print("RGB(")
             print_int(rgb.0)
             print(", ")
             print_int(rgb.1)
@@ -18,14 +18,17 @@ fn match_union_type(v UnionType) {
             print(")")
         } 
     }
-    print(" ")
+    print(", ")
 }
 
-fn match_int(i I8) {
+fn match_int_plus_one(i I8) {
     match i + 1 {  -- `+ 1` so we don't always just match on ident expressions.
-        case 1 => print("i + 1 == 1 ")
+        case 1 => print("i + 1 == 1")
         case 2 as a => print_int(a)
+        case 3..5 => print("i + 1 in 3..5")
+        case 6..<8 as b => print_int(b)
     }
+    print(", ")
 }
 
 fn main() {
@@ -33,7 +36,8 @@ fn main() {
     let blue = UnionType.RGB(10, 20, 255)
     match_union_type(str)
     match_union_type(blue)
-    print(", ")
-    match_int(0)
-    match_int(1)
+    match_int_plus_one(0)
+    match_int_plus_one(1)
+    match_int_plus_one(4)
+    match_int_plus_one(6)
 }

@@ -29,7 +29,10 @@ func (self *matchLowering) VisitMatchExpression(expr *ast.MatchExpression, t Tra
 		switch pattern := arm.Pattern.(type) {
 		case *ast.UnionTypePattern:
 			unionType := self.typeInfo.MustLookup(expr.Expression).(*typed.UnionType)
-			valueType := self.typeInfo.MustLookup(pattern.Type)
+			var valueType typed.Type
+			if pattern.Type != nil {
+				valueType = self.typeInfo.MustLookup(pattern.Type)
+			}
 			if pattern.NamedVariant != "" {
 				valueType_, ok := unionType.FindNamedVariant(pattern.NamedVariant)
 				if !ok {

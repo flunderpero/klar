@@ -11,7 +11,7 @@ fn print_union_value(v StrIntBoolColor) {
         case Int as i => print_int(i)
         case Bool as b => print_bool(b)
         case StrIntBoolColor.Green => print("Green")
-        case StrIntBoolColor.RGB as rgb {
+        case .RGB as rgb {
             print("(")
             print_int(rgb.0)
             print(", ")

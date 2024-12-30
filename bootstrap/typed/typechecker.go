@@ -1819,19 +1819,25 @@ func (tc *typeChecker) VisitMatchExpression(expr *ast.MatchExpression, w ast.Wal
 		pattern := arm.Pattern
 		switch pattern := pattern.(type) {
 		case *ast.UnionTypePattern:
-			ty, err := tc.lookupTypeOfNode(pattern.Type)
-			if err != nil {
-				return err
+			var patternType Type
+			if pattern.Type == nil {
+				patternType = exprType
+			} else {
+				patternType_, err := tc.lookupTypeOfNode(pattern.Type)
+				if err != nil {
+					return err
+				}
+				patternType = patternType_
+				tc.typeInfo.Set(pattern.Type, patternType)
 			}
-			tc.typeInfo.Set(pattern.Type, ty)
-			if !exprType.IsAssignableFrom(ty) {
+			if !exprType.IsAssignableFrom(patternType) {
 				return errors.Errorf(
-					"%s: expected match expression type %s to be assignable to pattern type %s", pattern.Span(), exprType, ty)
+					"%s: expected match expression type %s to be assignable to pattern type %s", pattern.Span(), exprType, patternType)
 			}
 			if arm.Alias != nil {
 				tc.enterScope(arm.Body)
 				defer tc.exitScope()
-				varType := ty
+				varType := patternType
 				if pattern.NamedVariant != "" {
 					unionType, ok := varType.(*UnionType)
 					if !ok {

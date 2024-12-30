@@ -33,43 +33,43 @@ impl Span {
 }
 
 union TokenKind = 
-    | AngleLeft()
-    | AngleRight()
-    | Break()
-    | BracketLeft
-    | BracketRight
-    | Comma()
-    | Comment(Str)
-    | Continue()
-    | CurlyLeft()
-    | CurlyRight()
-    | Dot()
-    | Else()
-    | Equal()
-    | EqualEqual()
-    | EOF()
-    | False()
-    | Fn() 
-    | For()
-    | Identifier(Str)
-    | If()
-    | Impl()
-    | Int(Str)
-    | Let()
-    | Loop()
-    | Minus()
-    | Mut()
-    | ParenLeft() 
-    | ParenRight() 
-    | Pipe()
-    | Plus()
-    | Self()
-    | StrLiteral(Str) 
-    | Struct()
-    | Trait()
-    | True()
-    | TypeIdentifier(Str)
-    | Union()
+    | .AngleLeft
+    | .AngleRight
+    | .Break
+    | .BracketLeft
+    | .BracketRight
+    | .Comma
+    | .Comment(Str)
+    | .Continue
+    | .CurlyLeft
+    | .CurlyRight
+    | .Dot
+    | .Else
+    | .Equal
+    | .EqualEqual
+    | .EOF
+    | .False
+    | .Fn 
+    | .For
+    | .Identifier(Str)
+    | .If
+    | .Impl
+    | .Int(Str)
+    | .Let
+    | .Loop
+    | .Minus
+    | .Mut
+    | .ParenLeft 
+    | .ParenRight 
+    | .Pipe
+    | .Plus
+    | .Self
+    | .StrLiteral(Str) 
+    | .Struct
+    | .Trait
+    | .True
+    | .TypeIdentifier(Str)
+    | .Union
 
 struct Token {
     kind TokenKind
@@ -96,20 +96,20 @@ impl Iterator<Token> for Tokenizer {
         let from = self.span()
         let c = self.consume_char()
         let kind = match c {
-            case None => TokenKind.EOF()
+            case None => TokenKind.EOF
             case ' ' or '\t' or '\n' or '\r' => None
-            case '<' => TokenKind.AngleLeft()
-            case '>' => TokenKind.AngleRight()
-            case '[' => TokenKind.BracketLeft()
-            case ']' => TokenKind.BracketRight()
-            case ',' => TokenKind.Comma()
-            case '{' => TokenKind.CurlyLeft()
-            case '}' => TokenKind.CurlyRight()
-            case '.' => TokenKind.Dot()
-            case '(' => TokenKind.ParenLeft()
-            case ')' => TokenKind.ParenRight()
-            case '+' => TokenKind.Plus()
-            case '|' => TokenKind.Pipe()
+            case '<' => TokenKind.AngleLeft
+            case '>' => TokenKind.AngleRight
+            case '[' => TokenKind.BracketLeft
+            case ']' => TokenKind.BracketRight
+            case ',' => TokenKind.Comma
+            case '{' => TokenKind.CurlyLeft
+            case '}' => TokenKind.CurlyRight
+            case '.' => TokenKind.Dot
+            case '(' => TokenKind.ParenLeft
+            case ')' => TokenKind.ParenRight
+            case '+' => TokenKind.Plus
+            case '|' => TokenKind.Pipe
             case '-' {
                 if self.peek_char('-') {
                     mut value = "--"
@@ -120,7 +120,7 @@ impl Iterator<Token> for Tokenizer {
                         }
                     }
                     TokenKind.Comment(value)
-                } else => TokenKind.Minus()
+                } else => TokenKind.Minus
             }
             case '=' {
                 match self.peek_char() {
@@ -168,22 +168,22 @@ impl Iterator<Token> for Tokenizer {
                 }
                 if is_type_identifier => TokenKind.TypeIdentifier(value) 
                 else => match value {
-                    case "break" => TokenKind.Break()
-                    case "continue" => TokenKind.Continue()
-                    case "else" => TokenKind.Else()
-                    case "false" => TokenKind.False()
-                    case "fn" => TokenKind.Fn()
-                    case "for" => TokenKind.For()
-                    case "if" => TokenKind.If()
-                    case "impl" => TokenKind.Impl()
-                    case "let" => TokenKind.Let()
-                    case "loop" => TokenKind.Loop()
-                    case "mut" => TokenKind.Mut()
-                    case "self" => TokenKind.Self()
-                    case "struct" => TokenKind.Struct()
-                    case "trait" => TokenKind.Trait()
-                    case "true" => TokenKind.True()
-                    case "union" => TokenKind.Union()
+                    case "break" => TokenKind.Break
+                    case "continue" => TokenKind.Continue
+                    case "else" => TokenKind.Else
+                    case "false" => TokenKind.False
+                    case "fn" => TokenKind.Fn
+                    case "for" => TokenKind.For
+                    case "if" => TokenKind.If
+                    case "impl" => TokenKind.Impl
+                    case "let" => TokenKind.Let
+                    case "loop" => TokenKind.Loop
+                    case "mut" => TokenKind.Mut
+                    case "self" => TokenKind.Self
+                    case "struct" => TokenKind.Struct
+                    case "trait" => TokenKind.Trait
+                    case "true" => TokenKind.True
+                    case "union" => TokenKind.Union
                     case _ => TokenKind.Identifier(value)
                 }
             }

@@ -8,7 +8,7 @@ union UnionType = Str | .RGB(Int, Int, Int)
 fn match_union_type(v UnionType) {
     match v {
         case Str as s => print(s)
-        case UnionType.RGB as rgb {
+        case .RGB as rgb {
             print("(")
             print_int(rgb.0)
             print(", ")

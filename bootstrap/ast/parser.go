@@ -437,7 +437,7 @@ type UnionTypePattern struct {
 	matchPatternBase
 	span         token.Span
 	Type         Type  // Optional, can be nil
-	NamedVariant Ident // Optional, ignored if ""
+	NamedVariant Ident // Optional, can be ""
 }
 
 func (self UnionTypePattern) String() string {
@@ -921,6 +921,14 @@ func (p *Parser) parseMatchPattern() (MatchPattern, error) {
 	from := p.span()
 	t := p.peek()
 	switch t.Kind {
+	case token.Dot:
+		p.consumeAny()
+		namedVariant_, err := p.consume(token.TypeIdent)
+		if err != nil {
+			return nil, err
+		}
+		namedVariant := Ident(namedVariant_.Value)
+		return &UnionTypePattern{Type: nil, NamedVariant: namedVariant, span: p.spanToHere(from)}, nil
 	case token.TypeIdent:
 		ty, err := p.parseType()
 		if err != nil {
@@ -929,9 +937,6 @@ func (p *Parser) parseMatchPattern() (MatchPattern, error) {
 		var namedVariant Ident = ""
 		if p.peek().Kind == token.Dot {
 			p.consumeAny()
-			if err != nil {
-				return nil, err
-			}
 			namedVariant_, err := p.consume(token.TypeIdent)
 			if err != nil {
 				return nil, err

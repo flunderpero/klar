@@ -86,3 +86,7 @@ allocator
 rhs
 expr
 Ident
+EOF
+whitespace
+Wildcard
+wildcard

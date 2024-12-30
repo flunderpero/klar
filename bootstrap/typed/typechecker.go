@@ -1864,6 +1864,9 @@ func (tc *typeChecker) VisitMatchExpression(expr *ast.MatchExpression, w ast.Wal
 			}
 			patternType = exprType
 			aliasType = exprType
+		case *ast.WildcardPattern:
+			patternType = exprType
+			aliasType = exprType
 		default:
 			return errors.Errorf("%s: pattern of type %T not implemented", arm.Span(), pattern)
 		}

@@ -93,6 +93,7 @@ const (
 	Match              TokenKind = "match"
 	Case               TokenKind = "case"
 	As                 TokenKind = "as"
+	Underscore         TokenKind = "_"
 )
 
 func (t Token) String() string {
@@ -157,6 +158,8 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			tokens = append(tokens, Token{Kind: Slash, Value: "", Span: span})
 		} else if c == '%' {
 			tokens = append(tokens, Token{Kind: Percent, Value: "", Span: span})
+		} else if c == '_' {
+			tokens = append(tokens, Token{Kind: Underscore, Value: "", Span: span})
 		} else if c == '.' {
 			kind := Dot
 			if src[i] == '.' {

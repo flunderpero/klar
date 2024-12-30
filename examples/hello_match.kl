@@ -1,5 +1,5 @@
 -- expect.stdout {
--- Hello, RGB(10, 20, 255), i + 1 == 1, 2, i + 1 in 3..5, 7, 
+-- Hello, RGB(10, 20, 255), i + 1 == 1, 2, i + 1 in 3..5, 7, 127 is any other int, 
 -- } expect.stdout
 -- expect.exit_code: 0
 
@@ -27,6 +27,10 @@ fn match_int_plus_one(i I8) {
         case 2 as a => print_int(a)
         case 3..5 => print("i + 1 in 3..5")
         case 6..<8 as b => print_int(b)
+        case _ as c { 
+            print_int(c)
+            print(" is any other int")
+        }
     }
     print(", ")
 }
@@ -40,4 +44,5 @@ fn main() {
     match_int_plus_one(1)
     match_int_plus_one(4)
     match_int_plus_one(6)
+    match_int_plus_one(126)
 }

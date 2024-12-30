@@ -102,6 +102,10 @@ func (self *matchLowering) buildPatternCondition(
 			arm.Body.Nodes = append([]ast.Node{varDef}, arm.Body.Nodes...)
 		}
 		return self.nodeCreator.NewBinaryExpression(lhs, ast.OpEqual, rhs, arm.Span())
+	case *ast.WildcardPattern:
+		trueExpr := self.nodeCreator.NewBoolLiteralExpression(true, pattern.Span())
+		self.typeInfo.Set(trueExpr, &typed.BoolType{})
+		return trueExpr
 	case *ast.IntPattern:
 		return self.nodeCreator.NewBinaryExpression(matchedValueExpr, ast.OpEqual, &pattern.Value, pattern.Span())
 	case *ast.IntRangePattern:

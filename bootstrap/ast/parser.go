@@ -49,6 +49,10 @@ func (self *NodeCreator) NewSignedIntLiteralExpression(value int64, span token.S
 	return &IntLiteralExpression{nodeBase: self.newNodeBase(span), Int64: value, IsUInt64: false}
 }
 
+func (self *NodeCreator) NewBoolLiteralExpression(value bool, span token.Span) *BoolLiteralExpression {
+	return &BoolLiteralExpression{nodeBase: self.newNodeBase(span), Value: value}
+}
+
 func (self *NodeCreator) NewIfExpression(condition Expression, trueBody *BlockExpression, falseBody *BlockExpression, span token.Span) *IfExpression {
 	return &IfExpression{nodeBase: self.newNodeBase(span), Condition: condition, TrueBody: trueBody, FalseBody: falseBody}
 }
@@ -479,6 +483,14 @@ func (self IntRangePattern) String() string {
 		inclusive = " (inclusive)"
 	}
 	return fmt.Sprintf("IntRangePattern\n%s\n%s%s", base.Indent(self.From, 1), base.Indent(self.To, 1), inclusive)
+}
+
+type WildcardPattern struct {
+	matchPatternBase
+}
+
+func (self WildcardPattern) String() string {
+	return "WildcardPattern"
 }
 
 type LoopStatement struct {
@@ -954,6 +966,9 @@ func (p *Parser) parseMatchPattern() (MatchPattern, error) {
 	from := p.span()
 	t := p.peek()
 	switch t.Kind {
+	case token.Underscore:
+		p.consumeAny()
+		return &WildcardPattern{matchPatternBase: p.matchPatternBase(from)}, nil
 	case token.Dot:
 		p.consumeAny()
 		namedVariant_, err := p.consume(token.TypeIdent)

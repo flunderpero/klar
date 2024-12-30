@@ -73,16 +73,7 @@ func (self *matchLowering) buildPatternCondition(
 	case *ast.UnionTypePattern:
 		unionType := matchedValueType.(*typed.UnionType)
 		var valueType typed.Type
-		if pattern.Type != nil {
-			valueType = self.typeInfo.MustLookup(pattern.Type)
-		}
-		if pattern.NamedVariant != "" {
-			valueType_, ok := unionType.FindNamedVariant(pattern.NamedVariant)
-			if !ok {
-				panic(fmt.Sprintf("variant %s not found in union type %s", pattern.NamedVariant, unionType))
-			}
-			valueType = valueType_
-		}
+		valueType = self.typeInfo.MustLookup(pattern)
 		tag := FindUnionVariantTag(unionType, valueType)
 		lhs := self.nodeCreator.NewMemberExpression(matchedValueExpr, "tag", arm.Span())
 		self.typeInfo.Set(lhs, &typed.Int64Type{})

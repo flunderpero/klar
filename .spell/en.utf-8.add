@@ -90,3 +90,7 @@ EOF
 whitespace
 Wildcard
 wildcard
+typechecker
+matchchecker
+fn
+fixme

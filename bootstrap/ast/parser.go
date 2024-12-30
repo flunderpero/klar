@@ -429,12 +429,13 @@ func (self *MatchArm) String() string {
 }
 
 type MatchPattern interface {
+	Node
 	String() string
 	matchPattern()
 }
 
 type matchPatternBase struct {
-	span token.Span
+	nodeBase
 }
 
 func (self matchPatternBase) matchPattern() {}
@@ -959,7 +960,7 @@ func (p *Parser) parseMatchArm() (*MatchArm, error) {
 }
 
 func (p *Parser) matchPatternBase(from token.Span) matchPatternBase {
-	return matchPatternBase{span: p.spanToHere(from)}
+	return matchPatternBase{nodeBase: p.newNodeBase(from)}
 }
 
 func (p *Parser) parseMatchPattern() (MatchPattern, error) {

@@ -1821,8 +1821,26 @@ func (tc *typeChecker) VisitMatchExpression(expr *ast.MatchExpression, w ast.Wal
 		var aliasType Type
 		switch pattern := pattern.(type) {
 		case *ast.UnionTypePattern:
-			if pattern.Type == nil {
-				patternType = exprType
+			if pattern.NamedVariant != "" {
+				if pattern.Type != nil {
+					ty, err := tc.lookupTypeOfNode(pattern.Type)
+					if err != nil {
+						return err
+					}
+					if ty.Id() != exprType.Id() {
+						return errors.Errorf("%s: expected union variant of type %s, got %s", pattern.Span(), exprType, ty)
+					}
+				}
+				unionType, ok := exprType.(*UnionType)
+				if !ok {
+					return errors.Errorf("%s: expected union type, got %s", pattern.Span(), aliasType)
+				}
+				variantType, ok := unionType.FindNamedVariant(pattern.NamedVariant)
+				if !ok {
+					return errors.Errorf(
+						"%s: variant %q not found in union type %q", pattern.Span(), pattern.NamedVariant, unionType)
+				}
+				patternType = variantType
 			} else {
 				patternType_, err := tc.lookupTypeOfNode(pattern.Type)
 				if err != nil {
@@ -1831,19 +1849,12 @@ func (tc *typeChecker) VisitMatchExpression(expr *ast.MatchExpression, w ast.Wal
 				patternType = patternType_
 				tc.typeInfo.Set(pattern.Type, patternType)
 			}
+			tc.typeInfo.Set(pattern, patternType)
 			if arm.Alias != nil {
-				aliasType = patternType
-				if pattern.NamedVariant != "" {
-					unionType, ok := aliasType.(*UnionType)
-					if !ok {
-						return errors.Errorf("%s: expected union type, got %s", pattern.Span(), aliasType)
-					}
-					variantType, ok := unionType.FindNamedVariant(pattern.NamedVariant)
-					if !ok {
-						return errors.Errorf(
-							"%s: variant %q not found in union type %q", pattern.Span(), pattern.NamedVariant, unionType)
-					}
-					aliasType = variantType.Type
+				if namedVariantType, ok := patternType.(*NamedUnionVariant); ok {
+					aliasType = namedVariantType.Type
+				} else {
+					aliasType = patternType
 				}
 			}
 		case *ast.IntPattern:
@@ -1914,7 +1925,7 @@ func (tc *typeChecker) VisitMatchExpression(expr *ast.MatchExpression, w ast.Wal
 		}
 	}
 	tc.typeInfo.Set(expr, ty)
-	return nil
+	return CheckMatch(expr, tc.typeInfo)
 }
 
 func (tc *typeChecker) resolveTypeParams(genericType GenericType, astParams []ast.TypeParam) ([]TypeParam, error) {

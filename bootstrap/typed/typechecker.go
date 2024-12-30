@@ -1817,9 +1817,10 @@ func (tc *typeChecker) VisitMatchExpression(expr *ast.MatchExpression, w ast.Wal
 	exprType := tc.typeInfo.MustLookup(expr.Expression)
 	for _, arm := range expr.Arms {
 		pattern := arm.Pattern
+		var patternType Type
+		var aliasType Type
 		switch pattern := pattern.(type) {
 		case *ast.UnionTypePattern:
-			var patternType Type
 			if pattern.Type == nil {
 				patternType = exprType
 			} else {
@@ -1830,34 +1831,43 @@ func (tc *typeChecker) VisitMatchExpression(expr *ast.MatchExpression, w ast.Wal
 				patternType = patternType_
 				tc.typeInfo.Set(pattern.Type, patternType)
 			}
-			if !exprType.IsAssignableFrom(patternType) {
-				return errors.Errorf(
-					"%s: expected match expression type %s to be assignable to pattern type %s", pattern.Span(), exprType, patternType)
-			}
 			if arm.Alias != nil {
-				tc.enterScope(arm.Body)
-				defer tc.exitScope()
-				varType := patternType
+				aliasType = patternType
 				if pattern.NamedVariant != "" {
-					unionType, ok := varType.(*UnionType)
+					unionType, ok := aliasType.(*UnionType)
 					if !ok {
-						return errors.Errorf("%s: expected union type, got %s", pattern.Span(), varType)
+						return errors.Errorf("%s: expected union type, got %s", pattern.Span(), aliasType)
 					}
 					variantType, ok := unionType.FindNamedVariant(pattern.NamedVariant)
 					if !ok {
 						return errors.Errorf(
 							"%s: variant %q not found in union type %q", pattern.Span(), pattern.NamedVariant, unionType)
 					}
-					varType = variantType.Type
-				}
-				if err := tc.typeScope.declareVariable(
-					arm.Alias.Ident.String(),
-					VariableType{Type: varType, Span: arm.Span()}); err != nil {
-					return err
+					aliasType = variantType.Type
 				}
 			}
+		case *ast.IntLiteralPattern:
+			tc.contextualType = exprType
+			if err := tc.VisitIntLiteralExpression(&pattern.Value); err != nil {
+				return err
+			}
+			patternType = tc.typeInfo.MustLookup(&pattern.Value)
+			aliasType = patternType
 		default:
 			return errors.Errorf("%s: pattern of type %T not implemented", arm.Span(), pattern)
+		}
+		if !exprType.IsAssignableFrom(patternType) {
+			return errors.Errorf(
+				"%s: expected match expression type %s to be assignable to pattern type %s", arm.Span(), exprType, patternType)
+		}
+		if arm.Alias != nil {
+			tc.enterScope(arm.Body)
+			defer tc.exitScope()
+			if err := tc.typeScope.declareVariable(
+				arm.Alias.Ident.String(),
+				VariableType{Type: aliasType, Span: arm.Span()}); err != nil {
+				return err
+			}
 		}
 		if err := tc.VisitNode(arm.Body, w); err != nil {
 			return err

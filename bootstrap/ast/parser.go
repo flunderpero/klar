@@ -230,7 +230,7 @@ type IntLiteralExpression struct {
 	IsUInt64 bool
 }
 
-func (expr *IntLiteralExpression) String() string {
+func (expr IntLiteralExpression) String() string {
 	var value string
 	if expr.IsUInt64 {
 		value = fmt.Sprintf("%d", expr.UInt64)
@@ -429,13 +429,18 @@ type MatchPattern interface {
 	matchPattern()
 }
 
-type matchPatternBase struct{}
+type matchPatternBase struct {
+	span token.Span
+}
 
 func (self matchPatternBase) matchPattern() {}
 
+func (self matchPatternBase) Span() token.Span {
+	return self.span
+}
+
 type UnionTypePattern struct {
 	matchPatternBase
-	span         token.Span
 	Type         Type  // Optional, can be nil
 	NamedVariant Ident // Optional, can be ""
 }
@@ -448,8 +453,13 @@ func (self UnionTypePattern) String() string {
 	return fmt.Sprintf("UnionTypePattern\n%s%s", base.Indent(self.Type, 1), ident)
 }
 
-func (self UnionTypePattern) Span() token.Span {
-	return self.span
+type IntLiteralPattern struct {
+	matchPatternBase
+	Value IntLiteralExpression
+}
+
+func (self IntLiteralPattern) String() string {
+	return fmt.Sprintf("IntLiteralPattern%s", base.Indent(self.Value, 1))
 }
 
 type LoopStatement struct {
@@ -917,6 +927,10 @@ func (p *Parser) parseMatchArm() (*MatchArm, error) {
 	return &MatchArm{nodeBase: p.newNodeBase(from), Pattern: pattern, Alias: alias, Body: body}, nil
 }
 
+func (p *Parser) matchPatternBase(from token.Span) matchPatternBase {
+	return matchPatternBase{span: p.spanToHere(from)}
+}
+
 func (p *Parser) parseMatchPattern() (MatchPattern, error) {
 	from := p.span()
 	t := p.peek()
@@ -928,7 +942,7 @@ func (p *Parser) parseMatchPattern() (MatchPattern, error) {
 			return nil, err
 		}
 		namedVariant := Ident(namedVariant_.Value)
-		return &UnionTypePattern{Type: nil, NamedVariant: namedVariant, span: p.spanToHere(from)}, nil
+		return &UnionTypePattern{matchPatternBase: p.matchPatternBase(from), Type: nil, NamedVariant: namedVariant}, nil
 	case token.TypeIdent:
 		ty, err := p.parseType()
 		if err != nil {
@@ -943,7 +957,13 @@ func (p *Parser) parseMatchPattern() (MatchPattern, error) {
 			}
 			namedVariant = Ident(namedVariant_.Value)
 		}
-		return &UnionTypePattern{Type: ty, NamedVariant: namedVariant, span: p.spanToHere(from)}, nil
+		return &UnionTypePattern{matchPatternBase: p.matchPatternBase(from), Type: ty, NamedVariant: namedVariant}, nil
+	case token.Int:
+		literal, err := p.parseIntLiteralExpression()
+		if err != nil {
+			return nil, err
+		}
+		return &IntLiteralPattern{matchPatternBase: p.matchPatternBase(from), Value: *literal}, nil
 	}
 	return nil, errors.Errorf("expected a pattern but got %q", t)
 }

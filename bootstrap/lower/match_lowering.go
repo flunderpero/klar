@@ -21,14 +21,38 @@ type matchLowering struct {
 	replaceUnionTypeWithStructTypeSeen map[typed.TypeId]typed.Type
 }
 
-func (self *matchLowering) VisitMatchExpression(expr *ast.MatchExpression, t TransformWalker) (ast.Expression, bool) {
+func (self *matchLowering) VisitMatchExpression(match *ast.MatchExpression, t TransformWalker) (ast.Expression, bool) {
+	// First create a block that will replace the given `match` expression.
+	matchType := self.typeInfo.MustLookup(match)
+	block := self.nodeCreator.NewBlockExpression([]ast.Node{}, match.Span())
+	self.typeInfo.Set(block, matchType)
 	var result *ast.IfExpression
 	var lastIfExpr *ast.IfExpression
-	for _, arm := range expr.Arms {
+	exprType := self.typeInfo.MustLookup(match.Expression)
+	// First assign the result of the expression to a local variable so we don't re-evaluate it all
+	// the time. But only do so if it is not already an `ast.IdentExpression`.
+	var exprIdentExpr *ast.IdentExpression
+	if e, ok := match.Expression.(*ast.IdentExpression); ok {
+		exprIdentExpr = e
+	} else {
+		exprVarIdent := ast.Ident("__match_lowering_expr")
+		exprIdentExpr = self.nodeCreator.NewIdentExpression(exprVarIdent, match.Expression.Span())
+		self.typeInfo.Set(exprIdentExpr, exprType)
+		exprVarDef := self.nodeCreator.NewVariableDefinition(
+			exprVarIdent,
+			nil,
+			false,
+			match.Expression,
+			match.Expression.Span(),
+		)
+		self.typeInfo.Set(exprVarDef, &typed.VariableType{Type: exprType, Span: match.Span()})
+		block.Nodes = append(block.Nodes, exprVarDef)
+	}
+	for _, arm := range match.Arms {
 		var condition ast.Expression
 		switch pattern := arm.Pattern.(type) {
 		case *ast.UnionTypePattern:
-			unionType := self.typeInfo.MustLookup(expr.Expression).(*typed.UnionType)
+			unionType := exprType.(*typed.UnionType)
 			var valueType typed.Type
 			if pattern.Type != nil {
 				valueType = self.typeInfo.MustLookup(pattern.Type)
@@ -41,7 +65,7 @@ func (self *matchLowering) VisitMatchExpression(expr *ast.MatchExpression, t Tra
 				valueType = valueType_
 			}
 			tag := FindUnionVariantTag(unionType, valueType)
-			lhs := self.nodeCreator.NewMemberExpression(expr.Expression, "tag", arm.Span())
+			lhs := self.nodeCreator.NewMemberExpression(exprIdentExpr, "tag", arm.Span())
 			self.typeInfo.Set(lhs, &typed.Int64Type{})
 			rhs := self.nodeCreator.NewSignedIntLiteralExpression(int64(tag), arm.Span())
 			self.typeInfo.Set(rhs, &typed.Int64Type{})
@@ -51,9 +75,17 @@ func (self *matchLowering) VisitMatchExpression(expr *ast.MatchExpression, t Tra
 				if pattern.NamedVariant != "" {
 					varType = valueType.(*typed.NamedUnionVariant).Type
 				}
-				getData := self.nodeCreator.NewMemberExpression(expr.Expression, "data", arm.Alias.Span())
+				getData := self.nodeCreator.NewMemberExpression(exprIdentExpr, "data", arm.Alias.Span())
 				self.typeInfo.Set(getData, varType)
 				varDef := self.nodeCreator.NewVariableDefinition(arm.Alias.Ident, nil, false, getData, arm.Alias.Span())
+				self.typeInfo.Set(varDef, &typed.VariableType{Type: varType, Span: arm.Alias.Span()})
+				arm.Body.Nodes = append([]ast.Node{varDef}, arm.Body.Nodes...)
+			}
+		case *ast.IntLiteralPattern:
+			condition = self.nodeCreator.NewBinaryExpression(exprIdentExpr, ast.OpEqual, &pattern.Value, arm.Span())
+			if arm.Alias != nil {
+				varType := self.typeInfo.MustLookup(&pattern.Value)
+				varDef := self.nodeCreator.NewVariableDefinition(arm.Alias.Ident, nil, false, &pattern.Value, arm.Alias.Span())
 				self.typeInfo.Set(varDef, &typed.VariableType{Type: varType, Span: arm.Alias.Span()})
 				arm.Body.Nodes = append([]ast.Node{varDef}, arm.Body.Nodes...)
 			}
@@ -74,7 +106,8 @@ func (self *matchLowering) VisitMatchExpression(expr *ast.MatchExpression, t Tra
 			result = ifExpr
 		}
 	}
-	return result, true
+	block.Nodes = append(block.Nodes, result)
+	return block, true
 }
 
 func MatchLowering(

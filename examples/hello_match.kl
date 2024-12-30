@@ -1,5 +1,5 @@
 -- expect.stdout {
--- Hello (10, 20, 255) 
+-- Hello (10, 20, 255) , i + 1 == 1 2
 -- } expect.stdout
 -- expect.exit_code: 0
 
@@ -21,9 +21,19 @@ fn match_union_type(v UnionType) {
     print(" ")
 }
 
+fn match_int(i I8) {
+    match i + 1 {  -- `+ 1` so we don't always just match on ident expressions.
+        case 1 => print("i + 1 == 1 ")
+        case 2 as a => print_int(a)
+    }
+}
+
 fn main() {
     let str UnionType = "Hello"
     let blue = UnionType.RGB(10, 20, 255)
     match_union_type(str)
     match_union_type(blue)
+    print(", ")
+    match_int(0)
+    match_int(1)
 }

@@ -86,6 +86,28 @@ func (self *unionLowering) VisitAssignmentStatement(expr *ast.AssignmentStatemen
 	return expr, true
 }
 
+func (self *unionLowering) VisitMemberExpression(expr *ast.MemberExpression, w TransformWalker) (ast.Expression, bool) {
+	newExpr, ok := w.WalkMemberExpression(expr)
+	if !ok {
+		return nil, false
+	}
+	expr, ok = newExpr.(*ast.MemberExpression)
+	if !ok {
+		return newExpr, true
+	}
+	namedVariantType, ok := self.typeInfo.MustLookup(expr).(*typed.NamedUnionVariant)
+	if !ok || !namedVariantType.IsUnitVariant() {
+		return expr, true
+	}
+	valueExpr := self.nodeCreator.NewTupleLiterarExpression([]ast.Expression{}, expr.Span())
+	self.typeInfo.Set(valueExpr, namedVariantType)
+	callExpr := self.createUnionStructCallExpression(namedVariantType.UnionType, valueExpr)
+	// We need to set the type of the `valueExpr` to the namedVariantType's inner type
+	// to not mess up following passes like tuple lowering.
+	self.typeInfo.Set(valueExpr, namedVariantType.Type)
+	return callExpr, true
+}
+
 // Convert named union variant initialization calls to calls to initiate the union struct:
 //
 //	Color.RGB(1, 2, 3)
@@ -139,7 +161,7 @@ func (self *unionLowering) replaceUnionTypeWithStructType(ty typed.Type) typed.T
 			case typed.UnionVariantKindType:
 				variant.Type = self.replaceUnionTypeWithStructType(variant.Type)
 			case typed.UnionVariantKindNamed:
-				variant.Named.Type = self.replaceUnionTypeWithStructType(variant.Named.Type).(typed.CallableType)
+				variant.Named.Type = self.replaceUnionTypeWithStructType(variant.Named.Type).(*typed.TupleType)
 			default:
 				panic(fmt.Sprintf("unexpected union variant kind: %d", variant.Kind))
 			}
@@ -169,7 +191,7 @@ func (self *unionLowering) replaceUnionTypeWithStructType(ty typed.Type) typed.T
 			method.Type = self.replaceUnionTypeWithStructType(method.Type).(*typed.FunctionType)
 			tyKind.Methods[i] = method
 		}
-	case *typed.NamedUnionVariant:
+	case *typed.NamedUnionVariant, *typed.NamedUnionVariantConstructor:
 		ty = self.unionStructType
 		self.replaceUnionTypeWithStructTypeSeen[ty.Id()] = ty
 	case *typed.BoolType,

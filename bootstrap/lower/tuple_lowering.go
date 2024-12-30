@@ -119,14 +119,14 @@ func (self *tupleLowering) replaceTupleTypeWithStructType(ty typed.Type) typed.T
 			case typed.UnionVariantKindType:
 				variant.Type = self.replaceTupleTypeWithStructType(variant.Type)
 			case typed.UnionVariantKindNamed:
-				variant.Named.Type = self.replaceTupleTypeWithStructType(variant.Named.Type).(typed.CallableType)
+				variant.Named.Type = self.replaceTupleTypeWithStructType(variant.Named.Type).(*typed.TupleType)
 			default:
 				panic(fmt.Sprintf("unexpected union variant kind: %d", variant.Kind))
 			}
 		}
 	case *typed.NamedUnionVariant:
 		self.replaceTupleTypeWithStructTypeSeen[ty.Id()] = ty
-		tyKind.Type = self.replaceTupleTypeWithStructType(tyKind.Type).(typed.CallableType)
+		tyKind.Type = self.replaceTupleTypeWithStructType(tyKind.Type).(*typed.TupleType)
 	case *typed.BoolType,
 		*typed.Int64Type,
 		*typed.Int32Type,

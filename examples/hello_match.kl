@@ -3,7 +3,7 @@
 -- } expect.stdout
 -- expect.exit_code: 0
 
-union UnionType = Str | RGB(Int, Int, Int)
+union UnionType = Str | .RGB(Int, Int, Int)
 
 fn match_union_type(v UnionType) {
     match v {

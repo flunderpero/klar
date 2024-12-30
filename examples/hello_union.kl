@@ -3,7 +3,7 @@
 -- } expect.stdout
 -- expect.exit_code: 0
 
-union StrIntBoolColor = Str | Int | Bool | Green() | RGB(Int, Int, Int)
+union StrIntBoolColor = Str | Int | Bool | .Green | .RGB(Int, Int, Int)
 
 fn print_union_value(v StrIntBoolColor) {
     match v {
@@ -28,7 +28,7 @@ fn main() {
     let str StrIntBoolColor = "Hello"
     let int StrIntBoolColor = 42
     let bool StrIntBoolColor = true
-    let green = StrIntBoolColor.Green()
+    let green = StrIntBoolColor.Green
     let blue = StrIntBoolColor.RGB(10, 20, 255)
     print_union_value(str)
     print_union_value(int)

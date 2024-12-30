@@ -71,6 +71,10 @@ func (self *NodeCreator) NewVariableDefinition(
 		nodeBase: self.newNodeBase(span), Name: name, Type: ty, Mutable: mutable, Value: value}
 }
 
+func (self *NodeCreator) NewTupleLiterarExpression(values []Expression, span token.Span) *TupleLiteralExpression {
+	return &TupleLiteralExpression{nodeBase: self.newNodeBase(span), Values: values}
+}
+
 type nodeBase struct {
 	id   NodeId
 	span token.Span
@@ -432,7 +436,7 @@ func (self matchPatternBase) matchPattern() {}
 type UnionTypePattern struct {
 	matchPatternBase
 	span         token.Span
-	Type         Type
+	Type         Type  // Optional, can be nil
 	NamedVariant Ident // Optional, ignored if ""
 }
 
@@ -1452,7 +1456,7 @@ func (p *Parser) parseNamedUnionDeclaration() (*UnionTypeDeclaration, error) {
 	if _, err := p.consume(token.Union); err != nil {
 		return nil, err
 	}
-	identToken, err := p.consume(token.TypeIdent)
+	nameToken, err := p.consume(token.TypeIdent)
 	if err != nil {
 		return nil, err
 	}
@@ -1463,14 +1467,46 @@ func (p *Parser) parseNamedUnionDeclaration() (*UnionTypeDeclaration, error) {
 	if _, err = p.consume(token.Equal); err != nil {
 		return nil, err
 	}
-	res, err := p.parseAnonymousUnionDeclaration()
-	if err != nil {
-		return nil, err
+	variants := []UnionVariant{}
+	for p.index < len(p.tokens) {
+		t := p.peek()
+		switch t.Kind {
+		case token.Pipe:
+			p.consumeAny()
+			continue
+		case token.Dot:
+			p.consumeAny()
+			ident, err := p.consume(token.TypeIdent)
+			if err != nil {
+				return nil, err
+			}
+			var tupleType *TupleType
+			if p.peek().Kind == token.LParen {
+				tupleType, err = p.parseTupleType()
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				tupleType = &TupleType{}
+			}
+			variant := UnionVariant{Kind: UnionVariantKindNamed, Named: NamedVariant{Name: Ident(ident.Value), Type: tupleType}}
+			variants = append(variants, variant)
+		case token.TypeIdent:
+			variantType, err := p.parseType()
+			if err != nil {
+				return nil, err
+			}
+			variant := UnionVariant{Kind: UnionVariantKindType, Type: variantType}
+			variants = append(variants, variant)
+		default:
+			return nil, errors.Errorf("unexpected token while parsing named union type: %s", t)
+		}
+		if p.peek().Kind != token.Pipe {
+			break
+		}
 	}
-	res.Name = Ident(identToken.Value)
-	res.TypeParams = typeParams
-	res.span = p.spanToHere(from)
-	return res, nil
+	return &UnionTypeDeclaration{
+		nodeBase: p.newNodeBase(from), Name: Ident(nameToken.Value), Variants: variants, TypeParams: typeParams}, nil
 }
 
 func (p *Parser) parseAnonymousUnionDeclaration() (*UnionTypeDeclaration, error) {
@@ -1481,29 +1517,22 @@ func (p *Parser) parseAnonymousUnionDeclaration() (*UnionTypeDeclaration, error)
 		switch t.Kind {
 		case token.Pipe:
 			p.consumeAny()
+			continue
 		case token.TypeIdent:
-			var variant UnionVariant
-			if p.peek1().Kind == token.LParen {
-				p.consumeAny()
-				tupleType, err := p.parseTupleType()
-				if err != nil {
-					return nil, err
-				}
-				variant = UnionVariant{Kind: UnionVariantKindNamed, Named: NamedVariant{Name: Ident(t.Value), Type: tupleType}}
-			} else {
-				variantType, err := p.parseType()
-				if err != nil {
-					return nil, err
-				}
-				variant = UnionVariant{Kind: UnionVariantKindType, Type: variantType}
+			variantType, err := p.parseType()
+			if err != nil {
+				return nil, err
 			}
+			variant := UnionVariant{Kind: UnionVariantKindType, Type: variantType}
 			variants = append(variants, variant)
-			if p.peek().Kind != token.Pipe {
-				return &UnionTypeDeclaration{nodeBase: p.newNodeBase(from), Variants: variants}, nil
-			}
+		default:
+			return nil, errors.Errorf("unexpected token while parsing anonymous union type: %s", t)
+		}
+		if p.peek().Kind != token.Pipe {
+			break
 		}
 	}
-	panic("unexpected end of file while parsing union")
+	return &UnionTypeDeclaration{nodeBase: p.newNodeBase(from), Variants: variants}, nil
 }
 
 func (p *Parser) parseStructDeclaration() (*StructTypeDeclaration, error) {

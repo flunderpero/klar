@@ -691,21 +691,35 @@ const (
 
 type NamedUnionVariant struct {
 	typeBase
-	Name      ast.Ident
-	Type      CallableType
-	UnionType *UnionType
+	Name        ast.Ident
+	Type        *TupleType
+	UnionType   *UnionType
+	Constructor *NamedUnionVariantConstructor
+}
+
+func (self NamedUnionVariant) IsUnitVariant() bool {
+	return len(self.Type.Values) == 0
 }
 
 func (self NamedUnionVariant) String() string {
 	return fmt.Sprintf("NamedUnionVariant %s\n%s", self.Name, base.Indent(self.Type, 1))
 }
 
-func (self NamedUnionVariant) CallParams() []FunctionParam {
-	return self.Type.CallParams()
+type NamedUnionVariantConstructor struct {
+	typeBase
+	Type *NamedUnionVariant
 }
 
-func (self NamedUnionVariant) CallResult() Type {
-	return &self
+func (self NamedUnionVariantConstructor) String() string {
+	return fmt.Sprintf("NamedUnionVariantConstructor %s", self.Type.Name)
+}
+
+func (self NamedUnionVariantConstructor) CallParams() []FunctionParam {
+	return self.Type.Type.CallParams()
+}
+
+func (self NamedUnionVariantConstructor) CallResult() Type {
+	return self.Type
 }
 
 type UnionVariant struct {
@@ -1661,6 +1675,11 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 	if !ok {
 		return errors.Errorf("%s: callee %q is not a callable type", expr.Span(), calleeType)
 	}
+	if namedUnionVariant, ok := calleeType.(*NamedUnionVariantConstructor); ok {
+		if namedUnionVariant.Type.IsUnitVariant() {
+			return errors.Errorf("%s: unit variant %q cannot be called", expr.Span(), namedUnionVariant.Type.Name)
+		}
+	}
 	params := calleeType.CallParams()
 	result := calleeType.CallResult()
 	if funcType, ok := calleeType.(*FunctionType); ok {
@@ -1731,7 +1750,11 @@ func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.W
 				unionSymbol := tc.typeInfo.MustLookupSymbol(ty.Id())
 				return errors.Errorf("%s: variant %q not found in union type %q", expr.Span(), expr.Field, unionSymbol.Name)
 			}
-			memberType = variant
+			if variant.IsUnitVariant() {
+				memberType = variant
+			} else {
+				memberType = variant.Constructor
+			}
 		case *TypeParam:
 			if ty.TraitBound == nil {
 				return errors.Errorf("%s: type parameter %q does not have a trait bound", expr.Span(), ty.Name)
@@ -2263,7 +2286,13 @@ func (tc *typeChecker) VisitUnionTypeDeclaration(decl *ast.UnionTypeDeclaration)
 			variant = UnionVariant{
 				Kind: UnionVariantKindNamed,
 				Named: NamedUnionVariant{
-					typeBase: tc.newTypeBase(), Name: astVariant.Named.Name, Type: variantType, UnionType: unionType}}
+					typeBase:    tc.newTypeBase(),
+					Name:        astVariant.Named.Name,
+					Type:        variantType,
+					UnionType:   unionType,
+					Constructor: &NamedUnionVariantConstructor{typeBase: tc.newTypeBase()},
+				}}
+			variant.Named.Constructor.Type = &variant.Named
 		default:
 			panic(fmt.Sprintf("unexpected variant kind: %d", astVariant.Kind))
 		}

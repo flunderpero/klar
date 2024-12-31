@@ -168,8 +168,11 @@ func IsBuiltInFunction(funcType *FunctionType) bool {
 }
 
 var builtInSpan = token.Span{File: "<builtin>", Src: &[]byte{}, Start: 0, End: 0}
-var charType = &CharType{}
-var strType = &StrType{}
+var charType = &StructType{}
+var strType = &StructType{
+	typeBase: typeBase{TypeId(1)},
+	Fields:   []TypeAndName[Type]{{Name: "len_", Type: int64Type}, {Name: "bytes_", Type: rawPtr}},
+}
 var boolType = &BoolType{}
 var int64Type = &Int64Type{}
 var int32Type = &Int32Type{}
@@ -204,26 +207,6 @@ func (ty typeBase) Id() TypeId {
 
 func (ty typeBase) IsAssignableFrom(other Type) bool {
 	return ty.Id() == other.Id()
-}
-
-type StrType struct {
-	traits []*TraitType
-}
-
-func (ty StrType) Id() TypeId {
-	return 1
-}
-
-func (ty StrType) IsAssignableFrom(other Type) bool {
-	return ty.Id() == other.Id()
-}
-
-func (ty StrType) String() string {
-	return "StrType"
-}
-
-func (ty *StrType) Traits() []*TraitType {
-	return ty.traits
 }
 
 type CharType struct {
@@ -2423,6 +2406,10 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 		}
 		tc.typeInfo.DeclareSymbol(ty.Id(), &Symbol{Name: name, Scope: builtInSymbolScope})
 	}
+	// todo: Remove this workaround. If we want to compile multiple times within the same
+	//       process, we need to reset the functions we added to Str.
+	strType.traits = []*TraitType{}
+	strType.Methods = []TypeAndName[*FunctionType]{}
 	declareBuiltIn("None", noneType)
 	declareBuiltIn("Str", strType)
 	declareBuiltIn("Char", charType)

@@ -19,8 +19,8 @@ fn print_union_value(v StrIntBoolColor) {
             print(", ")
             print_int(rgb.2)
             print(")")
-        } 
     }
+}
     print(" ")
 }
 

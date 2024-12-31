@@ -94,3 +94,6 @@ typechecker
 matchchecker
 fn
 fixme
+len
+ptr
+concat

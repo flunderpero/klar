@@ -136,7 +136,6 @@ func (self *tupleLowering) replaceTupleTypeWithStructType(ty typed.Type) typed.T
 		*typed.UInt32Type,
 		*typed.UInt16Type,
 		*typed.UInt8Type,
-		*typed.StrType,
 		*typed.CharType,
 		*typed.NoneType,
 		*typed.NeverType,

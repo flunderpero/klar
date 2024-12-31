@@ -1444,8 +1444,6 @@ func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
 	switch ty := ty.(type) {
 	case *typed.NoneType, *typed.NeverType:
 		return noneType
-	case *typed.StrType:
-		return StrType
 	case *typed.BoolType:
 		return Int1Type
 	case *typed.Int8Type:

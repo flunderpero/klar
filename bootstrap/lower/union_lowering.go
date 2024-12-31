@@ -61,7 +61,7 @@ func (self *unionLowering) VisitVariableDefinition(v *ast.VariableDefinition, w 
 	if !ok {
 		return v, true
 	}
-	if _, ok := self.typeInfo.MustLookup(v.Value).(*typed.StructType); ok {
+	if self.typeInfo.MustLookup(v.Value).Id() == self.unionStructType.Id() {
 		// The value expression has already been converted to a struct type - nothing to do.
 		return v, true
 	}
@@ -78,7 +78,7 @@ func (self *unionLowering) VisitAssignmentStatement(expr *ast.AssignmentStatemen
 	if !ok {
 		return expr, true
 	}
-	if _, ok := self.typeInfo.MustLookup(expr.Rhs).(*typed.StructType); ok {
+	if self.typeInfo.MustLookup(expr.Rhs).Id() == self.unionStructType.Id() {
 		// The value expression has already been converted to a struct type - nothing to do.
 		return expr, true
 	}
@@ -203,7 +203,6 @@ func (self *unionLowering) replaceUnionTypeWithStructType(ty typed.Type) typed.T
 		*typed.UInt32Type,
 		*typed.UInt16Type,
 		*typed.UInt8Type,
-		*typed.StrType,
 		*typed.CharType,
 		*typed.NoneType,
 		*typed.NeverType,

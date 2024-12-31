@@ -4,3 +4,39 @@ fn panic(msg Str) Never {
     print(msg)
     internal_exit(1)
 }
+
+fn internal_memcpy(dst RawPtr, src RawPtr, len Int) {
+    mut i = 0
+    mut s = src
+    mut d = dst
+    loop {
+        if i == len {
+            break
+        }
+        i = i + 1
+        let b = internal_read_ptr<U8>(s)
+        internal_write_ptr<U8>(d, b)
+        s = s + 1
+        d = d + 1
+    }
+}
+
+-- This is the built-in Str declaration:
+-- struct Str {
+--     len_   Int
+--     bytes_ RawPtr
+-- }
+
+impl Str {
+    fn concat(self, s Str) Str {
+        let len = self.len_ + s.len_
+        let bytes = internal_malloc(len)
+        internal_memcpy(bytes, self.bytes_, self.len_)
+        internal_memcpy(bytes + self.len_, s.bytes_, s.len_)
+        Str(len, bytes)
+    }
+
+    fn len(self) Int {
+       self.len_ 
+    }
+}

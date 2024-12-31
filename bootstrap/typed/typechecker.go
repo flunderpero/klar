@@ -1774,6 +1774,14 @@ func (tc *typeChecker) VisitBlockExpression(expr *ast.BlockExpression, w ast.Wal
 	var blockType Type = noneType
 	if len(expr.Nodes) > 0 {
 		blockType = tc.typeInfo.MustLookup(expr.Nodes[len(expr.Nodes)-1])
+		for i, node := range expr.Nodes {
+			if returnStmt, ok := node.(*ast.ReturnStatement); ok {
+				if i != len(expr.Nodes)-1 {
+					return errors.Errorf("%s: return statement must be the last statement in a block", returnStmt.Span())
+				}
+				blockType = tc.typeInfo.MustLookup(returnStmt.Value)
+			}
+		}
 	}
 	tc.typeInfo.Set(expr, blockType)
 	return nil
@@ -2259,6 +2267,14 @@ func (tc *typeChecker) VisitContinueStatement(s *ast.ContinueStatement) error {
 func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 	if tc.loopDepth == 0 {
 		return errors.Errorf("%s: break statement outside of a loop", s.Span())
+	}
+	tc.typeInfo.Set(s, noneType)
+	return nil
+}
+
+func (tc *typeChecker) VisitReturnStatement(s *ast.ReturnStatement, w ast.Walker) error {
+	if err := w.WalkReturnStatement(s); err != nil {
+		return err
 	}
 	tc.typeInfo.Set(s, noneType)
 	return nil

@@ -915,9 +915,11 @@ func (g *generator) updateRegisterConstraints(symbolTableBefore map[ast.Ident]Re
 func (g *generator) isDefinedFunction(typedTy typed.Type) (DefinedFunction, bool) {
 	res, ok := g.definedFunctions[typedTy.Id()]
 	if !ok {
-		funcType := typedTy.(*typed.FunctionType)
-		if base, hasBase := funcType.GenericBase(); hasBase {
-			return g.isDefinedFunction(base)
+		funcType, ok := typedTy.(*typed.FunctionType)
+		if ok {
+			if base, hasBase := funcType.GenericBase(); hasBase {
+				return g.isDefinedFunction(base)
+			}
 		}
 	}
 	return res, ok
@@ -982,7 +984,10 @@ func (g *generator) VisitIdentExpression(expr *ast.IdentExpression) error {
 	typedTy := g.typeInfo.MustLookup(expr)
 	sourceType := g.declaredTypes.MustLookup(typedTy)
 	var source GetPointerSource
-	if definedFunc, ok := g.isDefinedFunction(typedTy); ok {
+	if _, ok := typedTy.(*typed.NoneType); ok {
+		g.registerByNodeId[expr.Id()] = NoneRegister
+		return nil
+	} else if definedFunc, ok := g.isDefinedFunction(typedTy); ok {
 		source = definedFunc
 	} else {
 		source = g.symbolTable.mustLookup(expr.Ident)
@@ -1432,6 +1437,17 @@ func (g *generator) VisitContinueStatement(stmt *ast.ContinueStatement) error {
 	loopScope := g.loopScope()
 	g.currentBlock.Terminator = &Jump{Target: loopScope.loopBlock}
 	g.currentBlock.Result = NoneRegister
+	g.currentBlock = g.newBlock(nil)
+	return nil
+}
+
+func (g *generator) VisitReturnStatement(stmt *ast.ReturnStatement, w ast.Walker) error {
+	if err := w.WalkNode(stmt.Value); err != nil {
+		return err
+	}
+	reg := g.lookupRegisterByNode(stmt.Value)
+	g.currentBlock.Terminator = &Return{}
+	g.currentBlock.Result = reg
 	g.currentBlock = g.newBlock(nil)
 	return nil
 }

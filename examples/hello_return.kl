@@ -1,0 +1,31 @@
+-- expect.stdout {
+-- returned at given index, loop finished
+-- } expect.stdout
+-- expect.exit_code: 0
+
+fn return_from_loop(index Int) Str {
+    mut i = 0
+    loop {
+        if i == index {
+            return "returned at given index"
+        } 
+        if i == 10 {
+            break
+        }
+        i = i + 1
+    }
+    return "loop finished"
+}
+
+fn must_return_none() {
+    if true {
+        return None
+    }
+}
+
+fn main() {
+    print(return_from_loop(5))
+    print(", ")
+    print(return_from_loop(15))
+    must_return_none()
+}

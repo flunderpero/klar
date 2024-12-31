@@ -94,6 +94,7 @@ const (
 	Case               TokenKind = "case"
 	As                 TokenKind = "as"
 	Underscore         TokenKind = "_"
+	Return             TokenKind = "return"
 )
 
 func (t Token) String() string {
@@ -313,6 +314,8 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 				token = Token{Kind: Case, Value: ""}
 			case "as":
 				token = Token{Kind: As, Value: ""}
+			case "return":
+				token = Token{Kind: Return, Value: ""}
 			default:
 				kind := Ident
 				if isTypeIdentifier(string(value)) {

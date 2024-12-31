@@ -519,6 +519,15 @@ func (b *ContinueStatement) String() string {
 	return "ContinueStatement"
 }
 
+type ReturnStatement struct {
+	nodeBase
+	Value Expression
+}
+
+func (r *ReturnStatement) String() string {
+	return fmt.Sprintf("ReturnStatement\n%s", base.Indent(r.Value, 1))
+}
+
 type AssignmentStatement struct {
 	nodeBase
 	Variable *IdentExpression
@@ -1737,6 +1746,18 @@ func (p *Parser) parseTraitDeclaration() (*TraitDeclaration, error) {
 	return nil, errors.Errorf("unexpected end of file while parsing trait")
 }
 
+func (p *Parser) parseReturnStatement() (*ReturnStatement, error) {
+	from := p.span()
+	if _, err := p.consume(token.Return); err != nil {
+		return nil, err
+	}
+	value, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+	return &ReturnStatement{nodeBase: p.newNodeBase(from), Value: value}, nil
+}
+
 var EOF = errors.Errorf("EOF")
 
 func (p *Parser) ParseNode() (Node, error) {
@@ -1758,6 +1779,8 @@ func (p *Parser) ParseNode() (Node, error) {
 		case token.Continue:
 			p.consumeAny()
 			return &ContinueStatement{nodeBase: p.newNodeBase(from)}, nil
+		case token.Return:
+			return p.parseReturnStatement()
 		case token.Struct:
 			return p.parseStructDeclaration()
 		case token.Union:

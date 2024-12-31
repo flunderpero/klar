@@ -42,6 +42,7 @@ type Transformer interface {
 	VisitLoopStatement(stmt *ast.LoopStatement, w TransformWalker) (*ast.LoopStatement, bool)
 	VisitBreakStatement(stmt *ast.BreakStatement) (*ast.BreakStatement, bool)
 	VisitContinueStatement(stmt *ast.ContinueStatement) (*ast.ContinueStatement, bool)
+	VisitReturnStatement(stmt *ast.ReturnStatement, w TransformWalker) (*ast.ReturnStatement, bool)
 }
 
 type TransformWalker interface {
@@ -62,6 +63,7 @@ type TransformWalker interface {
 	WalkUnaryExpression(expr *ast.UnaryExpression) (ast.Expression, bool)
 	WalkAssignmentStatement(stmt *ast.AssignmentStatement) (*ast.AssignmentStatement, bool)
 	WalkLoopStatement(stmt *ast.LoopStatement) (*ast.LoopStatement, bool)
+	WalkReturnStatement(stmt *ast.ReturnStatement) (*ast.ReturnStatement, bool)
 }
 
 type DefaultTransformer struct{}
@@ -156,6 +158,10 @@ func (_ *DefaultTransformer) VisitBreakStatement(stmt *ast.BreakStatement) (*ast
 
 func (_ *DefaultTransformer) VisitContinueStatement(stmt *ast.ContinueStatement) (*ast.ContinueStatement, bool) {
 	return stmt, true
+}
+
+func (_ *DefaultTransformer) VisitReturnStatement(stmt *ast.ReturnStatement, w TransformWalker) (*ast.ReturnStatement, bool) {
+	return w.WalkReturnStatement(stmt)
 }
 
 func (_ *DefaultTransformer) VisitStructTypeDeclaration(tc *ast.StructTypeDeclaration) (*ast.StructTypeDeclaration, bool) {
@@ -402,6 +408,15 @@ func (w *DefaultTransformWalker) WalkLoopStatement(stmt *ast.LoopStatement) (*as
 	return stmt, true
 }
 
+func (w *DefaultTransformWalker) WalkReturnStatement(stmt *ast.ReturnStatement) (*ast.ReturnStatement, bool) {
+	value, ok := w.Transformer.VisitNode(stmt.Value, w)
+	if !ok {
+		return nil, false
+	}
+	stmt.Value = value
+	return stmt, true
+}
+
 func (w *DefaultTransformWalker) WalkNode(node ast.Node) (ast.Node, bool) {
 	switch node := node.(type) {
 	case *ast.Module:
@@ -426,6 +441,8 @@ func (w *DefaultTransformWalker) WalkNode(node ast.Node) (ast.Node, bool) {
 		return w.Transformer.VisitBreakStatement(node)
 	case *ast.ContinueStatement:
 		return w.Transformer.VisitContinueStatement(node)
+	case *ast.ReturnStatement:
+		return w.Transformer.VisitReturnStatement(node, w)
 	default:
 		return w.Transformer.VisitExpression(node, w)
 	}

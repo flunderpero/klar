@@ -32,6 +32,7 @@ type Visitor interface {
 	VisitLoopStatement(stmt *LoopStatement, w Walker) error
 	VisitBreakStatement(stmt *BreakStatement) error
 	VisitContinueStatement(stmt *ContinueStatement) error
+	VisitReturnStatement(stmt *ReturnStatement, w Walker) error
 }
 
 type Walker interface {
@@ -52,6 +53,7 @@ type Walker interface {
 	WalkUnaryExpression(expr *UnaryExpression) error
 	WalkAssignmentStatement(stmt *AssignmentStatement) error
 	WalkLoopStatement(stmt *LoopStatement) error
+	WalkReturnStatement(stmt *ReturnStatement) error
 }
 
 type DefaultVisitor struct{}
@@ -146,6 +148,10 @@ func (_ *DefaultVisitor) VisitBreakStatement(stmt *BreakStatement) error {
 
 func (_ *DefaultVisitor) VisitContinueStatement(stmt *ContinueStatement) error {
 	return nil
+}
+
+func (_ *DefaultVisitor) VisitReturnStatement(stmt *ReturnStatement, w Walker) error {
+	return w.WalkReturnStatement(stmt)
 }
 
 func (_ *DefaultVisitor) VisitStructTypeDeclaration(tc *StructTypeDeclaration) error {
@@ -323,6 +329,10 @@ func (w *DefaultWalker) WalkLoopStatement(stmt *LoopStatement) error {
 	return w.Visitor.VisitBlockExpression(stmt.Body, w)
 }
 
+func (w *DefaultWalker) WalkReturnStatement(stmt *ReturnStatement) error {
+	return w.Visitor.VisitNode(stmt.Value, w)
+}
+
 func (w *DefaultWalker) WalkNode(node Node) error {
 	var err error
 	switch node := node.(type) {
@@ -348,6 +358,8 @@ func (w *DefaultWalker) WalkNode(node Node) error {
 		err = w.Visitor.VisitBreakStatement(node)
 	case *ContinueStatement:
 		err = w.Visitor.VisitContinueStatement(node)
+	case *ReturnStatement:
+		err = w.Visitor.VisitReturnStatement(node, w)
 	default:
 		err = w.Visitor.VisitExpression(node, w)
 	}

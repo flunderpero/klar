@@ -667,11 +667,6 @@ func (c *blockCode) generateBlock(block *ir.Block) error {
 			c.registerAllocator.forget(reg, c)
 		}
 	}
-	if _, ok := block.Result.Type.(ir.NoneType); !ok {
-		// Move the value of the block expression to x0.
-		resultAllocation := c.mustLookupRegisterAllocation(block.Result)
-		c.registerAllocator.move(x0, resultAllocation, c)
-	}
 	switch terminator := block.Terminator.(type) {
 	case *ir.Jump:
 		c.emit("b %s", c.blockLabel(terminator.Target))
@@ -682,6 +677,12 @@ func (c *blockCode) generateBlock(block *ir.Block) error {
 		c.emit("b %s", c.blockLabel(terminator.FalseBlock))
 		c.registerAllocator.forget(condRegister.irReg, c)
 	case *ir.Return:
+		if terminator.Value == ir.NoneRegister {
+			c.emit("mov x0, xzr")
+		} else {
+			value := c.mustLookupRegisterAllocation(terminator.Value)
+			c.registerAllocator.move(x0, value, c)
+		}
 		c.emit("b %s_ret", c.funcName(c.function.Id))
 	default:
 		return errors.Errorf("unknown terminator: %T", terminator)

@@ -181,10 +181,12 @@ func (ir CondBranch) Registers() []Register {
 	return []Register{ir.Condition}
 }
 
-type Return struct{}
+type Return struct {
+	Value Register
+}
 
 func (ir Return) String() string {
-	return "ret"
+	return fmt.Sprintf("ret %s", ir.Value)
 }
 
 func (ir *Return) Targets() []*Block {
@@ -1446,7 +1448,7 @@ func (g *generator) VisitReturnStatement(stmt *ast.ReturnStatement, w ast.Walker
 		return err
 	}
 	reg := g.lookupRegisterByNode(stmt.Value)
-	g.currentBlock.Terminator = &Return{}
+	g.currentBlock.Terminator = &Return{Value: reg}
 	g.currentBlock.Result = reg
 	g.currentBlock = g.newBlock(nil)
 	return nil
@@ -1613,7 +1615,7 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 		if gen.currentBlock.Terminator != nil {
 			return nil, errors.Errorf("expecting the last block to not have a terminator, but got: %s", block.Terminator)
 		}
-		gen.currentBlock.Terminator = &Return{}
+		gen.currentBlock.Terminator = &Return{Value: gen.currentBlock.Result}
 		funcDef.Entry = block
 		funcDef.RegisterConstraints = &gen.registerConstraints
 		funcDef.RegisterExpirations = calculateRegisterExpirations(funcDef.Entry, paramRegs)

@@ -1,5 +1,5 @@
 -- expect.stdout {
--- Hello 42 true Green (10, 20, 255) 
+-- Hello 42 true Green (10, 20, 255) PASS: Str, PASS: Int, PASS: Str, PASS: Green
 -- } expect.stdout
 -- expect.exit_code: 0
 
@@ -19,9 +19,25 @@ fn print_union_value(v StrIntBoolColor) {
             print(", ")
             print_int(rgb.2)
             print(")")
+        }
     }
-}
     print(" ")
+}
+
+fn anonymous_union(cond Bool) Str | Int {
+    if cond {
+        return "true"
+    }
+    0
+}
+
+fn return_named_union(cond Bool) StrIntBoolColor {
+    mut x StrIntBoolColor = "Str"
+    if cond {
+        x = StrIntBoolColor.Green
+        return x
+    }
+    x
 }
 
 fn main() {
@@ -35,4 +51,27 @@ fn main() {
     print_union_value(bool)
     print_union_value(green)
     print_union_value(blue)
+    let x = anonymous_union(true)
+    match x {
+        case Str => print("PASS: Str")
+        case Int => print("FAIL: unexpected union variant")
+    }
+    print(", ")
+    let y Str | Int = anonymous_union(false)
+    match y {
+        case Int => print("PASS: Int")
+        case Str => print("FAIL: unexpected union variant")
+    }
+    print(", ")
+    match return_named_union(false) {
+        case Str as s => print("PASS: ".concat(s))
+        case _ => print("FAIL: unexpected union variant")
+    }
+    print(", ")
+    match return_named_union(true) {
+        case .Green => print("PASS: Green")
+        case _ => print("FAIL: unexpected union variant")
+    }
 }
+
+

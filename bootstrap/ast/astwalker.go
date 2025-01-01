@@ -8,7 +8,7 @@ type Visitor interface {
 	VisitNode(node Node, w Walker) error
 	VisitModule(module *Module, w Walker) error
 	VisitStructTypeDeclaration(ty *StructTypeDeclaration) error
-	VisitUnionTypeDeclaration(ty *UnionTypeDeclaration) error
+	VisitNamedUnionTypeDeclaration(ty *NamedUnionTypeDeclaration) error
 	VisitFunctionDeclaration(decl *FunctionDeclaration) error
 	VisitFunctionDefinition(fn *FunctionDefinition, w Walker) error
 	VisitVariableDefinition(variable *VariableDefinition, w Walker) error
@@ -158,7 +158,7 @@ func (_ *DefaultVisitor) VisitStructTypeDeclaration(tc *StructTypeDeclaration) e
 	return nil
 }
 
-func (_ *DefaultVisitor) VisitUnionTypeDeclaration(tc *UnionTypeDeclaration) error {
+func (_ *DefaultVisitor) VisitNamedUnionTypeDeclaration(tc *NamedUnionTypeDeclaration) error {
 	return nil
 }
 
@@ -340,8 +340,8 @@ func (w *DefaultWalker) WalkNode(node Node) error {
 		err = w.Visitor.VisitModule(node, w)
 	case *StructTypeDeclaration:
 		err = w.Visitor.VisitStructTypeDeclaration(node)
-	case *UnionTypeDeclaration:
-		err = w.Visitor.VisitUnionTypeDeclaration(node)
+	case *NamedUnionTypeDeclaration:
+		err = w.Visitor.VisitNamedUnionTypeDeclaration(node)
 	case *TraitDeclaration:
 		err = w.Visitor.VisitTraitDeclaration(node, w)
 	case *ImplDefinition:

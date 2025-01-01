@@ -18,7 +18,7 @@ type Transformer interface {
 	VisitNode(node ast.Node, w TransformWalker) (ast.Node, bool)
 	VisitModule(module *ast.Module, w TransformWalker) (*ast.Module, bool)
 	VisitStructTypeDeclaration(ty *ast.StructTypeDeclaration) (*ast.StructTypeDeclaration, bool)
-	VisitUnionTypeDeclaration(ty *ast.UnionTypeDeclaration) (*ast.UnionTypeDeclaration, bool)
+	VisitNamedUnionTypeDeclaration(ty *ast.NamedUnionTypeDeclaration) (*ast.NamedUnionTypeDeclaration, bool)
 	VisitTraitDeclaration(train *ast.TraitDeclaration, w TransformWalker) (*ast.TraitDeclaration, bool)
 	VisitImplDefinition(impl *ast.ImplDefinition, w TransformWalker) (*ast.ImplDefinition, bool)
 	VisitFunctionDeclaration(decl *ast.FunctionDeclaration) (*ast.FunctionDeclaration, bool)
@@ -168,7 +168,7 @@ func (_ *DefaultTransformer) VisitStructTypeDeclaration(tc *ast.StructTypeDeclar
 	return tc, true
 }
 
-func (_ *DefaultTransformer) VisitUnionTypeDeclaration(ty *ast.UnionTypeDeclaration) (*ast.UnionTypeDeclaration, bool) {
+func (_ *DefaultTransformer) VisitNamedUnionTypeDeclaration(ty *ast.NamedUnionTypeDeclaration) (*ast.NamedUnionTypeDeclaration, bool) {
 	return ty, true
 }
 
@@ -423,8 +423,8 @@ func (w *DefaultTransformWalker) WalkNode(node ast.Node) (ast.Node, bool) {
 		return w.Transformer.VisitModule(node, w)
 	case *ast.StructTypeDeclaration:
 		return w.Transformer.VisitStructTypeDeclaration(node)
-	case *ast.UnionTypeDeclaration:
-		return w.Transformer.VisitUnionTypeDeclaration(node)
+	case *ast.NamedUnionTypeDeclaration:
+		return w.Transformer.VisitNamedUnionTypeDeclaration(node)
 	case *ast.TraitDeclaration:
 		return w.Transformer.VisitTraitDeclaration(node, w)
 	case *ast.ImplDefinition:

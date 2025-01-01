@@ -1205,7 +1205,7 @@ func (self *SymbolScope) FQN() string {
 	switch node := self.Node.(type) {
 	case *ast.FunctionDefinition:
 		name = node.Decl.Name.String()
-	case *ast.UnionTypeDeclaration:
+	case *ast.NamedUnionTypeDeclaration:
 		name = node.Name.String()
 	case *ast.ImplDefinition:
 		name = node.Target.String()
@@ -1331,6 +1331,7 @@ type typeChecker struct {
 	checkingMode     checkingMode
 	typeCreator      *TypeCreator
 	contextualType   Type
+	anonUnionTypes   map[string]*UnionType
 }
 
 func (tc *typeChecker) newTypeBase() typeBase {
@@ -1424,6 +1425,36 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 			return nil, errors.Errorf("undefined type parameter: %s", node.TypeName())
 		}
 		return res, nil
+	case *ast.UnionType:
+		unionType := &UnionType{typeBase: tc.newTypeBase()}
+		variants := make([]UnionVariant, len(node.Variants))
+		key := ""
+		for i, astVariant := range node.Variants {
+			var variant UnionVariant
+			switch astVariant.Kind {
+			case ast.UnionVariantKindType:
+				variantType, err := tc.lookupTypeOfNode(astVariant.Type)
+				key += variantType.Id().String() + ","
+				if err != nil {
+					return nil, err
+				}
+				variant = UnionVariant{Kind: UnionVariantKindType, Type: variantType}
+			case ast.UnionVariantKindNamed:
+				return nil, errors.Errorf(
+					"%s: named union variants are not supported in anonymous union types", astVariant.Type.Span())
+			default:
+				panic(fmt.Sprintf("unexpected variant kind: %d", astVariant.Kind))
+			}
+			variants[i] = variant
+		}
+		// Make sure that anonymous union types with the same variant types in the same order
+		// map to the same type.
+		if existingType, ok := tc.anonUnionTypes[key]; ok {
+			return existingType, nil
+		}
+		unionType.Variants = variants
+		tc.anonUnionTypes[key] = unionType
+		return unionType, nil
 	case *ast.SimpleType:
 		if len(node.TypeArgs) > 0 {
 			baseType, found := tc.typeScope.lookupType(node.TypeName())
@@ -2280,31 +2311,12 @@ func (tc *typeChecker) VisitReturnStatement(s *ast.ReturnStatement, w ast.Walker
 	return nil
 }
 
-func (tc *typeChecker) VisitUnionTypeDeclaration(decl *ast.UnionTypeDeclaration) error {
+func (tc *typeChecker) VisitNamedUnionTypeDeclaration(decl *ast.NamedUnionTypeDeclaration) error {
 	tc.enterGenericScope()
 	defer tc.exitGenericScope()
 	unionType := &UnionType{typeBase: tc.newTypeBase()}
-	typeParams, err := tc.resolveTypeParams(unionType, decl.TypeParams)
-	if err != nil {
-		return err
-	}
-	unionType.typeParams = typeParams
-	// The declared union type will have the type parameters as its type arguments. This way
-	// we don't have to distinguish between a type with type arguments set and one without type
-	// arguments.
-	unionType.typeArgs = make([]Type, len(typeParams))
-	for i, typeParam := range typeParams {
-		unionType.typeArgs[i] = typeParam
-	}
-	if err := tc.typeScope.declareType(string(decl.Name), unionType, decl.Span()); err != nil {
-		return err
-	}
-	tc.declareSymbol(unionType.Id(), decl.Name.String())
-	tc.typeInfo.Set(decl, &DeclaredType{Type: unionType})
-	tc.enterScope(decl)
-	defer tc.exitScope()
-	variants := make([]UnionVariant, len(decl.Variants))
-	for i, astVariant := range decl.Variants {
+	variants := make([]UnionVariant, len(decl.UnionType.Variants))
+	for i, astVariant := range decl.UnionType.Variants {
 		var variant UnionVariant
 		switch astVariant.Kind {
 		case ast.UnionVariantKindType:
@@ -2339,6 +2351,25 @@ func (tc *typeChecker) VisitUnionTypeDeclaration(decl *ast.UnionTypeDeclaration)
 		variants[i] = variant
 	}
 	unionType.Variants = variants
+	typeParams, err := tc.resolveTypeParams(unionType, decl.TypeParams)
+	if err != nil {
+		return err
+	}
+	unionType.typeParams = typeParams
+	// The declared union type will have the type parameters as its type arguments. This way
+	// we don't have to distinguish between a type with type arguments set and one without type
+	// arguments.
+	unionType.typeArgs = make([]Type, len(typeParams))
+	for i, typeParam := range typeParams {
+		unionType.typeArgs[i] = typeParam
+	}
+	if err := tc.typeScope.declareType(string(decl.Name), unionType, decl.Span()); err != nil {
+		return err
+	}
+	tc.declareSymbol(unionType.Id(), decl.Name.String())
+	tc.typeInfo.Set(decl, &DeclaredType{Type: unionType})
+	tc.enterScope(decl)
+	defer tc.exitScope()
 	return nil
 }
 
@@ -2413,6 +2444,7 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 		typeCreator:      typeCreator,
 		genericScope:     newGenericScope(nil),
 		genericsResolver: newGenericsResolver(typeInfo, typeCreator),
+		anonUnionTypes:   make(map[string]*UnionType),
 	}
 	// Declare builtin types and functions.
 	builtInSymbolScope := newSymbolScope(nil, nil)

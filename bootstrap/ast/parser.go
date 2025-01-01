@@ -587,22 +587,39 @@ func (self UnionVariant) String() string {
 	return fmt.Sprintf("UnionVariant\n%s", base.Indent(self.Named, 1))
 }
 
-type UnionTypeDeclaration struct {
+type UnionType struct {
+	nodeBase
+	Variants []UnionVariant
+}
+
+func (self UnionType) String() string {
+	return fmt.Sprintf("UnionType%s", base.IndentSlice(self.Variants, 1))
+}
+
+func (self UnionType) TypeName() string {
+	s := ""
+	for i, variant := range self.Variants {
+		if i > 0 {
+			s += "|"
+		}
+		if variant.Kind == UnionVariantKindNamed {
+			s += variant.Named.Name.String()
+		} else {
+			s += variant.Type.TypeName()
+		}
+	}
+	return s
+}
+
+type NamedUnionTypeDeclaration struct {
 	nodeBase
 	Name       Ident
 	TypeParams []TypeParam
-	Variants   []UnionVariant
+	UnionType  UnionType
 }
 
-func (self UnionTypeDeclaration) String() string {
-	name := ""
-	if self.Name.String() != "" {
-		name = fmt.Sprintf("\n%s", base.Indent(self.Name, 1))
-	}
-	return fmt.Sprintf("UnionTypeDeclaration%s%s%s",
-		name,
-		base.IndentString(typeParamsString(self.TypeParams), 1),
-		base.IndentSlice(self.Variants, 1))
+func (self NamedUnionTypeDeclaration) String() string {
+	return fmt.Sprintf("NamedUnionTypeDeclaration\n%s%s%s", base.Indent(self.Name, 1), base.IndentString(typeParamsString(self.TypeParams), 1), base.Indent(self.UnionType, 1))
 }
 
 type StructTypeField struct {
@@ -1117,6 +1134,10 @@ func (p *Parser) parseTupleType() (*TupleType, error) {
 }
 
 func (p *Parser) parseType() (Type, error) {
+	return p.parseType_(true)
+}
+
+func (p *Parser) parseType_(parseAnonymousUnionType bool) (Type, error) {
 	t := p.peek()
 	switch t.Kind {
 	case token.TypeIdent:
@@ -1124,6 +1145,16 @@ func (p *Parser) parseType() (Type, error) {
 		typeArgs, err := p.parseTypeArgs()
 		if err != nil {
 			return nil, err
+		}
+		if p.peek().Kind == token.Pipe && parseAnonymousUnionType {
+			simpleType := &SimpleType{nodeBase: p.newNodeBase(p.span()), Name: Ident(t.Value)}
+			unionType, err := p.parseAnonymousUnionType()
+			if err != nil {
+				return nil, err
+			}
+			unionType.Variants = append(
+				[]UnionVariant{{Kind: UnionVariantKindType, Type: simpleType}}, unionType.Variants...)
+			return unionType, nil
 		}
 		return &SimpleType{nodeBase: p.newNodeBase(p.span()), Name: Ident(t.Value), TypeArgs: typeArgs}, nil
 	case token.LParen:
@@ -1530,7 +1561,7 @@ func (p *Parser) parseLoopStatement() (*LoopStatement, error) {
 	return &LoopStatement{nodeBase: p.newNodeBase(from), Body: body}, nil
 }
 
-func (p *Parser) parseNamedUnionDeclaration() (*UnionTypeDeclaration, error) {
+func (p *Parser) parseNamedUnionDeclaration() (*NamedUnionTypeDeclaration, error) {
 	from := p.span()
 	if _, err := p.consume(token.Union); err != nil {
 		return nil, err
@@ -1571,7 +1602,7 @@ func (p *Parser) parseNamedUnionDeclaration() (*UnionTypeDeclaration, error) {
 			variant := UnionVariant{Kind: UnionVariantKindNamed, Named: NamedVariant{Name: Ident(ident.Value), Type: tupleType}}
 			variants = append(variants, variant)
 		case token.TypeIdent:
-			variantType, err := p.parseType()
+			variantType, err := p.parseType_(false)
 			if err != nil {
 				return nil, err
 			}
@@ -1584,11 +1615,12 @@ func (p *Parser) parseNamedUnionDeclaration() (*UnionTypeDeclaration, error) {
 			break
 		}
 	}
-	return &UnionTypeDeclaration{
-		nodeBase: p.newNodeBase(from), Name: Ident(nameToken.Value), Variants: variants, TypeParams: typeParams}, nil
+	unionType := &UnionType{nodeBase: p.newNodeBase(from), Variants: variants}
+	return &NamedUnionTypeDeclaration{
+		nodeBase: p.newNodeBase(from), Name: Ident(nameToken.Value), TypeParams: typeParams, UnionType: *unionType}, nil
 }
 
-func (p *Parser) parseAnonymousUnionDeclaration() (*UnionTypeDeclaration, error) {
+func (p *Parser) parseAnonymousUnionType() (*UnionType, error) {
 	from := p.span()
 	variants := []UnionVariant{}
 	for p.index < len(p.tokens) {
@@ -1598,7 +1630,7 @@ func (p *Parser) parseAnonymousUnionDeclaration() (*UnionTypeDeclaration, error)
 			p.consumeAny()
 			continue
 		case token.TypeIdent:
-			variantType, err := p.parseType()
+			variantType, err := p.parseType_(false)
 			if err != nil {
 				return nil, err
 			}
@@ -1611,7 +1643,7 @@ func (p *Parser) parseAnonymousUnionDeclaration() (*UnionTypeDeclaration, error)
 			break
 		}
 	}
-	return &UnionTypeDeclaration{nodeBase: p.newNodeBase(from), Variants: variants}, nil
+	return &UnionType{nodeBase: p.newNodeBase(from), Variants: variants}, nil
 }
 
 func (p *Parser) parseStructDeclaration() (*StructTypeDeclaration, error) {

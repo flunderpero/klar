@@ -19,6 +19,7 @@ type unionLowering struct {
 	nodeCreator                        *ast.NodeCreator
 	unionStructType                    *typed.StructType
 	replaceUnionTypeWithStructTypeSeen map[typed.TypeId]typed.Type
+	funcType                           *typed.FunctionType
 }
 
 func FindUnionVariantTag(unionType *typed.UnionType, variantType typed.Type) int {
@@ -131,6 +132,46 @@ func (self *unionLowering) VisitCallExpression(expr *ast.CallExpression, w Trans
 	expr = self.createUnionStructCallExpression(namedVariantType.UnionType, expr)
 	self.typeInfo.Set(expr.Args[1].Value, namedVariantType.Type)
 	return expr, true
+}
+
+func (self *unionLowering) VisitFunctionDefinition(fn *ast.FunctionDefinition, w TransformWalker) (*ast.FunctionDefinition, bool) {
+	if self.funcType != nil {
+		panic("nested functions should have been hoisted before")
+	}
+	self.funcType = self.typeInfo.MustLookup(fn).(*typed.DeclaredType).Type.(*typed.FunctionType)
+	if unionType, ok := self.funcType.Result.(*typed.UnionType); ok && len(fn.Body.Nodes) > 0 {
+		lastNode := fn.Body.Nodes[len(fn.Body.Nodes)-1]
+		if _, ok := lastNode.(*ast.ReturnStatement); !ok {
+			lastNodeType := self.typeInfo.MustLookup(lastNode)
+			if lastNodeType.Id() != unionType.Id() {
+				fn.Body.Nodes[len(fn.Body.Nodes)-1] = self.createUnionStructCallExpression(unionType, lastNode)
+			}
+		}
+	}
+	fn, ok := w.WalkFunctionDefinition(fn)
+	if !ok {
+		return nil, false
+	}
+	self.funcType = nil
+	return fn, true
+}
+
+func (self *unionLowering) VisitReturnStatement(stmt *ast.ReturnStatement, w TransformWalker) (*ast.ReturnStatement, bool) {
+	if unionType, ok := self.funcType.Result.(*typed.UnionType); ok {
+		retType := self.typeInfo.MustLookup(stmt.Value)
+		if retType.Id() != unionType.Id() {
+			stmt.Value = self.createUnionStructCallExpression(unionType, stmt.Value)
+		}
+	}
+	stmt, ok := w.WalkReturnStatement(stmt)
+	if !ok {
+		return nil, false
+	}
+	return stmt, true
+}
+
+func (self *unionLowering) VisitMatchExpression(match *ast.MatchExpression, w TransformWalker) (ast.Expression, bool) {
+	panic("match expressions should have been lowered before")
 }
 
 func (self *unionLowering) VisitNode(node ast.Node, w TransformWalker) (ast.Node, bool) {

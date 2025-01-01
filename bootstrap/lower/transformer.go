@@ -447,3 +447,18 @@ func (w *DefaultTransformWalker) WalkNode(node ast.Node) (ast.Node, bool) {
 		return w.Transformer.VisitExpression(node, w)
 	}
 }
+
+func visitMustNotChange(got ast.Node, want ast.Node, keep bool) {
+	if !keep {
+		panic(fmt.Sprintf("node should not have been removed: want %s", want))
+	}
+	if want != got {
+		panic(fmt.Sprintf("node should not have changed: want %s, got %s", want, got))
+	}
+}
+
+func visitMustNotRemove(want ast.Node, keep bool) {
+	if !keep {
+		panic(fmt.Sprintf("node should not have been removed: want %s", want))
+	}
+}

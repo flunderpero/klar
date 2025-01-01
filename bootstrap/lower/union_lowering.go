@@ -53,10 +53,8 @@ func (self *unionLowering) createUnionStructCallExpression(unionType *typed.Unio
 }
 
 func (self *unionLowering) VisitVariableDefinition(v *ast.VariableDefinition, w TransformWalker) (*ast.VariableDefinition, bool) {
-	v, ok := w.WalkVariableDefinition(v)
-	if !ok {
-		return nil, false
-	}
+	visited, ok := w.WalkVariableDefinition(v)
+	visitMustNotChange(v, visited, ok)
 	varType := self.typeInfo.MustLookup(v).(*typed.VariableType)
 	ty, ok := varType.Type.(*typed.UnionType)
 	if !ok {
@@ -71,10 +69,8 @@ func (self *unionLowering) VisitVariableDefinition(v *ast.VariableDefinition, w 
 }
 
 func (self *unionLowering) VisitAssignmentStatement(expr *ast.AssignmentStatement, w TransformWalker) (*ast.AssignmentStatement, bool) {
-	expr, ok := w.WalkAssignmentStatement(expr)
-	if !ok {
-		return nil, false
-	}
+	visited, ok := w.WalkAssignmentStatement(expr)
+	visitMustNotChange(expr, visited, ok)
 	ty, ok := self.typeInfo.MustLookup(expr.Variable).(*typed.UnionType)
 	if !ok {
 		return expr, true
@@ -88,14 +84,8 @@ func (self *unionLowering) VisitAssignmentStatement(expr *ast.AssignmentStatemen
 }
 
 func (self *unionLowering) VisitMemberExpression(expr *ast.MemberExpression, w TransformWalker) (ast.Expression, bool) {
-	newExpr, ok := w.WalkMemberExpression(expr)
-	if !ok {
-		return nil, false
-	}
-	expr, ok = newExpr.(*ast.MemberExpression)
-	if !ok {
-		return newExpr, true
-	}
+	visited, ok := w.WalkMemberExpression(expr)
+	visitMustNotChange(expr, visited, ok)
 	namedVariantType, ok := self.typeInfo.MustLookup(expr).(*typed.NamedUnionVariant)
 	if !ok || !namedVariantType.IsUnitVariant() {
 		return expr, true
@@ -117,14 +107,8 @@ func (self *unionLowering) VisitMemberExpression(expr *ast.MemberExpression, w T
 //
 //	UnionStruct(tag=1, data=(1, 2, 3)) -- `tag` is the tag of `Color.RGB` in this example.
 func (self *unionLowering) VisitCallExpression(expr *ast.CallExpression, w TransformWalker) (ast.Expression, bool) {
-	newExpr, ok := w.WalkCallExpression(expr)
-	if !ok {
-		return nil, false
-	}
-	expr, ok = newExpr.(*ast.CallExpression)
-	if !ok {
-		return newExpr, true
-	}
+	visited, ok := w.WalkCallExpression(expr)
+	visitMustNotChange(expr, visited, ok)
 	namedVariantType, ok := self.typeInfo.MustLookup(expr).(*typed.NamedUnionVariant)
 	if !ok {
 		return expr, true
@@ -148,10 +132,8 @@ func (self *unionLowering) VisitFunctionDefinition(fn *ast.FunctionDefinition, w
 			}
 		}
 	}
-	fn, ok := w.WalkFunctionDefinition(fn)
-	if !ok {
-		return nil, false
-	}
+	visited, ok := w.WalkFunctionDefinition(fn)
+	visitMustNotChange(fn, visited, ok)
 	self.funcType = nil
 	return fn, true
 }
@@ -163,10 +145,8 @@ func (self *unionLowering) VisitReturnStatement(stmt *ast.ReturnStatement, w Tra
 			stmt.Value = self.createUnionStructCallExpression(unionType, stmt.Value)
 		}
 	}
-	stmt, ok := w.WalkReturnStatement(stmt)
-	if !ok {
-		return nil, false
-	}
+	visited, ok := w.WalkReturnStatement(stmt)
+	visitMustNotChange(stmt, visited, ok)
 	return stmt, true
 }
 
@@ -176,9 +156,7 @@ func (self *unionLowering) VisitMatchExpression(match *ast.MatchExpression, w Tr
 
 func (self *unionLowering) VisitNode(node ast.Node, w TransformWalker) (ast.Node, bool) {
 	node, ok := w.WalkNode(node)
-	if !ok {
-		return nil, false
-	}
+	visitMustNotRemove(node, ok)
 	ty := self.typeInfo.MustLookup(node)
 	ty = self.replaceUnionTypeWithStructType(ty)
 	self.typeInfo.Set(node, ty)

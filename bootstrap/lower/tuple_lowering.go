@@ -47,14 +47,8 @@ func (self *tupleLowering) convertTupleToStructType(tupleType *typed.TupleType) 
 }
 
 func (self *tupleLowering) VisitTupleLiteralExpression(expr *ast.TupleLiteralExpression, w TransformWalker) (ast.Expression, bool) {
-	newExpr, ok := w.WalkTupleLiteralExpression(expr)
-	if !ok {
-		return nil, false
-	}
-	expr, ok = newExpr.(*ast.TupleLiteralExpression)
-	if !ok {
-		return newExpr, true
-	}
+	visited, ok := w.WalkTupleLiteralExpression(expr)
+	visitMustNotChange(expr, visited, ok)
 	tupleType := self.typeInfo.MustLookup(expr).(*typed.TupleType)
 	structType := self.convertTupleToStructType(tupleType)
 	callArgs := make([]ast.CallArg, len(expr.Values))
@@ -71,9 +65,7 @@ func (self *tupleLowering) VisitTupleLiteralExpression(expr *ast.TupleLiteralExp
 
 func (self *tupleLowering) VisitNode(node ast.Node, w TransformWalker) (ast.Node, bool) {
 	node, ok := w.WalkNode(node)
-	if !ok {
-		return nil, false
-	}
+	visitMustNotRemove(node, ok)
 	ty := self.typeInfo.MustLookup(node)
 	ty = self.replaceTupleTypeWithStructType(ty)
 	self.typeInfo.Set(node, ty)

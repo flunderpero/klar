@@ -71,14 +71,8 @@ func (self *receiverLowering) mergeMethodMemberExpression(expr *ast.MemberExpres
 }
 
 func (self *receiverLowering) VisitMemberExpression(expr *ast.MemberExpression, w TransformWalker) (ast.Expression, bool) {
-	newExpr, ok := w.WalkMemberExpression(expr)
-	if !ok {
-		return nil, false
-	}
-	expr, ok = newExpr.(*ast.MemberExpression)
-	if !ok {
-		return newExpr, false
-	}
+	visited, ok := w.WalkMemberExpression(expr)
+	visitMustNotChange(expr, visited, ok)
 	switch ty := self.typeInfo.MustLookup(expr).(type) {
 	case *typed.FunctionType:
 		if !ty.IsStaticMethod() {
@@ -90,14 +84,8 @@ func (self *receiverLowering) VisitMemberExpression(expr *ast.MemberExpression, 
 }
 
 func (self *receiverLowering) VisitCallExpression(expr *ast.CallExpression, w TransformWalker) (ast.Expression, bool) {
-	newExpr, ok := w.WalkCallExpression(expr)
-	if !ok {
-		return nil, false
-	}
-	expr, ok = newExpr.(*ast.CallExpression)
-	if !ok {
-		return newExpr, true
-	}
+	visited, ok := w.WalkCallExpression(expr)
+	visitMustNotChange(expr, visited, ok)
 	calleeType := self.typeInfo.MustLookup(expr.Callee).(typed.CallableType)
 	params := calleeType.CallParams()
 	// Re-order the call arguments to be in the order of the function parameters.

@@ -59,13 +59,10 @@ func (self *RegisterExpirations) visitBlock(block *Block) error {
 		}
 	}
 	for _, reg := range block.Terminator.Registers() {
+		if reg == NoneRegister {
+			continue
+		}
 		lifetime := self.lifetimes[reg.Id]
-		lifetime.LastBlock = block
-		lifetime.LastBlockPos = len(block.Instructions)
-		lifetime.Usages += 1
-	}
-	if block.Result != NoneRegister {
-		lifetime := self.lifetimes[block.Result.Id]
 		lifetime.LastBlock = block
 		lifetime.LastBlockPos = len(block.Instructions)
 		lifetime.Usages += 1

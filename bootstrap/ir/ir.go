@@ -125,7 +125,6 @@ type Block struct {
 	Instructions []Instruction
 	Terminator   Terminator
 	Predecessors []*Block
-	Result       Register
 }
 
 func (ir *Block) append(instruction Instruction) {
@@ -194,7 +193,7 @@ func (ir *Return) Targets() []*Block {
 }
 
 func (ir Return) Registers() []Register {
-	return []Register{}
+	return []Register{ir.Value}
 }
 
 type FunctionDefinition struct {
@@ -1236,7 +1235,6 @@ func (g *generator) VisitUnaryExpression(expr *ast.UnaryExpression, w ast.Walker
 func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) error {
 	condBlock := g.newBlock(g.currentBlock)
 	g.currentBlock.Terminator = &Jump{Target: condBlock}
-	g.currentBlock.Result = NoneRegister
 	g.currentBlock = condBlock
 	if err := w.WalkNode(expr.Condition); err != nil {
 		return err
@@ -1289,8 +1287,7 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) erro
 
 	g.currentBlock = mergeBlock
 	// We treat if _expressions_ as statements for now.
-	condBlock.Result = NoneRegister
-	g.registerByNodeId[expr.Id()] = condBlock.Result
+	g.registerByNodeId[expr.Id()] = NoneRegister
 	return nil
 }
 
@@ -1344,7 +1341,6 @@ func (g *generator) VisitBlockExpression(expr *ast.BlockExpression, w ast.Walker
 			reg = lastReg
 		}
 	}
-	g.currentBlock.Result = reg
 	g.registerByNodeId[expr.Id()] = reg
 	return nil
 }
@@ -1396,7 +1392,6 @@ func (g *generator) VisitLoopStatement(stmt *ast.LoopStatement, w ast.Walker) er
 	loopStartBlock := g.newBlock(g.currentBlock)
 	exitBlock := g.newBlock(loopStartBlock)
 	g.currentBlock.Terminator = &Jump{Target: loopStartBlock}
-	g.currentBlock.Result = NoneRegister
 	g.currentBlock = loopStartBlock
 	loopScope := g.enterLoop(loopStartBlock, exitBlock)
 	// In order to add the register constraints we need to first take a snapshot
@@ -1421,7 +1416,6 @@ func (g *generator) VisitLoopStatement(stmt *ast.LoopStatement, w ast.Walker) er
 	}
 	g.exitLoop()
 	g.currentBlock.Terminator = &Jump{Target: loopStartBlock}
-	g.currentBlock.Result = NoneRegister
 	g.currentBlock = exitBlock
 	g.registerByNodeId[stmt.Id()] = NoneRegister
 	return nil
@@ -1430,7 +1424,6 @@ func (g *generator) VisitLoopStatement(stmt *ast.LoopStatement, w ast.Walker) er
 func (g *generator) VisitBreakStatement(stmt *ast.BreakStatement) error {
 	loopScope := g.loopScope()
 	g.currentBlock.Terminator = &Jump{Target: loopScope.exitBlock}
-	g.currentBlock.Result = NoneRegister
 	g.currentBlock = g.newBlock(nil)
 	return nil
 }
@@ -1438,7 +1431,6 @@ func (g *generator) VisitBreakStatement(stmt *ast.BreakStatement) error {
 func (g *generator) VisitContinueStatement(stmt *ast.ContinueStatement) error {
 	loopScope := g.loopScope()
 	g.currentBlock.Terminator = &Jump{Target: loopScope.loopBlock}
-	g.currentBlock.Result = NoneRegister
 	g.currentBlock = g.newBlock(nil)
 	return nil
 }
@@ -1449,7 +1441,6 @@ func (g *generator) VisitReturnStatement(stmt *ast.ReturnStatement, w ast.Walker
 	}
 	reg := g.lookupRegisterByNode(stmt.Value)
 	g.currentBlock.Terminator = &Return{Value: reg}
-	g.currentBlock.Result = reg
 	g.currentBlock = g.newBlock(nil)
 	return nil
 }
@@ -1615,7 +1606,14 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 		if gen.currentBlock.Terminator != nil {
 			return nil, errors.Errorf("expecting the last block to not have a terminator, but got: %s", block.Terminator)
 		}
-		gen.currentBlock.Terminator = &Return{Value: gen.currentBlock.Result}
+		returnReg := NoneRegister
+		if len(funcSpec.FuncDef.Body.Nodes) > 0 {
+			lastNodeId := funcSpec.FuncDef.Body.Nodes[len(funcSpec.FuncDef.Body.Nodes)-1].Id()
+			if returnReg_, ok := gen.registerByNodeId[lastNodeId]; ok {
+				returnReg = returnReg_
+			}
+		}
+		gen.currentBlock.Terminator = &Return{Value: returnReg}
 		funcDef.Entry = block
 		funcDef.RegisterConstraints = &gen.registerConstraints
 		funcDef.RegisterExpirations = calculateRegisterExpirations(funcDef.Entry, paramRegs)

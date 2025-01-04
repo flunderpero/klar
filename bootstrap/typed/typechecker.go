@@ -1854,8 +1854,8 @@ func (tc *typeChecker) VisitMatchExpression(expr *ast.MatchExpression, w ast.Wal
 			if err := tc.VisitIntLiteralExpression(&pattern.Value); err != nil {
 				return err
 			}
-			patternType = exprType
-			aliasType = exprType
+			patternType = tc.typeInfo.MustLookup(&pattern.Value)
+			aliasType = patternType
 		case *ast.IntRangePattern:
 			tc.contextualType = exprType
 			if err := tc.VisitIntLiteralExpression(&pattern.From); err != nil {
@@ -1865,8 +1865,14 @@ func (tc *typeChecker) VisitMatchExpression(expr *ast.MatchExpression, w ast.Wal
 			if err := tc.VisitIntLiteralExpression(&pattern.To); err != nil {
 				return err
 			}
-			patternType = exprType
-			aliasType = exprType
+			patternType = tc.typeInfo.MustLookup(&pattern.From)
+			aliasType = patternType
+		case *ast.StrPattern:
+			if err := tc.VisitStringLiteralExpression(&pattern.Value); err != nil {
+				return err
+			}
+			patternType = tc.typeInfo.MustLookup(&pattern.Value)
+			aliasType = patternType
 		case *ast.WildcardPattern:
 			patternType = exprType
 			aliasType = exprType

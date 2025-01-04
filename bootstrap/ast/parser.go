@@ -486,6 +486,15 @@ func (self IntRangePattern) String() string {
 	return fmt.Sprintf("IntRangePattern\n%s\n%s%s", base.Indent(self.From, 1), base.Indent(self.To, 1), inclusive)
 }
 
+type StrPattern struct {
+	matchPatternBase
+	Value StringLiteralExpression
+}
+
+func (self StrPattern) String() string {
+	return fmt.Sprintf("StrPattern\n%s", base.Indent(&self.Value, 1))
+}
+
 type WildcardPattern struct {
 	matchPatternBase
 }
@@ -1035,6 +1044,12 @@ func (p *Parser) parseMatchPattern() (MatchPattern, error) {
 				matchPatternBase: p.matchPatternBase(from), From: *literal, To: *to, InclusiveTo: t.Kind == token.ClosedRange}, nil
 		}
 		return &IntPattern{matchPatternBase: p.matchPatternBase(from), Value: *literal}, nil
+	case token.Str:
+		literal, err := p.parseStringLiteralExpression()
+		if err != nil {
+			return nil, err
+		}
+		return &StrPattern{matchPatternBase: p.matchPatternBase(from), Value: *literal}, nil
 	}
 	return nil, errors.Errorf("expected a pattern but got %q", t)
 }
@@ -1501,6 +1516,14 @@ func (p *Parser) parseCharLiteralExpression() (*CharLiteralExpression, error) {
 	return &CharLiteralExpression{nodeBase: p.newNodeBase(t.Span), Value: value}, nil
 }
 
+func (p *Parser) parseStringLiteralExpression() (*StringLiteralExpression, error) {
+	t, err := p.consume(token.Str)
+	if err != nil {
+		return nil, err
+	}
+	return &StringLiteralExpression{nodeBase: p.newNodeBase(t.Span), Value: t.Value}, nil
+}
+
 func (p *Parser) parsePrimaryExpression() (Expression, error) {
 	from := p.span()
 	t := p.peek()
@@ -1512,8 +1535,7 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 		p.consumeAny()
 		return &IdentExpression{nodeBase: p.newNodeBase(from), Ident: Ident("self")}, nil
 	case token.Str:
-		p.consumeAny()
-		return &StringLiteralExpression{nodeBase: p.newNodeBase(from), Value: t.Value}, nil
+		return p.parseStringLiteralExpression()
 	case token.Char:
 		return p.parseCharLiteralExpression()
 	case token.Int:

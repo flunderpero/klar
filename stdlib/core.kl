@@ -36,6 +36,26 @@ impl Str {
         Str(len, bytes)
     }
 
+    fn eq(self, s Str) Bool {
+        if self.len_ != s.len_ {
+            return false
+        }
+        let len = self.len_
+        mut i = 0
+        loop {
+            if i == len {
+                break
+            }
+            let a = internal_read_ptr<U8>(self.bytes_ + i)
+            let b = internal_read_ptr<U8>(s.bytes_ + i)
+            if a != b {
+                return false
+            }
+            i = i + 1
+        }
+        true
+    }
+
     fn len(self) Int {
        self.len_ 
     }

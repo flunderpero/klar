@@ -11,6 +11,7 @@ import (
 	"slices"
 
 	"github.com/flunderpero/klar/bootstrap/ast"
+	"github.com/pkg/errors"
 )
 
 type value interface{}
@@ -60,6 +61,10 @@ func (self *matchChecker) isExhaustive(ty Type, values []value) error {
 	case *UnionType:
 		return self.isExhaustiveUnion(ty, values)
 	}
+	switch ty.Id() {
+	case self.typeInfo.BuiltIns.Str.Id():
+		return errors.Errorf("string match is only exhaustive if it contains the wildcard pattern")
+	}
 	panic(fmt.Sprintf("unhandled type %T", ty))
 }
 
@@ -75,7 +80,7 @@ func (self *matchChecker) isExhaustiveInt(values []value, min int64, max int64) 
 		}
 		return 0
 	})
-	var minVal int64 = 0
+	var minVal int64 = min
 	for _, v_ := range values {
 		v := v_.(intRange)
 		if v.from > minVal {
@@ -122,6 +127,10 @@ func (self *matchChecker) patternValue(pattern ast.MatchPattern) value {
 		return intRange{from, to}
 	case *ast.UnionTypePattern:
 		return self.typeInfo.MustLookup(pattern)
+	case *ast.StrPattern:
+		// We don't need to do anything, because a string match is only exhaustive if it
+		// contains the wildcard pattern.
+		return nil
 	case *ast.WildcardPattern:
 		return &wildcard{}
 	}

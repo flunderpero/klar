@@ -1,5 +1,5 @@
 -- expect.stdout {
--- Hello, RGB(10, 20, 255), i + 1 == 1, 2, i + 1 in 3..5, 7, 127 is any other int, 
+-- Hello, RGB(10, 20, 255), i + 1 == 1, 2, i + 1 in 3..5, 7, 127 is any other int, Hello, world!
 -- } expect.stdout
 -- expect.exit_code: 0
 
@@ -35,6 +35,14 @@ fn match_int_plus_one(i I8) {
     print(", ")
 }
 
+fn match_str(s Str) Str {
+    match s {
+        case "world" => "Hello, "
+        case "Hello, " => "world"
+        case _ as other => other
+    }
+}
+
 fn main() {
     let str UnionType = "Hello"
     let blue = UnionType.RGB(10, 20, 255)
@@ -45,4 +53,7 @@ fn main() {
     match_int_plus_one(4)
     match_int_plus_one(6)
     match_int_plus_one(126)
+    print(match_str("world"))
+    print(match_str("Hello, "))
+    print(match_str("!"))
 }

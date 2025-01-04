@@ -35,7 +35,7 @@ func (self *matchLowering) VisitMatchExpression(match *ast.MatchExpression, t Tr
 	if e, ok := match.Expression.(*ast.IdentExpression); ok {
 		matchedValueExpr = e
 	} else {
-		ident := ast.Ident("__match_lowering_expr")
+		ident := ast.Ident("$match_lowering_expr")
 		matchedValueExpr = self.nodeCreator.NewIdentExpression(ident, match.Expression.Span())
 		self.typeInfo.Set(matchedValueExpr, matchedValueType)
 		varDef := self.nodeCreator.NewVariableDefinition(ident, nil, false, match.Expression, match.Expression.Span())
@@ -99,6 +99,19 @@ func (self *matchLowering) buildPatternCondition(
 		return trueExpr
 	case *ast.IntPattern:
 		return self.nodeCreator.NewBinaryExpression(matchedValueExpr, ast.OpEqual, &pattern.Value, pattern.Span())
+	case *ast.StrPattern:
+		strType := self.typeInfo.BuiltIns.Str
+		eqFunc, ok := strType.FindMethod("eq", pattern.Span())
+		if !ok {
+			panic("eq method not found in Str type")
+		}
+		str := self.nodeCreator.NewIdentExpression(ast.Ident("Str"), pattern.Span())
+		self.typeInfo.Set(str, strType)
+		strEq := self.nodeCreator.NewMemberExpression(str, "eq", pattern.Span())
+		self.typeInfo.Set(strEq, eqFunc)
+		return self.nodeCreator.NewCallExpression(strEq, []ast.CallArg{
+			{Value: matchedValueExpr, Span: matchedValueExpr.Span()},
+			{Value: &pattern.Value, Span: pattern.Value.Span()}}, pattern.Span())
 	case *ast.IntRangePattern:
 		fromExpr := self.nodeCreator.NewBinaryExpression(
 			matchedValueExpr, ast.OpGreaterThanOrEqual, &pattern.From, pattern.From.Span())

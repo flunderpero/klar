@@ -879,6 +879,7 @@ type generator struct {
 	loopScopes          []loopScope
 	definedFunctions    map[typed.TypeId]DefinedFunction
 	dataLayout          DataLayout
+	builtIns            *typed.BuiltIns
 }
 
 func (g *generator) enterScope() {
@@ -1053,8 +1054,8 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		structType := g.lookupType(expr).(*StructType)
 		sizeReg := g.nextRegister(Int64Type)
 		mallocReg := g.nextRegister(Int64Type)
-		mallocFuncType := g.declaredTypes.MustLookup(typed.BuiltInInternalMallocFunction).(*FunctionType)
-		mallocFuncDef := g.definedFunctions[typed.BuiltInInternalMallocFunction.Id()]
+		mallocFuncType := g.declaredTypes.MustLookup(g.builtIns.InternalMalloc).(*FunctionType)
+		mallocFuncDef := g.definedFunctions[g.builtIns.InternalMalloc.Id()]
 		g.append(&IntConst{
 			register: sizeReg,
 			Value:    int64(g.dataLayout.SizeOf(structType)),
@@ -1090,7 +1091,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		g.registerByNodeId[expr.Id()] = mallocReg
 	case *typed.FunctionType:
 		genericBase, hasGenericBase := calleeType.GenericBase()
-		if hasGenericBase && genericBase.Id() == typed.BuiltInSizeOfFunction.Id() {
+		if hasGenericBase && genericBase.Id() == g.builtIns.SizeOf.Id() {
 			// Special handling for `sizeof`.
 			typeArg := calleeType.TypeArgs()[0]
 			ty := g.declaredTypes.MustLookup(typeArg)
@@ -1124,7 +1125,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		for _, arg := range expr.Args {
 			args = append(args, g.lookupRegisterByNode(arg.Value))
 		}
-		if hasGenericBase && genericBase.Id() == typed.BuiltInInternalWritePtrFunction.Id() {
+		if hasGenericBase && genericBase.Id() == g.builtIns.InternalWritePtr.Id() {
 			// Special handling for `internal_write_ptr` which becomes just a `Store` instruction.
 			valueType := g.declaredTypes.MustLookup(calleeType.TypeArgs()[0])
 			if !isValueType(valueType) {
@@ -1137,7 +1138,7 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 			}, expr)
 			return nil
 		}
-		if hasGenericBase && genericBase.Id() == typed.BuiltInInternalReadPtrFunction.Id() {
+		if hasGenericBase && genericBase.Id() == g.builtIns.InternalReadPtr.Id() {
 			// Special handling for `internal_read_ptr` which becomes just a `Load` instruction.
 			targetType := g.declaredTypes.MustLookup(calleeType.TypeArgs()[0])
 			if !isValueType(targetType) {
@@ -1605,17 +1606,10 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 		symbol := typeInfo.MustLookupSymbol(f.Id())
 		definedFunctions[f.Id()] = DefinedFunction{Id: f.Id(), FQN: symbol.FQN()}
 	}
-	declareBuiltInFunction(typed.BuiltInPrintFunction, true)
-	declareBuiltInFunction(typed.BuiltInPrintCharFunction, true)
-	declareBuiltInFunction(typed.BuiltInPrintIntFunction, true)
-	declareBuiltInFunction(typed.BuiltInPrintUIntFunction, true)
-	declareBuiltInFunction(typed.BuiltInPrintBoolFunction, true)
-	declareBuiltInFunction(typed.BuiltInInternalMallocFunction, true)
-	declareBuiltInFunction(typed.BuiltInInternalFreeFunction, true)
-	declareBuiltInFunction(typed.BuiltInInternalWritePtrFunction, false)
-	declareBuiltInFunction(typed.BuiltInInternalReadPtrFunction, false)
-	declareBuiltInFunction(typed.BuiltInInternalExitFunction, true)
-	declareBuiltInFunction(typed.BuiltInSizeOfFunction, true)
+	for _, fn := range typeInfo.BuiltIns.Functions() {
+		declareType := fn.Id() != typeInfo.BuiltIns.InternalReadPtr.Id() && fn.Id() != typeInfo.BuiltIns.InternalWritePtr.Id()
+		declareBuiltInFunction(fn, declareType)
+	}
 	constants := []*StrConst{}
 	// Generate code for each function specialization.
 	for i, funcDef := range funcDefs {
@@ -1631,6 +1625,7 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 			loopScopes:          []loopScope{},
 			definedFunctions:    definedFunctions,
 			dataLayout:          dataLayout,
+			builtIns:            &typeInfo.BuiltIns,
 		}
 		// Make function parameters visible.
 		paramRegs := []Register{}

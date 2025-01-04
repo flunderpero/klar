@@ -81,111 +81,6 @@ type Type interface {
 	IsAssignableFrom(other Type) bool
 }
 
-var BuiltInPrintFunction = &FunctionType{
-	typeBase: typeBase{TypeId(100)},
-	Params:   []FunctionParam{{Name: "value", Type: strType}},
-	Result:   noneType,
-}
-var BuiltInPrintCharFunction = &FunctionType{
-	typeBase: typeBase{TypeId(101)},
-	Params:   []FunctionParam{{Name: "value", Type: charType}},
-	Result:   noneType,
-}
-var BuiltInPrintIntFunction = &FunctionType{
-	typeBase: typeBase{TypeId(102)},
-	Params:   []FunctionParam{{Name: "value", Type: int64Type}},
-	Result:   noneType,
-}
-var BuiltInPrintUIntFunction = &FunctionType{
-	typeBase: typeBase{TypeId(103)},
-	Params:   []FunctionParam{{Name: "value", Type: uint64Type}},
-	Result:   noneType,
-}
-var BuiltInPrintBoolFunction = &FunctionType{
-	typeBase: typeBase{TypeId(104)},
-	Params:   []FunctionParam{{Name: "value", Type: boolType}},
-	Result:   noneType,
-}
-var BuiltInInternalMallocFunction = &FunctionType{
-	typeBase: typeBase{TypeId(105)},
-	Params:   []FunctionParam{{Name: "size", Type: int64Type}},
-	Result:   int64Type,
-}
-var BuiltInInternalFreeFunction = &FunctionType{
-	typeBase: typeBase{TypeId(106)},
-	Params:   []FunctionParam{{Name: "ptr", Type: rawPtr}},
-	Result:   noneType,
-}
-var BuiltInSizeOfFunctionTypeParam = &TypeParam{
-	typeBase:    typeBase{TypeId(107)},
-	GenericType: BuiltInSizeOfFunction,
-	Name:        ast.Ident("T"),
-	Index:       0,
-}
-var BuiltInSizeOfFunction = &FunctionType{
-	typeBase: typeBase{TypeId(108)},
-	Params:   []FunctionParam{},
-	Result:   int64Type,
-}
-var BuiltInInternalWritePtrFunctionTypeParam = &TypeParam{
-	typeBase: typeBase{TypeId(109)},
-	Name:     ast.Ident("T"),
-	Index:    0,
-}
-var BuiltInInternalWritePtrFunction = &FunctionType{
-	typeBase: typeBase{TypeId(110)},
-	Params: []FunctionParam{
-		{Name: "ptr", Type: rawPtr},
-		{Name: "value", Type: BuiltInInternalWritePtrFunctionTypeParam},
-	},
-	Result: noneType,
-}
-var BuiltInInternalReadPtrFunctionTypeParam = &TypeParam{
-	typeBase:    typeBase{TypeId(111)},
-	GenericType: BuiltInInternalReadPtrFunction,
-	Name:        ast.Ident("T"),
-	Index:       0,
-}
-var BuiltInInternalReadPtrFunction = &FunctionType{
-	typeBase: typeBase{TypeId(112)},
-	Params:   []FunctionParam{{Name: "ptr", Type: rawPtr}},
-}
-var BuiltInInternalExitFunction = &FunctionType{
-	typeBase: typeBase{TypeId(113)},
-	Params:   []FunctionParam{{Name: "code", Type: int64Type}},
-	Result:   neverType,
-}
-
-func IsBuiltInFunction(funcType *FunctionType) bool {
-	id := funcType.Id()
-	res := id >= BuiltInPrintFunction.Id() && id <= BuiltInInternalExitFunction.Id()
-	if !res {
-		if base, ok := funcType.GenericBase(); ok {
-			return IsBuiltInFunction(base.(*FunctionType))
-		}
-	}
-	return res
-}
-
-var builtInSpan = token.Span{File: "<builtin>", Src: &[]byte{}, Start: 0, End: 0}
-var charType = &StructType{}
-var strType = &StructType{
-	typeBase: typeBase{TypeId(1)},
-	Fields:   []TypeAndName[Type]{{Name: "len_", Type: int64Type}, {Name: "bytes_", Type: rawPtr}},
-}
-var boolType = &BoolType{}
-var int64Type = &Int64Type{}
-var int32Type = &Int32Type{}
-var int16Type = &Int16Type{}
-var int8Type = &Int8Type{}
-var uint64Type = &UInt64Type{}
-var uint32Type = &UInt32Type{}
-var uint16Type = &UInt16Type{}
-var uint8Type = &UInt8Type{}
-var noneType = &NoneType{}
-var neverType = &NeverType{}
-var rawPtr = &RawPtr{}
-
 type TypeWithTraits interface {
 	Type
 	Traits() []*TraitType
@@ -271,7 +166,7 @@ func (ty Int8Type) Id() TypeId {
 }
 
 func (ty Int8Type) IsAssignableFrom(other Type) bool {
-	return other.Id() == int8Type.Id()
+	return other.Id() == Int8Type{}.Id()
 }
 
 func (ty *Int8Type) Traits() []*TraitType {
@@ -299,7 +194,7 @@ func (ty Int16Type) Id() TypeId {
 }
 
 func (ty Int16Type) IsAssignableFrom(other Type) bool {
-	return other.Id() == int16Type.Id() || other.Id() == int8Type.Id() || other.Id() == uint8Type.Id()
+	return other.Id() == Int16Type{}.Id() || other.Id() == Int8Type{}.Id() || other.Id() == UInt8Type{}.Id()
 }
 
 func (ty *Int16Type) Traits() []*TraitType {
@@ -327,7 +222,7 @@ func (ty Int32Type) Id() TypeId {
 }
 
 func (ty Int32Type) IsAssignableFrom(other Type) bool {
-	return other.Id() == int32Type.Id() || other.Id() == int16Type.Id() || other.Id() == int8Type.Id() || other.Id() == uint8Type.Id() || other.Id() == uint16Type.Id()
+	return other.Id() == Int32Type{}.Id() || other.Id() == Int16Type{}.Id() || other.Id() == Int8Type{}.Id() || other.Id() == UInt8Type{}.Id() || other.Id() == UInt16Type{}.Id()
 }
 
 func (ty *Int32Type) Traits() []*TraitType {
@@ -355,7 +250,7 @@ func (ty Int64Type) Id() TypeId {
 }
 
 func (ty Int64Type) IsAssignableFrom(other Type) bool {
-	return other.Id() == int64Type.Id() || other.Id() == int32Type.Id() || other.Id() == int16Type.Id() || other.Id() == int8Type.Id() || other.Id() == uint8Type.Id() || other.Id() == uint16Type.Id() || other.Id() == uint32Type.Id()
+	return other.Id() == Int64Type{}.Id() || other.Id() == Int32Type{}.Id() || other.Id() == Int16Type{}.Id() || other.Id() == Int8Type{}.Id() || other.Id() == UInt8Type{}.Id() || other.Id() == UInt16Type{}.Id() || other.Id() == UInt32Type{}.Id()
 }
 
 func (ty *Int64Type) Traits() []*TraitType {
@@ -383,7 +278,7 @@ func (ty UInt8Type) Id() TypeId {
 }
 
 func (ty UInt8Type) IsAssignableFrom(other Type) bool {
-	return other.Id() == uint8Type.Id()
+	return other.Id() == UInt8Type{}.Id()
 }
 
 func (ty *UInt8Type) Traits() []*TraitType {
@@ -411,7 +306,7 @@ func (ty UInt16Type) Id() TypeId {
 }
 
 func (ty UInt16Type) IsAssignableFrom(other Type) bool {
-	return other.Id() == uint16Type.Id() || other.Id() == uint8Type.Id()
+	return other.Id() == UInt16Type{}.Id() || other.Id() == UInt8Type{}.Id()
 }
 
 func (ty *UInt16Type) Traits() []*TraitType {
@@ -439,7 +334,7 @@ func (ty UInt32Type) Id() TypeId {
 }
 
 func (ty UInt32Type) IsAssignableFrom(other Type) bool {
-	return other.Id() == uint32Type.Id() || other.Id() == uint16Type.Id() || other.Id() == uint8Type.Id()
+	return other.Id() == UInt32Type{}.Id() || other.Id() == UInt16Type{}.Id() || other.Id() == UInt8Type{}.Id()
 }
 
 func (ty *UInt32Type) Traits() []*TraitType {
@@ -467,7 +362,7 @@ func (ty UInt64Type) Id() TypeId {
 }
 
 func (ty UInt64Type) IsAssignableFrom(other Type) bool {
-	return other.Id() == uint64Type.Id() || other.Id() == uint32Type.Id() || other.Id() == uint16Type.Id() || other.Id() == uint8Type.Id()
+	return other.Id() == UInt64Type{}.Id() || other.Id() == UInt32Type{}.Id() || other.Id() == UInt16Type{}.Id() || other.Id() == UInt8Type{}.Id()
 }
 
 func (ty *UInt64Type) Traits() []*TraitType {
@@ -500,7 +395,7 @@ func (ty RawPtr) Id() TypeId {
 }
 
 func (ty RawPtr) IsAssignableFrom(other Type) bool {
-	return ty.Id() == other.Id() || other.Id() == int64Type.Id()
+	return ty.Id() == other.Id() || other.Id() == Int64Type{}.Id()
 }
 
 func (ty RawPtr) String() string {
@@ -1243,6 +1138,57 @@ func newSymbolScope(node ast.Node, parent *SymbolScope) *SymbolScope {
 	return scope
 }
 
+type BuiltIns struct {
+	Str                   *StructType
+	Char                  *CharType
+	Bool                  *BoolType
+	Int                   *Int64Type
+	I64                   *Int64Type
+	I32                   *Int32Type
+	I16                   *Int16Type
+	I8                    *Int8Type
+	U64                   *UInt64Type
+	U32                   *UInt32Type
+	U16                   *UInt16Type
+	U8                    *UInt8Type
+	None                  *NoneType
+	Never                 *NeverType
+	RawPtr                *RawPtr
+	Print                 *FunctionType
+	PrintChar             *FunctionType
+	PrintInt              *FunctionType
+	PrintUInt             *FunctionType
+	PrintBool             *FunctionType
+	InternalMalloc        *FunctionType
+	InternalFree          *FunctionType
+	SizeOf                *FunctionType
+	InternalWritePtr      *FunctionType
+	InternalReadPtr       *FunctionType
+	InternalExit          *FunctionType
+	builtInFunctionIdFrom TypeId
+	builtInFunctionIdTo   TypeId
+}
+
+func (self *BuiltIns) IsBuiltInFunction(ty *FunctionType) bool {
+	return ty.id >= self.builtInFunctionIdFrom && ty.id <= self.builtInFunctionIdTo
+}
+
+func (self *BuiltIns) Functions() []*FunctionType {
+	return []*FunctionType{
+		self.Print,
+		self.PrintChar,
+		self.PrintInt,
+		self.PrintUInt,
+		self.PrintBool,
+		self.InternalMalloc,
+		self.InternalFree,
+		self.SizeOf,
+		self.InternalWritePtr,
+		self.InternalReadPtr,
+		self.InternalExit,
+	}
+}
+
 type TypeInfo struct {
 	types   map[ast.NodeId]Type
 	symbols map[string]*Symbol
@@ -1252,6 +1198,7 @@ type TypeInfo struct {
 	traitBoundsTypeParam map[ast.Node]*TypeParam
 	Main                 *FunctionType
 	Panic                *FunctionType
+	BuiltIns             BuiltIns
 }
 
 func (m *TypeInfo) LookupTraitBoundTypeParam(expr ast.Node) (*TypeParam, bool) {
@@ -1504,67 +1451,67 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 }
 
 func (tc *typeChecker) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
-	tc.typeInfo.Set(expr, strType)
+	tc.typeInfo.Set(expr, tc.typeInfo.BuiltIns.Str)
 	return nil
 }
 
 func (tc *typeChecker) VisitCharLiteralExpression(expr *ast.CharLiteralExpression) error {
-	tc.typeInfo.Set(expr, charType)
+	tc.typeInfo.Set(expr, tc.typeInfo.BuiltIns.Char)
 	return nil
 }
 
 func (tc *typeChecker) VisitIntLiteralExpression(expr *ast.IntLiteralExpression) error {
 	if expr.IsUInt64 {
-		tc.typeInfo.Set(expr, uint64Type)
+		tc.typeInfo.Set(expr, tc.typeInfo.BuiltIns.U64)
 		return nil
 	}
 	v := expr.Int64
 	var ty Type
 	switch tc.contextualType {
-	case int8Type:
+	case tc.typeInfo.BuiltIns.I8:
 		if v < -128 || v > 127 {
 			return errors.Errorf("%s: value %d out of range for Int8Type", expr.Span(), v)
 		}
-		ty = int8Type
-	case int16Type:
+		ty = tc.typeInfo.BuiltIns.I8
+	case tc.typeInfo.BuiltIns.I16:
 		if v < -32768 || v > 32767 {
 			return errors.Errorf("%s: value %d out of range for Int16Type", expr.Span(), v)
 		}
-		ty = int16Type
-	case int32Type:
+		ty = tc.typeInfo.BuiltIns.I16
+	case tc.typeInfo.BuiltIns.I32:
 		if v < -2147483648 || v > 2147483647 {
 			return errors.Errorf("%s: value %d out of range for Int32Type", expr.Span(), v)
 		}
-		ty = int32Type
-	case uint8Type:
+		ty = tc.typeInfo.BuiltIns.I32
+	case tc.typeInfo.BuiltIns.U8:
 		if v < 0 || v > 255 {
 			return errors.Errorf("%s: value %d out of range for UInt8Type", expr.Span(), v)
 		}
-		ty = uint8Type
-	case uint16Type:
+		ty = tc.typeInfo.BuiltIns.U8
+	case tc.typeInfo.BuiltIns.U16:
 		if v < 0 || v > 65535 {
 			return errors.Errorf("%s: value %d out of range for UInt16Type", expr.Span(), v)
 		}
-		ty = uint16Type
-	case uint32Type:
+		ty = tc.typeInfo.BuiltIns.U16
+	case tc.typeInfo.BuiltIns.U32:
 		if v < 0 || v > 4294967295 {
 			return errors.Errorf("%s: value %d out of range for UInt32Type", expr.Span(), v)
 		}
-		ty = uint32Type
-	case uint64Type:
+		ty = tc.typeInfo.BuiltIns.U32
+	case tc.typeInfo.BuiltIns.U64:
 		if v < 0 {
 			return errors.Errorf("%s: value %d out of range for UInt64Type", expr.Span(), v)
 		}
-		ty = uint64Type
+		ty = tc.typeInfo.BuiltIns.U64
 	default:
-		ty = int64Type
+		ty = tc.typeInfo.BuiltIns.I64
 	}
 	tc.typeInfo.Set(expr, ty)
 	return nil
 }
 
 func (tc *typeChecker) VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) error {
-	tc.typeInfo.Set(expr, boolType)
+	tc.typeInfo.Set(expr, tc.typeInfo.BuiltIns.Bool)
 	return nil
 }
 
@@ -1661,15 +1608,15 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 		if !lhs.IsAssignableFrom(rhs) {
 			return errors.Errorf("%s: rhs of comparison expression must be assignable to lhs, expected %q got %q", expr.Span(), lhs, rhs)
 		}
-		tc.typeInfo.Set(expr, boolType)
+		tc.typeInfo.Set(expr, tc.typeInfo.BuiltIns.Bool)
 	case ast.OpAnd, ast.OpOr:
-		if lhs != boolType {
+		if lhs != tc.typeInfo.BuiltIns.Bool {
 			return errors.Errorf("%s: lhs of logical expression must be of type BoolType, got %s", expr.Span(), lhs)
 		}
-		if rhs != boolType {
+		if rhs != tc.typeInfo.BuiltIns.Bool {
 			return errors.Errorf("%s: rhs of logical expression must be of type BoolType, got %s", expr.Span(), rhs)
 		}
-		tc.typeInfo.Set(expr, boolType)
+		tc.typeInfo.Set(expr, tc.typeInfo.BuiltIns.Bool)
 	default:
 		return errors.Errorf("%s: unsupported binary operator: %s", expr.Span(), expr.Op)
 	}
@@ -1683,11 +1630,11 @@ func (tc *typeChecker) VisitUnaryExpression(expr *ast.UnaryExpression, w ast.Wal
 	valueType := tc.typeInfo.MustLookup(expr.Value)
 	switch expr.Op {
 	case ast.OpNot:
-		if valueType != boolType {
+		if valueType != tc.typeInfo.BuiltIns.Bool {
 			return errors.Errorf(
 				"%s: operand of logical not expression must be of type BoolType, got %s", expr.Span(), valueType)
 		}
-		tc.typeInfo.Set(expr, boolType)
+		tc.typeInfo.Set(expr, tc.typeInfo.BuiltIns.Bool)
 	default:
 		return errors.Errorf("%s: unsupported unary operator: %s", expr.Span(), expr.Op)
 	}
@@ -1815,7 +1762,7 @@ func (tc *typeChecker) VisitBlockExpression(expr *ast.BlockExpression, w ast.Wal
 	if err := w.WalkBlockExpression(expr); err != nil {
 		return err
 	}
-	var blockType Type = noneType
+	var blockType Type = tc.typeInfo.BuiltIns.None
 	if len(expr.Nodes) > 0 {
 		blockType = tc.typeInfo.MustLookup(expr.Nodes[len(expr.Nodes)-1])
 		for i, node := range expr.Nodes {
@@ -1842,7 +1789,7 @@ func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) e
 	}
 	branchTypes := []Type{tc.typeInfo.MustLookup(expr.TrueBody)}
 	if expr.FalseBody == nil {
-		branchTypes = append(branchTypes, noneType)
+		branchTypes = append(branchTypes, tc.typeInfo.BuiltIns.None)
 	} else {
 		branchTypes = append(branchTypes, tc.typeInfo.MustLookup(expr.FalseBody))
 	}
@@ -2347,12 +2294,12 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 		return errors.Errorf(
 			"%s: lhs and rhs of assignment statement must have the same type, got lhs: %s and rhs: %s", s.Span(), varType, rhsType)
 	}
-	tc.typeInfo.Set(s, noneType)
+	tc.typeInfo.Set(s, tc.typeInfo.BuiltIns.None)
 	return nil
 }
 
 func (tc *typeChecker) VisitLoopStatement(s *ast.LoopStatement, w ast.Walker) error {
-	tc.typeInfo.Set(s, noneType)
+	tc.typeInfo.Set(s, tc.typeInfo.BuiltIns.None)
 	tc.enterLoop()
 	defer tc.exitLoop()
 	return w.WalkLoopStatement(s)
@@ -2362,7 +2309,7 @@ func (tc *typeChecker) VisitContinueStatement(s *ast.ContinueStatement) error {
 	if tc.loopDepth == 0 {
 		return errors.Errorf("%s: continue statement outside of a loop", s.Span())
 	}
-	tc.typeInfo.Set(s, noneType)
+	tc.typeInfo.Set(s, tc.typeInfo.BuiltIns.None)
 	return nil
 }
 
@@ -2370,7 +2317,7 @@ func (tc *typeChecker) VisitBreakStatement(s *ast.BreakStatement) error {
 	if tc.loopDepth == 0 {
 		return errors.Errorf("%s: break statement outside of a loop", s.Span())
 	}
-	tc.typeInfo.Set(s, noneType)
+	tc.typeInfo.Set(s, tc.typeInfo.BuiltIns.None)
 	return nil
 }
 
@@ -2378,7 +2325,7 @@ func (tc *typeChecker) VisitReturnStatement(s *ast.ReturnStatement, w ast.Walker
 	if err := w.WalkReturnStatement(s); err != nil {
 		return err
 	}
-	tc.typeInfo.Set(s, noneType)
+	tc.typeInfo.Set(s, tc.typeInfo.BuiltIns.None)
 	return nil
 }
 
@@ -2485,7 +2432,7 @@ func (tc *typeChecker) VisitNode(node ast.Node, w ast.Walker) error {
 }
 
 func (tc *typeChecker) VisitModule(module *ast.Module, w ast.Walker) error {
-	tc.typeInfo.Set(module, noneType)
+	tc.typeInfo.Set(module, tc.typeInfo.BuiltIns.None)
 	return w.WalkModule(module)
 }
 
@@ -2498,6 +2445,166 @@ func (tc *typeChecker) check(node ast.Node, w ast.Walker) (Type, error) {
 		return nil, errors.Errorf("main function not found")
 	}
 	return nodeType, nil
+}
+
+var builtInSpan = token.Span{File: "<builtin>", Src: &[]byte{}, Start: 0, End: 0}
+
+func declareBuiltIn[T Type](tc *typeChecker, builtInSymbolScope *SymbolScope, name string, ty T) T {
+	if err := tc.typeScope.declareType(name, ty, builtInSpan); err != nil {
+		panic(errors.Wrapf(err, "failed to declare: %s", name))
+	}
+	tc.typeInfo.DeclareSymbol(ty.Id(), &Symbol{Name: name, Scope: builtInSymbolScope})
+	return ty
+
+}
+
+func (tc *typeChecker) declareBuiltIns(typeInfo *TypeInfo) {
+	builtInSymbolScope := newSymbolScope(nil, nil)
+	builtIns := BuiltIns{}
+	builtIns.RawPtr = declareBuiltIn(tc, builtInSymbolScope, "RawPtr", &RawPtr{})
+	builtIns.Char = declareBuiltIn(tc, builtInSymbolScope, "Char", &CharType{})
+	builtIns.Bool = declareBuiltIn(tc, builtInSymbolScope, "Bool", &BoolType{})
+	builtIns.I64 = declareBuiltIn(tc, builtInSymbolScope, "I64", &Int64Type{})
+	builtIns.I32 = declareBuiltIn(tc, builtInSymbolScope, "I32", &Int32Type{})
+	builtIns.I16 = declareBuiltIn(tc, builtInSymbolScope, "I16", &Int16Type{})
+	builtIns.I8 = declareBuiltIn(tc, builtInSymbolScope, "I8", &Int8Type{})
+	builtIns.U64 = declareBuiltIn(tc, builtInSymbolScope, "U64", &UInt64Type{})
+	builtIns.U32 = declareBuiltIn(tc, builtInSymbolScope, "U32", &UInt32Type{})
+	builtIns.U16 = declareBuiltIn(tc, builtInSymbolScope, "U16", &UInt16Type{})
+	builtIns.U8 = declareBuiltIn(tc, builtInSymbolScope, "U8", &UInt8Type{})
+	builtIns.Never = declareBuiltIn(tc, builtInSymbolScope, "Never", &NeverType{})
+	builtIns.None = declareBuiltIn(tc, builtInSymbolScope, "None", &NoneType{})
+	builtIns.Int = declareBuiltIn(tc, builtInSymbolScope, "Int", builtIns.I64)
+	builtIns.builtInFunctionIdFrom = 100
+	builtIns.builtInFunctionIdTo = builtIns.builtInFunctionIdFrom - 1
+	nextFuncId := func() TypeId {
+		builtIns.builtInFunctionIdTo += 1
+		return builtIns.builtInFunctionIdTo
+	}
+	builtIns.Str = declareBuiltIn(
+		tc,
+		builtInSymbolScope,
+		"Str",
+		&StructType{
+			typeBase: typeBase{TypeId(1)},
+			Fields:   []TypeAndName[Type]{{Name: "len_", Type: builtIns.I64}, {Name: "bytes_", Type: builtIns.RawPtr}}})
+	builtIns.Print = declareBuiltIn(
+		tc,
+		builtInSymbolScope,
+		"print",
+		&FunctionType{
+			typeBase: typeBase{nextFuncId()},
+			Params:   []FunctionParam{{Name: "value", Type: builtIns.Str}},
+			Result:   builtIns.None,
+		})
+	builtIns.PrintChar = declareBuiltIn(
+		tc,
+		builtInSymbolScope,
+		"print_char",
+		&FunctionType{
+			typeBase: typeBase{nextFuncId()},
+			Params:   []FunctionParam{{Name: "value", Type: builtIns.Char}},
+			Result:   builtIns.None})
+	builtIns.PrintInt = declareBuiltIn(
+		tc,
+		builtInSymbolScope,
+		"print_int",
+		&FunctionType{
+			typeBase: typeBase{nextFuncId()},
+			Params:   []FunctionParam{{Name: "value", Type: builtIns.I64}},
+			Result:   builtIns.None})
+	builtIns.PrintUInt = declareBuiltIn(
+		tc,
+		builtInSymbolScope,
+		"print_uint",
+		&FunctionType{
+			typeBase: typeBase{nextFuncId()},
+			Params:   []FunctionParam{{Name: "value", Type: builtIns.U64}},
+			Result:   builtIns.None})
+	builtIns.PrintBool = declareBuiltIn(
+		tc,
+		builtInSymbolScope,
+		"print_bool",
+		&FunctionType{
+			typeBase: typeBase{nextFuncId()},
+			Params:   []FunctionParam{{Name: "value", Type: builtIns.Bool}},
+			Result:   builtIns.None})
+	builtIns.InternalMalloc = declareBuiltIn(
+		tc,
+		builtInSymbolScope,
+		"internal_malloc",
+		&FunctionType{
+			typeBase: typeBase{nextFuncId()},
+			Params:   []FunctionParam{{Name: "size", Type: builtIns.I64}},
+			Result:   builtIns.I64})
+	builtIns.InternalFree = declareBuiltIn(
+		tc,
+		builtInSymbolScope,
+		"internal_free",
+		&FunctionType{
+			typeBase: typeBase{nextFuncId()},
+			Params:   []FunctionParam{{Name: "ptr", Type: builtIns.RawPtr}},
+			Result:   builtIns.None})
+	builtIns.SizeOf = declareBuiltIn(
+		tc,
+		builtInSymbolScope,
+		"sizeof",
+		&FunctionType{
+			typeBase: typeBase{nextFuncId()},
+			Params:   []FunctionParam{},
+			Result:   builtIns.I64})
+	sizeOfTypeParam := &TypeParam{
+		typeBase:    typeBase{nextFuncId()},
+		GenericType: builtIns.SizeOf,
+		Name:        ast.Ident("T"),
+		Index:       0,
+	}
+	builtIns.SizeOf.typeParams = []TypeParam{*sizeOfTypeParam}
+	builtIns.SizeOf.typeArgs = []Type{sizeOfTypeParam}
+	internalWritePtrTypeParam := &TypeParam{
+		typeBase: typeBase{nextFuncId()},
+		Name:     ast.Ident("T"),
+		Index:    0,
+	}
+	builtIns.InternalWritePtr = declareBuiltIn(
+		tc,
+		builtInSymbolScope,
+		"internal_write_ptr",
+		&FunctionType{
+			typeBase: typeBase{nextFuncId()},
+			Params: []FunctionParam{
+				{Name: "ptr", Type: builtIns.RawPtr},
+				{Name: "value", Type: internalWritePtrTypeParam},
+			},
+			Result: builtIns.None})
+	internalWritePtrTypeParam.GenericType = builtIns.InternalWritePtr
+	builtIns.InternalWritePtr.typeParams = []TypeParam{*internalWritePtrTypeParam}
+	builtIns.InternalWritePtr.typeArgs = []Type{internalWritePtrTypeParam}
+	builtIns.InternalReadPtr = declareBuiltIn(
+		tc,
+		builtInSymbolScope,
+		"internal_read_ptr",
+		&FunctionType{
+			typeBase: typeBase{nextFuncId()},
+			Params:   []FunctionParam{{Name: "ptr", Type: builtIns.RawPtr}}})
+	internalReadPtrTypeParam := &TypeParam{
+		typeBase:    typeBase{nextFuncId()},
+		GenericType: builtIns.InternalReadPtr,
+		Name:        ast.Ident("T"),
+		Index:       0,
+	}
+	builtIns.InternalReadPtr.typeParams = []TypeParam{*internalReadPtrTypeParam}
+	builtIns.InternalReadPtr.typeArgs = []Type{internalReadPtrTypeParam}
+	builtIns.InternalReadPtr.Result = internalReadPtrTypeParam
+	builtIns.InternalExit = declareBuiltIn(
+		tc,
+		builtInSymbolScope,
+		"internal_exit",
+		&FunctionType{
+			typeBase: typeBase{nextFuncId()},
+			Params:   []FunctionParam{{Name: "code", Type: builtIns.I64}},
+			Result:   builtIns.Never})
+	typeInfo.BuiltIns = builtIns
 }
 
 func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *GenericsResolver, error) {
@@ -2517,52 +2624,7 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 		genericsResolver: newGenericsResolver(typeInfo, typeCreator),
 		anonUnionTypes:   make(map[string]*UnionType),
 	}
-	// Declare builtin types and functions.
-	builtInSymbolScope := newSymbolScope(nil, nil)
-	declareBuiltIn := func(name string, ty Type) {
-		if err := tc.typeScope.declareType(name, ty, builtInSpan); err != nil {
-			panic(errors.Wrapf(err, "failed to declare: %s", name))
-		}
-		tc.typeInfo.DeclareSymbol(ty.Id(), &Symbol{Name: name, Scope: builtInSymbolScope})
-	}
-	// todo: Remove this workaround. If we want to compile multiple times within the same
-	//       process, we need to reset the functions we added to Str.
-	strType.traits = []*TraitType{}
-	strType.Methods = []TypeAndName[*FunctionType]{}
-	declareBuiltIn("None", noneType)
-	declareBuiltIn("Str", strType)
-	declareBuiltIn("Char", charType)
-	declareBuiltIn("Bool", boolType)
-	declareBuiltIn("Int", int64Type)
-	declareBuiltIn("I64", int64Type)
-	declareBuiltIn("I32", int32Type)
-	declareBuiltIn("I16", int16Type)
-	declareBuiltIn("I8", int8Type)
-	declareBuiltIn("U64", uint64Type)
-	declareBuiltIn("U32", uint32Type)
-	declareBuiltIn("U16", uint16Type)
-	declareBuiltIn("U8", uint8Type)
-	declareBuiltIn("RawPtr", rawPtr)
-	declareBuiltIn("Never", neverType)
-	declareBuiltIn("print", BuiltInPrintFunction)
-	declareBuiltIn("print_char", BuiltInPrintCharFunction)
-	declareBuiltIn("print_int", BuiltInPrintIntFunction)
-	declareBuiltIn("print_uint", BuiltInPrintUIntFunction)
-	declareBuiltIn("print_bool", BuiltInPrintBoolFunction)
-	declareBuiltIn("internal_exit", BuiltInInternalExitFunction)
-	declareBuiltIn("internal_malloc", BuiltInInternalMallocFunction)
-	declareBuiltIn("internal_free", BuiltInInternalFreeFunction)
-	BuiltInInternalWritePtrFunctionTypeParam.GenericType = BuiltInInternalWritePtrFunction
-	BuiltInInternalWritePtrFunction.typeParams = []TypeParam{*BuiltInInternalWritePtrFunctionTypeParam}
-	BuiltInInternalWritePtrFunction.typeArgs = []Type{BuiltInInternalWritePtrFunctionTypeParam}
-	declareBuiltIn("internal_write_ptr", BuiltInInternalWritePtrFunction)
-	BuiltInInternalReadPtrFunction.typeParams = []TypeParam{*BuiltInInternalReadPtrFunctionTypeParam}
-	BuiltInInternalReadPtrFunction.typeArgs = []Type{BuiltInInternalReadPtrFunctionTypeParam}
-	BuiltInInternalReadPtrFunction.Result = BuiltInInternalReadPtrFunctionTypeParam
-	declareBuiltIn("internal_read_ptr", BuiltInInternalReadPtrFunction)
-	BuiltInSizeOfFunction.typeParams = []TypeParam{*BuiltInSizeOfFunctionTypeParam}
-	BuiltInSizeOfFunction.typeArgs = []Type{BuiltInSizeOfFunctionTypeParam}
-	declareBuiltIn("sizeof", BuiltInSizeOfFunction)
+	tc.declareBuiltIns(typeInfo)
 	walker := &ast.DefaultWalker{Visitor: tc}
 	_, err := tc.check(node, walker)
 	if err != nil {

@@ -153,7 +153,7 @@ func (self *mono) lookupOrCreateSpecializedFunction(ty typed.Type) (*typed.Funct
 	if !ok {
 		return nil, false
 	}
-	if typed.IsBuiltInFunction(funcType) {
+	if self.globalTypeInfo.BuiltIns.IsBuiltInFunction(funcType) {
 		return nil, false
 	}
 	baseType, ok := funcType.GenericBase()

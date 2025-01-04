@@ -1,7 +1,20 @@
 -- expect.stdout {
--- OK: true then, OK: false else, OK: 2 > 1, OK: 2 >= 2, OK: 2 == 2, OK: 1 != 2, OK: 1 < 2, OK: 1 <= 2, OK: 1 == 2 or 2 == 2, OK: 1 == 1 and 2 == 2, OK: not false, OK: nested
+-- OK: true then, OK: false else, OK: 2 > 1, OK: 2 >= 2, OK: 2 == 2, OK: 1 != 2, OK: 1 < 2, OK: 1 <= 2, OK: 1 == 2 or 2 == 2, OK: 1 == 1 and 2 == 2, OK: not false, OK: nested, PASS: nested_if_result(true), PASS: nested_if_result(false)
 -- } expect.stdout
 -- expect.exit_code: 0
+
+fn nested_if_result(cond Bool) Str {
+    if cond { 
+        if not cond => "FAIL: nested_if_result" else => "PASS: nested_if_result(true)"
+    } else {
+        mut x = ""
+        if cond => x = "FAIL: nested_if_result" else {
+            x = if 1 == 2 => "FAIL: nested_if_result" else => "PASS: nested_if_result(false)"
+            x
+        } 
+        x
+    }
+}
 
 fn main() {
     if true => print("OK: true then, ")
@@ -31,4 +44,8 @@ fn main() {
     -- Nested if expressions.
     if false => print("FAIL: nested")
     else => if true => if true => print("OK: nested")
+    print(", ")
+    print(nested_if_result(true))
+    print(", ")
+    print(nested_if_result(false))
 }

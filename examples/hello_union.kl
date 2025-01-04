@@ -34,8 +34,7 @@ fn anonymous_union(cond Bool) Str | Int {
 fn return_named_union(cond Bool) StrIntBoolColor {
     mut x StrIntBoolColor = "Str"
     if cond {
-        x = StrIntBoolColor.Green
-        return x
+        x = if not cond => "FAIL" else => if cond => StrIntBoolColor.Green else => 0
     }
     x
 }
@@ -73,5 +72,3 @@ fn main() {
         case _ => print("FAIL: unexpected union variant")
     }
 }
-
-

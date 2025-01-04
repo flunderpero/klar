@@ -5,10 +5,6 @@ This is a pass over the IR to calculate the lifetime of each register.
 */
 package ir
 
-import (
-	"fmt"
-)
-
 type RegisterLifetime struct {
 	Register      Register
 	FirstBlock    *Block
@@ -36,36 +32,37 @@ func (self *RegisterExpirations) key(block *Block, pos int) uint64 {
 	return uint64(block.Id)<<32 | (uint64(pos))
 }
 
-func (self *RegisterExpirations) visitBlock(block *Block) error {
-	for i, inst := range block.Instructions {
-		if inst.Register() != NoneRegister {
-			if _, ok := self.lifetimes[inst.Register().Id]; ok {
-				panic(fmt.Sprintf("register %v already exists", inst.Register().Id))
-			}
-			self.lifetimes[inst.Register().Id] = &RegisterLifetime{
-				Register:      inst.Register(),
-				FirstBlock:    block,
-				FirstBlockPos: i,
-				LastBlock:     block,
-				LastBlockPos:  i,
-				Usages:        1,
-			}
+func (self *RegisterExpirations) update(block *Block, blockPos int, reg Register) {
+	if reg == NoneRegister {
+		return
+	}
+	lifetime, ok := self.lifetimes[reg.Id]
+	if !ok {
+		lifetime = &RegisterLifetime{
+			Register:      reg,
+			FirstBlock:    block,
+			FirstBlockPos: blockPos,
+			LastBlock:     block,
+			LastBlockPos:  blockPos,
+			Usages:        1,
 		}
+		self.lifetimes[reg.Id] = lifetime
+		return
+	}
+	lifetime.LastBlock = block
+	lifetime.LastBlockPos = len(block.Instructions)
+	lifetime.Usages += 1
+}
+
+func (self *RegisterExpirations) visitBlock(block *Block) error {
+	for blockPos, inst := range block.Instructions {
+		self.update(block, blockPos, inst.Register())
 		for _, reg := range inst.ParamRegisters() {
-			lifetime := self.lifetimes[reg.Id]
-			lifetime.LastBlock = block
-			lifetime.LastBlockPos = i
-			lifetime.Usages += 1
+			self.update(block, blockPos, reg)
 		}
 	}
 	for _, reg := range block.Terminator.Registers() {
-		if reg == NoneRegister {
-			continue
-		}
-		lifetime := self.lifetimes[reg.Id]
-		lifetime.LastBlock = block
-		lifetime.LastBlockPos = len(block.Instructions)
-		lifetime.Usages += 1
+		self.update(block, len(block.Instructions), reg)
 	}
 	return nil
 }

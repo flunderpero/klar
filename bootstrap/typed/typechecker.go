@@ -739,10 +739,16 @@ type UnionType struct {
 	typeParams  []TypeParam
 	typeArgs    []Type
 	Variants    []UnionVariant
+	IsAnonymous bool
 }
 
 func (self UnionType) String() string {
-	return fmt.Sprintf("UnionType%s%s%s",
+	anon := ""
+	if self.IsAnonymous {
+		anon = "\n    (anonymous)"
+	}
+	return fmt.Sprintf("UnionType%s%s%s%s",
+		anon,
 		base.IndentString(typeParamsString(self.typeParams), 1),
 		base.IndentString(typeArgsString(self.typeArgs), 1),
 		base.IndentSlice(self.Variants, 1),
@@ -1389,6 +1395,18 @@ func (tc *typeChecker) declareSymbol(key IsId, name string) {
 	tc.typeInfo.DeclareSymbol(key, symbol)
 }
 
+func (tc *typeChecker) findOrSetAnonUnionType(ty *UnionType) *UnionType {
+	key := ""
+	for _, variant := range ty.Variants {
+		key += variant.AsType().Id().String() + ","
+	}
+	if existingType, ok := tc.anonUnionTypes[key]; ok {
+		return existingType
+	}
+	tc.anonUnionTypes[key] = ty
+	return ty
+}
+
 func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 	switch node := node.(type) {
 	case *ast.FunctionType:
@@ -1426,15 +1444,13 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 		}
 		return res, nil
 	case *ast.UnionType:
-		unionType := &UnionType{typeBase: tc.newTypeBase()}
+		unionType := &UnionType{typeBase: tc.newTypeBase(), IsAnonymous: true}
 		variants := make([]UnionVariant, len(node.Variants))
-		key := ""
 		for i, astVariant := range node.Variants {
 			var variant UnionVariant
 			switch astVariant.Kind {
 			case ast.UnionVariantKindType:
 				variantType, err := tc.lookupTypeOfNode(astVariant.Type)
-				key += variantType.Id().String() + ","
 				if err != nil {
 					return nil, err
 				}
@@ -1447,13 +1463,10 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 			}
 			variants[i] = variant
 		}
+		unionType.Variants = variants
 		// Make sure that anonymous union types with the same variant types in the same order
 		// map to the same type.
-		if existingType, ok := tc.anonUnionTypes[key]; ok {
-			return existingType, nil
-		}
-		unionType.Variants = variants
-		tc.anonUnionTypes[key] = unionType
+		unionType = tc.findOrSetAnonUnionType(unionType)
 		return unionType, nil
 	case *ast.SimpleType:
 		if len(node.TypeArgs) > 0 {
@@ -1819,6 +1832,7 @@ func (tc *typeChecker) VisitBlockExpression(expr *ast.BlockExpression, w ast.Wal
 }
 
 func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) error {
+	contextualType := tc.contextualType
 	if err := w.WalkIfExpression(expr); err != nil {
 		return err
 	}
@@ -1826,13 +1840,22 @@ func (tc *typeChecker) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) e
 	if _, ok := tc.typeInfo.MustLookup(expr.Condition).(*BoolType); !ok {
 		return errors.Errorf("%s: the condition of an if expression must be a boolean type, got: %s", expr.Condition.Span(), condType)
 	}
-	// Only an if expression with an else branch can have a type other than None.
-	// And currently we don't have else branches.
-	tc.typeInfo.Set(expr, noneType)
+	branchTypes := []Type{tc.typeInfo.MustLookup(expr.TrueBody)}
+	if expr.FalseBody == nil {
+		branchTypes = append(branchTypes, noneType)
+	} else {
+		branchTypes = append(branchTypes, tc.typeInfo.MustLookup(expr.FalseBody))
+	}
+	ty, err := tc.combineTypesIfNeeded(branchTypes, contextualType, expr.Span())
+	if err != nil {
+		return err
+	}
+	tc.typeInfo.Set(expr, ty)
 	return nil
 }
 
 func (tc *typeChecker) VisitMatchExpression(expr *ast.MatchExpression, w ast.Walker) error {
+	contextualType := tc.contextualType
 	if err := tc.VisitNode(expr.Expression, w); err != nil {
 		return err
 	}
@@ -1922,32 +1945,76 @@ func (tc *typeChecker) VisitMatchExpression(expr *ast.MatchExpression, w ast.Wal
 	}
 	// Build the resulting type that is either a concrete type if all match arms
 	// have the same type or a union type of all different match arm types.
-	ty := tc.typeInfo.MustLookup(expr.Arms[0].Body)
-	for _, arm := range expr.Arms {
-		armType := tc.typeInfo.MustLookup(arm.Body)
-		if !ty.IsAssignableFrom(armType) {
-			if unionTy, ok := ty.(*UnionType); ok {
+	armTypes := make([]Type, len(expr.Arms))
+	for i, arm := range expr.Arms {
+		armTypes[i] = tc.typeInfo.MustLookup(arm.Body)
+	}
+	ty, err := tc.combineTypesIfNeeded(armTypes, contextualType, expr.Span())
+	if err != nil {
+		return err
+	}
+	tc.typeInfo.Set(expr, ty)
+	return CheckMatch(expr, tc.typeInfo)
+}
+
+func (tc *typeChecker) combineTypesIfNeeded(types_ []Type, contextualType Type, span token.Span) (Type, error) {
+	// First, expand all anonymous unions. We can't have nested anonymous unions.
+	types := []Type{}
+	for _, ty := range types_ {
+		if unionType, ok := ty.(*UnionType); ok && unionType.IsAnonymous {
+			for _, variant := range unionType.Variants {
+				if variant.Kind == UnionVariantKindType {
+					types = append(types, variant.Type)
+				} else {
+					panic(fmt.Sprintf("unexpected union variant kind: %d", variant.Kind))
+				}
+			}
+		} else {
+			types = append(types, ty)
+		}
+	}
+	if contextualType != nil {
+		for _, ty := range types {
+			if !contextualType.IsAssignableFrom(ty) {
+				return nil, errors.Errorf(
+					"%s: expected type %s to be assignable to contextual type %s", span, ty, contextualType)
+			}
+		}
+		return contextualType, nil
+	}
+	res := types[0]
+	resultIsUnion := false
+	for _, ty := range types[1:] {
+		if namedUnionVariant, ok := ty.(*NamedUnionVariant); ok {
+			ty = namedUnionVariant.UnionType
+		}
+		if res.Id() != ty.Id() {
+			if resultIsUnion {
+				unionTy := res.(*UnionType)
 				alreadyPartOfUnion := false
 				for _, variant := range unionTy.Variants {
-					if variant.Type.IsAssignableFrom(armType) {
+					if variant.Type.IsAssignableFrom(ty) {
 						alreadyPartOfUnion = true
 						break
 					}
 				}
 				if !alreadyPartOfUnion {
-					unionTy.Variants = append(unionTy.Variants, UnionVariant{Kind: UnionVariantKindType, Type: armType})
-					ty = unionTy
+					unionTy.Variants = append(unionTy.Variants, UnionVariant{Kind: UnionVariantKindType, Type: ty})
+					res = unionTy
 				}
 			} else {
-				ty = &UnionType{typeBase: tc.newTypeBase(), Variants: []UnionVariant{
+				res = &UnionType{typeBase: tc.newTypeBase(), IsAnonymous: true, Variants: []UnionVariant{
+					{Kind: UnionVariantKindType, Type: res},
 					{Kind: UnionVariantKindType, Type: ty},
-					{Kind: UnionVariantKindType, Type: armType},
 				}}
+				resultIsUnion = true
 			}
 		}
 	}
-	tc.typeInfo.Set(expr, ty)
-	return CheckMatch(expr, tc.typeInfo)
+	if unionType, ok := res.(*UnionType); ok {
+		res = tc.findOrSetAnonUnionType(unionType)
+	}
+	return res, nil
 }
 
 func (tc *typeChecker) resolveTypeParams(genericType GenericType, astParams []ast.TypeParam) ([]TypeParam, error) {
@@ -2249,11 +2316,15 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 }
 
 func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w ast.Walker) error {
-	if err := w.WalkAssignmentStatement(s); err != nil {
+	if err := tc.VisitNode(s.Variable, w); err != nil {
+		return err
+	}
+	varType, varInfo, ok := tc.typeScope.lookupVariable(s.Variable.Ident)
+	tc.contextualType = varType
+	if err := tc.VisitNode(s.Rhs, w); err != nil {
 		return err
 	}
 	rhsType := tc.typeInfo.MustLookup(s.Rhs)
-	varType, varInfo, ok := tc.typeScope.lookupVariable(s.Variable.Ident)
 	if !ok {
 		return errors.Errorf("%s: unknown variable %q", s.Span(), s.Variable.Ident)
 	}
@@ -2274,7 +2345,7 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 	}
 	if !varType.IsAssignableFrom(rhsType) {
 		return errors.Errorf(
-			"%s: lhs and rhs of assignment statement must have the same type, got %s and %s", s.Span(), varType, rhsType)
+			"%s: lhs and rhs of assignment statement must have the same type, got lhs: %s and rhs: %s", s.Span(), varType, rhsType)
 	}
 	tc.typeInfo.Set(s, noneType)
 	return nil
@@ -2314,7 +2385,7 @@ func (tc *typeChecker) VisitReturnStatement(s *ast.ReturnStatement, w ast.Walker
 func (tc *typeChecker) VisitNamedUnionTypeDeclaration(decl *ast.NamedUnionTypeDeclaration) error {
 	tc.enterGenericScope()
 	defer tc.exitGenericScope()
-	unionType := &UnionType{typeBase: tc.newTypeBase()}
+	unionType := &UnionType{typeBase: tc.newTypeBase(), IsAnonymous: false}
 	variants := make([]UnionVariant, len(decl.UnionType.Variants))
 	for i, astVariant := range decl.UnionType.Variants {
 		var variant UnionVariant

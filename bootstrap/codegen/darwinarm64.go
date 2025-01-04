@@ -462,6 +462,10 @@ func (c *blockCode) generateBlock(block *ir.Block) error {
 	for i, inst := range block.Instructions {
 		c.emitDebug("%s", inst)
 		switch inst := inst.(type) {
+		case *ir.Local:
+			reg := c.registerAllocator.allocate(inst.Register(), c)
+			c.values[inst.Register().Id] = reg
+			c.registerAllocator.spillIfTempAllocation(reg, c)
 		case *ir.BoolConst:
 			reg := c.registerAllocator.allocate(inst.Register(), c)
 			c.emit("mov %s, #%d", reg, inst.Value)
@@ -675,7 +679,7 @@ func (c *blockCode) generateBlock(block *ir.Block) error {
 		c.registerAllocator.ensureInRegister(condRegister, c)
 		c.emit("cbnz %s, %s", condRegister, c.blockLabel(terminator.TrueBlock))
 		c.emit("b %s", c.blockLabel(terminator.FalseBlock))
-		c.registerAllocator.forget(condRegister.irReg, c)
+		c.registerAllocator.releaseIfTempAllocation(condRegister)
 	case *ir.Return:
 		if terminator.Value == ir.NoneRegister {
 			c.emit("mov x0, xzr")

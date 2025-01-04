@@ -385,6 +385,25 @@ func (i BoolConst) ParamRegisters() []Register {
 	return []Register{}
 }
 
+// A `local` instruction is just there to introduce a register.
+// That register will most likely be part of a register constraint.
+// See `VisitIfExpression`.
+type Local struct {
+	register Register
+}
+
+func (i Local) String() string {
+	return fmt.Sprintf("%s = local", i.register)
+}
+
+func (i *Local) Register() Register {
+	return i.register
+}
+
+func (i Local) ParamRegisters() []Register {
+	return []Register{}
+}
+
 type GetPointerSource interface {
 	getPointerSourceMarker()
 }
@@ -721,14 +740,19 @@ func (r RegisterConstraints) IsEmpty() bool {
 }
 
 func (r *RegisterConstraints) Lookup(reg Register) (*[]Register, bool) {
-	for _, constraint := range r.constraints {
+	res, _, ok := r.lookup(reg)
+	return res, ok
+}
+
+func (r *RegisterConstraints) lookup(reg Register) (*[]Register, int, bool) {
+	for i, constraint := range r.constraints {
 		for _, c := range *constraint {
 			if c == reg {
-				return constraint, true
+				return constraint, i, true
 			}
 		}
 	}
-	return nil, false
+	return nil, -1, false
 }
 
 func (r RegisterConstraints) String() string {
@@ -751,17 +775,30 @@ func (r RegisterConstraints) String() string {
 }
 
 func (r *RegisterConstraints) add(reg1 Register, reg2 Register) {
-	c, found := r.Lookup(reg1)
-	if found {
-		if !slices.Contains(*c, reg2) {
-			*c = append(*c, reg2)
+	if reg1 == NoneRegister || reg2 == NoneRegister {
+		return
+	}
+	c1, _, found1 := r.lookup(reg1)
+	c2, i2, found2 := r.lookup(reg2)
+	if found1 && found2 {
+		// merge the two and remove the originals
+		for _, r2 := range *c2 {
+			if !slices.Contains(*c1, r2) {
+				*c1 = append(*c1, r2)
+			}
+		}
+		r.constraints = append(r.constraints[:i2], r.constraints[i2+1:]...)
+		return
+	}
+	if found1 {
+		if !slices.Contains(*c1, reg2) {
+			*c1 = append(*c1, reg2)
 		}
 		return
 	}
-	c, found = r.Lookup(reg2)
-	if found {
-		if !slices.Contains(*c, reg1) {
-			*c = append(*c, reg1)
+	if found2 {
+		if !slices.Contains(*c2, reg1) {
+			*c2 = append(*c2, reg1)
 		}
 		return
 	}
@@ -1234,6 +1271,10 @@ func (g *generator) VisitUnaryExpression(expr *ast.UnaryExpression, w ast.Walker
 
 func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) error {
 	condBlock := g.newBlock(g.currentBlock)
+	// Create a "local" register that is then constrained with the result
+	// of the `expr.TrueBody` and `expr.FalseBody` and forms the result of the if expression.
+	reg := g.nextRegister(g.lookupType(expr))
+	g.currentBlock.append(&Local{reg})
 	g.currentBlock.Terminator = &Jump{Target: condBlock}
 	g.currentBlock = condBlock
 	if err := w.WalkNode(expr.Condition); err != nil {
@@ -1269,6 +1310,8 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) erro
 	if g.currentBlock.Terminator == nil {
 		g.currentBlock.Terminator = &Jump{Target: mergeBlock}
 	}
+	trueReg := g.lookupRegisterByNode(expr.TrueBody)
+	g.registerConstraints.add(reg, trueReg)
 	constraints := g.updateRegisterConstraints(symbolTableBeforeBodies)
 	if expr.FalseBody != nil {
 		g.currentBlock = falseBlock
@@ -1279,15 +1322,15 @@ func (g *generator) VisitIfExpression(expr *ast.IfExpression, w ast.Walker) erro
 			g.currentBlock.Terminator = &Jump{Target: mergeBlock}
 		}
 		constraints = append(constraints, g.updateRegisterConstraints(symbolTableBeforeBodies)...)
+		falseReg := g.lookupRegisterByNode(expr.FalseBody)
+		g.registerConstraints.add(reg, falseReg)
 	}
 	// We have to keep all register constraints alive.
 	if len(constraints) > 0 {
 		mergeBlock.append(&KeepAlive{params: constraints})
 	}
-
 	g.currentBlock = mergeBlock
-	// We treat if _expressions_ as statements for now.
-	g.registerByNodeId[expr.Id()] = NoneRegister
+	g.registerByNodeId[expr.Id()] = reg
 	return nil
 }
 

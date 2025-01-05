@@ -2543,167 +2543,6 @@ func (tc *typeChecker) check(node ast.Node, w ast.Walker) (Type, error) {
 	}
 	return nodeType, nil
 }
-
-var builtInSpan = token.Span{File: "<builtin>", Src: &[]byte{}, Start: 0, End: 0}
-
-func declareBuiltIn[T Type](tc *typeChecker, builtInSymbolScope *SymbolScope, name string, ty T) T {
-	if err := tc.typeScope.declareType(name, ty, builtInSpan); err != nil {
-		panic(errors.Wrapf(err, "failed to declare: %s", name))
-	}
-	tc.typeInfo.DeclareSymbol(ty.Id(), &Symbol{Name: name, Scope: builtInSymbolScope})
-	return ty
-
-}
-
-func (tc *typeChecker) declareBuiltIns(typeInfo *TypeInfo) {
-	builtInSymbolScope := newSymbolScope(nil, nil)
-	builtIns := BuiltIns{}
-	builtIns.RawPtr = declareBuiltIn(tc, builtInSymbolScope, "RawPtr", &RawPtr{})
-	builtIns.Char = declareBuiltIn(tc, builtInSymbolScope, "Char", &CharType{})
-	builtIns.Bool = declareBuiltIn(tc, builtInSymbolScope, "Bool", &BoolType{})
-	builtIns.I64 = declareBuiltIn(tc, builtInSymbolScope, "I64", &Int64Type{})
-	builtIns.I32 = declareBuiltIn(tc, builtInSymbolScope, "I32", &Int32Type{})
-	builtIns.I16 = declareBuiltIn(tc, builtInSymbolScope, "I16", &Int16Type{})
-	builtIns.I8 = declareBuiltIn(tc, builtInSymbolScope, "I8", &Int8Type{})
-	builtIns.U64 = declareBuiltIn(tc, builtInSymbolScope, "U64", &UInt64Type{})
-	builtIns.U32 = declareBuiltIn(tc, builtInSymbolScope, "U32", &UInt32Type{})
-	builtIns.U16 = declareBuiltIn(tc, builtInSymbolScope, "U16", &UInt16Type{})
-	builtIns.U8 = declareBuiltIn(tc, builtInSymbolScope, "U8", &UInt8Type{})
-	builtIns.Never = declareBuiltIn(tc, builtInSymbolScope, "Never", &NeverType{})
-	builtIns.None = declareBuiltIn(tc, builtInSymbolScope, "None", &NoneType{})
-	builtIns.Int = declareBuiltIn(tc, builtInSymbolScope, "Int", builtIns.I64)
-	builtIns.builtInFunctionIdFrom = 100
-	builtIns.builtInFunctionIdTo = builtIns.builtInFunctionIdFrom - 1
-	nextFuncId := func() TypeId {
-		builtIns.builtInFunctionIdTo += 1
-		return builtIns.builtInFunctionIdTo
-	}
-	builtIns.Str = declareBuiltIn(
-		tc,
-		builtInSymbolScope,
-		"Str",
-		&StructType{
-			typeBase: typeBase{TypeId(1)},
-			Fields:   []TypeAndName[Type]{{Name: "len_", Type: builtIns.I64}, {Name: "bytes_", Type: builtIns.RawPtr}}})
-	builtIns.Print = declareBuiltIn(
-		tc,
-		builtInSymbolScope,
-		"print",
-		&FunctionType{
-			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "value", Type: builtIns.Str}},
-			Result:   builtIns.None,
-		})
-	builtIns.PrintChar = declareBuiltIn(
-		tc,
-		builtInSymbolScope,
-		"print_char",
-		&FunctionType{
-			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "value", Type: builtIns.Char}},
-			Result:   builtIns.None})
-	builtIns.PrintInt = declareBuiltIn(
-		tc,
-		builtInSymbolScope,
-		"print_int",
-		&FunctionType{
-			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "value", Type: builtIns.I64}},
-			Result:   builtIns.None})
-	builtIns.PrintUInt = declareBuiltIn(
-		tc,
-		builtInSymbolScope,
-		"print_uint",
-		&FunctionType{
-			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "value", Type: builtIns.U64}},
-			Result:   builtIns.None})
-	builtIns.PrintBool = declareBuiltIn(
-		tc,
-		builtInSymbolScope,
-		"print_bool",
-		&FunctionType{
-			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "value", Type: builtIns.Bool}},
-			Result:   builtIns.None})
-	builtIns.InternalMalloc = declareBuiltIn(
-		tc,
-		builtInSymbolScope,
-		"internal_malloc",
-		&FunctionType{
-			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "size", Type: builtIns.I64}},
-			Result:   builtIns.I64})
-	builtIns.InternalFree = declareBuiltIn(
-		tc,
-		builtInSymbolScope,
-		"internal_free",
-		&FunctionType{
-			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "ptr", Type: builtIns.RawPtr}},
-			Result:   builtIns.None})
-	builtIns.SizeOf = declareBuiltIn(
-		tc,
-		builtInSymbolScope,
-		"sizeof",
-		&FunctionType{
-			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{},
-			Result:   builtIns.I64})
-	sizeOfTypeParam := &TypeParam{
-		typeBase:    typeBase{nextFuncId()},
-		GenericType: builtIns.SizeOf,
-		Name:        ast.Ident("T"),
-		Index:       0,
-	}
-	builtIns.SizeOf.typeParams = []TypeParam{*sizeOfTypeParam}
-	builtIns.SizeOf.typeArgs = []Type{sizeOfTypeParam}
-	internalWritePtrTypeParam := &TypeParam{
-		typeBase: typeBase{nextFuncId()},
-		Name:     ast.Ident("T"),
-		Index:    0,
-	}
-	builtIns.InternalWritePtr = declareBuiltIn(
-		tc,
-		builtInSymbolScope,
-		"internal_write_ptr",
-		&FunctionType{
-			typeBase: typeBase{nextFuncId()},
-			Params: []FunctionParam{
-				{Name: "ptr", Type: builtIns.RawPtr},
-				{Name: "value", Type: internalWritePtrTypeParam},
-			},
-			Result: builtIns.None})
-	internalWritePtrTypeParam.GenericType = builtIns.InternalWritePtr
-	builtIns.InternalWritePtr.typeParams = []TypeParam{*internalWritePtrTypeParam}
-	builtIns.InternalWritePtr.typeArgs = []Type{internalWritePtrTypeParam}
-	builtIns.InternalReadPtr = declareBuiltIn(
-		tc,
-		builtInSymbolScope,
-		"internal_read_ptr",
-		&FunctionType{
-			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "ptr", Type: builtIns.RawPtr}}})
-	internalReadPtrTypeParam := &TypeParam{
-		typeBase:    typeBase{nextFuncId()},
-		GenericType: builtIns.InternalReadPtr,
-		Name:        ast.Ident("T"),
-		Index:       0,
-	}
-	builtIns.InternalReadPtr.typeParams = []TypeParam{*internalReadPtrTypeParam}
-	builtIns.InternalReadPtr.typeArgs = []Type{internalReadPtrTypeParam}
-	builtIns.InternalReadPtr.Result = internalReadPtrTypeParam
-	builtIns.InternalExit = declareBuiltIn(
-		tc,
-		builtInSymbolScope,
-		"internal_exit",
-		&FunctionType{
-			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "code", Type: builtIns.I64}},
-			Result:   builtIns.Never})
-	typeInfo.BuiltIns = builtIns
-}
-
 func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *GenericsResolver, error) {
 	typeInfo := &TypeInfo{
 		types:                make(map[ast.NodeId]Type),
@@ -2711,18 +2550,20 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 		typeBindings:         make(map[*ast.IdentExpression]Type),
 		traitBoundsTypeParam: make(map[ast.Node]*TypeParam),
 	}
+	rootTypeScope := newTypeScope(nil)
+	rootSymbolScope := newSymbolScope(node, nil)
+	declareBuiltIns(rootTypeScope, typeInfo)
 	tc := &typeChecker{
 		DefaultVisitor:    ast.DefaultVisitor{},
-		typeScope:         newTypeScope(nil),
+		typeScope:         rootTypeScope,
 		typeInfo:          typeInfo,
-		symbolScope:       newSymbolScope(node, nil),
+		symbolScope:       rootSymbolScope,
 		typeCreator:       typeCreator,
 		genericScope:      newGenericScope(nil),
 		inferGenericScope: newInferGenericScope(nil),
 		genericsResolver:  newGenericsResolver(typeInfo, typeCreator),
 		anonUnionTypes:    make(map[string]*UnionType),
 	}
-	tc.declareBuiltIns(typeInfo)
 	walker := &ast.DefaultWalker{Visitor: tc}
 	_, err := tc.check(node, walker)
 	if err != nil {

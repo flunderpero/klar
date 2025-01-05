@@ -1,0 +1,34 @@
+-- expect.stdout {
+-- test1, reflect, Hello, 42, 
+-- } expect.stdout
+-- expect.exit_code: 0
+
+fn return_self<T>(v T) T => v
+
+struct Single<T> {
+    value T
+}
+
+struct Pair<K, V> {
+    key K
+    value V
+}
+
+impl Single {
+    fn make_pair<U>(self, value U) Pair<T, U> => Pair<T, U>(key=self.value, value=value) 
+
+    fn static_reflect(val T) T => val
+}
+
+fn main() {
+    print(return_self("test"))
+    print_int(return_self(1))
+    print(", ")
+    print(Single.static_reflect("reflect"))
+    print(", ")
+    let s = Single("Hello, ")
+    let p = s.make_pair(42)
+    print(p.key)
+    print_int(p.value)
+    print(", ")
+}

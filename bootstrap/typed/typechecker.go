@@ -1266,6 +1266,35 @@ func (m *TypeInfo) DeclareSymbol(id IsId, symbol *Symbol) {
 	m.symbols[id.String()] = symbol
 }
 
+type inferGenericScope struct {
+	parent *inferGenericScope
+	types  map[TypeId]Type
+}
+
+func newInferGenericScope(parent *inferGenericScope) *inferGenericScope {
+	return &inferGenericScope{
+		parent: parent,
+		types:  make(map[TypeId]Type),
+	}
+}
+
+func (self *inferGenericScope) lookupTypeParam(param TypeParam) (Type, bool) {
+	ty, found := self.types[param.Id()]
+	if !found && self.parent != nil {
+		return self.parent.lookupTypeParam(param)
+	}
+	return ty, found
+}
+
+func (self *inferGenericScope) declareTypeParam(param *TypeParam, ty Type) bool {
+	existing := self.types[param.Id()]
+	if existing == nil {
+		self.types[param.Id()] = ty
+		return true
+	}
+	return existing.Id() == ty.Id()
+}
+
 type checkingMode int
 
 const (
@@ -1275,16 +1304,17 @@ const (
 
 type typeChecker struct {
 	ast.DefaultVisitor
-	typeInfo         *TypeInfo
-	typeScope        *typeScope
-	symbolScope      *SymbolScope
-	genericScope     *genericScope
-	genericsResolver *GenericsResolver
-	loopDepth        int
-	checkingMode     checkingMode
-	typeCreator      *TypeCreator
-	contextualType   Type
-	anonUnionTypes   map[string]*UnionType
+	typeInfo          *TypeInfo
+	typeScope         *typeScope
+	symbolScope       *SymbolScope
+	genericScope      *genericScope
+	inferGenericScope *inferGenericScope
+	genericsResolver  *GenericsResolver
+	loopDepth         int
+	checkingMode      checkingMode
+	typeCreator       *TypeCreator
+	contextualType    Type
+	anonUnionTypes    map[string]*UnionType
 }
 
 func (tc *typeChecker) newTypeBase() typeBase {
@@ -1308,6 +1338,14 @@ func (tc *typeChecker) enterGenericScope() {
 
 func (tc *typeChecker) exitGenericScope() {
 	tc.genericScope = tc.genericScope.parent
+}
+
+func (tc *typeChecker) enterInferGenericScope() {
+	tc.inferGenericScope = newInferGenericScope(tc.inferGenericScope)
+}
+
+func (tc *typeChecker) exitInferGenericScope() {
+	tc.inferGenericScope = tc.inferGenericScope.parent
 }
 
 func (tc *typeChecker) enterLoop() {
@@ -1416,29 +1454,20 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 		unionType = tc.findOrSetAnonUnionType(unionType)
 		return unionType, nil
 	case *ast.SimpleType:
-		if len(node.TypeArgs) > 0 {
-			baseType, found := tc.typeScope.lookupType(node.TypeName())
-			if !found {
-				return nil, errors.Errorf("undefined type: %s", node.TypeName())
-			}
-			structType, ok := baseType.(*StructType)
-			if !ok {
-				return nil, errors.Errorf("expected struct type, got: %T", baseType)
-			}
-			if len(node.TypeArgs) != len(structType.TypeParams()) {
-				return nil, errors.Errorf(
-					"expected %d type arguments, got %d for %q",
-					len(structType.TypeParams()), len(node.TypeArgs), node.TypeName())
-			}
-			typeArgs := make([]Type, len(node.TypeArgs))
-			for i, typeArg := range node.TypeArgs {
-				typeArg, err := tc.lookupTypeOfNode(typeArg)
-				if err != nil {
-					return nil, err
+		baseType, found := tc.typeScope.lookupType(node.TypeName())
+		if found {
+			genericType, ok := baseType.(GenericType)
+			if ok {
+				typeArgs := make([]Type, len(node.TypeArgs))
+				for i, typeArg := range node.TypeArgs {
+					typeArg, err := tc.lookupTypeOfNode(typeArg)
+					if err != nil {
+						return nil, err
+					}
+					typeArgs[i] = typeArg
 				}
-				typeArgs[i] = typeArg
+				return tc.resolveGenericType(genericType, node.TypeArgs, node.Span())
 			}
-			return tc.resolveGenericType(structType, node.TypeArgs, node.Span())
 		}
 	}
 	if res, found := tc.typeScope.lookupType(node.TypeName()); found {
@@ -1530,6 +1559,9 @@ func (tc *typeChecker) VisitTupleLiteralExpression(expr *ast.TupleLiteralExpress
 }
 
 func (tc *typeChecker) resolveGenericType(ty GenericType, astTypeArgs []ast.Type, span token.Span) (Type, error) {
+	if len(astTypeArgs) == 0 {
+		return tc.inferGenericType(ty, span)
+	}
 	typeParams := ty.TypeParams()
 	if len(astTypeArgs) != len(typeParams) {
 		return nil, errors.Errorf(
@@ -1553,12 +1585,37 @@ func (tc *typeChecker) resolveGenericType(ty GenericType, astTypeArgs []ast.Type
 	return tc.genericsResolver.ResolveTypeArgs(ty, typeParams, typeArgs), nil
 }
 
+func (tc *typeChecker) inferGenericType(ty GenericType, span token.Span) (Type, error) {
+	typeParams := ty.TypeParams()
+	typeArgs := append([]Type{}, ty.TypeArgs()...)
+	foundTypeParam := false
+	for i, typeParam := range typeParams {
+		ty, found := tc.inferGenericScope.lookupTypeParam(typeParam)
+		if !found {
+			continue
+		}
+		foundTypeParam = true
+		typeArgs[i] = ty
+		if typeParam.TraitBound != nil {
+			if !typeParam.TraitBound.IsAssignableFrom(ty) {
+				return nil, errors.Errorf(
+					"%s: inferred type %q does not satisfy trait bound %q", span, ty, typeParam.TraitBound)
+			}
+		}
+	}
+	if foundTypeParam {
+		return tc.genericsResolver.ResolveTypeArgs(ty, typeParams, typeArgs), nil
+	} else {
+		return ty, nil
+	}
+}
+
 func (tc *typeChecker) VisitIdentExpression(expr *ast.IdentExpression) error {
 	ty, found := tc.typeScope.lookupType(expr.Ident.String())
 	if !found {
 		return errors.Errorf("%s: type not found for identifier %s", expr.Span(), expr.Ident)
 	}
-	if genericType, ok := ty.(GenericType); ok && len(expr.TypeArgs) > 0 {
+	if genericType, ok := ty.(GenericType); ok {
 		resolvedType, err := tc.resolveGenericType(genericType, expr.TypeArgs, expr.Span())
 		if err != nil {
 			return err
@@ -1666,6 +1723,7 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 			"%s: expected %d arguments, got %d for %s", expr.Span(), len(params), len(expr.Args), calleeType)
 	}
 	seenParamIndexes := []int{}
+	argTypes := make([]Type, len(expr.Args))
 	for i, arg := range expr.Args {
 		var paramIndex = i
 		if arg.Name != "" {
@@ -1684,9 +1742,42 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 			return err
 		}
 		argType := tc.typeInfo.MustLookup(arg.Value)
+		argTypes[paramIndex] = argType
+	}
+	// Infer generic types if needed.
+	if _, ok := calleeType.(GenericType); ok {
+		tc.enterInferGenericScope()
+		defer tc.exitInferGenericScope()
+		hasTypeParamArgs := false
+		for i, param := range params {
+			if typeParam, ok := param.Type.(*TypeParam); ok {
+				hasTypeParamArgs = true
+				if !tc.inferGenericScope.declareTypeParam(typeParam, argTypes[i]) {
+					return errors.Errorf(
+						"%s: type parameter %q already declared with a different type", expr.Span(), typeParam)
+				}
+			}
+		}
+		if hasTypeParamArgs {
+			if err := tc.VisitNode(expr.Callee, w); err != nil {
+				return err
+			}
+			calleeType = tc.typeInfo.MustLookup(expr.Callee).(CallableType)
+			params = calleeType.CallParams()
+			if funcType, ok := calleeType.(*FunctionType); ok {
+				if funcType.IsMethod() && !funcType.IsStaticMethod() {
+					params = params[1:]
+				}
+			}
+			result = calleeType.CallResult()
+			tc.typeInfo.Set(expr.Callee, calleeType)
+		}
+	}
+	for i, param := range params {
+		argType := argTypes[i]
 		if !param.Type.IsAssignableFrom(argType) {
 			return errors.Errorf(
-				"%s: expected argument %d to be of type %s, got %s", expr.Span(), paramIndex, param.Type, argType)
+				"%s: expected argument %d to be of type %s, got %s", expr.Span(), i, param.Type, argType)
 		}
 	}
 	tc.typeInfo.Set(expr, result)
@@ -1745,7 +1836,7 @@ func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.W
 			panic(fmt.Sprintf("unexpected type %T", ty))
 		}
 	}
-	if genericType, ok := memberType.(GenericType); ok && len(expr.TypeArgs) > 0 {
+	if genericType, ok := memberType.(GenericType); ok {
 		resolvedType, err := tc.resolveGenericType(genericType, expr.TypeArgs, expr.Span())
 		if err != nil {
 			return err
@@ -2621,14 +2712,15 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 		traitBoundsTypeParam: make(map[ast.Node]*TypeParam),
 	}
 	tc := &typeChecker{
-		DefaultVisitor:   ast.DefaultVisitor{},
-		typeScope:        newTypeScope(nil),
-		typeInfo:         typeInfo,
-		symbolScope:      newSymbolScope(node, nil),
-		typeCreator:      typeCreator,
-		genericScope:     newGenericScope(nil),
-		genericsResolver: newGenericsResolver(typeInfo, typeCreator),
-		anonUnionTypes:   make(map[string]*UnionType),
+		DefaultVisitor:    ast.DefaultVisitor{},
+		typeScope:         newTypeScope(nil),
+		typeInfo:          typeInfo,
+		symbolScope:       newSymbolScope(node, nil),
+		typeCreator:       typeCreator,
+		genericScope:      newGenericScope(nil),
+		inferGenericScope: newInferGenericScope(nil),
+		genericsResolver:  newGenericsResolver(typeInfo, typeCreator),
+		anonUnionTypes:    make(map[string]*UnionType),
 	}
 	tc.declareBuiltIns(typeInfo)
 	walker := &ast.DefaultWalker{Visitor: tc}

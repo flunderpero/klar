@@ -35,8 +35,7 @@ trait PrintIt {
 fn main() {
     forward_fn()
     print(", ")
-    let v ForwardUnion = "Str"
-    let c = Color(v)
+    let c = Color("Str")
     c.print_it()
 }
 

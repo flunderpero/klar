@@ -1,5 +1,5 @@
 -- expect.stdout {
--- Hello 42 true Green (10, 20, 255) PASS: Str, PASS: Int, PASS: Str, PASS: Green
+-- Hello 42 true Green (10, 20, 255) Str param 1 false Green PASS: Str, PASS: Int, PASS: Str, PASS: Green
 -- } expect.stdout
 -- expect.exit_code: 0
 
@@ -50,6 +50,10 @@ fn main() {
     print_union_value(bool)
     print_union_value(green)
     print_union_value(blue)
+    print_union_value("Str param")
+    print_union_value(1)
+    print_union_value(false)
+    print_union_value(StrIntBoolColor.Green)
     let x = anonymous_union(true)
     match x {
         case Str => print("PASS: Str")

@@ -2,6 +2,7 @@ package token
 
 import (
 	"fmt"
+	"strconv"
 	"unicode"
 
 	"github.com/pkg/errors"
@@ -116,6 +117,59 @@ func isTypeIdentifier(name string) bool {
 	return unicode.IsUpper(firstRune)
 }
 
+func parseEscapeSequence(src []byte, insideStr bool) ([]byte, int, error) {
+	c := src[0]
+	switch c {
+	case 'n':
+		return []byte{'\n'}, 1, nil
+	case 'r':
+		return []byte{'\r'}, 1, nil
+	case 't':
+		return []byte{'\t'}, 1, nil
+	case '0':
+		return []byte{0}, 1, nil
+	case '\\':
+		return []byte{'\\'}, 1, nil
+	case '\'':
+		if insideStr {
+			return nil, 0, errors.Errorf("invalid escape sequence: \\%c", c)
+		}
+		return []byte{'\''}, 1, nil
+	case '"':
+		if !insideStr {
+			return nil, 0, errors.Errorf("invalid escape sequence: \\%c", c)
+		}
+		return []byte{'"'}, 1, nil
+	case 'u':
+		if len(src) < 2 {
+			return nil, 0, errors.Errorf("invalid escape sequence: \\u")
+		}
+		if src[1] != '{' {
+			return nil, 0, errors.Errorf("invalid escape sequence: \\u%c", src[1])
+		}
+		i := 2
+		for ; i < len(src); i++ {
+			if src[i] == '}' {
+				break
+			}
+		}
+		if i == len(src) {
+			return nil, 0, errors.Errorf("invalid escape sequence: \\u{")
+		}
+		value, err := strconv.ParseInt(string(src[2:i]), 16, 32)
+		if err != nil {
+			return nil, 0, errors.Errorf("invalid escape sequence: \\u{%s}", string(src[2:i]))
+		}
+		if value < 0 || value > 0x10FFFF {
+			return nil, 0, errors.Errorf("invalid escape sequence: \\u{%s}", string(src[2:i]))
+		}
+		return []byte(string(rune(value))), i + 1, nil
+	default:
+		return nil, 0, errors.Errorf("unknown escape sequence: \\%c", c)
+	}
+
+}
+
 func Tokenize(src []byte, file string) ([]Token, error) {
 	var tokens []Token
 	var i = 0
@@ -213,17 +267,26 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			tokens = append(tokens, Token{Kind: NotEqual, Value: "", Span: span})
 		} else if c == '\'' {
 			// Parse char.
-			value := []byte{}
-			for i < len(src) {
-				c = src[i]
-				if c != '\'' {
-					i += 1
-					value = append(value, c)
-				} else {
-					i += 1 // Consume the closing '\''.
-					break
+			var value []byte
+			c = src[i]
+			if c == '\\' {
+				i += 1
+				value_, len, err := parseEscapeSequence(src[i:], false)
+				if err != nil {
+					return nil, err
 				}
+				value = value_
+				i += len
+			} else if c == '\'' {
+				return nil, errors.Errorf("empty char literal")
+			} else {
+				value = []byte{c}
+				i += 1
 			}
+			if src[i] != '\'' {
+				return nil, errors.Errorf("invalid char literal")
+			}
+			i += 1
 			span.End = i
 			tokens = append(tokens, Token{Kind: Char, Value: string(value), Span: span})
 		} else if c == '"' {
@@ -231,7 +294,15 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			value := []byte{}
 			for i < len(src) {
 				c = src[i]
-				if c != '"' {
+				if c == '\\' {
+					i += 1
+					value_, len, err := parseEscapeSequence(src[i:], true)
+					if err != nil {
+						return nil, err
+					}
+					value = append(value, value_...)
+					i += len
+				} else if c != '"' {
 					i += 1
 					value = append(value, c)
 				} else {

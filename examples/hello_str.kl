@@ -1,9 +1,11 @@
 -- expect.stdout {
--- Hello, world!
+-- Hello, world!Escape: 
+-- "	A"
 -- } expect.stdout
 -- expect.exit_code: 0
 
 fn main() {
     let s = "Hello"
     print(s.concat(", world!"))
+    print("Escape: \n\"\t\u{41}\"")
 }

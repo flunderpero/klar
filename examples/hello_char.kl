@@ -1,9 +1,12 @@
 -- expect.stdout {
--- c
+-- ctruetruefalse
 -- } expect.stdout
 -- expect.exit_code: 0
 
 fn main() {
     let c = 'c'
     print_char(c)
+    print_bool('a' == 'a')
+    print_bool('a' < 'b')
+    print_bool('a' > 'b')
 }

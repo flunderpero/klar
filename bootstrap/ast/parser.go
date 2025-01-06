@@ -486,6 +486,21 @@ func (self IntRangePattern) String() string {
 	return fmt.Sprintf("IntRangePattern\n%s\n%s%s", base.Indent(self.From, 1), base.Indent(self.To, 1), inclusive)
 }
 
+type CharRangePattern struct {
+	matchPatternBase
+	From        CharLiteralExpression
+	To          CharLiteralExpression
+	InclusiveTo bool
+}
+
+func (self CharRangePattern) String() string {
+	inclusive := " (exclusive)"
+	if self.InclusiveTo {
+		inclusive = " (inclusive)"
+	}
+	return fmt.Sprintf("CharRangePattern\n%s\n%s%s", base.Indent(&self.From, 1), base.Indent(&self.To, 1), inclusive)
+}
+
 type StrPattern struct {
 	matchPatternBase
 	Value StringLiteralExpression
@@ -493,6 +508,15 @@ type StrPattern struct {
 
 func (self StrPattern) String() string {
 	return fmt.Sprintf("StrPattern\n%s", base.Indent(&self.Value, 1))
+}
+
+type CharPattern struct {
+	matchPatternBase
+	Value CharLiteralExpression
+}
+
+func (self CharPattern) String() string {
+	return fmt.Sprintf("CharPattern\n%s", base.Indent(&self.Value, 1))
 }
 
 type WildcardPattern struct {
@@ -1050,6 +1074,22 @@ func (p *Parser) parseMatchPattern() (MatchPattern, error) {
 			return nil, err
 		}
 		return &StrPattern{matchPatternBase: p.matchPatternBase(from), Value: *literal}, nil
+	case token.Char:
+		literal, err := p.parseCharLiteralExpression()
+		if err != nil {
+			return nil, err
+		}
+		t := p.peek()
+		if t.Kind == token.ClosedRange || t.Kind == token.HalfOpenRange {
+			p.consumeAny()
+			to, err := p.parseCharLiteralExpression()
+			if err != nil {
+				return nil, err
+			}
+			return &CharRangePattern{
+				matchPatternBase: p.matchPatternBase(from), From: *literal, To: *to, InclusiveTo: t.Kind == token.ClosedRange}, nil
+		}
+		return &CharPattern{matchPatternBase: p.matchPatternBase(from), Value: *literal}, nil
 	}
 	return nil, errors.Errorf("expected a pattern but got %q", t)
 }

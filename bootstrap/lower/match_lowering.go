@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/flunderpero/klar/bootstrap/ast"
+	"github.com/flunderpero/klar/bootstrap/token"
 	"github.com/flunderpero/klar/bootstrap/typed"
 )
 
@@ -99,6 +100,8 @@ func (self *matchLowering) buildPatternCondition(
 		return trueExpr
 	case *ast.IntPattern:
 		return self.nodeCreator.NewBinaryExpression(matchedValueExpr, ast.OpEqual, &pattern.Value, pattern.Span())
+	case *ast.CharPattern:
+		return self.nodeCreator.NewBinaryExpression(matchedValueExpr, ast.OpEqual, &pattern.Value, pattern.Span())
 	case *ast.StrPattern:
 		strType := self.typeInfo.BuiltIns.Str
 		eqFunc, ok := strType.FindMethod("eq", pattern.Span())
@@ -113,19 +116,26 @@ func (self *matchLowering) buildPatternCondition(
 			{Value: matchedValueExpr, Span: matchedValueExpr.Span()},
 			{Value: &pattern.Value, Span: pattern.Value.Span()}}, pattern.Span())
 	case *ast.IntRangePattern:
-		fromExpr := self.nodeCreator.NewBinaryExpression(
-			matchedValueExpr, ast.OpGreaterThanOrEqual, &pattern.From, pattern.From.Span())
-		self.typeInfo.Set(fromExpr, &typed.BoolType{})
-		toOp := ast.OpLessThan
-		if pattern.InclusiveTo {
-			toOp = ast.OpLessThanOrEqual
-		}
-		toExpr := self.nodeCreator.NewBinaryExpression(
-			matchedValueExpr, toOp, &pattern.To, pattern.To.Span())
-		self.typeInfo.Set(toExpr, &typed.BoolType{})
-		return self.nodeCreator.NewBinaryExpression(fromExpr, ast.OpAnd, toExpr, pattern.Span())
+		return self.buildRangePatternCondition(matchedValueExpr, &pattern.From, &pattern.To, pattern.InclusiveTo, pattern.Span())
+	case *ast.CharRangePattern:
+		return self.buildRangePatternCondition(matchedValueExpr, &pattern.From, &pattern.To, pattern.InclusiveTo, pattern.Span())
 	}
 	panic(fmt.Sprintf("unhandled pattern type: %T", arm.Pattern))
+}
+
+func (self *matchLowering) buildRangePatternCondition(
+	matchedValueExpr ast.Expression, from ast.Expression, to ast.Expression, inclusiveTo bool, span token.Span) ast.Expression {
+	fromExpr := self.nodeCreator.NewBinaryExpression(
+		matchedValueExpr, ast.OpGreaterThanOrEqual, from, from.Span())
+	self.typeInfo.Set(fromExpr, &typed.BoolType{})
+	toOp := ast.OpLessThan
+	if inclusiveTo {
+		toOp = ast.OpLessThanOrEqual
+	}
+	toExpr := self.nodeCreator.NewBinaryExpression(
+		matchedValueExpr, toOp, to, to.Span())
+	self.typeInfo.Set(toExpr, &typed.BoolType{})
+	return self.nodeCreator.NewBinaryExpression(fromExpr, ast.OpAnd, toExpr, span)
 }
 
 func MatchLowering(

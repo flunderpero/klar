@@ -60,6 +60,8 @@ func (self *matchChecker) isExhaustive(ty Type, values []value) error {
 		return self.isExhaustiveInt(values, 0, 255)
 	case *UnionType:
 		return self.isExhaustiveUnion(ty, values)
+	case *CharType:
+		return self.isExhaustiveInt(values, 0, 0x10FFFF)
 	}
 	switch ty.Id() {
 	case self.typeInfo.BuiltIns.Str.Id():
@@ -121,6 +123,15 @@ func (self *matchChecker) patternValue(pattern ast.MatchPattern) value {
 	case *ast.IntRangePattern:
 		from := pattern.From.Int64 // fixme uint64
 		to := pattern.To.Int64     // fixme uint64
+		if !pattern.InclusiveTo {
+			to -= 1
+		}
+		return intRange{from, to}
+	case *ast.CharPattern:
+		return intRange{int64(pattern.Value.Value), int64(pattern.Value.Value)}
+	case *ast.CharRangePattern:
+		from := int64(pattern.From.Value)
+		to := int64(pattern.To.Value)
 		if !pattern.InclusiveTo {
 			to -= 1
 		}

@@ -1694,13 +1694,13 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 		tc.typeInfo.Set(expr, lhs)
 	case ast.OpEqual, ast.OpNotEqual, ast.OpGreaterThan, ast.OpGreaterThanOrEqual, ast.OpLessThan, ast.OpLessThanOrEqual:
 		switch lhs.(type) {
-		case IntType, *RawPtr:
+		case IntType, *RawPtr, *CharType:
 		case *BoolType:
 			if expr.Op != ast.OpEqual && expr.Op != ast.OpNotEqual {
 				return errors.Errorf("%s: only == and != are supported for bool types", expr.Span())
 			}
 		default:
-			return errors.Errorf("%s: lhs of comparison expression must be an int or bool type, got %s", expr.Span(), lhs)
+			return errors.Errorf("%s: lhs of comparison expression must be an int, char, or bool type, got %s", expr.Span(), lhs)
 		}
 		if !lhs.IsAssignableFrom(rhs) {
 			return errors.Errorf("%s: rhs of comparison expression must be assignable to lhs, expected %q got %q", expr.Span(), lhs, rhs)
@@ -2003,6 +2003,21 @@ func (tc *typeChecker) VisitMatchExpression(expr *ast.MatchExpression, w ast.Wal
 				return err
 			}
 			patternType = tc.typeInfo.MustLookup(&pattern.Value)
+			aliasType = patternType
+		case *ast.CharPattern:
+			if err := tc.VisitCharLiteralExpression(&pattern.Value); err != nil {
+				return err
+			}
+			patternType = tc.typeInfo.MustLookup(&pattern.Value)
+			aliasType = patternType
+		case *ast.CharRangePattern:
+			if err := tc.VisitCharLiteralExpression(&pattern.From); err != nil {
+				return err
+			}
+			if err := tc.VisitCharLiteralExpression(&pattern.To); err != nil {
+				return err
+			}
+			patternType = tc.typeInfo.MustLookup(&pattern.From)
 			aliasType = patternType
 		case *ast.WildcardPattern:
 			patternType = exprType

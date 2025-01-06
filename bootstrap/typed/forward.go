@@ -31,7 +31,7 @@ func forwardDeclare(
 	for _, node := range nodes {
 		switch node := node.(type) {
 		case *ast.StructTypeDeclaration:
-			ty := &StructType{typeBase: typeCreator.newTypeBase()}
+			ty := &StructType{implementableTypeBase: typeCreator.newImplementableTypeBase(nil, nil)}
 			if err := declare(node.Name, ty, node); err != nil {
 				return nil, err
 			}

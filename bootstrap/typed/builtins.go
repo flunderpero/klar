@@ -6,6 +6,57 @@ import (
 	"github.com/pkg/errors"
 )
 
+type BuiltIns struct {
+	Str                   *StructType
+	Char                  *CharType
+	Bool                  *BoolType
+	Int                   *Int64Type
+	I64                   *Int64Type
+	I32                   *Int32Type
+	I16                   *Int16Type
+	I8                    *Int8Type
+	U64                   *UInt64Type
+	U32                   *UInt32Type
+	U16                   *UInt16Type
+	U8                    *UInt8Type
+	None                  *NoneType
+	Never                 *NeverType
+	RawPtr                *RawPtr
+	Print                 *FunctionType
+	PrintChar             *FunctionType
+	PrintInt              *FunctionType
+	PrintUInt             *FunctionType
+	PrintBool             *FunctionType
+	InternalMalloc        *FunctionType
+	InternalFree          *FunctionType
+	SizeOf                *FunctionType
+	InternalWritePtr      *FunctionType
+	InternalReadPtr       *FunctionType
+	InternalExit          *FunctionType
+	builtInFunctionIdFrom TypeId
+	builtInFunctionIdTo   TypeId
+}
+
+func (self *BuiltIns) IsBuiltInFunction(ty *FunctionType) bool {
+	return ty.id >= self.builtInFunctionIdFrom && ty.id <= self.builtInFunctionIdTo
+}
+
+func (self *BuiltIns) Functions() []*FunctionType {
+	return []*FunctionType{
+		self.Print,
+		self.PrintChar,
+		self.PrintInt,
+		self.PrintUInt,
+		self.PrintBool,
+		self.InternalMalloc,
+		self.InternalFree,
+		self.SizeOf,
+		self.InternalWritePtr,
+		self.InternalReadPtr,
+		self.InternalExit,
+	}
+}
+
 var builtInSpan = token.Span{File: "<builtin>", Src: &[]byte{}, Start: 0, End: 0}
 
 func declareBuiltIn[T Type](typesScope_ *typeScope, typeInfo *TypeInfo, symbolScope *SymbolScope, name string, ty T) T {
@@ -45,8 +96,9 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		symbolScope,
 		"Str",
 		&StructType{
-			typeBase: typeBase{TypeId(1)},
-			Fields:   []TypeAndName[Type]{{Name: "len_", Type: builtIns.I64}, {Name: "bytes_", Type: builtIns.RawPtr}}})
+			implementableTypeBase: implementableTypeBase{typeBase: typeBase{TypeId(1)}, methods: nil, traits: nil},
+			Fields: []TypeAndName[Type]{{
+				Name: "len_", Type: builtIns.I64}, {Name: "bytes_", Type: builtIns.RawPtr}}})
 	builtIns.Print = declareBuiltIn(
 		tc,
 		typeInfo,

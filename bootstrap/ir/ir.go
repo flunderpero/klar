@@ -1347,7 +1347,7 @@ func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.Walk
 	source := g.lookupRegisterByNode(expr.Target)
 	sourceType := g.lookupType(expr.Target).(*StructType)
 	irSourceType := g.typeInfo.MustLookup(expr.Target).(*typed.StructType)
-	fieldIndex, found := irSourceType.FindFieldIndex(expr.Field, expr.Span())
+	fieldIndex, found := irSourceType.FindFieldIndex(expr.Field)
 	if !found {
 		// Note: After lowering there will be no `ast.MemberExpression` that references a
 		//       method. All of those have been replaced when lowering to plain function calls.
@@ -1407,7 +1407,7 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 		sourceReg := g.symbolTable.mustLookup(stmt.Variable.Ident)
 		structType := g.typeInfo.MustLookup(stmt.Variable).(*typed.StructType)
 		sourceType := g.lookupType(stmt.Variable).(*StructType)
-		fieldIndex, found := structType.FindFieldIndex(ast.MemberExpressionField(*stmt.Field), stmt.Span())
+		fieldIndex, found := structType.FindFieldIndex(ast.MemberExpressionField(*stmt.Field))
 		if !found {
 			structSymbol := g.typeInfo.MustLookupSymbol(structType.Id())
 			return errors.Errorf("field %q not found in struct %q", *stmt.Field, structSymbol.Name)

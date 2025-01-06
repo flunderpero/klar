@@ -100,10 +100,6 @@ func (self *tupleLowering) replaceTupleTypeWithStructType(ty typed.Type) typed.T
 			field.Type = self.replaceTupleTypeWithStructType(field.Type)
 			tyKind.Fields[i] = field
 		}
-		for i, method := range tyKind.Methods {
-			method.Type = self.replaceTupleTypeWithStructType(method.Type).(*typed.FunctionType)
-			tyKind.Methods[i] = method
-		}
 	case *typed.UnionType:
 		self.replaceTupleTypeWithStructTypeSeen[ty.Id()] = ty
 		for _, variant := range tyKind.Variants {

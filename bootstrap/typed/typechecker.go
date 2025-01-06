@@ -32,6 +32,10 @@ func (self *TypeCreator) newTypeBase() typeBase {
 	return typeBase{id: TypeId(self.nextTypeId)}
 }
 
+func (self *TypeCreator) newImplementableTypeBase(methods []*Method, traits []*TraitType) implementableTypeBase {
+	return implementableTypeBase{typeBase: self.newTypeBase(), methods: methods, traits: traits}
+}
+
 func (self *TypeCreator) NewFunctionType(genericBase *FunctionType, typeParams []TypeParam, typeArgs []Type, receiver Type, params []FunctionParam, result Type) *FunctionType {
 	return &FunctionType{
 		typeBase:    self.newTypeBase(),
@@ -54,15 +58,13 @@ func (self *TypeCreator) NewTraitType(genericBase *TraitType, typeParams []TypeP
 	}
 }
 
-func (self *TypeCreator) NewStructType(genericBase *StructType, typeParams []TypeParam, typeArgs []Type, fields []TypeAndName[Type], methods []TypeAndName[*FunctionType], traits []*TraitType) *StructType {
+func (self *TypeCreator) NewStructType(genericBase *StructType, typeParams []TypeParam, typeArgs []Type, fields []TypeAndName[Type], methods []*Method, traits []*TraitType) *StructType {
 	return &StructType{
-		typeBase:    self.newTypeBase(),
-		genericBase: genericBase,
-		typeParams:  typeParams,
-		typeArgs:    typeArgs,
-		Fields:      fields,
-		Methods:     methods,
-		traits:      traits,
+		implementableTypeBase: self.newImplementableTypeBase(methods, traits),
+		genericBase:           genericBase,
+		typeParams:            typeParams,
+		typeArgs:              typeArgs,
+		Fields:                fields,
 	}
 }
 
@@ -86,6 +88,57 @@ type TypeWithTraits interface {
 	Traits() []*TraitType
 }
 
+type Method = TypeAndName[*FunctionType]
+
+type ImplementableType interface {
+	TypeWithTraits
+	Methods() []*Method
+	FindMethod(name ast.Ident) (*FunctionType, bool)
+	addMethod(name ast.Ident, funcType *FunctionType) bool
+	addTrait(traitType *TraitType) bool
+}
+
+type implementableTypeBase struct {
+	typeBase
+	traits  []*TraitType
+	methods []*Method
+}
+
+func (self implementableTypeBase) Traits() []*TraitType {
+	return self.traits
+}
+
+func (self implementableTypeBase) Methods() []*Method {
+	return self.methods
+}
+
+func (self *implementableTypeBase) addMethod(name ast.Ident, funcType *FunctionType) bool {
+	if _, found := self.FindMethod(name); found {
+		return false
+	}
+	self.methods = append(self.methods, &Method{Name: name, Type: funcType})
+	return true
+}
+
+func (self *implementableTypeBase) addTrait(traitType *TraitType) bool {
+	for _, trait := range self.traits {
+		if trait.Id() == traitType.Id() {
+			return false
+		}
+	}
+	self.traits = append(self.traits, traitType)
+	return true
+}
+
+func (self implementableTypeBase) FindMethod(name ast.Ident) (*FunctionType, bool) {
+	for _, method := range self.methods {
+		if method.Name == name {
+			return method.Type, true
+		}
+	}
+	return nil, false
+}
+
 type CallableType interface {
 	Type
 	CallParams() []TypeAndName[Type]
@@ -105,7 +158,7 @@ func (ty typeBase) IsAssignableFrom(other Type) bool {
 }
 
 type CharType struct {
-	traits []*TraitType
+	implementableTypeBase
 }
 
 func (ty CharType) Id() TypeId {
@@ -120,12 +173,8 @@ func (ty CharType) String() string {
 	return "CharType"
 }
 
-func (ty *CharType) Traits() []*TraitType {
-	return ty.traits
-}
-
 type BoolType struct {
-	traits []*TraitType
+	implementableTypeBase
 }
 
 func (ty BoolType) Id() TypeId {
@@ -134,10 +183,6 @@ func (ty BoolType) Id() TypeId {
 
 func (ty BoolType) IsAssignableFrom(other Type) bool {
 	return ty.Id() == other.Id()
-}
-
-func (ty *BoolType) Traits() []*TraitType {
-	return ty.traits
 }
 
 func (ty BoolType) String() string {
@@ -150,7 +195,7 @@ type IntType interface {
 }
 
 type Int8Type struct {
-	traits []*TraitType
+	implementableTypeBase
 }
 
 func (ty Int8Type) IsSigned() bool {
@@ -169,16 +214,12 @@ func (ty Int8Type) IsAssignableFrom(other Type) bool {
 	return other.Id() == Int8Type{}.Id()
 }
 
-func (ty *Int8Type) Traits() []*TraitType {
-	return ty.traits
-}
-
 func (ty Int8Type) String() string {
 	return "Int8Type"
 }
 
 type Int16Type struct {
-	traits []*TraitType
+	implementableTypeBase
 }
 
 func (ty Int16Type) IsSigned() bool {
@@ -197,16 +238,12 @@ func (ty Int16Type) IsAssignableFrom(other Type) bool {
 	return other.Id() == Int16Type{}.Id() || other.Id() == Int8Type{}.Id() || other.Id() == UInt8Type{}.Id()
 }
 
-func (ty *Int16Type) Traits() []*TraitType {
-	return ty.traits
-}
-
 func (ty Int16Type) String() string {
 	return "Int16Type"
 }
 
 type Int32Type struct {
-	traits []*TraitType
+	implementableTypeBase
 }
 
 func (ty Int32Type) IsSigned() bool {
@@ -225,16 +262,12 @@ func (ty Int32Type) IsAssignableFrom(other Type) bool {
 	return other.Id() == Int32Type{}.Id() || other.Id() == Int16Type{}.Id() || other.Id() == Int8Type{}.Id() || other.Id() == UInt8Type{}.Id() || other.Id() == UInt16Type{}.Id()
 }
 
-func (ty *Int32Type) Traits() []*TraitType {
-	return ty.traits
-}
-
 func (ty Int32Type) String() string {
 	return "Int32Type"
 }
 
 type Int64Type struct {
-	traits []*TraitType
+	implementableTypeBase
 }
 
 func (ty Int64Type) IsSigned() bool {
@@ -253,16 +286,12 @@ func (ty Int64Type) IsAssignableFrom(other Type) bool {
 	return other.Id() == Int64Type{}.Id() || other.Id() == Int32Type{}.Id() || other.Id() == Int16Type{}.Id() || other.Id() == Int8Type{}.Id() || other.Id() == UInt8Type{}.Id() || other.Id() == UInt16Type{}.Id() || other.Id() == UInt32Type{}.Id()
 }
 
-func (ty *Int64Type) Traits() []*TraitType {
-	return ty.traits
-}
-
 func (ty Int64Type) String() string {
 	return "Int64Type"
 }
 
 type UInt8Type struct {
-	traits []*TraitType
+	implementableTypeBase
 }
 
 func (ty UInt8Type) IsSigned() bool {
@@ -281,16 +310,12 @@ func (ty UInt8Type) IsAssignableFrom(other Type) bool {
 	return other.Id() == UInt8Type{}.Id()
 }
 
-func (ty *UInt8Type) Traits() []*TraitType {
-	return ty.traits
-}
-
 func (ty UInt8Type) String() string {
 	return "UInt8Type"
 }
 
 type UInt16Type struct {
-	traits []*TraitType
+	implementableTypeBase
 }
 
 func (ty UInt16Type) IsSigned() bool {
@@ -309,16 +334,12 @@ func (ty UInt16Type) IsAssignableFrom(other Type) bool {
 	return other.Id() == UInt16Type{}.Id() || other.Id() == UInt8Type{}.Id()
 }
 
-func (ty *UInt16Type) Traits() []*TraitType {
-	return ty.traits
-}
-
 func (ty UInt16Type) String() string {
 	return "UInt16Type"
 }
 
 type UInt32Type struct {
-	traits []*TraitType
+	implementableTypeBase
 }
 
 func (ty UInt32Type) IsSigned() bool {
@@ -337,16 +358,12 @@ func (ty UInt32Type) IsAssignableFrom(other Type) bool {
 	return other.Id() == UInt32Type{}.Id() || other.Id() == UInt16Type{}.Id() || other.Id() == UInt8Type{}.Id()
 }
 
-func (ty *UInt32Type) Traits() []*TraitType {
-	return ty.traits
-}
-
 func (ty UInt32Type) String() string {
 	return "UInt32Type"
 }
 
 type UInt64Type struct {
-	traits []*TraitType
+	implementableTypeBase
 }
 
 func (ty UInt64Type) IsSigned() bool {
@@ -363,10 +380,6 @@ func (ty UInt64Type) Id() TypeId {
 
 func (ty UInt64Type) IsAssignableFrom(other Type) bool {
 	return other.Id() == UInt64Type{}.Id() || other.Id() == UInt32Type{}.Id() || other.Id() == UInt16Type{}.Id() || other.Id() == UInt8Type{}.Id()
-}
-
-func (ty *UInt64Type) Traits() []*TraitType {
-	return ty.traits
 }
 
 func (ty UInt64Type) String() string {
@@ -687,17 +700,11 @@ func (self UnionType) IsAssignableFrom(other Type) bool {
 }
 
 type StructType struct {
-	typeBase
+	implementableTypeBase
 	genericBase *StructType
 	typeParams  []TypeParam
 	typeArgs    []Type
 	Fields      []TypeAndName[Type]
-	Methods     []TypeAndName[*FunctionType]
-	traits      []*TraitType
-}
-
-func (ty StructType) Traits() []*TraitType {
-	return ty.traits
 }
 
 func (ty StructType) String() string {
@@ -722,11 +729,11 @@ func (ty StructType) String() string {
 		base.IndentString(typeParamsString(ty.typeParams), 1),
 		base.IndentString(typeArgsString(ty.typeArgs), 1),
 		base.IndentStringSlice(fields, 2),
-		base.IndentSlice(ty.Methods, 2),
+		base.IndentSlice(ty.Methods(), 2),
 	)
 }
 
-func (ty StructType) FindFieldIndex(name ast.MemberExpressionField, span token.Span) (int, bool) {
+func (ty StructType) FindFieldIndex(name ast.MemberExpressionField) (int, bool) {
 	fieldIndex := slices.IndexFunc(ty.Fields, func(field TypeAndName[Type]) bool { return string(field.Name) == string(name) })
 	if fieldIndex < 0 {
 		return -1, false
@@ -734,36 +741,37 @@ func (ty StructType) FindFieldIndex(name ast.MemberExpressionField, span token.S
 	return fieldIndex, true
 }
 
-func (ty StructType) FindField(name ast.MemberExpressionField, span token.Span) (*TypeAndName[Type], bool) {
-	fieldIndex, found := ty.FindFieldIndex(name, span)
+func (ty StructType) FindField(name ast.MemberExpressionField) (*TypeAndName[Type], bool) {
+	fieldIndex, found := ty.FindFieldIndex(name)
 	if !found {
 		return nil, false
 	}
 	return &ty.Fields[fieldIndex], true
 }
 
-func (ty StructType) FindMethod(name ast.Ident, span token.Span) (*FunctionType, bool) {
-	for _, method := range ty.Methods {
-		if method.Name == name {
-			return method.Type, true
-		}
-	}
-	return nil, false
-}
-
 func (ty StructType) FindMember(name ast.MemberExpressionField, span token.Span) (Type, bool) {
-	field, found := ty.FindField(name, span)
+	field, found := ty.FindField(name)
 	if found {
 		return field.Type, true
 	}
 	if name.IsIndex() {
 		return nil, false
 	}
-	method, found := ty.FindMethod(name.AsIdent(), span)
+	method, found := ty.FindMethod(name.AsIdent())
 	if found {
 		return method, true
 	}
 	return nil, false
+}
+
+func (ty *StructType) addMethod(name ast.Ident, funcType *FunctionType) bool {
+	if _, found := ty.FindMethod(name); found {
+		return false
+	}
+	if _, found := ty.FindField(ast.MemberExpressionField(name)); found {
+		return false
+	}
+	return ty.implementableTypeBase.addMethod(name, funcType)
 }
 
 func (ty StructType) CallParams() []FunctionParam {
@@ -911,10 +919,13 @@ func (ty FunctionType) IsStaticMethod() bool {
 
 func (ty FunctionType) CheckSameSignatureIgnoringReceiverTypes(other *FunctionType, span token.Span) error {
 	match := func(thisType Type, otherType Type) bool {
-		if otherType == other.Receiver {
-			return thisType == ty.Receiver
+		if thisType.Id() == otherType.Id() {
+			return true
 		}
-		return thisType == otherType
+		if otherType.Id() == other.Receiver.Id() {
+			return thisType.Id() == ty.Receiver.Id()
+		}
+		return false
 	}
 	if len(ty.Params) != len(other.Params) {
 		return errors.Errorf("%s: parameter count does not match: %d != %d", span, len(ty.Params), len(other.Params))
@@ -1136,57 +1147,6 @@ func newSymbolScope(node ast.Node, parent *SymbolScope) *SymbolScope {
 		parent.Children = append(parent.Children, scope)
 	}
 	return scope
-}
-
-type BuiltIns struct {
-	Str                   *StructType
-	Char                  *CharType
-	Bool                  *BoolType
-	Int                   *Int64Type
-	I64                   *Int64Type
-	I32                   *Int32Type
-	I16                   *Int16Type
-	I8                    *Int8Type
-	U64                   *UInt64Type
-	U32                   *UInt32Type
-	U16                   *UInt16Type
-	U8                    *UInt8Type
-	None                  *NoneType
-	Never                 *NeverType
-	RawPtr                *RawPtr
-	Print                 *FunctionType
-	PrintChar             *FunctionType
-	PrintInt              *FunctionType
-	PrintUInt             *FunctionType
-	PrintBool             *FunctionType
-	InternalMalloc        *FunctionType
-	InternalFree          *FunctionType
-	SizeOf                *FunctionType
-	InternalWritePtr      *FunctionType
-	InternalReadPtr       *FunctionType
-	InternalExit          *FunctionType
-	builtInFunctionIdFrom TypeId
-	builtInFunctionIdTo   TypeId
-}
-
-func (self *BuiltIns) IsBuiltInFunction(ty *FunctionType) bool {
-	return ty.id >= self.builtInFunctionIdFrom && ty.id <= self.builtInFunctionIdTo
-}
-
-func (self *BuiltIns) Functions() []*FunctionType {
-	return []*FunctionType{
-		self.Print,
-		self.PrintChar,
-		self.PrintInt,
-		self.PrintUInt,
-		self.PrintBool,
-		self.InternalMalloc,
-		self.InternalFree,
-		self.SizeOf,
-		self.InternalWritePtr,
-		self.InternalReadPtr,
-		self.InternalExit,
-	}
 }
 
 type TypeInfo struct {
@@ -1849,6 +1809,13 @@ func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.W
 				return errors.Errorf("%s: member %q not found in struct type %q", expr.Span(), expr.Field, structSymbol.Name)
 			}
 			memberType = memberType_
+		case ImplementableType:
+			method, found := ty.FindMethod(expr.Field.AsIdent())
+			if !found {
+				symbol := tc.typeInfo.MustLookupSymbol(ty.Id())
+				return errors.Errorf("%s: method %q not found in implementable type %q", expr.Span(), expr.Field, symbol.Name)
+			}
+			memberType = method
 		case *UnionType:
 			variant, found := ty.FindNamedVariant(expr.Field.AsIdent())
 			if !found {
@@ -2282,13 +2249,13 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 
 func (tc *typeChecker) checkImplDefinitionDeclaration(forwardImpl *forwardImplDef, w ast.Walker) error {
 	impl := forwardImpl.implDef
-	structType_, found := tc.typeScope.lookupType(string(impl.Target))
+	targetType_, found := tc.typeScope.lookupType(string(impl.Target))
 	if !found {
 		return errors.Errorf("%s: type %q not found for impl definition", impl.Span(), impl.Target)
 	}
-	structType, ok := structType_.(*StructType)
+	targetType, ok := targetType_.(ImplementableType)
 	if !ok {
-		return errors.Errorf("%s: type %q is not a struct type", impl.Span(), structType_)
+		return errors.Errorf("%s: type %q is not a implementable type", impl.Span(), targetType_)
 	}
 	tc.enterScope(impl)
 	defer tc.exitScope()
@@ -2303,10 +2270,10 @@ func (tc *typeChecker) checkImplDefinitionDeclaration(forwardImpl *forwardImplDe
 			return errors.Errorf("%s: type %q is not a trait type", impl.Span(), traitType_)
 		}
 	}
-	if HasTypeParams(structType) {
+	if genericType, ok := targetType.(GenericType); ok && HasTypeParams(genericType) {
 		tc.enterGenericScope()
 		defer tc.exitGenericScope()
-		for _, typeParam := range structType.typeParams {
+		for _, typeParam := range genericType.TypeParams() {
 			if err := tc.genericScope.declareTypeParam(typeParam.Name.String(), &typeParam, impl.Span()); err != nil {
 				return err
 			}
@@ -2320,7 +2287,7 @@ func (tc *typeChecker) checkImplDefinitionDeclaration(forwardImpl *forwardImplDe
 		}
 		traitType = traitType_.(*TraitType)
 	}
-	if err := tc.typeScope.declareType("Self", structType, impl.Span()); err != nil {
+	if err := tc.typeScope.declareType("Self", targetType, impl.Span()); err != nil {
 		return err
 	}
 	forwardDecls, err := tc.forwardDeclare(impl.Methods)
@@ -2339,22 +2306,12 @@ func (tc *typeChecker) checkImplDefinitionDeclaration(forwardImpl *forwardImplDe
 	}
 	for _, method := range impl.Methods {
 		decl := method.Decl
-		if _, found := structType.FindField(ast.MemberExpressionField(decl.Name), decl.Span()); found {
-			structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
-			return errors.Errorf(
-				"%s: method name %q already used in struct type %q", decl.Span(), decl.Name, structSymbol.Name)
-		}
-		if _, found := structType.FindMethod(decl.Name, decl.Span()); found {
-			structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
-			return errors.Errorf(
-				"%s: method name %q already used in struct type %q", decl.Span(), decl.Name, structSymbol.Name)
-		}
 		typeDecl := tc.typeInfo.MustLookupDeclaredType(method)
 		methodType, ok := typeDecl.Type.(*FunctionType)
 		if !ok {
 			return errors.Errorf("%s: type is not a function type: %s", method.Span(), typeDecl)
 		}
-		methodType.Receiver = structType
+		methodType.Receiver = targetType
 		if traitType != nil {
 			traitMethodType, ok := traitType.FindMethod(decl.Name, decl.Span())
 			if !ok {
@@ -2362,7 +2319,7 @@ func (tc *typeChecker) checkImplDefinitionDeclaration(forwardImpl *forwardImplDe
 				return errors.Errorf("%s: method %q not found in trait %q", decl.Span(), decl.Name, traitSymbol.Name)
 			}
 			if err := traitMethodType.CheckSameSignatureIgnoringReceiverTypes(methodType, decl.Span()); err != nil {
-				structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
+				structSymbol := tc.typeInfo.MustLookupSymbol(targetType.Id())
 				traitSymbol := tc.typeInfo.MustLookupSymbol(traitType.Id())
 				return errors.Wrapf(
 					err,
@@ -2375,14 +2332,18 @@ func (tc *typeChecker) checkImplDefinitionDeclaration(forwardImpl *forwardImplDe
 			}
 			delete(unimplementedTraitMethods, decl.Name)
 		}
-		structType.Methods = append(structType.Methods, TypeAndName[*FunctionType]{Name: decl.Name, Type: methodType})
+		if !targetType.addMethod(decl.Name, methodType) {
+			targetSymbol := tc.typeInfo.MustLookupSymbol(targetType.Id())
+			return errors.Errorf(
+				"%s: name %q already exists in type %q", decl.Span(), decl.Name, targetSymbol.Name)
+		}
 	}
 	if traitType != nil && len(unimplementedTraitMethods) > 0 {
 		missingTraitMethods := []string{}
 		for _, method := range unimplementedTraitMethods {
 			missingTraitMethods = append(missingTraitMethods, method.String())
 		}
-		structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
+		structSymbol := tc.typeInfo.MustLookupSymbol(targetType.Id())
 		traitSymbol := tc.typeInfo.MustLookupSymbol(traitType.Id())
 		return errors.Errorf(
 			"%s: impl %q does not implement all methods of trait %q: %s",
@@ -2393,7 +2354,11 @@ func (tc *typeChecker) checkImplDefinitionDeclaration(forwardImpl *forwardImplDe
 		)
 	}
 	if traitType != nil {
-		structType.traits = append(structType.traits, traitType)
+		if !targetType.addTrait(traitType) {
+			targetSymbol := tc.typeInfo.MustLookupSymbol(targetType.Id())
+			return errors.Errorf(
+				"%s: trait %q already implemented for type %q", impl.Span(), traitType, targetSymbol.Name)
+		}
 	}
 	return nil
 }
@@ -2457,7 +2422,7 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 		if !ok {
 			return errors.Errorf("%s: variable %q is not a struct type", s.Span(), s.Variable.Ident)
 		}
-		field, found := structType.FindField(ast.MemberExpressionField(*s.Field), s.Span())
+		field, found := structType.FindField(ast.MemberExpressionField(*s.Field))
 		if !found {
 			structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
 			return errors.Errorf("%s: field %q not found in struct type %q", s.Span(), s.Field, structSymbol.Name)

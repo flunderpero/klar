@@ -136,7 +136,7 @@ func (self *mono) resolve(node ast.Node) typed.Type {
 			if structType == nil {
 				panic(fmt.Sprintf("struct type not found for trait bound type param: %s", traitBoundTypeParam))
 			}
-			ty, ok = structType.FindMethod(*funcName, node.Span())
+			ty, ok = structType.FindMethod(*funcName)
 			if !ok {
 				panic(fmt.Sprintf("method %q not found in struct: %s", funcName, structType))
 			}

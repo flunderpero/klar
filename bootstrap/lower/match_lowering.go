@@ -104,7 +104,7 @@ func (self *matchLowering) buildPatternCondition(
 		return self.nodeCreator.NewBinaryExpression(matchedValueExpr, ast.OpEqual, &pattern.Value, pattern.Span())
 	case *ast.StrPattern:
 		strType := self.typeInfo.BuiltIns.Str
-		eqFunc, ok := strType.FindMethod("eq", pattern.Span())
+		eqFunc, ok := strType.FindMethod("eq")
 		if !ok {
 			panic("eq method not found in Str type")
 		}

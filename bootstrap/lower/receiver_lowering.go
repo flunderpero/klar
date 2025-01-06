@@ -53,15 +53,12 @@ func (self *receiverLowering) mergeReceiverGenericsIntoFunction(funcType *typed.
 
 func (self *receiverLowering) mergeMethodMemberExpression(expr *ast.MemberExpression, funcType *typed.FunctionType) *ast.IdentExpression {
 	receiver := expr.Target
-	receiverType_ := self.typeInfo.MustLookup(receiver)
-	var receiverType typed.GenericType
-	if typeParam, ok := receiverType_.(*typed.TypeParam); ok {
+	receiverType := self.typeInfo.MustLookup(receiver)
+	if typeParam, ok := receiverType.(*typed.TypeParam); ok {
 		receiverType = typeParam.TraitBound
-	} else {
-		receiverType = receiverType_.(typed.GenericType)
 	}
-	if typed.HasTypeParams(receiverType) {
-		funcType = self.mergeReceiverGenericsIntoFunction(funcType, receiverType)
+	if genericType, ok := receiverType.(typed.GenericType); ok && typed.HasTypeParams(genericType) {
+		funcType = self.mergeReceiverGenericsIntoFunction(funcType, genericType)
 	}
 	res := self.convertToTypeIdIdentExpression(expr, funcType)
 	if typeParam, ok := self.typeInfo.LookupTraitBoundTypeParam(expr); ok {

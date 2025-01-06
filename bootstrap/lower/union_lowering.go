@@ -245,10 +245,6 @@ func (self *unionLoweringStage2) replaceUnionTypeWithStructType(ty typed.Type) t
 			field.Type = self.replaceUnionTypeWithStructType(field.Type)
 			tyKind.Fields[i] = field
 		}
-		for i, method := range tyKind.Methods {
-			method.Type = self.replaceUnionTypeWithStructType(method.Type).(*typed.FunctionType)
-			tyKind.Methods[i] = method
-		}
 	case *typed.NamedUnionVariant, *typed.NamedUnionVariantConstructor:
 		ty = self.unionStructType
 		self.replaceUnionTypeWithStructTypeSeen[ty.Id()] = ty

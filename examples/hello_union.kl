@@ -39,6 +39,12 @@ fn return_named_union(cond Bool) StrIntBoolColor {
     x
 }
 
+struct Printer {}
+
+impl Printer {
+    fn print_union(v StrIntBoolColor) => print_union_value(v)
+}
+
 fn main() {
     let str StrIntBoolColor = "Hello"
     let int StrIntBoolColor = 42
@@ -53,7 +59,7 @@ fn main() {
     print_union_value("Str param")
     print_union_value(1)
     print_union_value(false)
-    print_union_value(StrIntBoolColor.Green)
+    Printer.print_union(StrIntBoolColor.Green)
     let x = anonymous_union(true)
     match x {
         case Str => print("PASS: Str")

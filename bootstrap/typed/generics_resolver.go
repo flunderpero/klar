@@ -173,7 +173,7 @@ func willResolve(ty Type, typeParams []TypeParam, seen map[TypeId]bool) bool {
 				return true
 			}
 		}
-		for _, method := range ty.Methods {
+		for _, method := range ty.methods {
 			if willResolve(method.Type, typeParams, seen) {
 				return true
 			}
@@ -242,7 +242,7 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 				ty.typeParams,
 				genericTypeArgs,
 				make([]TypeAndName[Type], len(ty.Fields)),
-				make([]TypeAndName[*FunctionType], len(ty.Methods)),
+				make([]*Method, len(ty.methods)),
 				ty.traits,
 			)
 			self.resolvedStructTypes = append(self.resolvedStructTypes, res)
@@ -251,10 +251,10 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 				field.Type = self.ResolveTypeArgs(field.Type, typeParams, typeArgs)
 				res.Fields[i] = field
 			}
-			for i, method := range ty.Methods {
-				method := method // Make a copy.
+			for i, method := range ty.methods {
+				method := *method // Make a copy.
 				method.Type = self.ResolveTypeArgs(method.Type, typeParams, typeArgs).(*FunctionType)
-				res.Methods[i] = method
+				res.methods[i] = &method
 			}
 			self.declareSymbolForSpecializedType(res)
 			return res

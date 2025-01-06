@@ -34,7 +34,7 @@ func Lower(
 			{Type: &typed.Int64Type{}, Name: "tag"},
 			{Type: &typed.RawPtr{}, Name: "data"},
 		},
-		[]typed.TypeAndName[*typed.FunctionType]{},
+		[]*typed.Method{},
 		[]*typed.TraitType{})
 	// Note: The order of passes is important.
 	module = ReceiverLowering(module, typeInfo, genericsResolver, nodeCreator)

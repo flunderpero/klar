@@ -99,3 +99,5 @@ ptr
 concat
 func
 Param
+builtins
+memoized

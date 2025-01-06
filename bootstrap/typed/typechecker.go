@@ -1302,6 +1302,12 @@ const (
 	insideTraitOrImplMode checkingMode = 1
 )
 
+type memoizedScopes struct {
+	genericScope *genericScope
+	typeScope    *typeScope
+	symbolScope  *SymbolScope
+}
+
 type typeChecker struct {
 	ast.DefaultVisitor
 	typeInfo          *TypeInfo
@@ -1315,6 +1321,7 @@ type typeChecker struct {
 	typeCreator       *TypeCreator
 	contextualType    Type
 	anonUnionTypes    map[string]*UnionType
+	memoizedScopes    map[ast.NodeId]*memoizedScopes
 }
 
 func (tc *typeChecker) newTypeBase() typeBase {
@@ -1348,6 +1355,35 @@ func (tc *typeChecker) exitInferGenericScope() {
 	tc.inferGenericScope = tc.inferGenericScope.parent
 }
 
+func (tc *typeChecker) memoizeScopes(node ast.Node) {
+	if _, ok := tc.memoizedScopes[node.Id()]; ok {
+		panic(fmt.Sprintf("scopes already memoized for node #%d", node.Id()))
+	}
+	tc.memoizedScopes[node.Id()] = &memoizedScopes{
+		genericScope: tc.genericScope,
+		typeScope:    tc.typeScope,
+		symbolScope:  tc.symbolScope,
+	}
+}
+
+func (tc *typeChecker) useMemoizedScopes(node ast.Node) func() {
+	memoizedScopes, ok := tc.memoizedScopes[node.Id()]
+	if !ok {
+		panic(fmt.Sprintf("scopes not memoized for node #%d", node.Id()))
+	}
+	oldGenericScope := tc.genericScope
+	oldTypeScope := tc.typeScope
+	oldSymbolScope := tc.symbolScope
+	tc.genericScope = memoizedScopes.genericScope
+	tc.typeScope = memoizedScopes.typeScope
+	tc.symbolScope = memoizedScopes.symbolScope
+	return func() {
+		tc.genericScope = oldGenericScope
+		tc.typeScope = oldTypeScope
+		tc.symbolScope = oldSymbolScope
+	}
+}
+
 func (tc *typeChecker) enterLoop() {
 	tc.loopDepth += 1
 }
@@ -1371,13 +1407,17 @@ func (tc *typeChecker) exitCheckingMode() {
 }
 
 func (tc *typeChecker) declareSymbol(key IsId, name string) {
+	declareSymbol(key, name, tc.symbolScope, tc.typeInfo)
+}
+
+func declareSymbol(key IsId, name string, symbolScope *SymbolScope, typeInfo *TypeInfo) {
 	keyString := key.String()
-	symbol := &Symbol{Name: name, Scope: tc.symbolScope}
-	if _, found := tc.symbolScope.Symbols[keyString]; found {
+	symbol := &Symbol{Name: name, Scope: symbolScope}
+	if _, found := symbolScope.Symbols[keyString]; found {
 		panic(fmt.Sprintf("symbol already declared: %q", symbol.Name))
 	}
-	tc.symbolScope.Symbols[keyString] = symbol
-	tc.typeInfo.DeclareSymbol(key, symbol)
+	symbolScope.Symbols[keyString] = symbol
+	typeInfo.DeclareSymbol(key, symbol)
 }
 
 func (tc *typeChecker) findOrSetAnonUnionType(ty *UnionType) *UnionType {
@@ -2105,7 +2145,11 @@ func (tc *typeChecker) resolveFunctionParamsAndResult(
 }
 
 func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) error {
-	funcType := &FunctionType{typeBase: tc.newTypeBase()}
+	return nil
+}
+
+func (tc *typeChecker) checkFunctionDeclaration(decl *ast.FunctionDeclaration) error {
+	funcType := tc.typeInfo.MustLookup(decl).(*DeclaredType).Type.(*FunctionType)
 	typeParams, err := tc.resolveTypeParams(funcType, decl.TypeParams)
 	if err != nil {
 		return err
@@ -2118,7 +2162,6 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 	for i, typeParam := range typeParams {
 		funcType.typeArgs[i] = typeParam
 	}
-	tc.declareSymbol(funcType.Id(), decl.Name.String())
 	params, result, err := tc.resolveFunctionParamsAndResult(decl.Params, decl.Result)
 	if err != nil {
 		return err
@@ -2138,23 +2181,28 @@ func (tc *typeChecker) VisitFunctionDeclaration(decl *ast.FunctionDeclaration) e
 		if decl.Name == "panic" {
 			tc.typeInfo.Panic = funcType
 		}
-		if err := tc.typeScope.declareType(string(decl.Name), funcType, decl.Span()); err != nil {
-			return err
-		}
 	}
-	tc.typeInfo.Set(decl, &DeclaredType{Type: funcType})
 	return nil
 }
 
 func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast.Walker) error {
+	return nil
+}
+
+func (tc *typeChecker) checkFunctionDefinitionDeclaration(fn *ast.FunctionDefinition) error {
 	tc.enterGenericScope()
 	defer tc.exitGenericScope()
-	if err := tc.VisitFunctionDeclaration(fn.Decl); err != nil {
+	tc.memoizeScopes(fn)
+	if err := tc.checkFunctionDeclaration(fn.Decl); err != nil {
 		return err
 	}
-	declaredType := tc.typeInfo.MustLookup(fn.Decl).(*DeclaredType)
+	return nil
+}
+
+func (tc *typeChecker) checkFunctionDefinitionBody(fn *ast.FunctionDefinition, w ast.Walker) error {
+	declaredType := tc.typeInfo.MustLookup(fn).(*DeclaredType)
 	functionType := declaredType.Type.(*FunctionType)
-	tc.typeInfo.Set(fn, declaredType)
+	defer tc.useMemoizedScopes(fn)()
 	tc.enterScope(fn)
 	defer tc.exitScope()
 	params := functionType.Params
@@ -2172,11 +2220,11 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 }
 
 func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.Walker) error {
-	// We need to forward declare the trait type so that we can set the `Self` type correctly.
-	traitType := &TraitType{typeBase: tc.newTypeBase()}
-	if err := tc.typeScope.declareType(string(trait.Name), traitType, trait.Span()); err != nil {
-		return err
-	}
+	return nil
+}
+
+func (tc *typeChecker) checkTraitDeclaration(trait *ast.TraitDeclaration, w ast.Walker) error {
+	traitType := tc.typeInfo.MustLookup(trait).(*DeclaredType).Type.(*TraitType)
 	tc.enterScope(trait)
 	defer tc.exitScope()
 	tc.enterGenericScope()
@@ -2191,9 +2239,13 @@ func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.
 	}
 	tc.enterCheckingMode(insideTraitOrImplMode)
 	defer tc.exitCheckingMode()
-	for _, decl := range trait.MethodDecls {
+	decls, err := tc.forwardDeclare(trait.MethodDecls)
+	if err != nil {
+		return err
+	}
+	for _, decl := range decls.funcDecls {
 		tc.enterGenericScope()
-		err := tc.VisitFunctionDeclaration(decl)
+		err := tc.checkFunctionDeclaration(decl)
 		if err != nil {
 			tc.exitGenericScope()
 			return err
@@ -2206,12 +2258,15 @@ func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.
 		methodAndName := TypeAndName[*FunctionType]{Name: methodDecl.Name, Type: methodType}
 		traitType.Methods = append(traitType.Methods, methodAndName)
 	}
-	tc.declareSymbol(traitType.Id(), trait.Name.String())
-	tc.typeInfo.Set(trait, traitType)
 	return nil
 }
 
 func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walker) error {
+	return nil
+}
+
+func (tc *typeChecker) checkImplDefinitionDeclaration(forwardImpl *forwardImplDef, w ast.Walker) error {
+	impl := forwardImpl.implDef
 	structType_, found := tc.typeScope.lookupType(string(impl.Target))
 	if !found {
 		return errors.Errorf("%s: type %q not found for impl definition", impl.Span(), impl.Target)
@@ -2242,6 +2297,7 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 			}
 		}
 	}
+	tc.memoizeScopes(impl)
 	if traitType != nil && HasTypeParams(traitType) {
 		traitType_, err := tc.resolveGenericType(traitType, impl.TraitTypeArgs, impl.Span())
 		if err != nil {
@@ -2252,9 +2308,12 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 	if err := tc.typeScope.declareType("Self", structType, impl.Span()); err != nil {
 		return err
 	}
-	tc.enterCheckingMode(insideTraitOrImplMode)
-	defer tc.exitCheckingMode()
-	if err := w.WalkImplDefinition(impl); err != nil {
+	forwardDecls, err := tc.forwardDeclare(impl.Methods)
+	if err != nil {
+		return err
+	}
+	forwardImpl.forwardDecls = forwardDecls
+	if err := tc.checkForwardDeclsStage1(forwardDecls, w); err != nil {
 		return err
 	}
 	unimplementedTraitMethods := map[ast.Ident]*TypeAndName[*FunctionType]{}
@@ -2302,7 +2361,6 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 			delete(unimplementedTraitMethods, decl.Name)
 		}
 		structType.Methods = append(structType.Methods, TypeAndName[*FunctionType]{Name: decl.Name, Type: methodType})
-		tc.typeInfo.Set(method, &DeclaredType{Type: methodType})
 	}
 	if traitType != nil && len(unimplementedTraitMethods) > 0 {
 		missingTraitMethods := []string{}
@@ -2322,8 +2380,12 @@ func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walke
 	if traitType != nil {
 		structType.traits = append(structType.traits, traitType)
 	}
-	tc.typeInfo.Set(impl, &ImplType{typeBase: tc.newTypeBase(), ReceiverType: structType})
 	return nil
+}
+
+func (tc *typeChecker) checkImplDefinitionBodies(impl *forwardImplDef, w ast.Walker) error {
+	defer tc.useMemoizedScopes(impl.implDef)()
+	return tc.checkForwardDeclsStage2(impl.forwardDecls, w)
 }
 
 func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.Walker) error {
@@ -2427,9 +2489,13 @@ func (tc *typeChecker) VisitReturnStatement(s *ast.ReturnStatement, w ast.Walker
 }
 
 func (tc *typeChecker) VisitNamedUnionTypeDeclaration(decl *ast.NamedUnionTypeDeclaration) error {
+	return nil
+}
+
+func (tc *typeChecker) checkNamedUnionTypeDeclaration(decl *ast.NamedUnionTypeDeclaration) error {
 	tc.enterGenericScope()
 	defer tc.exitGenericScope()
-	unionType := &UnionType{typeBase: tc.newTypeBase(), IsAnonymous: false}
+	unionType := tc.typeInfo.MustLookup(decl).(*DeclaredType).Type.(*UnionType)
 	variants := make([]UnionVariant, len(decl.UnionType.Variants))
 	for i, astVariant := range decl.UnionType.Variants {
 		var variant UnionVariant
@@ -2478,20 +2544,17 @@ func (tc *typeChecker) VisitNamedUnionTypeDeclaration(decl *ast.NamedUnionTypeDe
 	for i, typeParam := range typeParams {
 		unionType.typeArgs[i] = typeParam
 	}
-	if err := tc.typeScope.declareType(string(decl.Name), unionType, decl.Span()); err != nil {
-		return err
-	}
-	tc.declareSymbol(unionType.Id(), decl.Name.String())
-	tc.typeInfo.Set(decl, &DeclaredType{Type: unionType})
-	tc.enterScope(decl)
-	defer tc.exitScope()
 	return nil
 }
 
 func (tc *typeChecker) VisitStructTypeDeclaration(decl *ast.StructTypeDeclaration) error {
+	return nil
+}
+
+func (tc *typeChecker) checkStructTypeDeclaration(decl *ast.StructTypeDeclaration) error {
 	tc.enterGenericScope()
 	defer tc.exitGenericScope()
-	structType := &StructType{typeBase: tc.newTypeBase()}
+	structType := tc.typeInfo.MustLookup(decl).(*DeclaredType).Type.(*StructType)
 	typeParams, err := tc.resolveTypeParams(structType, decl.TypeParams)
 	if err != nil {
 		return err
@@ -2512,12 +2575,7 @@ func (tc *typeChecker) VisitStructTypeDeclaration(decl *ast.StructTypeDeclaratio
 		}
 		fields = append(fields, TypeAndName[Type]{Name: field.Name, Type: fieldType})
 	}
-	if err := tc.typeScope.declareType(string(decl.Name), structType, decl.Span()); err != nil {
-		return err
-	}
 	structType.Fields = fields
-	tc.declareSymbol(structType.Id(), decl.Name.String())
-	tc.typeInfo.Set(decl, &DeclaredType{Type: structType})
 	return nil
 }
 
@@ -2530,7 +2588,87 @@ func (tc *typeChecker) VisitNode(node ast.Node, w ast.Walker) error {
 
 func (tc *typeChecker) VisitModule(module *ast.Module, w ast.Walker) error {
 	tc.typeInfo.Set(module, tc.typeInfo.BuiltIns.None)
-	return w.WalkModule(module)
+	return tc.forwardDeclareAndCheck(module.Nodes, w)
+}
+
+func (tc *typeChecker) forwardDeclareAndCheck(nodes any, w ast.Walker) error {
+	decls, err := tc.forwardDeclare(nodes)
+	if err != nil {
+		return err
+	}
+	if err := tc.checkForwardDeclsStage1(decls, w); err != nil {
+		return err
+	}
+	return tc.checkForwardDeclsStage2(decls, w)
+}
+
+func (tc *typeChecker) forwardDeclare(nodes any) (*forwardDecls, error) {
+	var n []ast.Node
+	switch nodes := nodes.(type) {
+	case []ast.Node:
+		n = nodes
+	case []*ast.FunctionDeclaration:
+		n = make([]ast.Node, len(nodes))
+		for i, node := range nodes {
+			n[i] = node
+		}
+	case []*ast.FunctionDefinition:
+		n = make([]ast.Node, len(nodes))
+		for i, node := range nodes {
+			n[i] = node
+		}
+	default:
+		panic(fmt.Sprintf("unexpected type %T", nodes))
+	}
+	return forwardDeclare(n, tc.typeCreator, tc.typeInfo, tc.symbolScope, tc.typeScope)
+}
+
+func (tc *typeChecker) checkForwardDeclsStage1(decls *forwardDecls, w ast.Walker) error {
+	for _, decl := range decls.funcDecls {
+		if err := tc.checkFunctionDeclaration(decl); err != nil {
+			return err
+		}
+	}
+	for _, decl := range decls.structDecls {
+		if err := tc.checkStructTypeDeclaration(decl); err != nil {
+			return err
+		}
+	}
+	for _, def := range decls.funcDefs {
+		if err := tc.checkFunctionDefinitionDeclaration(def); err != nil {
+			return err
+		}
+	}
+	for _, decl := range decls.traitDecls {
+		if err := tc.checkTraitDeclaration(decl, w); err != nil {
+			return err
+		}
+	}
+	for _, def := range decls.implDefs {
+		if err := tc.checkImplDefinitionDeclaration(def, w); err != nil {
+			return err
+		}
+	}
+	for _, decl := range decls.namedUnionDecls {
+		if err := tc.checkNamedUnionTypeDeclaration(decl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (tc *typeChecker) checkForwardDeclsStage2(decls *forwardDecls, w ast.Walker) error {
+	for _, def := range decls.funcDefs {
+		if err := tc.checkFunctionDefinitionBody(def, w); err != nil {
+			return err
+		}
+	}
+	for _, def := range decls.implDefs {
+		if err := tc.checkImplDefinitionBodies(def, w); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (tc *typeChecker) check(node ast.Node, w ast.Walker) (Type, error) {
@@ -2543,6 +2681,7 @@ func (tc *typeChecker) check(node ast.Node, w ast.Walker) (Type, error) {
 	}
 	return nodeType, nil
 }
+
 func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *GenericsResolver, error) {
 	typeInfo := &TypeInfo{
 		types:                make(map[ast.NodeId]Type),
@@ -2563,6 +2702,7 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 		inferGenericScope: newInferGenericScope(nil),
 		genericsResolver:  newGenericsResolver(typeInfo, typeCreator),
 		anonUnionTypes:    make(map[string]*UnionType),
+		memoizedScopes:    make(map[ast.NodeId]*memoizedScopes),
 	}
 	walker := &ast.DefaultWalker{Visitor: tc}
 	_, err := tc.check(node, walker)

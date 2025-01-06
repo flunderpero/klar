@@ -1,0 +1,45 @@
+-- expect.stdout {
+-- forward fn, Str
+-- } expect.stdout
+-- expect.exit_code: 0
+
+union ForwardUnion = Str | Color
+
+struct Color {
+    value ForwardUnion
+}
+
+impl PrintIt for Color {
+    fn print_it(self) {
+        print(self.match_it())
+    }
+}
+
+impl Color {
+    fn match_it(self) Str {
+        self.do_match_it()
+    }
+
+    fn do_match_it(self) Str {
+        match self.value {
+            case Str => "Str"
+            case Color => "Color"
+        }
+    }
+}
+
+trait PrintIt {
+    fn print_it(self)
+}
+
+fn main() {
+    forward_fn()
+    print(", ")
+    let v ForwardUnion = "Str"
+    let c = Color(v)
+    c.print_it()
+}
+
+fn forward_fn() {
+    print("forward fn")
+}

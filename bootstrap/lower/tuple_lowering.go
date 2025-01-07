@@ -115,6 +115,9 @@ func (self *tupleLowering) replaceTupleTypeWithStructType(ty typed.Type) typed.T
 	case *typed.NamedUnionVariant:
 		self.replaceTupleTypeWithStructTypeSeen[ty.Id()] = ty
 		tyKind.Type = self.replaceTupleTypeWithStructType(tyKind.Type).(*typed.TupleType)
+	case *typed.ArrayType:
+		self.replaceTupleTypeWithStructTypeSeen[ty.Id()] = ty
+		tyKind.SetElementType(self.replaceTupleTypeWithStructType(tyKind.ElementType()))
 	case *typed.BoolType,
 		*typed.Int64Type,
 		*typed.Int32Type,

@@ -35,6 +35,27 @@ trait ToStr {
 
 -- [[ Basic Types ]]
 
+-- [[ Array ]]
+
+-- The internal structure of the array is:
+--      I64 capacity
+--      I64 len
+--      T.. data
+
+impl InternalArray {
+    fn capacity(self) Int => internal_read_ptr<Int>(internal_cast<InternalArray, RawPtr>(self))
+
+    fn len(self) Int {
+        internal_read_ptr<Int>(internal_cast<InternalArray, RawPtr>(self) + sizeof<I64>())
+    }
+
+    fn get(self, i Int) T {
+        mut ptr = internal_cast<InternalArray, RawPtr>(self)
+        ptr = ptr + 16 + sizeof<T>() * i
+        internal_read_ptr<T>(ptr)
+    } 
+}
+
 -- [[ Str ]]
 
 -- This is the built-in Str declaration:

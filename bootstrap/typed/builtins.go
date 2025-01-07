@@ -22,6 +22,7 @@ type BuiltIns struct {
 	None                  *NoneType
 	Never                 *NeverType
 	RawPtr                *RawPtr
+	InternalArray         *ArrayType
 	InternalPrint         *FunctionType
 	PrintChar             *FunctionType
 	PrintInt              *FunctionType
@@ -86,12 +87,6 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 	builtIns.Never = declareBuiltIn(tc, typeInfo, symbolScope, "Never", &NeverType{})
 	builtIns.None = declareBuiltIn(tc, typeInfo, symbolScope, "None", &NoneType{})
 	builtIns.Int = declareBuiltIn(tc, typeInfo, symbolScope, "Int", builtIns.I64)
-	builtIns.builtInFunctionIdFrom = 100
-	builtIns.builtInFunctionIdTo = builtIns.builtInFunctionIdFrom - 1
-	nextFuncId := func() TypeId {
-		builtIns.builtInFunctionIdTo += 1
-		return builtIns.builtInFunctionIdTo
-	}
 	builtIns.Str = declareBuiltIn(
 		tc,
 		typeInfo,
@@ -101,6 +96,28 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 			implementableTypeBase: implementableTypeBase{typeBase: typeBase{TypeId(1)}, methods: nil, traits: nil},
 			Fields: []TypeAndName[Type]{{
 				Name: "len_", Type: builtIns.I64}, {Name: "bytes_", Type: builtIns.RawPtr}}})
+	builtIns.InternalArray = declareBuiltIn(
+		tc,
+		typeInfo,
+		symbolScope,
+		"InternalArray",
+		&ArrayType{
+			implementableTypeBase: implementableTypeBase{typeBase: typeBase{TypeId(15)}, methods: nil, traits: nil},
+		})
+	internalArrayTypeParam := &TypeParam{
+		typeBase:    typeBase{TypeId(16)},
+		GenericType: builtIns.InternalArray,
+		Name:        ast.Ident("T"),
+		Index:       0,
+	}
+	builtIns.InternalArray.typeParams = []TypeParam{*internalArrayTypeParam}
+	builtIns.InternalArray.typeArgs = []Type{internalArrayTypeParam}
+	builtIns.builtInFunctionIdFrom = 100
+	builtIns.builtInFunctionIdTo = builtIns.builtInFunctionIdFrom - 1
+	nextFuncId := func() TypeId {
+		builtIns.builtInFunctionIdTo += 1
+		return builtIns.builtInFunctionIdTo
+	}
 	builtIns.InternalPrint = declareBuiltIn(
 		tc,
 		typeInfo,

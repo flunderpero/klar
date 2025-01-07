@@ -16,6 +16,7 @@ type Visitor interface {
 	VisitBlockExpression(expr *BlockExpression, w Walker) error
 	VisitCallExpression(expr *CallExpression, w Walker) error
 	VisitMemberExpression(expr *MemberExpression, w Walker) error
+	VisitIndexExpression(expr *IndexExpression, w Walker) error
 	VisitIfExpression(expr *IfExpression, w Walker) error
 	VisitMatchExpression(expr *MatchExpression, w Walker) error
 	VisitBinaryExpression(expr *BinaryExpression, w Walker) error
@@ -28,6 +29,7 @@ type Visitor interface {
 	VisitIntLiteralExpression(expr *IntLiteralExpression) error
 	VisitBoolLiteralExpression(expr *BoolLiteralExpression) error
 	VisitTupleLiteralExpression(expr *TupleLiteralExpression, w Walker) error
+	VisitArrayLiteralExpression(expr *ArrayLiteralExpression, w Walker) error
 	VisitAssignmentStatement(stmt *AssignmentStatement, w Walker) error
 	VisitLoopStatement(stmt *LoopStatement, w Walker) error
 	VisitBreakStatement(stmt *BreakStatement) error
@@ -46,7 +48,9 @@ type Walker interface {
 	WalkBlockExpression(expr *BlockExpression) error
 	WalkCallExpression(expr *CallExpression) error
 	WalkTupleLiteralExpression(expr *TupleLiteralExpression) error
+	WalkArrayLiteralExpression(expr *ArrayLiteralExpression) error
 	WalkMemberExpression(expr *MemberExpression) error
+	WalkIndexExpression(expr *IndexExpression) error
 	WalkIfExpression(expr *IfExpression) error
 	WalkMatchExpression(expr *MatchExpression) error
 	WalkBinaryExpression(expr *BinaryExpression) error
@@ -82,12 +86,20 @@ func (_ *DefaultVisitor) VisitTupleLiteralExpression(expr *TupleLiteralExpressio
 	return w.WalkTupleLiteralExpression(expr)
 }
 
+func (_ *DefaultVisitor) VisitArrayLiteralExpression(expr *ArrayLiteralExpression, w Walker) error {
+	return w.WalkArrayLiteralExpression(expr)
+}
+
 func (_ *DefaultVisitor) VisitCallExpression(expr *CallExpression, w Walker) error {
 	return w.WalkCallExpression(expr)
 }
 
 func (_ *DefaultVisitor) VisitMemberExpression(expr *MemberExpression, w Walker) error {
 	return w.WalkMemberExpression(expr)
+}
+
+func (_ *DefaultVisitor) VisitIndexExpression(expr *IndexExpression, w Walker) error {
+	return w.WalkIndexExpression(expr)
 }
 
 func (_ *DefaultVisitor) VisitIfExpression(expr *IfExpression, w Walker) error {
@@ -195,8 +207,12 @@ func (w *DefaultWalker) WalkExpression(expr Expression) error {
 		err = w.Visitor.VisitCallExpression(expr, w)
 	case *MemberExpression:
 		err = w.Visitor.VisitMemberExpression(expr, w)
+	case *IndexExpression:
+		err = w.Visitor.VisitIndexExpression(expr, w)
 	case *TupleLiteralExpression:
 		err = w.Visitor.VisitTupleLiteralExpression(expr, w)
+	case *ArrayLiteralExpression:
+		err = w.Visitor.VisitArrayLiteralExpression(expr, w)
 	case *IfExpression:
 		err = w.Visitor.VisitIfExpression(expr, w)
 	case *MatchExpression:
@@ -269,7 +285,23 @@ func (w *DefaultWalker) WalkMemberExpression(expr *MemberExpression) error {
 	return w.Visitor.VisitNode(expr.Target, w)
 }
 
+func (w *DefaultWalker) WalkIndexExpression(expr *IndexExpression) error {
+	if err := w.Visitor.VisitNode(expr.Target, w); err != nil {
+		return err
+	}
+	return w.Visitor.VisitNode(expr.Index, w)
+}
+
 func (w *DefaultWalker) WalkTupleLiteralExpression(expr *TupleLiteralExpression) error {
+	for _, value := range expr.Values {
+		if err := w.Visitor.VisitNode(value, w); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *DefaultWalker) WalkArrayLiteralExpression(expr *ArrayLiteralExpression) error {
 	for _, value := range expr.Values {
 		if err := w.Visitor.VisitNode(value, w); err != nil {
 			return err

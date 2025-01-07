@@ -48,7 +48,7 @@ func (self *TypeCreator) NewFunctionType(genericBase *FunctionType, typeParams [
 	}
 }
 
-func (self *TypeCreator) NewTraitType(genericBase *TraitType, typeParams []TypeParam, typeArgs []Type, methods []TypeAndName[*FunctionType]) *TraitType {
+func (self *TypeCreator) NewTraitType(genericBase *TraitType, typeParams []TypeParam, typeArgs []Type, methods []*Method) *TraitType {
 	return &TraitType{
 		typeBase:    self.newTypeBase(),
 		genericBase: genericBase,
@@ -70,6 +70,15 @@ func (self *TypeCreator) NewStructType(genericBase *StructType, typeParams []Typ
 
 func (self *TypeCreator) NewTupleType(values []Type) *TupleType {
 	return &TupleType{typeBase: self.newTypeBase(), Values: values}
+}
+
+func (self *TypeCreator) NewArrayType(genericBase *ArrayType, typeParams []TypeParam, typeArgs []Type, methods []*Method, traits []*TraitType) *ArrayType {
+	return &ArrayType{
+		implementableTypeBase: self.newImplementableTypeBase(methods, traits),
+		genericBase:           genericBase,
+		typeParams:            typeParams,
+		typeArgs:              typeArgs,
+	}
 }
 
 type IsId interface {
@@ -573,6 +582,54 @@ func (self TupleType) CallResult() Type {
 	return &self
 }
 
+type ArrayType struct {
+	implementableTypeBase
+	genericBase *ArrayType
+	typeParams  []TypeParam
+	typeArgs    []Type
+}
+
+func (self ArrayType) String() string {
+	return fmt.Sprintf("ArrayType%s%s%s",
+		base.IndentString(typeParamsString(self.typeParams), 1),
+		base.IndentString(typeArgsString(self.typeArgs), 1),
+		base.IndentSlice(self.Methods(), 1),
+	)
+}
+
+func (self ArrayType) ElementType() Type {
+	return self.typeArgs[0]
+}
+
+func (self *ArrayType) SetElementType(elementType Type) {
+	self.typeArgs[0] = elementType
+}
+
+func (self ArrayType) IsAssignableFrom(other Type) bool {
+	if self.id == other.Id() {
+		return true
+	}
+	if other, ok := other.(*ArrayType); ok {
+		return self.ElementType().Id() == other.ElementType().Id()
+	}
+	return false
+}
+
+func (self *ArrayType) TypeParams() []TypeParam {
+	return self.typeParams
+}
+
+func (self *ArrayType) TypeArgs() []Type {
+	return self.typeArgs
+}
+
+func (self *ArrayType) GenericBase() (GenericType, bool) {
+	if self.genericBase == nil {
+		return nil, false
+	}
+	return self.genericBase, true
+}
+
 type UnionVariantKind int
 
 const (
@@ -802,7 +859,7 @@ type TraitType struct {
 	genericBase *TraitType
 	typeParams  []TypeParam
 	typeArgs    []Type
-	Methods     []TypeAndName[*FunctionType]
+	Methods     []*Method
 }
 
 func (ty TraitType) String() string {
@@ -1559,7 +1616,28 @@ func (tc *typeChecker) VisitTupleLiteralExpression(expr *ast.TupleLiteralExpress
 		values[i] = valueType
 	}
 	tupleType := &TupleType{typeBase: tc.newTypeBase(), Values: values}
+	// todo: We should generate useful, short symbols. We cannot use `tupleType.String()`
+	//       here because it generates a monstrosity of a string.
+	symbol := ""
+	for _, value := range values {
+		if len(symbol) > 0 {
+			symbol += "$"
+		}
+		symbol += value.Id().String()
+	}
+	tc.declareSymbol(tupleType.Id(), symbol)
 	tc.typeInfo.Set(expr, tupleType)
+	return nil
+}
+
+func (tc *typeChecker) VisitArrayLiteralExpression(expr *ast.ArrayLiteralExpression, w ast.Walker) error {
+	if err := w.WalkArrayLiteralExpression(expr); err != nil {
+		return err
+	}
+	elementType := tc.typeInfo.MustLookup(expr.Values[0])
+	arrayType := tc.genericsResolver.ResolveTypeArgs(
+		tc.typeInfo.BuiltIns.InternalArray, tc.typeInfo.BuiltIns.InternalArray.typeParams, []Type{elementType})
+	tc.typeInfo.Set(expr, arrayType)
 	return nil
 }
 
@@ -1803,6 +1881,22 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 		}
 	}
 	tc.typeInfo.Set(expr, result)
+	return nil
+}
+
+func (tc *typeChecker) VisitIndexExpression(expr *ast.IndexExpression, w ast.Walker) error {
+	if err := w.WalkIndexExpression(expr); err != nil {
+		return err
+	}
+	indexType, ok := tc.typeInfo.MustLookup(expr.Index).(IntType)
+	if !ok {
+		return errors.Errorf("%s: index must be of type IntType, got %s", expr.Index.Span(), indexType)
+	}
+	ty, ok := tc.typeInfo.MustLookup(expr.Target).(*ArrayType)
+	if !ok {
+		return errors.Errorf("%s: target must be of type ArrayType, got %s", expr.Target.Span(), ty)
+	}
+	tc.typeInfo.Set(expr, ty.ElementType())
 	return nil
 }
 
@@ -2227,7 +2321,7 @@ func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.
 	return nil
 }
 
-func (tc *typeChecker) checkTraitDeclaration(trait *ast.TraitDeclaration, w ast.Walker) error {
+func (tc *typeChecker) checkTraitDeclaration(trait *ast.TraitDeclaration) error {
 	traitType := tc.typeInfo.MustLookup(trait).(*DeclaredType).Type.(*TraitType)
 	tc.enterScope(trait)
 	defer tc.exitScope()
@@ -2259,7 +2353,7 @@ func (tc *typeChecker) checkTraitDeclaration(trait *ast.TraitDeclaration, w ast.
 	for _, methodDecl := range trait.MethodDecls {
 		methodType := tc.typeInfo.MustLookupDeclaredType(methodDecl).Type.(*FunctionType)
 		methodType.Receiver = traitType
-		methodAndName := TypeAndName[*FunctionType]{Name: methodDecl.Name, Type: methodType}
+		methodAndName := &Method{Name: methodDecl.Name, Type: methodType}
 		traitType.Methods = append(traitType.Methods, methodAndName)
 	}
 	return nil
@@ -2320,10 +2414,10 @@ func (tc *typeChecker) checkImplDefinitionDeclaration(forwardImpl *forwardImplDe
 	if err := tc.checkForwardDeclsStage1(forwardDecls, w); err != nil {
 		return err
 	}
-	unimplementedTraitMethods := map[ast.Ident]*TypeAndName[*FunctionType]{}
+	unimplementedTraitMethods := map[ast.Ident]*Method{}
 	if traitType != nil {
 		for _, method := range traitType.Methods {
-			unimplementedTraitMethods[method.Name] = &method
+			unimplementedTraitMethods[method.Name] = method
 		}
 	}
 	for _, method := range impl.Methods {
@@ -2642,7 +2736,7 @@ func (tc *typeChecker) checkForwardDeclsStage1(decls *forwardDecls, w ast.Walker
 		}
 	}
 	for _, decl := range decls.traitDecls {
-		if err := tc.checkTraitDeclaration(decl, w); err != nil {
+		if err := tc.checkTraitDeclaration(decl); err != nil {
 			return err
 		}
 	}

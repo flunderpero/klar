@@ -262,6 +262,15 @@ func (self *TupleLiteralExpression) String() string {
 	return fmt.Sprintf("TupleLiteralExpression%s", base.IndentSlice(self.Values, 1))
 }
 
+type ArrayLiteralExpression struct {
+	nodeBase
+	Values []Expression
+}
+
+func (self *ArrayLiteralExpression) String() string {
+	return fmt.Sprintf("ArrayLiteralExpression%s", base.IndentSlice(self.Values, 1))
+}
+
 type MemberExpressionField string
 
 func (self MemberExpressionField) String() string {
@@ -297,6 +306,16 @@ type MemberExpression struct {
 
 func (expr *MemberExpression) String() string {
 	return fmt.Sprintf("MemberExpression\n%s\n%s%s", base.Indent(expr.Target, 1), base.Indent(expr.Field, 1), base.IndentString(typeArgsString(expr.TypeArgs), 1))
+}
+
+type IndexExpression struct {
+	nodeBase
+	Target Expression
+	Index  Expression
+}
+
+func (expr *IndexExpression) String() string {
+	return fmt.Sprintf("IndexExpression\n%s\n%s", base.Indent(expr.Target, 1), base.Indent(expr.Index, 1))
 }
 
 type BinaryOperator string
@@ -1127,24 +1146,48 @@ func (p *Parser) parseTupleLiteralExpression() (*TupleLiteralExpression, error) 
 	if _, err := p.consume(token.LParen); err != nil {
 		return nil, err
 	}
-	values := []Expression{}
-	for p.index < len(p.tokens) {
-		value, err := p.parseExpression()
+	values, err := p.parseCommaSeparatedExpressionList(token.RParen)
+	if err != nil {
+		return nil, err
+	}
+	if len(values) == 0 {
+		return nil, errors.Errorf("expected at least one value in tuple")
+	}
+	return &TupleLiteralExpression{nodeBase: p.newNodeBase(from), Values: values}, nil
+}
+
+func (p *Parser) parseArrayLiteralExpression() (*ArrayLiteralExpression, error) {
+	from := p.span()
+	if _, err := p.consume(token.LBracket); err != nil {
+		return nil, err
+	}
+	values, err := p.parseCommaSeparatedExpressionList(token.RBracket)
+	if err != nil {
+		return nil, err
+	}
+	return &ArrayLiteralExpression{nodeBase: p.newNodeBase(from), Values: values}, nil
+}
+
+func (p *Parser) parseCommaSeparatedExpressionList(closingTokenKind token.TokenKind) ([]Expression, error) {
+	expressions := []Expression{}
+	done := false
+	for p.index < len(p.tokens) && !done {
+		expr, err := p.parseExpression()
 		if err != nil {
 			return nil, err
 		}
-		values = append(values, value)
+		expressions = append(expressions, expr)
 		switch p.peek().Kind {
-		case token.RParen:
-			p.consumeAny()
-			return &TupleLiteralExpression{nodeBase: p.newNodeBase(from), Values: values}, nil
 		case token.Comma:
 			p.consumeAny()
+		case closingTokenKind:
+			p.consumeAny()
+			done = true
 		default:
-			return nil, errors.Errorf("expected comma or close paren, got %s", p.peek())
+			return nil, errors.Errorf("expected comma or closing token (%s), got %s", closingTokenKind, p.peek())
 		}
 	}
-	panic("unexpected end of file while parsing tuple")
+	return expressions, nil
 }
 
 func (p *Parser) parseFunctionType() (*FunctionType, error) {
@@ -1571,6 +1614,19 @@ func (p *Parser) parseExpressionWithPostfix() (Expression, error) {
 			if err != nil {
 				return nil, err
 			}
+		case token.LBracket:
+			if is_forbidden_expression {
+				return nil, errors.Errorf("block and if expressions cannot be indexed")
+			}
+			p.consumeAny()
+			indexExpr, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			expr = &IndexExpression{nodeBase: p.newNodeBase(from), Target: expr, Index: indexExpr}
+			if _, err := p.consume(token.RBracket); err != nil {
+				return nil, err
+			}
 		default:
 			return expr, nil
 		}
@@ -1671,6 +1727,8 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 		return p.parseBlockExpression()
 	case token.LParen:
 		return p.parseTupleLiteralExpression()
+	case token.LBracket:
+		return p.parseArrayLiteralExpression()
 	case token.If:
 		return p.parseIfExpression()
 	case token.Match:

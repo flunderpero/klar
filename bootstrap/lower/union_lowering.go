@@ -229,6 +229,9 @@ func (self *unionLoweringStage2) replaceUnionTypeWithStructType(ty typed.Type) t
 		for i, value := range tyKind.Values {
 			tyKind.Values[i] = self.replaceUnionTypeWithStructType(value)
 		}
+	case *typed.ArrayType:
+		self.replaceUnionTypeWithStructTypeSeen[ty.Id()] = ty
+		tyKind.SetElementType(self.replaceUnionTypeWithStructType(tyKind.ElementType()))
 	case *typed.FunctionType:
 		self.replaceUnionTypeWithStructTypeSeen[ty.Id()] = ty
 		for i, param := range tyKind.Params {

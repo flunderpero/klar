@@ -55,6 +55,8 @@ const (
 	RCurly             TokenKind = "}"
 	LAngle             TokenKind = "<"
 	RAngle             TokenKind = ">"
+	LBracket           TokenKind = "["
+	RBracket           TokenKind = "]"
 	LessThanOrEqual    TokenKind = "<="
 	GreaterThanOrEqual TokenKind = ">="
 	Comma              TokenKind = ","
@@ -194,6 +196,10 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			tokens = append(tokens, Token{Kind: LCurly, Value: "", Span: span})
 		} else if c == '}' {
 			tokens = append(tokens, Token{Kind: RCurly, Value: "", Span: span})
+		} else if c == '[' {
+			tokens = append(tokens, Token{Kind: LBracket, Value: "", Span: span})
+		} else if c == ']' {
+			tokens = append(tokens, Token{Kind: RBracket, Value: "", Span: span})
 		} else if c == '<' {
 			kind := LAngle
 			if src[i] == '=' {

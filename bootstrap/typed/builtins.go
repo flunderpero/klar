@@ -22,7 +22,7 @@ type BuiltIns struct {
 	None                  *NoneType
 	Never                 *NeverType
 	RawPtr                *RawPtr
-	Print                 *FunctionType
+	InternalPrint         *FunctionType
 	PrintChar             *FunctionType
 	PrintInt              *FunctionType
 	PrintUInt             *FunctionType
@@ -33,6 +33,7 @@ type BuiltIns struct {
 	InternalWritePtr      *FunctionType
 	InternalReadPtr       *FunctionType
 	InternalExit          *FunctionType
+	InternalCast          *FunctionType
 	builtInFunctionIdFrom TypeId
 	builtInFunctionIdTo   TypeId
 }
@@ -43,7 +44,7 @@ func (self *BuiltIns) IsBuiltInFunction(ty *FunctionType) bool {
 
 func (self *BuiltIns) Functions() []*FunctionType {
 	return []*FunctionType{
-		self.Print,
+		self.InternalPrint,
 		self.PrintChar,
 		self.PrintInt,
 		self.PrintUInt,
@@ -54,6 +55,7 @@ func (self *BuiltIns) Functions() []*FunctionType {
 		self.InternalWritePtr,
 		self.InternalReadPtr,
 		self.InternalExit,
+		self.InternalCast,
 	}
 }
 
@@ -99,11 +101,11 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 			implementableTypeBase: implementableTypeBase{typeBase: typeBase{TypeId(1)}, methods: nil, traits: nil},
 			Fields: []TypeAndName[Type]{{
 				Name: "len_", Type: builtIns.I64}, {Name: "bytes_", Type: builtIns.RawPtr}}})
-	builtIns.Print = declareBuiltIn(
+	builtIns.InternalPrint = declareBuiltIn(
 		tc,
 		typeInfo,
 		symbolScope,
-		"print",
+		"internal_print",
 		&FunctionType{
 			typeBase: typeBase{nextFuncId()},
 			Params:   []FunctionParam{{Name: "value", Type: builtIns.Str}},
@@ -185,6 +187,32 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		Name:     ast.Ident("T"),
 		Index:    0,
 	}
+	castFromTypeParam := &TypeParam{
+		typeBase: typeBase{nextFuncId()},
+		Name:     ast.Ident("T"),
+		Index:    0,
+	}
+	castToTypeParam := &TypeParam{
+		typeBase: typeBase{nextFuncId()},
+		Name:     ast.Ident("U"),
+		Index:    1,
+	}
+	builtIns.InternalCast = declareBuiltIn(
+		tc,
+		typeInfo,
+		symbolScope,
+		"internal_cast",
+		&FunctionType{
+			typeBase:   typeBase{nextFuncId()},
+			typeParams: []TypeParam{*castFromTypeParam, *castToTypeParam},
+			typeArgs:   []Type{castFromTypeParam, castToTypeParam},
+			Params: []FunctionParam{
+				{Name: "value", Type: castFromTypeParam},
+			},
+			Result: castToTypeParam,
+		})
+	castFromTypeParam.GenericType = builtIns.InternalCast
+	castToTypeParam.GenericType = builtIns.InternalCast
 	builtIns.InternalWritePtr = declareBuiltIn(
 		tc,
 		typeInfo,

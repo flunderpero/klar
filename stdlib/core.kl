@@ -1,8 +1,14 @@
 -- All core types that are always available.
 
+-- [[ Functions ]]
+
 fn panic(msg Str) Never {
     print(msg)
     internal_exit(1)
+}
+
+fn print<T impl ToStr>(s T) {
+    internal_print(s.to_str())
 }
 
 fn internal_memcpy(dst RawPtr, src RawPtr, len Int) {
@@ -20,6 +26,16 @@ fn internal_memcpy(dst RawPtr, src RawPtr, len Int) {
         d = d + 1
     }
 }
+
+-- [[ Traits ]]
+
+trait ToStr {
+    fn to_str(self) Str
+}
+
+-- [[ Basic Types ]]
+
+-- [[ Str ]]
 
 -- This is the built-in Str declaration:
 -- struct Str {
@@ -59,4 +75,104 @@ impl Str {
     fn len(self) Int {
        self.len_ 
     }
+}
+
+impl ToStr for Str {
+    fn to_str(self) Str => self 
+}
+
+-- [[ Int Types ]]
+
+impl I8 {
+    fn to_u8(self) U8 => internal_cast<I8, U8>(self)
+    fn to_u16(self) U16 => internal_cast<I8, U16>(self)
+    fn to_u32(self) U32 => internal_cast<I8, U32>(self)
+    fn to_u64(self) U64 => internal_cast<I8, U64>(self)
+    fn to_i16(self) I16 => internal_cast<I8, I16>(self)
+    fn to_i32(self) I32 => internal_cast<I8, I32>(self)
+    fn to_i64(self) I64 => internal_cast<I8, I64>(self)
+    fn to_int(self) Int => internal_cast<I8, Int>(self)
+}
+
+impl I16 {
+    fn to_u8(self) U8 => internal_cast<I16, U8>(self)
+    fn to_u16(self) U16 => internal_cast<I16, U16>(self)
+    fn to_u32(self) U32 => internal_cast<I16, U32>(self)
+    fn to_u64(self) U64 => internal_cast<I16, U64>(self)
+    fn to_i8(self) I8 => internal_cast<I16, I8>(self)
+    fn to_i32(self) I32 => internal_cast<I16, I32>(self)
+    fn to_i64(self) I64 => internal_cast<I16, I64>(self)
+    fn to_int(self) Int => internal_cast<I16, Int>(self)
+}
+
+impl I32 {
+    fn to_u8(self) U8 => internal_cast<I32, U8>(self)
+    fn to_u16(self) U16 => internal_cast<I32, U16>(self)
+    fn to_u32(self) U32 => internal_cast<I32, U32>(self)
+    fn to_u64(self) U64 => internal_cast<I32, U64>(self)
+    fn to_i8(self) I8 => internal_cast<I32, I8>(self)
+    fn to_i16(self) I16 => internal_cast<I32, I16>(self)
+    fn to_i64(self) I64 => internal_cast<I32, I64>(self)
+    fn to_int(self) Int => internal_cast<I32, Int>(self)
+}
+
+impl I64 {
+    fn to_u8(self) U8 => internal_cast<I64, U8>(self)
+    fn to_u16(self) U16 => internal_cast<I64, U16>(self)
+    fn to_u32(self) U32 => internal_cast<I64, U32>(self)
+    fn to_u64(self) U64 => internal_cast<I64, U64>(self)
+    fn to_i8(self) I8 => internal_cast<I64, I8>(self)
+    fn to_i16(self) I16 => internal_cast<I64, I16>(self)
+    fn to_i32(self) I32 => internal_cast<I64, I32>(self)
+    fn to_int(self) Int => internal_cast<I64, Int>(self)
+}
+
+impl U8 {
+    fn to_u16(self) U16 => internal_cast<U8, U16>(self)
+    fn to_u32(self) U32 => internal_cast<U8, U32>(self)
+    fn to_u64(self) U64 => internal_cast<U8, U64>(self)
+    fn to_i8(self) I8 => internal_cast<U8, I8>(self)
+    fn to_i16(self) I16 => internal_cast<U8, I16>(self)
+    fn to_i32(self) I32 => internal_cast<U8, I32>(self)
+    fn to_i64(self) I64 => internal_cast<U8, I64>(self)
+    fn to_int(self) Int => internal_cast<U8, Int>(self)
+}
+
+impl U16 {
+    fn to_i8(self) I8 => internal_cast<U16, I8>(self)
+    fn to_u8(self) U8 => internal_cast<U16, U8>(self)
+    fn to_u32(self) U32 => internal_cast<U16, U32>(self)
+    fn to_u64(self) U64 => internal_cast<U16, U64>(self)
+    fn to_i16(self) I16 => internal_cast<U16, I16>(self)
+    fn to_i32(self) I32 => internal_cast<U16, I32>(self)
+    fn to_i64(self) I64 => internal_cast<U16, I64>(self)
+    fn to_int(self) Int => internal_cast<U16, Int>(self)
+}
+
+impl U32 {
+    fn to_i8(self) I8 => internal_cast<U32, I8>(self)
+    fn to_u8(self) U8 => internal_cast<U32, U8>(self)
+    fn to_u16(self) U16 => internal_cast<U32, U16>(self)
+    fn to_u64(self) U64 => internal_cast<U32, U64>(self)
+    fn to_i16(self) I16 => internal_cast<U32, I16>(self)
+    fn to_i32(self) I32 => internal_cast<U32, I32>(self)
+    fn to_i64(self) I64 => internal_cast<U32, I64>(self)
+    fn to_int(self) Int => internal_cast<U32, Int>(self)
+}
+
+impl U64 {
+    fn to_i8(self) I8 => internal_cast<U64, I8>(self)
+    fn to_u8(self) U8 => internal_cast<U64, U8>(self)
+    fn to_u16(self) U16 => internal_cast<U64, U16>(self)
+    fn to_u32(self) U32 => internal_cast<U64, U32>(self)
+    fn to_i16(self) I16 => internal_cast<U64, I16>(self)
+    fn to_i32(self) I32 => internal_cast<U64, I32>(self)
+    fn to_i64(self) I64 => internal_cast<U64, I64>(self)
+    fn to_int(self) Int => internal_cast<U64, Int>(self)
+}
+
+-- [[ Char ]]
+
+impl Char {
+    fn to_u32(self) U32 => internal_cast<Char, U32>(self)
 }

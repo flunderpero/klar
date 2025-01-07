@@ -1039,15 +1039,20 @@ func (self VariableType) IsAssignableFrom(other Type) bool {
 	return false
 }
 
+type TypeAndSpan struct {
+	Type Type
+	Span token.Span
+}
+
 type typeScope struct {
-	types     map[string]Type
+	types     map[string]TypeAndSpan
 	variables map[string]VariableType
 	parent    *typeScope
 }
 
 func newTypeScope(parent *typeScope) *typeScope {
 	return &typeScope{
-		types:     make(map[string]Type),
+		types:     make(map[string]TypeAndSpan),
 		variables: make(map[string]VariableType),
 		parent:    parent,
 	}
@@ -1058,7 +1063,7 @@ func (te *typeScope) lookupType(name string) (Type, bool) {
 	if !found && te.parent != nil {
 		return te.parent.lookupType(name)
 	}
-	return ty, found
+	return ty.Type, found
 }
 
 func (te *typeScope) lookupVariable(name ast.Ident) (Type, *VariableType, bool) {
@@ -1074,10 +1079,10 @@ func (te *typeScope) lookupVariable(name ast.Ident) (Type, *VariableType, bool) 
 }
 
 func (te *typeScope) declareType(name string, ty Type, span token.Span) error {
-	if _, found := te.types[name]; found {
-		return errors.Errorf("%s: type %q already declared", span, name)
+	if existing, found := te.types[name]; found {
+		return errors.Errorf("%s: type %q already declared here: %s", span, name, existing.Span)
 	}
-	te.types[name] = ty
+	te.types[name] = TypeAndSpan{Type: ty, Span: span}
 	return nil
 }
 

@@ -481,6 +481,15 @@ func (c *blockCode) generateBlock(block *ir.Block) error {
 			c.generateIntImmediate(reg.reg(), inst.Value)
 			c.values[inst.Register().Id] = reg
 			c.registerAllocator.spillIfTempAllocation(reg, c)
+		case *ir.IntCast:
+			reg := c.registerAllocator.allocate(inst.Register(), c)
+			src := c.mustLookupRegisterAllocation(inst.Source)
+			c.registerAllocator.ensureInRegister(src, c)
+			c.emit("mov %s, %s", reg, src)
+			c.sign_extend_or_zero_extend(reg.reg(), inst.TargetType)
+			c.values[inst.Register().Id] = reg
+			c.registerAllocator.spillIfTempAllocation(reg, c)
+            c.registerAllocator.releaseIfTempAllocation(src)
 		case ir.BinaryInst:
 			reg := c.registerAllocator.allocate(inst.Register(), c)
 			lhs := c.mustLookupRegisterAllocation(inst.Lhs())
@@ -791,10 +800,10 @@ func generateFunction(function *ir.FunctionDefinition, module *ir.Module, isMain
 	return c, nil
 }
 
-func defineBuiltInPrintFunction(asm *ASMText) {
+func defineBuiltInInternalPrintFunction(asm *ASMText) {
 	asm.emit(
 		`
-.print:
+.internal_print:
     stp fp, lr, [sp, #-16]!
     mov fp, sp
     ldr x1, [x0, 8]
@@ -939,7 +948,7 @@ func GenerateDarwinArm64ASM(irModule *ir.Module) (*ASMText, error) {
 	defineBuiltInInternalMalloc(asm)
 	defineBuiltInInternalFree(asm)
 	defineBuiltInInternalExit(asm)
-	defineBuiltInPrintFunction(asm)
+	defineBuiltInInternalPrintFunction(asm)
 	defineBuiltInPrintCharFunction(asm)
 	defineBuiltInPrintIntFunction(asm)
 	defineBuiltInPrintUIntFunction(asm)

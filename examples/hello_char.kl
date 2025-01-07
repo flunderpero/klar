@@ -1,5 +1,5 @@
 -- expect.stdout {
--- c	A
+-- c99	A
 -- truetruefalse
 -- } expect.stdout
 -- expect.exit_code: 0
@@ -7,6 +7,7 @@
 fn main() {
     let c = 'c'
     c.print_me()
+    print_int(c.to_u32())
     print_char('\t')
     print_char('\u{41}')
     print_char('\n')

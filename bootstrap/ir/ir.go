@@ -466,6 +466,24 @@ func (s Store) String() string {
 	return fmt.Sprintf("store %s %s, %s", s.Type, s.Value, s.Target)
 }
 
+type IntCast struct {
+	register   Register
+	Source     Register
+	TargetType IntType
+}
+
+func (self IntCast) String() string {
+	return fmt.Sprintf("%s = cast %s %s", self.register, self.TargetType, self.Source)
+}
+
+func (self IntCast) Register() Register {
+	return self.register
+}
+
+func (self IntCast) ParamRegisters() []Register {
+	return []Register{self.Source}
+}
+
 type BinaryInst interface {
 	Instruction
 	binaryInstructionMarker()
@@ -1125,6 +1143,30 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 		for _, arg := range expr.Args {
 			args = append(args, g.lookupRegisterByNode(arg.Value))
 		}
+		if hasGenericBase && genericBase.Id() == g.builtIns.InternalCast.Id() {
+			fromIRType := calleeType.TypeArgs()[0]
+			toIRType := calleeType.TypeArgs()[1]
+			if fromIRType.Id() == g.builtIns.Char.Id() {
+				if toIRType.Id() != g.builtIns.U32.Id() {
+					panic(fmt.Sprintf("unsupported cast from %s to %s", fromIRType, toIRType))
+				}
+				// `Char` is treated as `U32` anyway so we don't need to do anything.
+				g.registerByNodeId[expr.Id()] = g.lookupRegisterByNode(expr.Args[0].Value)
+				return nil
+			} else if _, ok := fromIRType.(typed.IntType); ok {
+				if _, ok := toIRType.(typed.IntType); ok {
+					toType := g.declaredTypes.MustLookup(toIRType).(IntType)
+					reg := g.nextRegister(toType)
+					g.append(&IntCast{
+						register:   reg,
+						Source:     g.lookupRegisterByNode(expr.Args[0].Value),
+						TargetType: toType,
+					}, expr)
+					return nil
+				}
+			}
+			panic(fmt.Sprintf("unsupported cast from %s to %s", fromIRType, toIRType))
+		}
 		if hasGenericBase && genericBase.Id() == g.builtIns.InternalWritePtr.Id() {
 			// Special handling for `internal_write_ptr` which becomes just a `Store` instruction.
 			valueType := g.declaredTypes.MustLookup(calleeType.TypeArgs()[0])
@@ -1607,7 +1649,9 @@ func GenerateIR(lowered *lower.LoweredAST, dataLayout DataLayout) (*Module, erro
 		definedFunctions[f.Id()] = DefinedFunction{Id: f.Id(), FQN: symbol.FQN()}
 	}
 	for _, fn := range typeInfo.BuiltIns.Functions() {
-		declareType := fn.Id() != typeInfo.BuiltIns.InternalReadPtr.Id() && fn.Id() != typeInfo.BuiltIns.InternalWritePtr.Id()
+		declareType := fn.Id() != typeInfo.BuiltIns.InternalReadPtr.Id() &&
+			fn.Id() != typeInfo.BuiltIns.InternalWritePtr.Id() &&
+			fn.Id() != typeInfo.BuiltIns.InternalCast.Id()
 		declareBuiltInFunction(fn, declareType)
 	}
 	constants := []*StrConst{}

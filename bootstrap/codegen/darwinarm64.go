@@ -489,7 +489,7 @@ func (c *blockCode) generateBlock(block *ir.Block) error {
 			c.sign_extend_or_zero_extend(reg.reg(), inst.TargetType)
 			c.values[inst.Register().Id] = reg
 			c.registerAllocator.spillIfTempAllocation(reg, c)
-            c.registerAllocator.releaseIfTempAllocation(src)
+			c.registerAllocator.releaseIfTempAllocation(src)
 		case ir.BinaryInst:
 			reg := c.registerAllocator.allocate(inst.Register(), c)
 			lhs := c.mustLookupRegisterAllocation(inst.Lhs())
@@ -543,6 +543,19 @@ func (c *blockCode) generateBlock(block *ir.Block) error {
 					return errors.Errorf("unknown binary logic operation: %s", inst.Op)
 				}
 				c.emit("%s %s, %s, %s", op, reg, lhs, rhs)
+			case *ir.BitwiseShiftLeft:
+				c.emit("lsl %s, %s, %s", reg, lhs, rhs)
+				c.sign_extend_or_zero_extend(reg.reg(), inst.Type)
+			case *ir.BitwiseShiftRight:
+				c.emit("lsr %s, %s, %s", reg, lhs, rhs)
+			case *ir.BitwiseAnd:
+				c.emit("and %s, %s, %s", reg, lhs, rhs)
+			case *ir.BitwiseOr:
+				c.emit("orr %s, %s, %s", reg, lhs, rhs)
+			case *ir.BitwiseXor:
+				c.emit("eor %s, %s, %s", reg, lhs, rhs)
+			default:
+				panic(fmt.Sprintf("unknown binary instruction: %T", inst))
 			}
 			c.values[inst.Register().Id] = reg
 			c.registerAllocator.spillIfTempAllocation(reg, c)
@@ -550,6 +563,15 @@ func (c *blockCode) generateBlock(block *ir.Block) error {
 			if lhs != rhs {
 				c.registerAllocator.releaseIfTempAllocation(rhs)
 			}
+		case *ir.BitwiseNot:
+			reg := c.registerAllocator.allocate(inst.Register(), c)
+			value := c.mustLookupRegisterAllocation(inst.Value)
+			c.registerAllocator.ensureInRegister(value, c)
+			c.values[inst.Register().Id] = reg
+			c.emit("mvn %s, %s", reg, value)
+			c.sign_extend_or_zero_extend(reg.reg(), reg.irReg.Type.(ir.IntType))
+			c.registerAllocator.spillIfTempAllocation(reg, c)
+			c.registerAllocator.releaseIfTempAllocation(value)
 		case *ir.UnaryLogic:
 			reg := c.registerAllocator.allocate(inst.Register(), c)
 			value := c.mustLookupRegisterAllocation(inst.Value)

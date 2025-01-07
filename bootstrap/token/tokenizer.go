@@ -40,6 +40,10 @@ type Token struct {
 	Span  Span
 }
 
+func (self Token) Immediate(other Token) bool {
+	return self.Span.End+1 == other.Span.Start
+}
+
 type TokenKind string
 
 const (
@@ -65,6 +69,9 @@ const (
 	NotEqual           TokenKind = "!="
 	FatArrow           TokenKind = "=>"
 	Pipe               TokenKind = "|"
+	BitwiseAnd         TokenKind = "&"
+	BitwiseXor         TokenKind = "^"
+	BitwiseNot         TokenKind = "~"
 	EqualEqual         TokenKind = "=="
 	Str                TokenKind = "Str"
 	Char               TokenKind = "Char"
@@ -230,6 +237,12 @@ func Tokenize(src []byte, file string) ([]Token, error) {
 			tokens = append(tokens, Token{Kind: kind, Value: "", Span: span})
 		} else if c == '|' {
 			tokens = append(tokens, Token{Kind: Pipe, Value: "", Span: span})
+		} else if c == '&' {
+			tokens = append(tokens, Token{Kind: BitwiseAnd, Value: "", Span: span})
+		} else if c == '^' {
+			tokens = append(tokens, Token{Kind: BitwiseXor, Value: "", Span: span})
+		} else if c == '~' {
+			tokens = append(tokens, Token{Kind: BitwiseNot, Value: "", Span: span})
 		} else if c == '-' {
 			if src[i] == '-' {
 				i += 1

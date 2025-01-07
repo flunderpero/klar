@@ -1645,7 +1645,7 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 	}
 	rhs := tc.typeInfo.MustLookup(expr.Rhs)
 	switch expr.Op {
-	case ast.OpAdd, ast.OpMultiply, ast.OpDivide, ast.OpModulo:
+	case ast.OpAdd, ast.OpMultiply, ast.OpDivide, ast.OpModulo, ast.OpBitwiseAnd, ast.OpBitwiseOr, ast.OpBitwiseXor:
 		switch lhs.(type) {
 		case IntType, *RawPtr:
 		default:
@@ -1655,6 +1655,16 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 		if !lhs.IsAssignableFrom(rhs) {
 			return errors.Errorf(
 				"%s: rhs of arithmetic expression must be assignable to lhs, expected %q got %q", expr.Span(), lhs, rhs)
+		}
+		tc.typeInfo.Set(expr, lhs)
+	case ast.OpBitwiseShiftLeft, ast.OpBitwiseShiftRight:
+		if _, ok := lhs.(IntType); !ok {
+			return errors.Errorf(
+				"%s: lhs of bitwise shift expression must be an integer type, got %s", expr.Span(), lhs)
+		}
+		if _, ok := rhs.(IntType); !ok {
+			return errors.Errorf(
+				"%s: rhs of bitwise shift expression must be an integer type, got %s", expr.Span(), rhs)
 		}
 		tc.typeInfo.Set(expr, lhs)
 	case ast.OpEqual, ast.OpNotEqual, ast.OpGreaterThan, ast.OpGreaterThanOrEqual, ast.OpLessThan, ast.OpLessThanOrEqual:
@@ -1697,6 +1707,13 @@ func (tc *typeChecker) VisitUnaryExpression(expr *ast.UnaryExpression, w ast.Wal
 				"%s: operand of logical not expression must be of type BoolType, got %s", expr.Span(), valueType)
 		}
 		tc.typeInfo.Set(expr, tc.typeInfo.BuiltIns.Bool)
+	case ast.OpBitwiseNot:
+		if _, ok := valueType.(IntType); !ok {
+			return errors.Errorf(
+				"%s: operand of bitwise not expression must be of type IntType, got %s", expr.Span(), valueType)
+		}
+		tc.typeInfo.Set(expr, valueType)
+
 	default:
 		return errors.Errorf("%s: unsupported unary operator: %s", expr.Span(), expr.Op)
 	}

@@ -582,6 +582,51 @@ func (i UnsignedIntAddWithOverflow) String() string {
 	return fmt.Sprintf("%s = addo %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
 }
 
+type BitwiseOr struct {
+	binaryInst
+	Type IntType
+}
+
+func (i BitwiseOr) String() string {
+	return fmt.Sprintf("%s = or %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
+}
+
+type BitwiseAnd struct {
+	binaryInst
+	Type IntType
+}
+
+func (i BitwiseAnd) String() string {
+	return fmt.Sprintf("%s = and %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
+}
+
+type BitwiseXor struct {
+	binaryInst
+	Type IntType
+}
+
+func (i BitwiseXor) String() string {
+	return fmt.Sprintf("%s = xor %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
+}
+
+type BitwiseShiftLeft struct {
+	binaryInst
+	Type IntType
+}
+
+func (i BitwiseShiftLeft) String() string {
+	return fmt.Sprintf("%s = shl %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
+}
+
+type BitwiseShiftRight struct {
+	binaryInst
+	Type IntType
+}
+
+func (i BitwiseShiftRight) String() string {
+	return fmt.Sprintf("%s = shr %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
+}
+
 type IntCompOp string
 
 const (
@@ -601,6 +646,23 @@ type IntCompare struct {
 
 func (i IntCompare) String() string {
 	return fmt.Sprintf("%s = icmp %s %s %s, %s", i.register, i.Op, i.Type, i.lhs, i.rhs)
+}
+
+type BitwiseNot struct {
+	register Register
+	Value    Register
+}
+
+func (i BitwiseNot) String() string {
+	return fmt.Sprintf("%s = not %s %s", i.register, i.Value.Type, i.Value)
+}
+
+func (i BitwiseNot) Register() Register {
+	return i.register
+}
+
+func (i BitwiseNot) ParamRegisters() []Register {
+	return []Register{i.Value}
 }
 
 type BinaryLogicOp string
@@ -1288,6 +1350,26 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 		}
 		g.append(&BinaryLogic{
 			binaryInst: binaryInst{register: g.nextRegister(Int1Type), lhs: lhs, rhs: rhs}, Op: op}, expr)
+	case ast.OpBitwiseShiftLeft:
+		ty := g.lookupType(expr.Lhs).(IntType)
+		g.append(&BitwiseShiftLeft{
+			binaryInst: binaryInst{register: g.nextRegister(ty), lhs: lhs, rhs: rhs}, Type: ty}, expr)
+	case ast.OpBitwiseShiftRight:
+		ty := g.lookupType(expr.Lhs).(IntType)
+		g.append(&BitwiseShiftRight{
+			binaryInst: binaryInst{register: g.nextRegister(ty), lhs: lhs, rhs: rhs}, Type: ty}, expr)
+	case ast.OpBitwiseOr:
+		ty := g.lookupType(expr.Lhs).(IntType)
+		g.append(&BitwiseOr{
+			binaryInst: binaryInst{register: g.nextRegister(ty), lhs: lhs, rhs: rhs}, Type: ty}, expr)
+	case ast.OpBitwiseAnd:
+		ty := g.lookupType(expr.Lhs).(IntType)
+		g.append(&BitwiseAnd{
+			binaryInst: binaryInst{register: g.nextRegister(ty), lhs: lhs, rhs: rhs}, Type: ty}, expr)
+	case ast.OpBitwiseXor:
+		ty := g.lookupType(expr.Lhs).(IntType)
+		g.append(&BitwiseXor{
+			binaryInst: binaryInst{register: g.nextRegister(ty), lhs: lhs, rhs: rhs}, Type: ty}, expr)
 	default:
 		return errors.Errorf("unsupported binary operator: %s", expr.Op)
 	}
@@ -1306,6 +1388,10 @@ func (g *generator) VisitUnaryExpression(expr *ast.UnaryExpression, w ast.Walker
 		}
 		reg := g.lookupRegisterByNode(expr.Value)
 		g.append(&UnaryLogic{register: g.nextRegister(Int1Type), Op: UnaryLogicOpNot, Value: reg}, expr)
+	case ast.OpBitwiseNot:
+		ty := g.lookupType(expr).(IntType)
+		reg := g.lookupRegisterByNode(expr.Value)
+		g.append(&BitwiseNot{register: g.nextRegister(ty), Value: reg}, expr)
 	default:
 		return errors.Errorf("unsupported unary operator: %s", expr.Op)
 	}

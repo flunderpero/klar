@@ -101,3 +101,13 @@ func
 Param
 builtins
 memoized
+shl
+shr
+ne
+lt
+ge
+le
+mut
+LLVM
+lsr
+mvn

@@ -314,6 +314,11 @@ const (
 	OpNotEqual           BinaryOperator = "!="
 	OpAnd                BinaryOperator = "and"
 	OpOr                 BinaryOperator = "or"
+	OpBitwiseAnd         BinaryOperator = "&"
+	OpBitwiseOr          BinaryOperator = "|"
+	OpBitwiseXor         BinaryOperator = "^"
+	OpBitwiseShiftLeft   BinaryOperator = "<<"
+	OpBitwiseShiftRight  BinaryOperator = ">>"
 )
 
 func (op BinaryOperator) String() string {
@@ -335,7 +340,8 @@ func (expr *BinaryExpression) String() string {
 type UnaryOperator string
 
 const (
-	OpNot UnaryOperator = "not"
+	OpNot        UnaryOperator = "not"
+	OpBitwiseNot UnaryOperator = "~"
 )
 
 func (op UnaryOperator) String() string {
@@ -839,8 +845,30 @@ func (p *Parser) span() token.Span {
 	return span
 }
 
-func (p *Parser) parseTypeArgs() ([]Type, error) {
-	if p.peek().Kind != token.LAngle {
+func (p *Parser) isStartOfTypeParamOrArgList(tokenBefore token.Token) bool {
+	t := p.peek()
+	if t.Kind != token.LAngle {
+		return false
+	}
+	if !tokenBefore.Immediate(t) {
+		// The opening `<` must immediately follow the previous token, i.e. `Foo <Int>` is invalid.
+		return false
+	}
+	t1 := p.peek1()
+	if t1.Kind == token.LAngle {
+		// This is actually a bitwise shift left.
+		return false
+	}
+	if !t.Immediate(t1) {
+		// The next token must follow immediately, i.e. no whitespace is allowed
+		// between the opening `<` and the next token.
+		return false
+	}
+	return true
+}
+
+func (p *Parser) parseTypeArgs(tokenBefore token.Token) ([]Type, error) {
+	if !p.isStartOfTypeParamOrArgList(tokenBefore) {
 		return nil, nil
 	}
 	p.consumeAny()
@@ -1196,8 +1224,8 @@ func (p *Parser) parseType_(parseAnonymousUnionType bool) (Type, error) {
 	t := p.peek()
 	switch t.Kind {
 	case token.TypeIdent:
-		p.consumeAny()
-		typeArgs, err := p.parseTypeArgs()
+		beforeTypeArgs := p.consumeAny()
+		typeArgs, err := p.parseTypeArgs(beforeTypeArgs)
 		if err != nil {
 			return nil, err
 		}
@@ -1236,8 +1264,8 @@ func (p *Parser) tryParseType(defaultValue Type) (Type, error) {
 	return defaultValue, nil
 }
 
-func (p *Parser) parseTypeParams() ([]TypeParam, error) {
-	if p.peek().Kind != token.LAngle {
+func (p *Parser) parseTypeParams(tokenBefore token.Token) ([]TypeParam, error) {
+	if !p.isStartOfTypeParamOrArgList(tokenBefore) {
 		return nil, nil
 	}
 	p.consumeAny()
@@ -1281,7 +1309,7 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 	if err != nil {
 		return nil, err
 	}
-	typeParams, err := p.parseTypeParams()
+	typeParams, err := p.parseTypeParams(nameToken)
 	if err != nil {
 		return nil, err
 	}
@@ -1428,19 +1456,24 @@ func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 		// This is the start of a single-expression block.
 		return lhs, nil
 	}
-	precedences := map[token.TokenKind]int{
-		token.Or:                 1,
-		token.And:                2,
-		token.EqualEqual:         3,
-		token.NotEqual:           3,
-		token.LessThanOrEqual:    3,
-		token.LAngle:             3,
-		token.RAngle:             3,
-		token.GreaterThanOrEqual: 3,
-		token.Plus:               4,
-		token.Star:               5,
-		token.Slash:              5,
-		token.Percent:            5,
+	precedences := map[BinaryOperator]int{
+		OpOr:                 1,
+		OpAnd:                2,
+		OpEqual:              3,
+		OpNotEqual:           3,
+		OpLessThanOrEqual:    3,
+		OpLessThan:           3,
+		OpGreaterThan:        3,
+		OpGreaterThanOrEqual: 3,
+		OpBitwiseOr:          4,
+		OpBitwiseXor:         5,
+		OpBitwiseAnd:         6,
+		OpBitwiseShiftLeft:   7,
+		OpBitwiseShiftRight:  7,
+		OpAdd:                8,
+		OpMultiply:           9,
+		OpDivide:             9,
+		OpModulo:             9,
 	}
 	ops := map[token.TokenKind]BinaryOperator{
 		token.Plus:               OpAdd,
@@ -1455,19 +1488,44 @@ func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 		token.GreaterThanOrEqual: OpGreaterThanOrEqual,
 		token.And:                OpAnd,
 		token.Or:                 OpOr,
+		token.Pipe:               OpBitwiseOr,
+		token.BitwiseXor:         OpBitwiseXor,
+		token.BitwiseAnd:         OpBitwiseAnd,
 	}
 	for {
-		op := p.peek()
-		precedence, isOp := precedences[op.Kind]
-		if !isOp || precedence < minPrecedence {
+		t := p.peek()
+		op, isOp := ops[t.Kind]
+		if !isOp {
+			break
+		}
+		if t.Kind == token.LAngle {
+			t1 := p.peek1()
+			if t.Immediate(t1) {
+				op = OpBitwiseShiftLeft
+			}
+		}
+		if t.Kind == token.RAngle {
+			t1 := p.peek1()
+			if t.Immediate(t1) {
+				op = OpBitwiseShiftRight
+			}
+		}
+		precedence, ok := precedences[op]
+		if !ok {
+			panic(fmt.Sprintf("precedence not defined for operator %s", op))
+		}
+		if precedence < minPrecedence {
 			break
 		}
 		p.consumeAny()
+		if op == OpBitwiseShiftLeft || op == OpBitwiseShiftRight {
+			p.consumeAny()
+		}
 		rhs, err := p.parseBinaryExpression(precedence)
 		if err != nil {
 			return nil, err
 		}
-		lhs = &BinaryExpression{nodeBase: p.newNodeBase(from), Op: ops[op.Kind], Lhs: lhs, Rhs: rhs}
+		lhs = &BinaryExpression{nodeBase: p.newNodeBase(from), Op: op, Lhs: lhs, Rhs: rhs}
 	}
 	return lhs, nil
 }
@@ -1499,7 +1557,7 @@ func (p *Parser) parseExpressionWithPostfix() (Expression, error) {
 				return nil, errors.Errorf("expected identifier or integer literal after dot, got %s", t)
 			}
 			field := p.consumeAny()
-			typeArgs, err := p.parseTypeArgs()
+			typeArgs, err := p.parseTypeArgs(field)
 			if err != nil {
 				return nil, err
 			}
@@ -1521,7 +1579,7 @@ func (p *Parser) parseExpressionWithPostfix() (Expression, error) {
 }
 
 func (p *Parser) parseIdentExpression(token token.Token) (*IdentExpression, error) {
-	typeArgs, err := p.parseTypeArgs()
+	typeArgs, err := p.parseTypeArgs(token)
 	if err != nil {
 		return nil, err
 	}
@@ -1564,6 +1622,24 @@ func (p *Parser) parseStringLiteralExpression() (*StringLiteralExpression, error
 	return &StringLiteralExpression{nodeBase: p.newNodeBase(t.Span), Value: t.Value}, nil
 }
 
+func (p *Parser) parseUnaryExpression() (*UnaryExpression, error) {
+	t := p.consumeAny()
+	var op UnaryOperator
+	switch t.Kind {
+	case token.Not:
+		op = OpNot
+	case token.BitwiseNot:
+		op = OpBitwiseNot
+	default:
+		return nil, errors.Errorf("unexpected unary operator: %s", t)
+	}
+	expr, err := p.parsePrimaryExpression()
+	if err != nil {
+		return nil, err
+	}
+	return &UnaryExpression{nodeBase: p.newNodeBase(t.Span), Op: op, Value: expr}, nil
+}
+
 func (p *Parser) parsePrimaryExpression() (Expression, error) {
 	from := p.span()
 	t := p.peek()
@@ -1599,13 +1675,8 @@ func (p *Parser) parsePrimaryExpression() (Expression, error) {
 		return p.parseIfExpression()
 	case token.Match:
 		return p.parseMatchExpression()
-	case token.Not:
-		p.consumeAny()
-		expr, err := p.parsePrimaryExpression()
-		if err != nil {
-			return nil, err
-		}
-		return &UnaryExpression{nodeBase: p.newNodeBase(from), Op: OpNot, Value: expr}, nil
+	case token.Not, token.BitwiseNot:
+		return p.parseUnaryExpression()
 	}
 	return nil, errors.Errorf("expected expression, got token: %s", t)
 
@@ -1632,7 +1703,7 @@ func (p *Parser) parseNamedUnionDeclaration() (*NamedUnionTypeDeclaration, error
 	if err != nil {
 		return nil, err
 	}
-	typeParams, err := p.parseTypeParams()
+	typeParams, err := p.parseTypeParams(nameToken)
 	if err != nil {
 		return nil, err
 	}
@@ -1717,7 +1788,7 @@ func (p *Parser) parseStructDeclaration() (*StructTypeDeclaration, error) {
 	if err != nil {
 		return nil, err
 	}
-	typeParams, err := p.parseTypeParams()
+	typeParams, err := p.parseTypeParams(identToken)
 	if err != nil {
 		return nil, err
 	}
@@ -1760,7 +1831,7 @@ func (p *Parser) parseImplDefinition() (*ImplDefinition, error) {
 	}
 	target := Ident(targetIdentToken.Value)
 	var trait Ident = ""
-	traitTypeArgs, err := p.parseTypeArgs()
+	traitTypeArgs, err := p.parseTypeArgs(targetIdentToken)
 	if err != nil {
 		return nil, err
 	}
@@ -1808,7 +1879,7 @@ func (p *Parser) parseTraitDeclaration() (*TraitDeclaration, error) {
 	if err != nil {
 		return nil, err
 	}
-	typeParams, err := p.parseTypeParams()
+	typeParams, err := p.parseTypeParams(typeIdentToken)
 	if err != nil {
 		return nil, err
 	}

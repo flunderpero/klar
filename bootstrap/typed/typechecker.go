@@ -2476,7 +2476,7 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 	if !varInfo.IsMutable {
 		return errors.Errorf("%s: variable %q is not mutable", s.Span(), s.Variable())
 	}
-	if ok, field := s.IsMemberAssigment(); ok {
+	if field, ok := s.IsMemberAssigment(); ok {
 		structType, ok := varType.(*StructType)
 		if !ok {
 			return errors.Errorf("%s: variable %q is not a struct type", s.Span(), s.Variable())
@@ -2487,12 +2487,12 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 			return errors.Errorf("%s: field %q not found in struct type %q", s.Span(), field, structSymbol.Name)
 		}
 		varType = field.Type
-	} else if ok, index := s.IsIndexAssigment(); ok {
+	} else if index, ok := s.IsIndexAssigment(); ok {
 		arrayType, ok := varType.(*StructType)
 		if !ok || !tc.typeInfo.BuiltIns.IsArrayType(arrayType) {
 			return errors.Errorf("%s: variable %q is not of array type", s.Span(), s.Variable())
 		}
-		indexType, ok := tc.typeInfo.MustLookup(index).(IntType)
+		indexType, ok := tc.typeInfo.MustLookup(index.Index).(IntType)
 		if !ok {
 			return errors.Errorf("%s: index must be of type IntType, got %s", index.Span(), indexType)
 		}

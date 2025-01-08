@@ -1554,35 +1554,6 @@ func (g *generator) lookupArrayElementType(node ast.Node) Type {
 	return g.declaredTypes.MustLookup(typedElementType)
 }
 
-func (g *generator) VisitIndexExpression(expr *ast.IndexExpression, w ast.Walker) error {
-	if err := w.WalkIndexExpression(expr); err != nil {
-		return err
-	}
-	targetReg := g.lookupRegisterByNode(expr.Target)
-	targetType := g.lookupType(expr.Target).(*StructType)
-	elementType := g.lookupArrayElementType(expr.Target)
-	if !isValueType(elementType) {
-		elementType = &PointerType{elementType}
-	}
-	elementSize := g.dataLayout.SizeOf(elementType)
-	indexReg := g.lookupRegisterByNode(expr.Index)
-	dataPtrReg := g.nextRegister(targetType.Fields[2])
-	dataFieldReg := g.nextRegister(PointerType{elementType})
-	g.append(&GetPointer{register: dataFieldReg, Source: targetReg, FieldIndex: 2, SourceType: targetType}, nil)
-	g.append(&Load{register: dataPtrReg, Source: dataFieldReg, TargetType: &PointerType{elementType}}, nil)
-	elementSizeReg := g.nextRegister(Int64Type)
-	g.append(&IntConst{register: elementSizeReg, Value: int64(elementSize), Type: Int64Type}, nil)
-	offsetReg := g.nextRegister(Int64Type)
-	g.append(
-		&IntMultiplicationWithOverflow{binaryInst{register: offsetReg, lhs: elementSizeReg, rhs: indexReg}, Int64Type}, nil)
-	elementPtrReg := g.nextRegister(elementType)
-	g.append(
-		&UnsignedIntAddWithOverflow{binaryInst{register: elementPtrReg, lhs: dataPtrReg, rhs: offsetReg}, Int64Type}, nil)
-	reg := g.nextRegister(elementType)
-	g.append(&Load{register: reg, Source: elementPtrReg, TargetType: elementType}, expr)
-	return nil
-}
-
 func (g *generator) VisitBlockExpression(expr *ast.BlockExpression, w ast.Walker) error {
 	g.enterScope()
 	defer g.exitScope()
@@ -1615,7 +1586,7 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 		return err
 	}
 	reg := g.lookupRegisterByNode(stmt.Value)
-	if ok, field := stmt.IsMemberAssigment(); ok {
+	if field, ok := stmt.IsMemberAssigment(); ok {
 		sourceReg := g.symbolTable.mustLookup(stmt.Variable())
 		structType := g.typeInfo.MustLookup(stmt.VariableExpr()).(*typed.StructType)
 		sourceType := g.declaredTypes.MustLookup(structType).(*StructType)
@@ -1638,29 +1609,8 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 			Value:  reg,
 			Type:   fieldType,
 		}, stmt)
-	} else if ok, index := stmt.IsIndexAssigment(); ok {
-		sourceReg := g.symbolTable.mustLookup(stmt.Variable())
-		structType := g.lookupType(stmt.VariableExpr()).(*StructType)
-		elementType := g.lookupArrayElementType(stmt.VariableExpr())
-		if !isValueType(elementType) {
-			elementType = &PointerType{elementType}
-		}
-		elementSize := g.dataLayout.SizeOf(elementType)
-		dataPtrReg := g.nextRegister(elementType)
-		dataFieldReg := g.nextRegister(PointerType{elementType})
-		g.append(&GetPointer{register: dataFieldReg, Source: sourceReg, FieldIndex: 2, SourceType: structType}, nil)
-		g.append(&Load{register: dataPtrReg, Source: dataFieldReg, TargetType: &PointerType{elementType}}, nil)
-		elementSizeReg := g.nextRegister(Int64Type)
-		g.append(&IntConst{register: elementSizeReg, Value: int64(elementSize), Type: Int64Type}, nil)
-		indexReg := g.lookupRegisterByNode(index)
-		offsetReg := g.nextRegister(Int64Type)
-		g.append(&IntMultiplicationWithOverflow{
-			binaryInst{register: offsetReg, lhs: elementSizeReg, rhs: indexReg}, Int64Type}, nil)
-		elementPtrReg := g.nextRegister(&PointerType{elementType})
-		g.append(&UnsignedIntAddWithOverflow{
-			binaryInst{register: elementPtrReg, lhs: dataPtrReg, rhs: offsetReg}, Int64Type}, nil)
-		g.append(&Store{Target: elementPtrReg, Value: reg, Type: elementType}, stmt)
-
+	} else if _, ok := stmt.IsIndexAssigment(); ok {
+		panic("index assignment should have been lowered")
 	} else if stmt.IsDirectAssigment() {
 		g.symbolTable.assign(stmt.Variable(), reg)
 	} else {

@@ -1,5 +1,5 @@
 -- expect.stdout {
--- 2.42.42.3.3, true.false, b.Boo, 2.b.Boo
+-- 2.42.3.3, true.false, b.Boo, 2.b.Boo
 -- } expect.stdout
 -- expect.exit_code: 0
 
@@ -8,9 +8,7 @@ fn main() {
     print_int(int_arr[1])
     print(".")
     int_arr[1] = 42
-    print_int(int_arr.get(1))
-    print(".")
-    print_int(int_arr[1])
+    print_int(int_arr[-2])
     print(".")
     print_int(int_arr.len())
     print(".")

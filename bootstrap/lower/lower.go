@@ -37,6 +37,7 @@ func Lower(
 		[]*typed.Method{},
 		[]*typed.TraitType{})
 	// Note: The order of passes is important.
+	module = IndexLowering(module, typeInfo, typeCreator, nodeCreator)
 	module = ReceiverLowering(module, typeInfo, genericsResolver, nodeCreator)
 	module = MatchLowering(module, typeInfo, typeCreator, nodeCreator, unionStructType)
 	module = UnionLowering(module, typeInfo, typeCreator, nodeCreator, unionStructType)

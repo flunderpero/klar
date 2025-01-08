@@ -107,7 +107,7 @@ func (self *unionLoweringStage2) VisitVariableDefinition(v *ast.VariableDefiniti
 	return v, true
 }
 
-func (self *unionLoweringStage2) VisitAssignmentStatement(expr *ast.AssignmentStatement, w TransformWalker) (*ast.AssignmentStatement, bool) {
+func (self *unionLoweringStage2) VisitAssignmentStatement(expr *ast.AssignmentStatement, w TransformWalker) (ast.Node, bool) {
 	visited, ok := w.WalkAssignmentStatement(expr)
 	visitMustNotChange(expr, visited, ok)
 	ty, ok := self.typeInfo.MustLookup(expr.Target).(*typed.UnionType)

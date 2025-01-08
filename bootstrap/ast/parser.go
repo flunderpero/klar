@@ -614,18 +614,18 @@ func (a *AssignmentStatement) Variable() Ident {
 	return a.VariableExpr().Ident
 }
 
-func (a *AssignmentStatement) IsMemberAssigment() (bool, Ident) {
+func (a *AssignmentStatement) IsMemberAssigment() (Ident, bool) {
 	if member, ok := a.Target.(*MemberExpression); ok {
-		return true, member.Field.AsIdent()
+		return member.Field.AsIdent(), true
 	}
-	return false, ""
+	return "", false
 }
 
-func (a *AssignmentStatement) IsIndexAssigment() (bool, Expression) {
+func (a *AssignmentStatement) IsIndexAssigment() (*IndexExpression, bool) {
 	if index, ok := a.Target.(*IndexExpression); ok {
-		return true, index.Index
+		return index, true
 	}
-	return false, nil
+	return nil, false
 }
 
 func (a *AssignmentStatement) IsDirectAssigment() bool {

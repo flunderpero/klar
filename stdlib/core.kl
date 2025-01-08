@@ -50,9 +50,21 @@ impl InternalArray {
 
     fn len(self) Int => self.len_
 
-    fn get(self, i Int) T {
-        internal_read_ptr<T>(self.data_ + i * sizeof<T>())
+    fn internal_index_ptr(self, index Int) Int {
+        let i = if index < 0 => self.len_ + index else => index
+        if i <= 0 or i >= self.len_ {
+            panic("Index out of bounds")
+        }
+        self.data_ + i * sizeof<T>()
+    }
+
+    fn internal_get(self, index Int) T {
+        internal_read_ptr<T>(self.internal_index_ptr(index))
     } 
+
+    fn internal_set(self, index Int, val T) {
+        internal_write_ptr<T>(self.internal_index_ptr(index), val)
+    }
 }
 
 -- [[ Str ]]

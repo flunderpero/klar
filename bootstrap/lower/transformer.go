@@ -40,7 +40,7 @@ type Transformer interface {
 	VisitBoolLiteralExpression(expr *ast.BoolLiteralExpression) (ast.Expression, bool)
 	VisitTupleLiteralExpression(expr *ast.TupleLiteralExpression, w TransformWalker) (ast.Expression, bool)
 	VisitArrayLiteralExpression(expr *ast.ArrayLiteralExpression, w TransformWalker) (ast.Expression, bool)
-	VisitAssignmentStatement(stmt *ast.AssignmentStatement, w TransformWalker) (*ast.AssignmentStatement, bool)
+	VisitAssignmentStatement(stmt *ast.AssignmentStatement, w TransformWalker) (ast.Node, bool)
 	VisitLoopStatement(stmt *ast.LoopStatement, w TransformWalker) (*ast.LoopStatement, bool)
 	VisitBreakStatement(stmt *ast.BreakStatement) (*ast.BreakStatement, bool)
 	VisitContinueStatement(stmt *ast.ContinueStatement) (*ast.ContinueStatement, bool)
@@ -65,7 +65,7 @@ type TransformWalker interface {
 	WalkMatchExpression(expr *ast.MatchExpression) (ast.Expression, bool)
 	WalkBinaryExpression(expr *ast.BinaryExpression) (ast.Expression, bool)
 	WalkUnaryExpression(expr *ast.UnaryExpression) (ast.Expression, bool)
-	WalkAssignmentStatement(stmt *ast.AssignmentStatement) (*ast.AssignmentStatement, bool)
+	WalkAssignmentStatement(stmt *ast.AssignmentStatement) (ast.Node, bool)
 	WalkLoopStatement(stmt *ast.LoopStatement) (*ast.LoopStatement, bool)
 	WalkReturnStatement(stmt *ast.ReturnStatement) (*ast.ReturnStatement, bool)
 }
@@ -156,7 +156,7 @@ func (_ *DefaultTransformer) VisitVariableDefinition(variable *ast.VariableDefin
 	return w.WalkVariableDefinition(variable)
 }
 
-func (_ *DefaultTransformer) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w TransformWalker) (*ast.AssignmentStatement, bool) {
+func (_ *DefaultTransformer) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w TransformWalker) (ast.Node, bool) {
 	return w.WalkAssignmentStatement(stmt)
 }
 
@@ -422,7 +422,7 @@ func (w *DefaultTransformWalker) WalkVariableDefinition(variable *ast.VariableDe
 	return variable, true
 }
 
-func (w *DefaultTransformWalker) WalkAssignmentStatement(stmt *ast.AssignmentStatement) (*ast.AssignmentStatement, bool) {
+func (w *DefaultTransformWalker) WalkAssignmentStatement(stmt *ast.AssignmentStatement) (ast.Node, bool) {
 	target, targetOk := w.Transformer.VisitNode(stmt.Target, w)
 	value, valueOk := w.Transformer.VisitNode(stmt.Value, w)
 	if targetOk != valueOk {

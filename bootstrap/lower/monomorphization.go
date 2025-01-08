@@ -52,6 +52,10 @@ func (self *SpecializedTypeInfo) MustLookupSymbol(id typed.IsId) *typed.Symbol {
 	return self.base.MustLookupSymbol(id)
 }
 
+func (self *SpecializedTypeInfo) BuiltIns() *typed.BuiltIns {
+	return &self.base.BuiltIns
+}
+
 type FunctionSpecialization struct {
 	FuncDef     *ast.FunctionDefinition
 	Specialized *typed.FunctionType

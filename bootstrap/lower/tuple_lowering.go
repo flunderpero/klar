@@ -80,6 +80,15 @@ func (self *tupleLowering) replaceTupleTypeWithStructType(ty typed.Type) typed.T
 	if res, ok := self.replaceTupleTypeWithStructTypeSeen[ty.Id()]; ok {
 		return res
 	}
+	if genericType, ok := ty.(typed.GenericType); ok {
+		typeArgs := genericType.TypeArgs()
+		for i, typeArg := range typeArgs {
+			if _, ok := typeArg.(typed.TypeParam); ok {
+				continue
+			}
+			typeArgs[i] = self.replaceTupleTypeWithStructType(typeArg)
+		}
+	}
 	switch tyKind := ty.(type) {
 	case *typed.TupleType:
 		ty = self.convertTupleToStructType(tyKind)
@@ -115,9 +124,6 @@ func (self *tupleLowering) replaceTupleTypeWithStructType(ty typed.Type) typed.T
 	case *typed.NamedUnionVariant:
 		self.replaceTupleTypeWithStructTypeSeen[ty.Id()] = ty
 		tyKind.Type = self.replaceTupleTypeWithStructType(tyKind.Type).(*typed.TupleType)
-	case *typed.ArrayType:
-		self.replaceTupleTypeWithStructTypeSeen[ty.Id()] = ty
-		tyKind.SetElementType(self.replaceTupleTypeWithStructType(tyKind.ElementType()))
 	case *typed.BoolType,
 		*typed.Int64Type,
 		*typed.Int32Type,

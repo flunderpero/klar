@@ -1147,26 +1147,29 @@ func (g *generator) VisitArrayLiteralExpression(expr *ast.ArrayLiteralExpression
 	}
 	// Arrays have been lowered to StructTypes.
 	structType := g.lookupType(expr).(*StructType)
-	elementType := g.lookupType(expr.Values[0])
+	elementType := g.lookupArrayElementType(expr)
 	if !isValueType(elementType) {
 		elementType = &PointerType{elementType}
 	}
 	elementSize := g.dataLayout.SizeOf(elementType)
-	size := elementSize * len(expr.Values)
-	mallocReg := g.malloc(size, expr)
-	lenPtrReg := g.nextRegister(PointerType{Int64Type})
-	capacityPtrReg := g.nextRegister(PointerType{Int64Type})
-	dataPtrReg := g.nextRegister(elementType)
+	resultReg := g.malloc(g.dataLayout.SizeOf(structType), expr)
+	lenFieldReg := g.nextRegister(PointerType{Int64Type})
+	capacityFieldReg := g.nextRegister(PointerType{Int64Type})
 	lenAndCapacityValReg := g.nextRegister(Int64Type)
 	// Set `capacity`.
 	g.append(&IntConst{register: lenAndCapacityValReg, Value: int64(len(expr.Values)), Type: Int64Type}, nil)
-	g.append(&GetPointer{register: capacityPtrReg, Source: mallocReg, FieldIndex: 0, SourceType: structType}, nil)
-	g.append(&Store{Target: capacityPtrReg, Value: lenAndCapacityValReg, Type: Int64Type}, nil)
+	g.append(&GetPointer{register: capacityFieldReg, Source: resultReg, FieldIndex: 0, SourceType: structType}, nil)
+	g.append(&Store{Target: capacityFieldReg, Value: lenAndCapacityValReg, Type: Int64Type}, nil)
 	// Set `len`.
-	g.append(&GetPointer{register: lenPtrReg, Source: mallocReg, FieldIndex: 1, SourceType: structType}, nil)
-	g.append(&Store{Target: lenPtrReg, Value: lenAndCapacityValReg, Type: Int64Type}, nil)
-	// Set values.
-	g.append(&GetPointer{register: dataPtrReg, Source: mallocReg, FieldIndex: 2, SourceType: structType}, nil)
+	g.append(&GetPointer{register: lenFieldReg, Source: resultReg, FieldIndex: 1, SourceType: structType}, nil)
+	g.append(&Store{Target: lenFieldReg, Value: lenAndCapacityValReg, Type: Int64Type}, nil)
+	// Allocate `data`.
+	size := elementSize * len(expr.Values)
+	dataPtrReg := g.malloc(size, nil)
+	// Set `data` field.
+	dataFieldReg := g.nextRegister(&PointerType{elementType})
+	g.append(&GetPointer{register: dataFieldReg, Source: resultReg, FieldIndex: 2, SourceType: structType}, nil)
+	g.append(&Store{Target: dataFieldReg, Value: dataPtrReg, Type: &PointerType{elementType}}, nil)
 	elementSizeReg := g.nextRegister(Int64Type)
 	g.append(&IntConst{register: elementSizeReg, Value: int64(elementSize), Type: Int64Type}, nil)
 	for _, value := range expr.Values {
@@ -1270,12 +1273,6 @@ func (g *generator) VisitCallExpression(expr *ast.CallExpression, w ast.Walker) 
 						Source:     g.lookupRegisterByNode(expr.Args[0].Value),
 						TargetType: toType,
 					}, expr)
-					return nil
-				}
-			} else if _, ok := fromIRType.(*typed.ArrayType); ok {
-				if _, ok := toIRType.(*typed.RawPtr); ok {
-					// The array type is already a pointer.
-					g.registerByNodeId[expr.Id()] = g.lookupRegisterByNode(expr.Args[0].Value)
 					return nil
 				}
 			}
@@ -1551,31 +1548,38 @@ func (g *generator) VisitMemberExpression(expr *ast.MemberExpression, w ast.Walk
 	return nil
 }
 
+func (g *generator) lookupArrayElementType(node ast.Node) Type {
+	typedType := g.typeInfo.MustLookup(node)
+	typedElementType := g.typeInfo.BuiltIns().GetArrayElementType(typedType)
+	return g.declaredTypes.MustLookup(typedElementType)
+}
+
 func (g *generator) VisitIndexExpression(expr *ast.IndexExpression, w ast.Walker) error {
 	if err := w.WalkIndexExpression(expr); err != nil {
 		return err
 	}
 	targetReg := g.lookupRegisterByNode(expr.Target)
 	targetType := g.lookupType(expr.Target).(*StructType)
-	elementPointerType := targetType.Fields[2].(*PointerType)
-	elementType := elementPointerType.ElementType
+	elementType := g.lookupArrayElementType(expr.Target)
 	if !isValueType(elementType) {
-		elementType = elementPointerType
+		elementType = &PointerType{elementType}
 	}
 	elementSize := g.dataLayout.SizeOf(elementType)
 	indexReg := g.lookupRegisterByNode(expr.Index)
 	dataPtrReg := g.nextRegister(targetType.Fields[2])
-	g.append(&GetPointer{register: dataPtrReg, Source: targetReg, FieldIndex: 2, SourceType: targetType}, nil)
+	dataFieldReg := g.nextRegister(PointerType{elementType})
+	g.append(&GetPointer{register: dataFieldReg, Source: targetReg, FieldIndex: 2, SourceType: targetType}, nil)
+	g.append(&Load{register: dataPtrReg, Source: dataFieldReg, TargetType: &PointerType{elementType}}, nil)
 	elementSizeReg := g.nextRegister(Int64Type)
 	g.append(&IntConst{register: elementSizeReg, Value: int64(elementSize), Type: Int64Type}, nil)
 	offsetReg := g.nextRegister(Int64Type)
 	g.append(
 		&IntMultiplicationWithOverflow{binaryInst{register: offsetReg, lhs: elementSizeReg, rhs: indexReg}, Int64Type}, nil)
-	elementPtrReg := g.nextRegister(elementPointerType)
+	elementPtrReg := g.nextRegister(elementType)
 	g.append(
 		&UnsignedIntAddWithOverflow{binaryInst{register: elementPtrReg, lhs: dataPtrReg, rhs: offsetReg}, Int64Type}, nil)
-	reg := g.nextRegister(elementPointerType)
-	g.append(&Load{register: reg, Source: elementPtrReg, TargetType: elementPointerType}, expr)
+	reg := g.nextRegister(elementType)
+	g.append(&Load{register: reg, Source: elementPtrReg, TargetType: elementType}, expr)
 	return nil
 }
 
@@ -1637,13 +1641,15 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 	} else if ok, index := stmt.IsIndexAssigment(); ok {
 		sourceReg := g.symbolTable.mustLookup(stmt.Variable())
 		structType := g.lookupType(stmt.VariableExpr()).(*StructType)
-		elementType := g.lookupType(stmt.Value)
+		elementType := g.lookupArrayElementType(stmt.VariableExpr())
 		if !isValueType(elementType) {
 			elementType = &PointerType{elementType}
 		}
 		elementSize := g.dataLayout.SizeOf(elementType)
 		dataPtrReg := g.nextRegister(elementType)
-		g.append(&GetPointer{register: dataPtrReg, Source: sourceReg, FieldIndex: 2, SourceType: structType}, nil)
+		dataFieldReg := g.nextRegister(PointerType{elementType})
+		g.append(&GetPointer{register: dataFieldReg, Source: sourceReg, FieldIndex: 2, SourceType: structType}, nil)
+		g.append(&Load{register: dataPtrReg, Source: dataFieldReg, TargetType: &PointerType{elementType}}, nil)
 		elementSizeReg := g.nextRegister(Int64Type)
 		g.append(&IntConst{register: elementSizeReg, Value: int64(elementSize), Type: Int64Type}, nil)
 		indexReg := g.lookupRegisterByNode(index)
@@ -1746,7 +1752,7 @@ func (dt *DeclaredTypes) MustLookup(ty typed.Type) Type {
 		return UInt32Type
 	case *typed.UInt64Type:
 		return UInt64Type
-	case *typed.StructType, *typed.FunctionType, *typed.ArrayType:
+	case *typed.StructType, *typed.FunctionType:
 		if res, found := dt.Types[ty.Id()]; found {
 			return res
 		}
@@ -1769,10 +1775,6 @@ func (dt *DeclaredTypes) declare(ty typed.Type) {
 			fieldTypes = append(fieldTypes, fieldType)
 		}
 		structType := &StructType{Fields: fieldTypes}
-		dt.Types[ty.Id()] = structType
-	case *typed.ArrayType:
-		elementType := dt.MustLookup(ty.ElementType())
-		structType := &StructType{Fields: []Type{Int64Type, Int64Type, &PointerType{elementType}}}
 		dt.Types[ty.Id()] = structType
 	case *typed.FunctionType:
 		params := make([]FunctionParam, len(ty.Params))

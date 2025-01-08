@@ -6,7 +6,6 @@ import (
 )
 
 type GenericsResolver struct {
-	resolvedArrayTypes  []*ArrayType
 	resolvedFuncTypes   []*FunctionType
 	resolvedStructTypes []*StructType
 	resolvedTraitTypes  []*TraitType
@@ -39,26 +38,6 @@ func (self *GenericsResolver) findResolvedStructType(ty *StructType, typeArgs []
 		tyBase = ty
 	}
 	for _, resolved := range self.resolvedStructTypes {
-		base, ok := resolved.GenericBase()
-		if !ok {
-			panic(fmt.Sprintf("expected to have a generic base type: %s", resolved))
-		}
-		if base.Id() != tyBase.Id() {
-			continue
-		}
-		if MatchTypeArgs(resolved, typeArgs) {
-			return resolved, true
-		}
-	}
-	return nil, false
-}
-
-func (self *GenericsResolver) findResolvedArrayType(ty *ArrayType, typeArgs []Type) (*ArrayType, bool) {
-	tyBase, ok := ty.GenericBase()
-	if !ok {
-		tyBase = ty
-	}
-	for _, resolved := range self.resolvedArrayTypes {
 		base, ok := resolved.GenericBase()
 		if !ok {
 			panic(fmt.Sprintf("expected to have a generic base type: %s", resolved))
@@ -272,20 +251,6 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 				field.Type = self.ResolveTypeArgs(field.Type, typeParams, typeArgs)
 				res.Fields[i] = field
 			}
-			for i, method := range ty.methods {
-				method := *method // Make a copy.
-				method.Type = self.ResolveTypeArgs(method.Type, typeParams, typeArgs).(*FunctionType)
-				res.methods[i] = &method
-			}
-			self.declareSymbolForSpecializedType(res)
-			return res
-		case *ArrayType:
-			if resolved, ok := self.findResolvedArrayType(ty, genericTypeArgs); ok {
-				return resolved
-			}
-			res := self.typeCreator.NewArrayType(
-				genericBase(ty), ty.typeParams, genericTypeArgs, make([]*Method, len(ty.methods)), ty.Traits())
-			self.resolvedArrayTypes = append(self.resolvedArrayTypes, res)
 			for i, method := range ty.methods {
 				method := *method // Make a copy.
 				method.Type = self.ResolveTypeArgs(method.Type, typeParams, typeArgs).(*FunctionType)

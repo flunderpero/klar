@@ -37,22 +37,21 @@ trait ToStr {
 
 -- [[ Array ]]
 
--- The internal structure of the array is:
---      I64 capacity
---      I64 len
---      T.. data
+-- The `InternalArray` maps to the array type in Klar.
+-- Its structure is as follows:
+-- struct InternalArray {
+--      capacity_ Int
+--      len_      Int
+--      data_     RawPtr
+-- }
 
 impl InternalArray {
-    fn capacity(self) Int => internal_read_ptr<Int>(internal_cast<InternalArray, RawPtr>(self))
+    fn capacity(self) Int => self.capacity_
 
-    fn len(self) Int {
-        internal_read_ptr<Int>(internal_cast<InternalArray, RawPtr>(self) + sizeof<I64>())
-    }
+    fn len(self) Int => self.len_
 
     fn get(self, i Int) T {
-        mut ptr = internal_cast<InternalArray, RawPtr>(self)
-        ptr = ptr + 16 + sizeof<T>() * i
-        internal_read_ptr<T>(ptr)
+        internal_read_ptr<T>(self.data_ + i * sizeof<T>())
     } 
 }
 

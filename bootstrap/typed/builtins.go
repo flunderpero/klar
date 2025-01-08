@@ -1,6 +1,8 @@
 package typed
 
 import (
+	"fmt"
+
 	"github.com/flunderpero/klar/bootstrap/ast"
 	"github.com/flunderpero/klar/bootstrap/token"
 	"github.com/pkg/errors"
@@ -22,7 +24,7 @@ type BuiltIns struct {
 	None                  *NoneType
 	Never                 *NeverType
 	RawPtr                *RawPtr
-	InternalArray         *ArrayType
+	InternalArray         *StructType
 	InternalPrint         *FunctionType
 	PrintChar             *FunctionType
 	PrintInt              *FunctionType
@@ -37,6 +39,20 @@ type BuiltIns struct {
 	InternalCast          *FunctionType
 	builtInFunctionIdFrom TypeId
 	builtInFunctionIdTo   TypeId
+}
+
+func (self *BuiltIns) GetArrayElementType(ty Type) Type {
+	if !self.IsArrayType(ty) {
+		panic(fmt.Sprintf("expected the array type, got: %s", ty))
+	}
+	return ty.(*StructType).typeArgs[0]
+}
+
+func (self *BuiltIns) IsArrayType(ty Type) bool {
+	if structTy, ok := ty.(*StructType); ok {
+		return structTy.genericBase == self.InternalArray
+	}
+	return false
 }
 
 func (self *BuiltIns) IsBuiltInFunction(ty *FunctionType) bool {
@@ -95,15 +111,19 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		&StructType{
 			implementableTypeBase: implementableTypeBase{typeBase: typeBase{TypeId(1)}, methods: nil, traits: nil},
 			Fields: []TypeAndName[Type]{{
-				Name: "len_", Type: builtIns.I64}, {Name: "bytes_", Type: builtIns.RawPtr}}})
+				Name: "len_", Type: builtIns.Int}, {Name: "bytes_", Type: builtIns.RawPtr}}})
 	builtIns.InternalArray = declareBuiltIn(
 		tc,
 		typeInfo,
 		symbolScope,
 		"InternalArray",
-		&ArrayType{
+		&StructType{
 			implementableTypeBase: implementableTypeBase{typeBase: typeBase{TypeId(15)}, methods: nil, traits: nil},
-		})
+			Fields: []TypeAndName[Type]{
+				{Name: "len_", Type: builtIns.Int},
+				{Name: "capacity_", Type: builtIns.Int},
+				{Name: "data_", Type: builtIns.RawPtr},
+			}})
 	internalArrayTypeParam := &TypeParam{
 		typeBase:    typeBase{TypeId(16)},
 		GenericType: builtIns.InternalArray,

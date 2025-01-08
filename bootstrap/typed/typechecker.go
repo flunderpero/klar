@@ -72,15 +72,6 @@ func (self *TypeCreator) NewTupleType(values []Type) *TupleType {
 	return &TupleType{typeBase: self.newTypeBase(), Values: values}
 }
 
-func (self *TypeCreator) NewArrayType(genericBase *ArrayType, typeParams []TypeParam, typeArgs []Type, methods []*Method, traits []*TraitType) *ArrayType {
-	return &ArrayType{
-		implementableTypeBase: self.newImplementableTypeBase(methods, traits),
-		genericBase:           genericBase,
-		typeParams:            typeParams,
-		typeArgs:              typeArgs,
-	}
-}
-
 type IsId interface {
 	String() string
 	IdMarker()
@@ -580,54 +571,6 @@ func (self TupleType) CallParams() []FunctionParam {
 
 func (self TupleType) CallResult() Type {
 	return &self
-}
-
-type ArrayType struct {
-	implementableTypeBase
-	genericBase *ArrayType
-	typeParams  []TypeParam
-	typeArgs    []Type
-}
-
-func (self ArrayType) String() string {
-	return fmt.Sprintf("ArrayType%s%s%s",
-		base.IndentString(typeParamsString(self.typeParams), 1),
-		base.IndentString(typeArgsString(self.typeArgs), 1),
-		base.IndentSlice(self.Methods(), 1),
-	)
-}
-
-func (self ArrayType) ElementType() Type {
-	return self.typeArgs[0]
-}
-
-func (self *ArrayType) SetElementType(elementType Type) {
-	self.typeArgs[0] = elementType
-}
-
-func (self ArrayType) IsAssignableFrom(other Type) bool {
-	if self.id == other.Id() {
-		return true
-	}
-	if other, ok := other.(*ArrayType); ok {
-		return self.ElementType().Id() == other.ElementType().Id()
-	}
-	return false
-}
-
-func (self *ArrayType) TypeParams() []TypeParam {
-	return self.typeParams
-}
-
-func (self *ArrayType) TypeArgs() []Type {
-	return self.typeArgs
-}
-
-func (self *ArrayType) GenericBase() (GenericType, bool) {
-	if self.genericBase == nil {
-		return nil, false
-	}
-	return self.genericBase, true
 }
 
 type UnionVariantKind int
@@ -1892,11 +1835,11 @@ func (tc *typeChecker) VisitIndexExpression(expr *ast.IndexExpression, w ast.Wal
 	if !ok {
 		return errors.Errorf("%s: index must be of type IntType, got %s", expr.Index.Span(), indexType)
 	}
-	ty, ok := tc.typeInfo.MustLookup(expr.Target).(*ArrayType)
-	if !ok {
-		return errors.Errorf("%s: target must be of type ArrayType, got %s", expr.Target.Span(), ty)
+	ty, ok := tc.typeInfo.MustLookup(expr.Target).(*StructType)
+	if !ok || !tc.typeInfo.BuiltIns.IsArrayType(ty) {
+		return errors.Errorf("%s: target must be the array type, got %s", expr.Target.Span(), ty)
 	}
-	tc.typeInfo.Set(expr, ty.ElementType())
+	tc.typeInfo.Set(expr, tc.typeInfo.BuiltIns.GetArrayElementType(ty))
 	return nil
 }
 
@@ -2545,15 +2488,15 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 		}
 		varType = field.Type
 	} else if ok, index := s.IsIndexAssigment(); ok {
-		arrayType, ok := varType.(*ArrayType)
-		if !ok {
-			return errors.Errorf("%s: variable %q is not an array type", s.Span(), s.Variable())
+		arrayType, ok := varType.(*StructType)
+		if !ok || !tc.typeInfo.BuiltIns.IsArrayType(arrayType) {
+			return errors.Errorf("%s: variable %q is not of array type", s.Span(), s.Variable())
 		}
 		indexType, ok := tc.typeInfo.MustLookup(index).(IntType)
 		if !ok {
 			return errors.Errorf("%s: index must be of type IntType, got %s", index.Span(), indexType)
 		}
-		varType = arrayType.ElementType()
+		varType = tc.typeInfo.BuiltIns.GetArrayElementType(arrayType)
 	} else if s.IsDirectAssigment() {
 	} else {
 		panic("unexpected assignment type")

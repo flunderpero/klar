@@ -1607,18 +1607,18 @@ func (g *generator) VisitVariableDefinition(expr *ast.VariableDefinition, w ast.
 }
 
 func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w ast.Walker) error {
-	if err := w.WalkNode(stmt.Rhs); err != nil {
+	if err := w.WalkAssignmentStatement(stmt); err != nil {
 		return err
 	}
-	reg := g.lookupRegisterByNode(stmt.Rhs)
-	if stmt.IsAssignToMember() {
-		sourceReg := g.symbolTable.mustLookup(stmt.Variable.Ident)
-		structType := g.typeInfo.MustLookup(stmt.Variable).(*typed.StructType)
-		sourceType := g.lookupType(stmt.Variable).(*StructType)
-		fieldIndex, found := structType.FindFieldIndex(ast.MemberExpressionField(*stmt.Field))
+	reg := g.lookupRegisterByNode(stmt.Value)
+	if ok, field := stmt.IsMemberAssigment(); ok {
+		sourceReg := g.symbolTable.mustLookup(stmt.Variable())
+		structType := g.typeInfo.MustLookup(stmt.VariableExpr()).(*typed.StructType)
+		sourceType := g.declaredTypes.MustLookup(structType).(*StructType)
+		fieldIndex, found := structType.FindFieldIndex(ast.MemberExpressionField(field))
 		if !found {
 			structSymbol := g.typeInfo.MustLookupSymbol(structType.Id())
-			return errors.Errorf("field %q not found in struct %q", *stmt.Field, structSymbol.Name)
+			return errors.Errorf("field %q not found in struct %q", field, structSymbol.Name)
 
 		}
 		fieldType := sourceType.Fields[fieldIndex]
@@ -1634,8 +1634,31 @@ func (g *generator) VisitAssignmentStatement(stmt *ast.AssignmentStatement, w as
 			Value:  reg,
 			Type:   fieldType,
 		}, stmt)
+	} else if ok, index := stmt.IsIndexAssigment(); ok {
+		sourceReg := g.symbolTable.mustLookup(stmt.Variable())
+		structType := g.lookupType(stmt.VariableExpr()).(*StructType)
+		elementType := g.lookupType(stmt.Value)
+		if !isValueType(elementType) {
+			elementType = &PointerType{elementType}
+		}
+		elementSize := g.dataLayout.SizeOf(elementType)
+		dataPtrReg := g.nextRegister(elementType)
+		g.append(&GetPointer{register: dataPtrReg, Source: sourceReg, FieldIndex: 2, SourceType: structType}, nil)
+		elementSizeReg := g.nextRegister(Int64Type)
+		g.append(&IntConst{register: elementSizeReg, Value: int64(elementSize), Type: Int64Type}, nil)
+		indexReg := g.lookupRegisterByNode(index)
+		offsetReg := g.nextRegister(Int64Type)
+		g.append(&IntMultiplicationWithOverflow{
+			binaryInst{register: offsetReg, lhs: elementSizeReg, rhs: indexReg}, Int64Type}, nil)
+		elementPtrReg := g.nextRegister(&PointerType{elementType})
+		g.append(&UnsignedIntAddWithOverflow{
+			binaryInst{register: elementPtrReg, lhs: dataPtrReg, rhs: offsetReg}, Int64Type}, nil)
+		g.append(&Store{Target: elementPtrReg, Value: reg, Type: elementType}, stmt)
+
+	} else if stmt.IsDirectAssigment() {
+		g.symbolTable.assign(stmt.Variable(), reg)
 	} else {
-		g.symbolTable.assign(stmt.Variable.Ident, reg)
+		panic("unsupported assignment")
 	}
 	return nil
 }

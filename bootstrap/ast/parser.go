@@ -588,22 +588,49 @@ func (r *ReturnStatement) String() string {
 
 type AssignmentStatement struct {
 	nodeBase
-	Variable *IdentExpression
-	// This is optional but we cannot express this in Go.
-	Field *Ident
-	Rhs   Expression
+	// Can either be an IdentExpression, MemberExpression, or IndexExpression.
+	Target Expression
+	Value  Expression
 }
 
 func (a *AssignmentStatement) String() string {
-	if a.IsAssignToMember() {
-		return fmt.Sprintf(
-			"AssignmentStatement\n%s\n%s\n%s", base.Indent(a.Variable, 1), base.Indent(*a.Field, 1), base.Indent(a.Rhs, 1))
-	}
-	return fmt.Sprintf("AssignmentStatement\n%s\n%s", base.Indent(a.Variable, 1), base.Indent(a.Rhs, 1))
+	return fmt.Sprintf("AssignmentStatement\n%s\n%s", base.Indent(a.Target, 1), base.Indent(a.Value, 1))
 }
 
-func (a *AssignmentStatement) IsAssignToMember() bool {
-	return a.Field != nil
+func (a *AssignmentStatement) VariableExpr() *IdentExpression {
+	switch target := a.Target.(type) {
+	case *IdentExpression:
+		return target
+	case *MemberExpression:
+		return a.Target.(*MemberExpression).Target.(*IdentExpression)
+	case *IndexExpression:
+		return a.Target.(*IndexExpression).Target.(*IdentExpression)
+	default:
+		panic(fmt.Sprintf("unexpected target type: %T", a.Target))
+	}
+}
+
+func (a *AssignmentStatement) Variable() Ident {
+	return a.VariableExpr().Ident
+}
+
+func (a *AssignmentStatement) IsMemberAssigment() (bool, Ident) {
+	if member, ok := a.Target.(*MemberExpression); ok {
+		return true, member.Field.AsIdent()
+	}
+	return false, ""
+}
+
+func (a *AssignmentStatement) IsIndexAssigment() (bool, Expression) {
+	if index, ok := a.Target.(*IndexExpression); ok {
+		return true, index.Index
+	}
+	return false, nil
+}
+
+func (a *AssignmentStatement) IsDirectAssigment() bool {
+	_, ok := a.Target.(*IdentExpression)
+	return ok
 }
 
 type Module struct {
@@ -1458,18 +1485,22 @@ func (p *Parser) parseAssignmentStatement(lhs Expression) (*AssignmentStatement,
 	}
 	switch lhs := lhs.(type) {
 	case *IdentExpression:
-		return &AssignmentStatement{nodeBase: p.newNodeBase(from), Variable: lhs, Field: nil, Rhs: rhs}, nil
+		return &AssignmentStatement{nodeBase: p.newNodeBase(from), Target: lhs, Value: rhs}, nil
 	case *MemberExpression:
-		switch variable := lhs.Target.(type) {
-		case *IdentExpression:
-			if lhs.Field.IsIndex() {
-				return nil, errors.Errorf("%s: cannot assign to an index", lhs.span)
-			}
-			field := lhs.Field.AsIdent()
-			return &AssignmentStatement{nodeBase: p.newNodeBase(from), Variable: variable, Field: &field, Rhs: rhs}, nil
+		if _, ok := lhs.Target.(*IdentExpression); !ok {
+			return nil, errors.Errorf("%s: cannot assign to a member expression that does not target an identifier", lhs.span)
 		}
+		if lhs.Field.IsIndex() {
+			return nil, errors.Errorf("%s: cannot assign to an index", lhs.span)
+		}
+		return &AssignmentStatement{nodeBase: p.newNodeBase(from), Target: lhs, Value: rhs}, nil
+	case *IndexExpression:
+		if _, ok := lhs.Target.(*IdentExpression); !ok {
+			return nil, errors.Errorf("%s: cannot assign to an index expression that does not target an identifier", lhs.span)
+		}
+		return &AssignmentStatement{nodeBase: p.newNodeBase(from), Target: lhs, Value: rhs}, nil
 	}
-	return nil, errors.Errorf("expected identifier or member expression with identifier as target, got %s", lhs)
+	return nil, errors.Errorf("expected IdentExpression, MemberExpression, or IndexExpression, got %s", lhs)
 }
 
 func (p *Parser) parseExpression() (Expression, error) {

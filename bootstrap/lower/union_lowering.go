@@ -110,15 +110,15 @@ func (self *unionLoweringStage2) VisitVariableDefinition(v *ast.VariableDefiniti
 func (self *unionLoweringStage2) VisitAssignmentStatement(expr *ast.AssignmentStatement, w TransformWalker) (*ast.AssignmentStatement, bool) {
 	visited, ok := w.WalkAssignmentStatement(expr)
 	visitMustNotChange(expr, visited, ok)
-	ty, ok := self.typeInfo.MustLookup(expr.Variable).(*typed.UnionType)
+	ty, ok := self.typeInfo.MustLookup(expr.Target).(*typed.UnionType)
 	if !ok {
 		return expr, true
 	}
-	if self.typeInfo.MustLookup(expr.Rhs).Id() == self.unionStructType.Id() {
+	if self.typeInfo.MustLookup(expr.Value).Id() == self.unionStructType.Id() {
 		// The value expression has already been converted to a struct type - nothing to do.
 		return expr, true
 	}
-	expr.Rhs = self.createUnionStructCallExpression(ty, expr.Rhs)
+	expr.Value = self.createUnionStructCallExpression(ty, expr.Value)
 	return expr, true
 }
 

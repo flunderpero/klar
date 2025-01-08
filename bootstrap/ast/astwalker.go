@@ -351,10 +351,10 @@ func (w *DefaultWalker) WalkVariableDefinition(variable *VariableDefinition) err
 }
 
 func (w *DefaultWalker) WalkAssignmentStatement(stmt *AssignmentStatement) error {
-	if err := w.Visitor.VisitNode(stmt.Variable, w); err != nil {
+	if err := w.Visitor.VisitNode(stmt.Target, w); err != nil {
 		return err
 	}
-	return w.Visitor.VisitNode(stmt.Rhs, w)
+	return w.Visitor.VisitNode(stmt.Value, w)
 }
 
 func (w *DefaultWalker) WalkLoopStatement(stmt *LoopStatement) error {

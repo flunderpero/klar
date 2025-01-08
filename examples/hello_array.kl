@@ -1,32 +1,38 @@
 -- expect.stdout {
--- 2.2.3.3, true.true, b.b, 2.b.b
+-- 2.42.42.3.3, true.false, b.Boo, 2.b.Boo
 -- } expect.stdout
 -- expect.exit_code: 0
 
 fn main() {
-    let int_arr = [1, 2, 3]
+    mut int_arr = [1, 2, 3]
     print_int(int_arr[1])
     print(".")
+    int_arr[1] = 42
     print_int(int_arr.get(1))
+    print(".")
+    print_int(int_arr[1])
     print(".")
     print_int(int_arr.len())
     print(".")
     print_int(int_arr.capacity())
     print(", ")
-    let bool_arr = [true, false, true]
+    mut bool_arr = [true, false, true]
     print_bool(bool_arr[2])
     print(".")
-    print_bool(bool_arr.get(2))
+    bool_arr[2] = false
+    print_bool(bool_arr[2])
     print(", ")
-    let str_arr = ["a", "b", "c"]
+    mut str_arr = ["a", "b", "c"]
     print(str_arr[1])
     print(".")
-    print(str_arr.get(1))
+    str_arr[1] = "Boo"
+    print(str_arr[1])
     print(", ")
-    let tuple_arr = [(1, "a"), (2, "b"), (3, "c")]
+    mut tuple_arr = [(1, "a"), (2, "b"), (3, "c")]
     print_int(tuple_arr[1].0)
     print(".")
     print(tuple_arr[1].1)
     print(".")
-    print(tuple_arr.get(1).1)
+    tuple_arr[1] = (42, "Boo")
+    print(tuple_arr[1].1)
 }

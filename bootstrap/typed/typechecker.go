@@ -2518,32 +2518,45 @@ func (tc *typeChecker) VisitVariableDefinition(v *ast.VariableDefinition, w ast.
 }
 
 func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w ast.Walker) error {
-	if err := tc.VisitNode(s.Variable, w); err != nil {
+	if err := tc.VisitNode(s.Target, w); err != nil {
 		return err
 	}
-	varType, varInfo, ok := tc.typeScope.lookupVariable(s.Variable.Ident)
+	varType, varInfo, ok := tc.typeScope.lookupVariable(s.Variable())
 	tc.contextualType = varType
-	if err := tc.VisitNode(s.Rhs, w); err != nil {
+	if err := tc.VisitNode(s.Value, w); err != nil {
 		return err
 	}
-	rhsType := tc.typeInfo.MustLookup(s.Rhs)
+	rhsType := tc.typeInfo.MustLookup(s.Value)
 	if !ok {
-		return errors.Errorf("%s: unknown variable %q", s.Span(), s.Variable.Ident)
+		return errors.Errorf("%s: unknown variable %q", s.Span(), s.Variable())
 	}
 	if !varInfo.IsMutable {
-		return errors.Errorf("%s: variable %q is not mutable", s.Span(), s.Variable.Ident)
+		return errors.Errorf("%s: variable %q is not mutable", s.Span(), s.Variable())
 	}
-	if s.IsAssignToMember() {
+	if ok, field := s.IsMemberAssigment(); ok {
 		structType, ok := varType.(*StructType)
 		if !ok {
-			return errors.Errorf("%s: variable %q is not a struct type", s.Span(), s.Variable.Ident)
+			return errors.Errorf("%s: variable %q is not a struct type", s.Span(), s.Variable())
 		}
-		field, found := structType.FindField(ast.MemberExpressionField(*s.Field))
+		field, found := structType.FindField(ast.MemberExpressionField(field))
 		if !found {
 			structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
-			return errors.Errorf("%s: field %q not found in struct type %q", s.Span(), s.Field, structSymbol.Name)
+			return errors.Errorf("%s: field %q not found in struct type %q", s.Span(), field, structSymbol.Name)
 		}
 		varType = field.Type
+	} else if ok, index := s.IsIndexAssigment(); ok {
+		arrayType, ok := varType.(*ArrayType)
+		if !ok {
+			return errors.Errorf("%s: variable %q is not an array type", s.Span(), s.Variable())
+		}
+		indexType, ok := tc.typeInfo.MustLookup(index).(IntType)
+		if !ok {
+			return errors.Errorf("%s: index must be of type IntType, got %s", index.Span(), indexType)
+		}
+		varType = arrayType.ElementType()
+	} else if s.IsDirectAssigment() {
+	} else {
+		panic("unexpected assignment type")
 	}
 	if !varType.IsAssignableFrom(rhsType) {
 		return errors.Errorf(

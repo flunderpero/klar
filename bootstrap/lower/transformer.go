@@ -423,16 +423,16 @@ func (w *DefaultTransformWalker) WalkVariableDefinition(variable *ast.VariableDe
 }
 
 func (w *DefaultTransformWalker) WalkAssignmentStatement(stmt *ast.AssignmentStatement) (*ast.AssignmentStatement, bool) {
-	variable, variableOk := w.Transformer.VisitIdentExpression(stmt.Variable)
-	rhs, rhsOk := w.Transformer.VisitNode(stmt.Rhs, w)
-	if variableOk != rhsOk {
-		panic("either both or none of variable and rhs can be deleted")
+	target, targetOk := w.Transformer.VisitNode(stmt.Target, w)
+	value, valueOk := w.Transformer.VisitNode(stmt.Value, w)
+	if targetOk != valueOk {
+		panic("either both or none of target and value can be deleted")
 	}
-	if !variableOk {
+	if !targetOk {
 		return nil, false
 	}
-	stmt.Variable = variable.(*ast.IdentExpression)
-	stmt.Rhs = rhs
+	stmt.Target = target
+	stmt.Value = value
 	return stmt, true
 }
 

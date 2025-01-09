@@ -8,6 +8,8 @@ struct Single<T> {
     value T
 }
 
+fn print_s_int(s Single<Int>) => print_int(s.value)
+
 impl Single {
     fn return_value(self) T => self.value
 
@@ -32,7 +34,7 @@ fn main() {
     print(", ")
 
     let i = Single<Int>(false, value=42)
-    print_int(i.value)
+    print_s_int(i)
     print(" ")
     print_int(i.return_value())
     print(" ")

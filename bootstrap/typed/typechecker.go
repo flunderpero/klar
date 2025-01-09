@@ -2701,6 +2701,12 @@ func (tc *typeChecker) checkForwardDeclsStage1(decls *forwardDecls, w ast.Walker
 			return err
 		}
 	}
+	// This is a bit of a hack. Because we resolve all types eagerly it can happen
+	// that a generic instance has been created (using `GenericsResolver.ResolveTypeArgs()`)
+	// but an impl block adds methods to the base type later. These methods are not seen
+	// by the instance.
+	// todo: We should do better here and lazy resolve (but we try to get away with it).
+	tc.genericsResolver.reResolveStructMethods()
 	for _, decl := range decls.namedUnionDecls {
 		if err := tc.checkNamedUnionTypeDeclaration(decl); err != nil {
 			return err

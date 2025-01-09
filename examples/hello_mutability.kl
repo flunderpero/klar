@@ -1,0 +1,23 @@
+-- expect.stdout {
+-- 2, 42
+-- } expect.stdout
+-- expect.exit_code: 0
+
+struct Container<T> {
+    mut value T
+}
+
+impl Container {
+    fn modify(mut self, new T) => self.value = new
+}
+
+fn inc(mut container Container<Int>) => container.value = container.value + 1
+
+fn main() {
+    mut c = Container(1)
+    inc(c)
+    print_int(c.value)
+    print(", ")
+    c.modify(42)
+    print_int(c.value)
+}

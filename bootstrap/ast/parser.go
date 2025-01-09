@@ -167,10 +167,23 @@ func (t TupleType) TypeName() string {
 	return fmt.Sprintf("(%s)", values)
 }
 
+type FunctionTypeParam struct {
+	Type    Type
+	Mutable bool
+}
+
+func (self FunctionTypeParam) String() string {
+	mutable := ""
+	if self.Mutable {
+		mutable = "mut "
+	}
+	return fmt.Sprintf("%s%s", mutable, self.Type)
+}
+
 type FunctionType struct {
 	nodeBase
 	TypeParams []TypeParam
-	Params     []Type
+	Params     []FunctionTypeParam
 	Result     Type
 }
 
@@ -186,7 +199,7 @@ func (t FunctionType) TypeName() string {
 		if i > 0 {
 			params += ","
 		}
-		params += param.TypeName()
+		params += param.String()
 	}
 	return fmt.Sprintf("fn(%s)%s", params, t.Result.TypeName())
 }
@@ -708,13 +721,18 @@ func (self NamedUnionTypeDeclaration) String() string {
 }
 
 type StructTypeField struct {
-	Name Ident
-	Type Type
-	Span token.Span
+	Name    Ident
+	Type    Type
+	Mutable bool
+	Span    token.Span
 }
 
 func (f StructTypeField) String() string {
-	return fmt.Sprintf("%s\n%s", f.Name, base.Indent(f.Type, 1))
+	mutable := ""
+	if f.Mutable {
+		mutable = "\n    (mutable)"
+	}
+	return fmt.Sprintf("%s%s\n%s", f.Name, mutable, base.Indent(f.Type, 1))
 }
 
 type StructTypeDeclaration struct {
@@ -741,13 +759,18 @@ func (st *StructTypeDeclaration) FindField(name Ident) (*StructTypeField, error)
 }
 
 type FunctionParam struct {
-	Name Ident
-	Type Type
-	Span token.Span
+	Name    Ident
+	Type    Type
+	Mutable bool
+	Span    token.Span
 }
 
 func (f FunctionParam) String() string {
-	return fmt.Sprintf("%s\n%s", f.Name, base.Indent(f.Type, 1))
+	mutable := ""
+	if f.Mutable {
+		mutable = "\n    (mutable)"
+	}
+	return fmt.Sprintf("%s%s\n%s", f.Name, mutable, base.Indent(f.Type, 1))
 }
 
 type FunctionDeclaration struct {
@@ -822,17 +845,17 @@ type VariableDefinition struct {
 }
 
 func (v *VariableDefinition) String() string {
-	mutable := "(immutable)"
+	mutable := ""
 	if v.Mutable {
-		mutable = "(mutable)"
+		mutable = "\n    (mutable)"
 	}
 	ty := ""
 	if v.Type != nil {
 		ty = fmt.Sprintf("\n(Type)\n%s", base.Indent(v.Type, 1))
 	}
 	return fmt.Sprintf(
-		"VariableDefinition\n%s\n%s%s\n%s",
-		base.IndentString(mutable, 1), base.Indent(v.Name, 1), base.IndentString(ty, 1), base.Indent(v.Value, 1))
+		"VariableDefinition\n%s%s%s\n%s",
+		base.Indent(v.Name, 1), mutable, base.IndentString(ty, 1), base.Indent(v.Value, 1))
 }
 
 type Parser struct {
@@ -1228,16 +1251,21 @@ func (p *Parser) parseFunctionType() (*FunctionType, error) {
 	if _, err := p.consume(token.LParen); err != nil {
 		return nil, err
 	}
-	params := []Type{}
+	params := []FunctionTypeParam{}
 	for p.index < len(p.tokens) {
 		if p.peek().Kind == token.RParen {
 			break
 		}
-		param, err := p.parseType()
+		mutable := false
+		if p.peek().Kind == token.Mut {
+			p.consumeAny()
+			mutable = true
+		}
+		paramType, err := p.parseType()
 		if err != nil {
 			return nil, err
 		}
-		params = append(params, param)
+		params = append(params, FunctionTypeParam{Type: paramType, Mutable: mutable})
 		t := p.peek()
 		if t.Kind == token.RParen {
 			p.consumeAny()
@@ -1394,6 +1422,11 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 			p.consumeAny()
 			break
 		}
+		mutable := false
+		if t.Kind == token.Mut {
+			mutable = true
+			p.consumeAny()
+		}
 		from := p.span()
 		paramNameToken := p.consumeAny()
 		if paramNameToken.Kind == token.Ident {
@@ -1402,7 +1435,7 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 			if err != nil {
 				return nil, err
 			}
-			param := FunctionParam{Name: paramName, Type: paramType}
+			param := FunctionParam{Name: paramName, Type: paramType, Mutable: mutable, Span: p.spanToHere(t.Span)}
 			params = append(params, param)
 		} else if paramNameToken.Kind == token.Self {
 			if !acceptSelfParameter {
@@ -1412,7 +1445,7 @@ func (p *Parser) parseFunctionDeclaration(acceptSelfParameter bool) (*FunctionDe
 				return nil, errors.Errorf("self parameter must be the first parameter")
 			}
 			selfType := &SimpleType{nodeBase: p.newNodeBase(from), Name: "Self"}
-			param := FunctionParam{Name: Ident("self"), Type: selfType, Span: p.spanToHere(from)}
+			param := FunctionParam{Name: Ident("self"), Type: selfType, Mutable: mutable, Span: p.spanToHere(t.Span)}
 			params = append(params, param)
 		}
 		t = p.peek()
@@ -1886,6 +1919,11 @@ func (p *Parser) parseStructDeclaration() (*StructTypeDeclaration, error) {
 	}
 	fields := []StructTypeField{}
 	for p.index < len(p.tokens) {
+		mutable := false
+		if p.peek().Kind == token.Mut {
+			mutable = true
+			p.consumeAny()
+		}
 		t := p.peek()
 		switch t.Kind {
 		case token.RCurly:
@@ -1900,7 +1938,7 @@ func (p *Parser) parseStructDeclaration() (*StructTypeDeclaration, error) {
 			if err != nil {
 				return nil, err
 			}
-			field := StructTypeField{Name: Ident(fieldName), Type: fieldType, Span: p.spanToHere(from)}
+			field := StructTypeField{Name: Ident(fieldName), Type: fieldType, Mutable: mutable, Span: p.spanToHere(from)}
 			fields = append(fields, field)
 		default:
 			return nil, errors.Errorf("unexpected token: %s", t)

@@ -36,7 +36,7 @@ func (self *TypeCreator) newImplementableTypeBase(methods []*Method, traits []*T
 	return implementableTypeBase{typeBase: self.newTypeBase(), methods: methods, traits: traits}
 }
 
-func (self *TypeCreator) NewFunctionType(genericBase *FunctionType, typeParams []TypeParam, typeArgs []Type, receiver Type, params []FunctionParam, result Type) *FunctionType {
+func (self *TypeCreator) NewFunctionType(genericBase *FunctionType, typeParams []TypeParam, typeArgs []Type, receiver Type, params []ParamOrField, result Type) *FunctionType {
 	return &FunctionType{
 		typeBase:    self.newTypeBase(),
 		genericBase: genericBase,
@@ -58,7 +58,7 @@ func (self *TypeCreator) NewTraitType(genericBase *TraitType, typeParams []TypeP
 	}
 }
 
-func (self *TypeCreator) NewStructType(genericBase *StructType, typeParams []TypeParam, typeArgs []Type, fields []TypeAndName[Type], methods []*Method, traits []*TraitType) *StructType {
+func (self *TypeCreator) NewStructType(genericBase *StructType, typeParams []TypeParam, typeArgs []Type, fields []ParamOrField, methods []*Method, traits []*TraitType) *StructType {
 	return &StructType{
 		implementableTypeBase: self.newImplementableTypeBase(methods, traits),
 		genericBase:           genericBase,
@@ -141,7 +141,7 @@ func (self implementableTypeBase) FindMethod(name ast.Ident) (*FunctionType, boo
 
 type CallableType interface {
 	Type
-	CallParams() []TypeAndName[Type]
+	CallParams() []ParamOrField
 	CallResult() Type
 }
 
@@ -561,10 +561,10 @@ func (self TupleType) IsAssignableFrom(other Type) bool {
 	return false
 }
 
-func (self TupleType) CallParams() []FunctionParam {
-	params := make([]FunctionParam, len(self.Values))
+func (self TupleType) CallParams() []ParamOrField {
+	params := make([]ParamOrField, len(self.Values))
 	for i, value := range self.Values {
-		params[i] = FunctionParam{Name: ast.Ident(fmt.Sprintf("%d", i)), Type: value}
+		params[i] = ParamOrField{Name: ast.Ident(fmt.Sprintf("%d", i)), Type: value}
 	}
 	return params
 }
@@ -605,7 +605,7 @@ func (self NamedUnionVariantConstructor) String() string {
 	return fmt.Sprintf("NamedUnionVariantConstructor %s", self.Type.Name)
 }
 
-func (self NamedUnionVariantConstructor) CallParams() []FunctionParam {
+func (self NamedUnionVariantConstructor) CallParams() []ParamOrField {
 	return self.Type.Type.CallParams()
 }
 
@@ -704,7 +704,7 @@ type StructType struct {
 	genericBase *StructType
 	typeParams  []TypeParam
 	typeArgs    []Type
-	Fields      []TypeAndName[Type]
+	Fields      []ParamOrField
 }
 
 func (ty StructType) String() string {
@@ -734,14 +734,14 @@ func (ty StructType) String() string {
 }
 
 func (ty StructType) FindFieldIndex(name ast.MemberExpressionField) (int, bool) {
-	fieldIndex := slices.IndexFunc(ty.Fields, func(field TypeAndName[Type]) bool { return string(field.Name) == string(name) })
+	fieldIndex := slices.IndexFunc(ty.Fields, func(field ParamOrField) bool { return string(field.Name) == string(name) })
 	if fieldIndex < 0 {
 		return -1, false
 	}
 	return fieldIndex, true
 }
 
-func (ty StructType) FindField(name ast.MemberExpressionField) (*TypeAndName[Type], bool) {
+func (ty StructType) FindField(name ast.MemberExpressionField) (*ParamOrField, bool) {
 	fieldIndex, found := ty.FindFieldIndex(name)
 	if !found {
 		return nil, false
@@ -774,7 +774,7 @@ func (ty *StructType) addMethod(name ast.Ident, funcType *FunctionType) bool {
 	return ty.implementableTypeBase.addMethod(name, funcType)
 }
 
-func (ty StructType) CallParams() []FunctionParam {
+func (ty StructType) CallParams() []ParamOrField {
 	return ty.Fields
 }
 
@@ -862,7 +862,19 @@ func (ty ImplType) String() string {
 	return fmt.Sprintf("ImplType\n%s", base.Indent(ty.ReceiverType, 1))
 }
 
-type FunctionParam = TypeAndName[Type]
+type ParamOrField struct {
+	Type    Type
+	Name    ast.Ident
+	Mutable bool
+}
+
+func (ty ParamOrField) String() string {
+	mutable := ""
+	if ty.Mutable {
+		mutable = "\n    (mutable)"
+	}
+	return fmt.Sprintf("ParamOrField %s%s\n%s", ty.Name, mutable, base.Indent(ty.Type, 1))
+}
 
 type FunctionType struct {
 	typeBase
@@ -870,7 +882,7 @@ type FunctionType struct {
 	typeParams  []TypeParam
 	typeArgs    []Type
 	Receiver    Type
-	Params      []FunctionParam
+	Params      []ParamOrField
 	Result      Type
 }
 
@@ -891,7 +903,11 @@ func (ty FunctionType) String() string {
 		if paramName == "" {
 			paramName = "<positional>"
 		}
-		params[i] = fmt.Sprintf("%s\n%s", paramName, base.IndentString(typeToString(param.Type), 1))
+		mutable := ""
+		if param.Mutable {
+			mutable = "\n    (mutable)"
+		}
+		params[i] = fmt.Sprintf("%s%s\n%s", paramName, mutable, base.IndentString(typeToString(param.Type), 1))
 	}
 	result := typeToString(ty.Result)
 	baseType := ""
@@ -976,7 +992,7 @@ func (ty FunctionType) IsAssignableFrom(other Type) bool {
 	return false
 }
 
-func (ty FunctionType) CallParams() []FunctionParam {
+func (ty FunctionType) CallParams() []ParamOrField {
 	return ty.Params
 }
 
@@ -1400,15 +1416,15 @@ func (tc *typeChecker) findOrSetAnonUnionType(ty *UnionType) *UnionType {
 func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 	switch node := node.(type) {
 	case *ast.FunctionType:
-		params := make([]TypeAndName[Type], len(node.Params))
+		params := make([]ParamOrField, len(node.Params))
 		for i, astParam := range node.Params {
-			argType, err := tc.lookupTypeOfNode(astParam)
+			argType, err := tc.lookupTypeOfNode(astParam.Type)
 			if err != nil {
 				return nil, err
 			}
 			// todo: `ast.functionType` does not include a name. Do we want to be able to include a
 			//       name?
-			params[i] = TypeAndName[Type]{Type: argType, Name: ""}
+			params[i] = ParamOrField{Type: argType, Name: "", Mutable: astParam.Mutable}
 		}
 		result, err := tc.lookupTypeOfNode(node.Result)
 		if err != nil {
@@ -1770,7 +1786,7 @@ func (tc *typeChecker) VisitCallExpression(expr *ast.CallExpression, w ast.Walke
 	for i, arg := range expr.Args {
 		var paramIndex = i
 		if arg.Name != "" {
-			paramIndex = slices.IndexFunc(params, func(p TypeAndName[Type]) bool { return p.Name == arg.Name })
+			paramIndex = slices.IndexFunc(params, func(p ParamOrField) bool { return p.Name == arg.Name })
 		}
 		if paramIndex < 0 {
 			return errors.Errorf("%s: parameter %q not found in callee type %s", arg.Span, arg.Name, calleeType)
@@ -2167,15 +2183,14 @@ func (tc *typeChecker) resolveTypeParams(genericType GenericType, astParams []as
 }
 
 func (tc *typeChecker) resolveFunctionParamsAndResult(
-	astParams []ast.FunctionParam, astResult ast.Type) (params []TypeAndName[Type], result Type, err error) {
-
-	params = make([]TypeAndName[Type], len(astParams))
+	astParams []ast.FunctionParam, astResult ast.Type) (params []ParamOrField, result Type, err error) {
+	params = make([]ParamOrField, len(astParams))
 	for i, arg := range astParams {
 		argType, err := tc.lookupTypeOfNode(arg.Type)
 		if err != nil {
 			return nil, nil, errors.Wrapf(err, "%s: type %s not found for parameter %s", arg.Span, arg.Type, arg.Name)
 		}
-		params[i] = TypeAndName[Type]{Type: argType, Name: arg.Name}
+		params[i] = ParamOrField{Type: argType, Name: arg.Name, Mutable: arg.Mutable}
 	}
 	result, err = tc.lookupTypeOfNode(astResult)
 	if err != nil {
@@ -2230,6 +2245,14 @@ func (tc *typeChecker) VisitFunctionDefinition(fn *ast.FunctionDefinition, w ast
 	return nil
 }
 
+func isValueType(ty Type) bool {
+	switch ty.(type) {
+	case IntType, *BoolType, *CharType:
+		return true
+	}
+	return false
+}
+
 func (tc *typeChecker) checkFunctionDefinitionDeclaration(fn *ast.FunctionDefinition) error {
 	tc.enterGenericScope()
 	defer tc.exitGenericScope()
@@ -2249,7 +2272,10 @@ func (tc *typeChecker) checkFunctionDefinitionBody(fn *ast.FunctionDefinition, w
 	params := functionType.Params
 	for i, astParam := range fn.Decl.Params {
 		param := params[i]
-		varType := VariableType{Type: param.Type, IsFunctionParam: true, IsMutable: false, Span: astParam.Span}
+		if param.Mutable && isValueType(param.Type) {
+			return errors.Errorf("%s: value type %s cannot be mutable", astParam.Type.Span(), param.Type)
+		}
+		varType := VariableType{Type: param.Type, IsFunctionParam: true, IsMutable: param.Mutable, Span: astParam.Span}
 		if err := tc.typeScope.declareVariable(string(param.Name), varType); err != nil {
 			return err
 		}
@@ -2486,6 +2512,9 @@ func (tc *typeChecker) VisitAssignmentStatement(s *ast.AssignmentStatement, w as
 			structSymbol := tc.typeInfo.MustLookupSymbol(structType.Id())
 			return errors.Errorf("%s: field %q not found in struct type %q", s.Span(), field, structSymbol.Name)
 		}
+		if !field.Mutable {
+			return errors.Errorf("%s: field %q is not mutable in struct: %s", s.Span(), field.Name, structType)
+		}
 		varType = field.Type
 	} else if index, ok := s.IsIndexAssigment(); ok {
 		arrayType, ok := varType.(*StructType)
@@ -2619,13 +2648,13 @@ func (tc *typeChecker) checkStructTypeDeclaration(decl *ast.StructTypeDeclaratio
 	for i, typeParam := range typeParams {
 		structType.typeArgs[i] = typeParam
 	}
-	fields := []TypeAndName[Type]{}
+	fields := []ParamOrField{}
 	for _, field := range decl.Fields {
 		fieldType, err := tc.lookupTypeOfNode(field.Type)
 		if err != nil {
 			return errors.Errorf("%s: type %q not found for field %q", field.Span, field.Type, field.Name)
 		}
-		fields = append(fields, TypeAndName[Type]{Name: field.Name, Type: fieldType})
+		fields = append(fields, ParamOrField{Name: field.Name, Type: fieldType, Mutable: field.Mutable})
 	}
 	structType.Fields = fields
 	return nil

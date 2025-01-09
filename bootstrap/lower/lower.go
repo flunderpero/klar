@@ -30,9 +30,9 @@ func Lower(
 		nil,
 		[]typed.TypeParam{},
 		[]typed.Type{},
-		[]typed.TypeAndName[typed.Type]{
-			{Type: &typed.Int64Type{}, Name: "tag"},
-			{Type: &typed.RawPtr{}, Name: "data"},
+		[]typed.ParamOrField{
+			{Type: &typed.Int64Type{}, Mutable: false, Name: "tag"},
+			{Type: &typed.RawPtr{}, Mutable: false, Name: "data"},
 		},
 		[]*typed.Method{},
 		[]*typed.TraitType{})

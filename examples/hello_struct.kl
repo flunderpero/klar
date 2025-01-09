@@ -8,7 +8,7 @@ struct Moon {
 }
 
 struct Planet {
-    name Str
+    mut name Str
     radius Int
     moon Moon
 }

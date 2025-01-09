@@ -215,7 +215,7 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 			if resolved, ok := self.findResolvedFuncType(ty, genericTypeArgs); ok {
 				return resolved
 			}
-			params := make([]TypeAndName[Type], len(ty.Params))
+			params := make([]ParamOrField, len(ty.Params))
 			receiver := ty.Receiver
 			if receiver != nil {
 				// If you call `ResolveTypeArgs` on the method only (and not on the struct it
@@ -247,7 +247,7 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 				genericBase(ty),
 				ty.typeParams,
 				genericTypeArgs,
-				make([]TypeAndName[Type], len(ty.Fields)),
+				make([]ParamOrField, len(ty.Fields)),
 				nil,
 				ty.traits,
 			)

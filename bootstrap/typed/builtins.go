@@ -110,8 +110,9 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		"Str",
 		&StructType{
 			implementableTypeBase: implementableTypeBase{typeBase: typeBase{TypeId(1)}, methods: nil, traits: nil},
-			Fields: []TypeAndName[Type]{{
-				Name: "len_", Type: builtIns.Int}, {Name: "bytes_", Type: builtIns.RawPtr}}})
+			Fields: []ParamOrField{
+				{Name: "len_", Mutable: false, Type: builtIns.Int},
+				{Name: "bytes_", Mutable: false, Type: builtIns.RawPtr}}})
 	builtIns.InternalArray = declareBuiltIn(
 		tc,
 		typeInfo,
@@ -119,10 +120,10 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		"InternalArray",
 		&StructType{
 			implementableTypeBase: implementableTypeBase{typeBase: typeBase{TypeId(15)}, methods: nil, traits: nil},
-			Fields: []TypeAndName[Type]{
-				{Name: "len_", Type: builtIns.Int},
-				{Name: "capacity_", Type: builtIns.Int},
-				{Name: "data_", Type: builtIns.RawPtr},
+			Fields: []ParamOrField{
+				{Name: "len_", Mutable: true, Type: builtIns.Int},
+				{Name: "capacity_", Mutable: true, Type: builtIns.Int},
+				{Name: "data_", Mutable: true, Type: builtIns.RawPtr},
 			}})
 	internalArrayTypeParam := &TypeParam{
 		typeBase:    typeBase{TypeId(16)},
@@ -145,7 +146,7 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		"internal_print",
 		&FunctionType{
 			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "value", Type: builtIns.Str}},
+			Params:   []ParamOrField{{Name: "value", Type: builtIns.Str}},
 			Result:   builtIns.None,
 		})
 	builtIns.PrintChar = declareBuiltIn(
@@ -155,7 +156,7 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		"print_char",
 		&FunctionType{
 			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "value", Type: builtIns.Char}},
+			Params:   []ParamOrField{{Name: "value", Type: builtIns.Char}},
 			Result:   builtIns.None})
 	builtIns.PrintInt = declareBuiltIn(
 		tc,
@@ -164,7 +165,7 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		"print_int",
 		&FunctionType{
 			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "value", Type: builtIns.I64}},
+			Params:   []ParamOrField{{Name: "value", Type: builtIns.I64}},
 			Result:   builtIns.None})
 	builtIns.PrintUInt = declareBuiltIn(
 		tc,
@@ -173,7 +174,7 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		"print_uint",
 		&FunctionType{
 			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "value", Type: builtIns.U64}},
+			Params:   []ParamOrField{{Name: "value", Type: builtIns.U64}},
 			Result:   builtIns.None})
 	builtIns.PrintBool = declareBuiltIn(
 		tc,
@@ -182,7 +183,7 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		"print_bool",
 		&FunctionType{
 			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "value", Type: builtIns.Bool}},
+			Params:   []ParamOrField{{Name: "value", Type: builtIns.Bool}},
 			Result:   builtIns.None})
 	builtIns.InternalMalloc = declareBuiltIn(
 		tc,
@@ -191,7 +192,7 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		"internal_malloc",
 		&FunctionType{
 			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "size", Type: builtIns.I64}},
+			Params:   []ParamOrField{{Name: "size", Type: builtIns.I64}},
 			Result:   builtIns.I64})
 	builtIns.InternalFree = declareBuiltIn(
 		tc,
@@ -200,7 +201,7 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		"internal_free",
 		&FunctionType{
 			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "ptr", Type: builtIns.RawPtr}},
+			Params:   []ParamOrField{{Name: "ptr", Type: builtIns.RawPtr}},
 			Result:   builtIns.None})
 	builtIns.SizeOf = declareBuiltIn(
 		tc,
@@ -209,7 +210,7 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		"sizeof",
 		&FunctionType{
 			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{},
+			Params:   []ParamOrField{},
 			Result:   builtIns.I64})
 	sizeOfTypeParam := &TypeParam{
 		typeBase:    typeBase{nextFuncId()},
@@ -243,7 +244,7 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 			typeBase:   typeBase{nextFuncId()},
 			typeParams: []TypeParam{*castFromTypeParam, *castToTypeParam},
 			typeArgs:   []Type{castFromTypeParam, castToTypeParam},
-			Params: []FunctionParam{
+			Params: []ParamOrField{
 				{Name: "value", Type: castFromTypeParam},
 			},
 			Result: castToTypeParam,
@@ -257,7 +258,7 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		"internal_write_ptr",
 		&FunctionType{
 			typeBase: typeBase{nextFuncId()},
-			Params: []FunctionParam{
+			Params: []ParamOrField{
 				{Name: "ptr", Type: builtIns.RawPtr},
 				{Name: "value", Type: internalWritePtrTypeParam},
 			},
@@ -272,7 +273,7 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		"internal_read_ptr",
 		&FunctionType{
 			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "ptr", Type: builtIns.RawPtr}}})
+			Params:   []ParamOrField{{Name: "ptr", Type: builtIns.RawPtr}}})
 	internalReadPtrTypeParam := &TypeParam{
 		typeBase:    typeBase{nextFuncId()},
 		GenericType: builtIns.InternalReadPtr,
@@ -289,7 +290,7 @@ func declareBuiltIns(tc *typeScope, typeInfo *TypeInfo) {
 		"internal_exit",
 		&FunctionType{
 			typeBase: typeBase{nextFuncId()},
-			Params:   []FunctionParam{{Name: "code", Type: builtIns.I64}},
+			Params:   []ParamOrField{{Name: "code", Type: builtIns.I64}},
 			Result:   builtIns.Never})
 	typeInfo.BuiltIns = builtIns
 }

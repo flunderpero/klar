@@ -29,12 +29,12 @@ func (self *tupleLowering) convertTupleToStructType(tupleType *typed.TupleType) 
 	}
 	structType, ok := self.tupleStructs[key]
 	if !ok {
-		fields := make([]typed.TypeAndName[typed.Type], len(tupleType.Values))
+		fields := make([]typed.ParamOrField, len(tupleType.Values))
 		for i, value := range tupleType.Values {
 			if tupleValue, ok := value.(*typed.TupleType); ok {
 				value = self.convertTupleToStructType(tupleValue)
 			}
-			field := typed.TypeAndName[typed.Type]{Name: ast.Ident(fmt.Sprintf("%d", i)), Type: value}
+			field := typed.ParamOrField{Name: ast.Ident(fmt.Sprintf("%d", i)), Mutable: false, Type: value}
 			fields[i] = field
 		}
 		structType = self.typeCreator.NewStructType(nil, nil, nil, fields, nil, nil)

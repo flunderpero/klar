@@ -528,6 +528,15 @@ func (i SignedIntAddWithOverflow) String() string {
 	return fmt.Sprintf("%s = iaddo %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
 }
 
+type SignedIntSubtractWithUnderflow struct {
+	binaryInst
+	Type IntType
+}
+
+func (i SignedIntSubtractWithUnderflow) String() string {
+	return fmt.Sprintf("%s = isubo %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
+}
+
 type IntMultiplicationWithOverflow struct {
 	binaryInst
 	Type IntType
@@ -580,6 +589,15 @@ type UnsignedIntAddWithOverflow struct {
 
 func (i UnsignedIntAddWithOverflow) String() string {
 	return fmt.Sprintf("%s = addo %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
+}
+
+type UnsignedIntSubtractWithUnderflow struct {
+	binaryInst
+	Type IntType
+}
+
+func (i UnsignedIntSubtractWithUnderflow) String() string {
+	return fmt.Sprintf("%s = subo %s %s, %s", i.register, i.Type, i.lhs, i.rhs)
 }
 
 type BitwiseOr struct {
@@ -1338,6 +1356,17 @@ func (g *generator) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.Walk
 		} else {
 			g.append(
 				&UnsignedIntAddWithOverflow{
+					binaryInst: binaryInst{register: g.nextRegister(valueType), lhs: lhs, rhs: rhs}, Type: valueType}, expr)
+		}
+	case ast.OpSubtract:
+		valueType := g.lookupType(expr).(IntType)
+		if valueType.IsSigned() {
+			g.append(
+				&SignedIntSubtractWithUnderflow{
+					binaryInst: binaryInst{register: g.nextRegister(valueType), lhs: lhs, rhs: rhs}, Type: valueType}, expr)
+		} else {
+			g.append(
+				&UnsignedIntSubtractWithUnderflow{
 					binaryInst: binaryInst{register: g.nextRegister(valueType), lhs: lhs, rhs: rhs}, Type: valueType}, expr)
 		}
 	case ast.OpMultiply:

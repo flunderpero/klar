@@ -503,6 +503,10 @@ func (c *blockCode) generateBlock(block *ir.Block) error {
 			case *ir.UnsignedIntAddWithOverflow:
 				c.emit("add %s, %s, %s", reg, lhs, rhs)
 				c.sign_extend_or_zero_extend(reg.reg(), inst.Type)
+			case *ir.SignedIntSubtractWithUnderflow:
+				c.emit("subs %s, %s, %s", reg, lhs, rhs)
+			case *ir.UnsignedIntSubtractWithUnderflow:
+				c.emit("sub %s, %s, %s", reg, lhs, rhs)
 			case *ir.IntMultiplicationWithOverflow:
 				c.emit("mul %s, %s, %s", reg, lhs, rhs)
 				c.sign_extend_or_zero_extend(reg.reg(), inst.Type)

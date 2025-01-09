@@ -335,6 +335,7 @@ type BinaryOperator string
 
 const (
 	OpAdd                BinaryOperator = "+"
+	OpSubtract           BinaryOperator = "-"
 	OpMultiply           BinaryOperator = "*"
 	OpDivide             BinaryOperator = "/"
 	OpModulo             BinaryOperator = "%"
@@ -1578,12 +1579,14 @@ func (p *Parser) parseBinaryExpression(minPrecedence int) (Expression, error) {
 		OpBitwiseShiftLeft:   7,
 		OpBitwiseShiftRight:  7,
 		OpAdd:                8,
+		OpSubtract:           8,
 		OpMultiply:           9,
 		OpDivide:             9,
 		OpModulo:             9,
 	}
 	ops := map[token.TokenKind]BinaryOperator{
 		token.Plus:               OpAdd,
+		token.Minus:              OpSubtract,
 		token.Star:               OpMultiply,
 		token.Slash:              OpDivide,
 		token.Percent:            OpModulo,

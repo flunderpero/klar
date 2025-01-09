@@ -1,5 +1,5 @@
 -- expect.stdout {
---  variable definitions: 127, 32767, 2147483647, 9223372036854775807 binary expressions: i8: -128, -16, false, i16: -32768, -1536, false, i32: -2147483648, -16, false, i64: -9223372036854775808, -16, false different_int_sizes: 5, 42 negative numbers: -12, -30, -42, 421, 2, 3, 9223372036854775807, -127, -32767, -2147483647, 255, 65535, 4294967295, 18446744073709551615, -1, -1, -1, -1
+--  variable definitions: 127, 32767, 2147483647, 9223372036854775807 binary expressions: i8: -128, -7, -16, 60, false, i16: -32768, -767, -1536, 16000, false, i32: -2147483648, -7, -16, 1073741820, false, i64: -9223372036854775808, -7, -16, 4611686018427387900, false different_int_sizes: 5, 42 negative numbers: -12, -30, -42, 421, 2, 3, 9223372036854775807, -127, -32767, -2147483647, 255, 65535, 4294967295, 18446744073709551615, -1, -1, -1, -1
 -- } expect.stdout
 -- expect.exit_code: 0
 
@@ -26,28 +26,44 @@ fn binary_expressions() {
     print("i8: ")
     print_int(i8 + 8)
     print(", ")
+    print_int(i8 - 127)
+    print(", ")
     print_int(i8 * 2)
+    print(", ")
+    print_int(i8 / 2)
     print(", ")
     print_bool(i8 > 127)
     let i16 I16 = 32000
     print(", i16: ")
     print_int(i16 + 768)
     print(", ")
+    print_int(i16 - 32767)
+    print(", ")
     print_int(i16 * 2)
+    print(", ")
+    print_int(i16 / 2)
     print(", ")
     print_bool(i16 > 32767)
     let i32 I32 = 2147483640
     print(", i32: ")
     print_int(i32 + 8)
     print(", ")
+    print_int(i32 - 2147483647)
+    print(", ")
     print_int(i32 * 2)
+    print(", ")
+    print_int(i32 / 2)
     print(", ")
     print_bool(i32 > 2147483647)
     let i64 I64 = 9223372036854775800
     print(", i64: ")
     print_int(i64 + 8)
     print(", ")
+    print_int(i64 - 9223372036854775807)
+    print(", ")
     print_int(i64 * 2)
+    print(", ")
+    print_int(i64 / 2)
     print(", ")
     print_bool(i64 > 9223372036854775807)
 }

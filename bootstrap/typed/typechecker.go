@@ -1682,7 +1682,7 @@ func (tc *typeChecker) VisitBinaryExpression(expr *ast.BinaryExpression, w ast.W
 	}
 	rhs := tc.typeInfo.MustLookup(expr.Rhs)
 	switch expr.Op {
-	case ast.OpAdd, ast.OpMultiply, ast.OpDivide, ast.OpModulo, ast.OpBitwiseAnd, ast.OpBitwiseOr, ast.OpBitwiseXor:
+	case ast.OpAdd, ast.OpSubtract, ast.OpMultiply, ast.OpDivide, ast.OpModulo, ast.OpBitwiseAnd, ast.OpBitwiseOr, ast.OpBitwiseXor:
 		switch lhs.(type) {
 		case IntType, *RawPtr:
 		default:

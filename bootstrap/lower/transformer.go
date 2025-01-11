@@ -277,9 +277,9 @@ func (w *DefaultTransformWalker) WalkCallExpression(expr *ast.CallExpression) (a
 
 func (w *DefaultTransformWalker) WalkIfExpression(expr *ast.IfExpression) (ast.Expression, bool) {
 	condition, conditionOk := w.Transformer.VisitNode(expr.Condition, w)
-	trueBody, trueBodyOk := w.Transformer.VisitBlockExpression(expr.TrueBody, w)
+	trueBody, trueBodyOk := w.Transformer.VisitNode(expr.TrueBody, w)
 	if expr.FalseBody != nil {
-		falseBody, falseBodyOk := w.Transformer.VisitBlockExpression(expr.FalseBody, w)
+		falseBody, falseBodyOk := w.Transformer.VisitNode(expr.FalseBody, w)
 		if falseBodyOk != conditionOk || falseBodyOk != trueBodyOk {
 			panic("either all or none of condition, trueBody and falseBody must be deleted")
 		}
@@ -300,7 +300,7 @@ func (w *DefaultTransformWalker) WalkMatchExpression(expr *ast.MatchExpression) 
 	}
 	expr.Expression = expression
 	for _, arm := range expr.Arms {
-		body, ok := w.Transformer.VisitBlockExpression(arm.Body, w)
+		body, ok := w.Transformer.VisitNode(arm.Body, w)
 		if !ok {
 			return nil, false
 		}
@@ -378,9 +378,9 @@ func (w *DefaultTransformWalker) WalkModule(module *ast.Module) (*ast.Module, bo
 func (w *DefaultTransformWalker) WalkTraitDeclaration(trait *ast.TraitDeclaration) (*ast.TraitDeclaration, bool) {
 	methodDecls := []*ast.FunctionDeclaration{}
 	for _, methodDecl := range trait.MethodDecls {
-		transformed, ok := w.Transformer.VisitFunctionDeclaration(methodDecl)
+		transformed, ok := w.Transformer.VisitNode(methodDecl, w)
 		if ok {
-			methodDecls = append(methodDecls, transformed)
+			methodDecls = append(methodDecls, transformed.(*ast.FunctionDeclaration))
 		}
 	}
 	trait.MethodDecls = methodDecls
@@ -390,9 +390,9 @@ func (w *DefaultTransformWalker) WalkTraitDeclaration(trait *ast.TraitDeclaratio
 func (w *DefaultTransformWalker) WalkImplDefinition(impl *ast.ImplDefinition) (*ast.ImplDefinition, bool) {
 	methods := []*ast.FunctionDefinition{}
 	for _, method := range impl.Methods {
-		transformed, ok := w.Transformer.VisitFunctionDefinition(method, w)
+		transformed, ok := w.Transformer.VisitNode(method, w)
 		if ok {
-			methods = append(methods, transformed)
+			methods = append(methods, transformed.(*ast.FunctionDefinition))
 		}
 	}
 	impl.Methods = methods
@@ -400,15 +400,15 @@ func (w *DefaultTransformWalker) WalkImplDefinition(impl *ast.ImplDefinition) (*
 }
 
 func (w *DefaultTransformWalker) WalkFunctionDefinition(fn *ast.FunctionDefinition) (*ast.FunctionDefinition, bool) {
-	decl, ok := w.Transformer.VisitFunctionDeclaration(fn.Decl)
+	decl, ok := w.Transformer.VisitNode(fn.Decl, w)
 	if !ok {
 		return nil, false
 	}
-	body, ok := w.Transformer.VisitBlockExpression(fn.Body, w)
+	body, ok := w.Transformer.VisitNode(fn.Body, w)
 	if !ok {
 		return nil, false
 	}
-	fn.Decl = decl
+	fn.Decl = decl.(*ast.FunctionDeclaration)
 	fn.Body = body.(*ast.BlockExpression)
 	return fn, true
 }
@@ -437,7 +437,7 @@ func (w *DefaultTransformWalker) WalkAssignmentStatement(stmt *ast.AssignmentSta
 }
 
 func (w *DefaultTransformWalker) WalkLoopStatement(stmt *ast.LoopStatement) (*ast.LoopStatement, bool) {
-	body, ok := w.Transformer.VisitBlockExpression(stmt.Body, w)
+	body, ok := w.Transformer.VisitNode(stmt.Body, w)
 	if !ok {
 		return nil, false
 	}
@@ -466,6 +466,8 @@ func (w *DefaultTransformWalker) WalkNode(node ast.Node) (ast.Node, bool) {
 		return w.Transformer.VisitTraitDeclaration(node, w)
 	case *ast.ImplDefinition:
 		return w.Transformer.VisitImplDefinition(node, w)
+	case *ast.FunctionDeclaration:
+		return w.Transformer.VisitFunctionDeclaration(node)
 	case *ast.FunctionDefinition:
 		return w.Transformer.VisitFunctionDefinition(node, w)
 	case *ast.VariableDefinition:

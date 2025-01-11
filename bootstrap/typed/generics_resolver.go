@@ -15,12 +15,14 @@ type GenericsResolver struct {
 	resolvedFuncTypes   []resolvedType[*FunctionType]
 	resolvedStructTypes []resolvedType[*StructType]
 	resolvedTraitTypes  []resolvedType[*TraitType]
+	resolvedUnionTypes  []resolvedType[*UnionType]
+	anonUnionTypes      map[string]*UnionType
 	typeInfo            *TypeInfo
 	typeCreator         *TypeCreator
 }
 
 func newGenericsResolver(typeInfo *TypeInfo, typeCreator *TypeCreator) *GenericsResolver {
-	return &GenericsResolver{typeInfo: typeInfo, typeCreator: typeCreator}
+	return &GenericsResolver{typeInfo: typeInfo, typeCreator: typeCreator, anonUnionTypes: make(map[string]*UnionType)}
 }
 
 func MatchTypeArgs(resolved GenericType, typeArgs []Type) bool {
@@ -38,12 +40,50 @@ func MatchTypeArgs(resolved GenericType, typeArgs []Type) bool {
 	return true
 }
 
+func (tc *GenericsResolver) FindOrSetAnonUnionType(ty *UnionType) *UnionType {
+	typeIds := make([]TypeId, len(ty.Variants))
+	for i, variant := range ty.Variants {
+		typeIds[i] = variant.AsType().Id()
+	}
+	// The order is not important.
+	slices.Sort(typeIds)
+	key := ""
+	for _, typeId := range typeIds {
+		key += typeId.String() + ","
+	}
+	if existingType, ok := tc.anonUnionTypes[key]; ok {
+		return existingType
+	}
+	tc.anonUnionTypes[key] = ty
+	return ty
+}
+
 func (self *GenericsResolver) findResolvedStructType(ty *StructType, typeArgs []Type) (*StructType, bool) {
 	tyBase, ok := ty.GenericBase()
 	if !ok {
 		tyBase = ty
 	}
 	for _, resolved := range self.resolvedStructTypes {
+		base, ok := resolved.ty.GenericBase()
+		if !ok {
+			panic(fmt.Sprintf("expected to have a generic base type: %s", resolved.ty))
+		}
+		if base.Id() != tyBase.Id() {
+			continue
+		}
+		if MatchTypeArgs(resolved.ty, typeArgs) {
+			return resolved.ty, true
+		}
+	}
+	return nil, false
+}
+
+func (self *GenericsResolver) findResolvedUnionType(ty *UnionType, typeArgs []Type) (*UnionType, bool) {
+	tyBase, ok := ty.GenericBase()
+	if !ok {
+		tyBase = ty
+	}
+	for _, resolved := range self.resolvedUnionTypes {
 		base, ok := resolved.ty.GenericBase()
 		if !ok {
 			panic(fmt.Sprintf("expected to have a generic base type: %s", resolved.ty))
@@ -192,6 +232,13 @@ func willResolve(ty Type, typeParams []TypeParam, seen map[TypeId]bool) bool {
 			}
 		}
 		return false
+	case *UnionType:
+		for _, variant := range ty.Variants {
+			if willResolve(variant.AsType(), typeParams, seen) {
+				return true
+			}
+		}
+		return false
 	default:
 		return slices.ContainsFunc(typeParams, func(typeParam TypeParam) bool { return typeParam.id == ty.Id() })
 	}
@@ -267,6 +314,32 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 			res := self.typeCreator.NewTraitType(genericBase(ty), ty.typeParams, genericTypeArgs, nil)
 			self.resolvedTraitTypes = append(self.resolvedTraitTypes, resolvedType[*TraitType]{res, typeParams, typeArgs})
 			res.Methods = self.resolveMethods(ty.Methods, typeParams, typeArgs)
+			self.declareSymbolForSpecializedType(res)
+			return res
+		case *UnionType:
+			if resolved, ok := self.findResolvedUnionType(ty, genericTypeArgs); ok {
+				return resolved
+			}
+			variants := make([]UnionVariant, len(ty.Variants))
+			for i, variant := range ty.Variants {
+				switch variant.Kind {
+				case UnionVariantKindType:
+					newVariant := variant
+					newVariant.Type = self.ResolveTypeArgs(variant.Type, typeParams, typeArgs)
+					variants[i] = newVariant
+				case UnionVariantKindNamed:
+					newVariant := variant
+					newVariant.Named.Type = self.ResolveTypeArgs(variant.Named.Type, typeParams, typeArgs).(*TupleType)
+					variants[i] = newVariant
+				default:
+					panic(fmt.Sprintf("unexpected union variant kind: %d", variant.Kind))
+				}
+			}
+			res := self.typeCreator.NewUnionType(genericBase(ty), ty.typeParams, genericTypeArgs, variants, ty.IsAnonymous)
+			if res.IsAnonymous {
+				res = self.FindOrSetAnonUnionType(res)
+			}
+			self.resolvedUnionTypes = append(self.resolvedUnionTypes, resolvedType[*UnionType]{res, typeParams, typeArgs})
 			self.declareSymbolForSpecializedType(res)
 			return res
 		default:

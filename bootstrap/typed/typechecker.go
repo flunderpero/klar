@@ -72,6 +72,17 @@ func (self *TypeCreator) NewTupleType(values []Type) *TupleType {
 	return &TupleType{typeBase: self.newTypeBase(), Values: values}
 }
 
+func (self *TypeCreator) NewUnionType(genericBase *UnionType, typeParams []TypeParam, typeArgs []Type, variants []UnionVariant, isAnonymous bool) *UnionType {
+	return &UnionType{
+		typeBase:    self.newTypeBase(),
+		genericBase: genericBase,
+		typeParams:  typeParams,
+		typeArgs:    typeArgs,
+		Variants:    variants,
+		IsAnonymous: isAnonymous,
+	}
+}
+
 type IsId interface {
 	String() string
 	IdMarker()
@@ -643,7 +654,7 @@ func (self UnionVariant) AsType() Type {
 
 type UnionType struct {
 	typeBase
-	genericBase *StructType
+	genericBase *UnionType
 	typeParams  []TypeParam
 	typeArgs    []Type
 	Variants    []UnionVariant
@@ -697,6 +708,18 @@ func (self UnionType) IsAssignableFrom(other Type) bool {
 		}
 	}
 	return false
+}
+
+func (self UnionType) Contains(other *UnionType) bool {
+	if other.IsAnonymous {
+		for _, variant := range other.Variants {
+			if !self.IsAssignableFrom(variant.AsType()) {
+				return false
+			}
+		}
+		return true
+	}
+	return self.IsAssignableFrom(other)
 }
 
 type StructType struct {
@@ -1301,7 +1324,6 @@ type typeChecker struct {
 	checkingMode      checkingMode
 	typeCreator       *TypeCreator
 	contextualType    Type
-	anonUnionTypes    map[string]*UnionType
 	memoizedScopes    map[ast.NodeId]*memoizedScopes
 }
 
@@ -1401,18 +1423,6 @@ func declareSymbol(key IsId, name string, symbolScope *SymbolScope, typeInfo *Ty
 	typeInfo.DeclareSymbol(key, symbol)
 }
 
-func (tc *typeChecker) findOrSetAnonUnionType(ty *UnionType) *UnionType {
-	key := ""
-	for _, variant := range ty.Variants {
-		key += variant.AsType().Id().String() + ","
-	}
-	if existingType, ok := tc.anonUnionTypes[key]; ok {
-		return existingType
-	}
-	tc.anonUnionTypes[key] = ty
-	return ty
-}
-
 func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 	switch node := node.(type) {
 	case *ast.FunctionType:
@@ -1472,7 +1482,7 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 		unionType.Variants = variants
 		// Make sure that anonymous union types with the same variant types in the same order
 		// map to the same type.
-		unionType = tc.findOrSetAnonUnionType(unionType)
+		unionType = tc.genericsResolver.FindOrSetAnonUnionType(unionType)
 		return unionType, nil
 	case *ast.SimpleType:
 		baseType, found := tc.typeScope.lookupType(node.TypeName())
@@ -2114,6 +2124,13 @@ func (tc *typeChecker) combineTypesIfNeeded(types_ []Type, contextualType Type, 
 			types = append(types, ty)
 		}
 	}
+	// Now remove all `NeverType`.
+	for i := 0; i < len(types); i++ {
+		if _, ok := types[i].(*NeverType); ok {
+			types = append(types[:i], types[i+1:]...)
+			i--
+		}
+	}
 	if contextualType != nil {
 		for _, ty := range types {
 			if !contextualType.IsAssignableFrom(ty) {
@@ -2153,7 +2170,7 @@ func (tc *typeChecker) combineTypesIfNeeded(types_ []Type, contextualType Type, 
 		}
 	}
 	if unionType, ok := res.(*UnionType); ok {
-		res = tc.findOrSetAnonUnionType(unionType)
+		res = tc.genericsResolver.FindOrSetAnonUnionType(unionType)
 	}
 	return res, nil
 }
@@ -2788,7 +2805,6 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 		genericScope:      newGenericScope(nil),
 		inferGenericScope: newInferGenericScope(nil),
 		genericsResolver:  newGenericsResolver(typeInfo, typeCreator),
-		anonUnionTypes:    make(map[string]*UnionType),
 		memoizedScopes:    make(map[ast.NodeId]*memoizedScopes),
 	}
 	walker := &ast.DefaultWalker{Visitor: tc}

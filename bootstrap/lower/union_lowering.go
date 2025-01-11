@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/flunderpero/klar/bootstrap/ast"
+	"github.com/flunderpero/klar/bootstrap/token"
 	"github.com/flunderpero/klar/bootstrap/typed"
 )
 
@@ -17,28 +18,180 @@ type unionLoweringStage1 struct {
 	typeInfo        *typed.TypeInfo
 	nodeCreator     *ast.NodeCreator
 	unionStructType *typed.StructType
+	nodePath        []ast.Node
 }
 
-func (self *unionLoweringStage1) VisitCallExpression(expr *ast.CallExpression, w TransformWalker) (ast.Expression, bool) {
-	calleeType := self.typeInfo.MustLookup(expr.Callee).(typed.CallableType)
-	for i, param := range calleeType.CallParams() {
-		paramType, ok := param.Type.(*typed.UnionType)
-		if !ok {
-			continue
-		}
-		argType := self.typeInfo.MustLookup(expr.Args[i].Value)
-		if paramType.Id() == argType.Id() {
-			continue
-		}
-		if _, ok := argType.(*typed.NamedUnionVariant); ok {
-			continue
-		}
-		expr.Args[i].Value = createUnionStructCallExpression(
-			paramType, expr.Args[i].Value, self.typeInfo, self.nodeCreator, self.unionStructType)
+func (self *unionLoweringStage1) createUnionStructCallExpression(unionType *typed.UnionType, valueExpr ast.Expression) *ast.CallExpression {
+	valueType := self.typeInfo.MustLookup(valueExpr)
+	tag := FindUnionVariantTag(unionType, valueType)
+	callArgs := make([]ast.CallArg, 2)
+	tagExpr := self.nodeCreator.NewSignedIntLiteralExpression(int64(tag), valueExpr.Span())
+	self.typeInfo.Set(tagExpr, &typed.Int64Type{})
+	valueExprType := self.typeInfo.MustLookup(valueExpr)
+	if valueExprType.Id() == self.typeInfo.BuiltIns.None.Id() {
+		valueExpr = self.nodeCreator.NewSignedIntLiteralExpression(0, valueExpr.Span())
+		self.typeInfo.Set(valueExpr, &typed.Int64Type{})
 	}
-	visited, ok := w.WalkCallExpression(expr)
+	callArgs[0] = ast.CallArg{Value: tagExpr, Span: valueExpr.Span()}
+	callArgs[1] = ast.CallArg{Value: valueExpr, Span: valueExpr.Span()}
+	calleeExpr := self.nodeCreator.NewIdentExpression(ast.Ident("$UnionLowering"), valueExpr.Span())
+	self.typeInfo.Set(calleeExpr, self.unionStructType)
+	callExpr := self.nodeCreator.NewCallExpression(calleeExpr, callArgs, valueExpr.Span())
+	self.typeInfo.Set(callExpr, self.unionStructType)
+	return callExpr
+}
+
+func (self *unionLoweringStage1) createEmptyUnionStructCallExpression(unionType *typed.UnionType, namedUnionVariant *typed.NamedUnionVariant, span token.Span) *ast.CallExpression {
+	tag := FindUnionVariantTag(unionType, namedUnionVariant)
+	callArgs := make([]ast.CallArg, 2)
+	tagExpr := self.nodeCreator.NewSignedIntLiteralExpression(int64(tag), span)
+	self.typeInfo.Set(tagExpr, &typed.Int64Type{})
+	valueExpr := self.nodeCreator.NewSignedIntLiteralExpression(0, span)
+	self.typeInfo.Set(valueExpr, &typed.Int64Type{})
+	callArgs[0] = ast.CallArg{Value: tagExpr, Span: span}
+	callArgs[1] = ast.CallArg{Value: valueExpr, Span: span}
+	calleeExpr := self.nodeCreator.NewIdentExpression(ast.Ident("$UnionLowering"), span)
+	self.typeInfo.Set(calleeExpr, self.unionStructType)
+	callExpr := self.nodeCreator.NewCallExpression(calleeExpr, callArgs, span)
+	self.typeInfo.Set(callExpr, self.unionStructType)
+	return callExpr
+}
+
+func (self *unionLoweringStage1) VisitMemberExpression(expr *ast.MemberExpression, w TransformWalker) (ast.Expression, bool) {
+	namedVariantType, isNamedVariant := self.typeInfo.MustLookup(expr).(*typed.NamedUnionVariant)
+	visited, ok := w.WalkMemberExpression(expr)
 	visitMustNotChange(expr, visited, ok)
+	if !isNamedVariant || !namedVariantType.IsUnitVariant() {
+		return expr, true
+	}
+	callExpr := self.createEmptyUnionStructCallExpression(namedVariantType.UnionType, namedVariantType, expr.Span())
+	return callExpr, true
+}
+
+func (self *unionLoweringStage1) findFinalNodeType(node ast.Node) typed.Type {
+	nodeType := self.typeInfo.MustLookup(node)
+	nodeUnionType, ok := nodeType.(*typed.UnionType)
+	if ok && !nodeUnionType.IsAnonymous {
+		return nodeUnionType
+	}
+	for i := len(self.nodePath) - 2; i >= 0; i-- {
+		parent := self.nodePath[i]
+		parentType := self.typeInfo.MustLookup(parent)
+		switch parent := parent.(type) {
+		case *ast.IfExpression:
+			previous := self.nodePath[i+1]
+			if previous == parent.Condition {
+				return nodeType
+			}
+			if parentUnionType, ok := parentType.(*typed.UnionType); ok && parentUnionType.IsAssignableFrom(nodeType) {
+				nodeType = parentUnionType
+			} else {
+				return nodeType
+			}
+		case *ast.BlockExpression:
+			if node != parent.Nodes[len(parent.Nodes)-1] {
+				return nodeType
+			}
+			if _, ok := node.(*ast.ReturnStatement); ok {
+				return nodeType
+			}
+			if parentUnionType, ok := parentType.(*typed.UnionType); ok && parentUnionType.IsAssignableFrom(nodeType) {
+				nodeType = parentUnionType
+			}
+		case *ast.VariableDefinition:
+			parentTy := parentType.(*typed.VariableType).Type
+			if parentUnionType, ok := parentTy.(*typed.UnionType); ok && parentUnionType.IsAssignableFrom(nodeType) {
+				nodeType = parentUnionType
+			}
+			return nodeType
+		case *ast.AssignmentStatement:
+			previous := self.nodePath[i+1]
+			if previous == parent.Target {
+				return nodeType
+			}
+			parentTy := self.typeInfo.MustLookup(parent.Target)
+			if parentUnionType, ok := parentTy.(*typed.UnionType); ok && parentUnionType.IsAssignableFrom(nodeType) {
+				nodeType = parentUnionType
+			}
+			return nodeType
+		case *ast.CallExpression:
+			previous := self.nodePath[i+1]
+			if previous == parent.Callee {
+				return nodeType
+			}
+			params := self.typeInfo.MustLookup(parent.Callee).(typed.CallableType).CallParams()
+			for i, arg := range parent.Args {
+				if arg.Value != previous {
+					continue
+				}
+				paramType := params[i].Type
+				if paramUnionType, ok := paramType.(*typed.UnionType); ok && paramUnionType.IsAssignableFrom(nodeType) {
+					return paramUnionType
+				}
+			}
+			return nodeType
+		case *ast.FunctionDefinition:
+			funcType := parentType.(*typed.DeclaredType).Type.(*typed.FunctionType)
+			if parentUnionType, ok := funcType.Result.(*typed.UnionType); ok && parentUnionType.IsAssignableFrom(nodeType) {
+				return parentUnionType
+			}
+			return nodeType
+		case *ast.ReturnStatement:
+			var funcType *typed.FunctionType
+			for {
+				i -= 1
+				if i < 0 {
+					panic("return statement not in function")
+				}
+				if funcDef, ok := self.nodePath[i].(*ast.FunctionDefinition); ok {
+					funcType = self.typeInfo.MustLookup(funcDef).(*typed.DeclaredType).Type.(*typed.FunctionType)
+					break
+				}
+			}
+			if unionType, ok := funcType.Result.(*typed.UnionType); ok && unionType.IsAssignableFrom(nodeType) {
+				return unionType
+			}
+		default:
+			return nodeType
+		}
+	}
+	return nodeType
+
+}
+
+func (self *unionLoweringStage1) VisitExpression(expr ast.Expression, w TransformWalker) (ast.Expression, bool) {
+	if blockExpr, ok := expr.(*ast.BlockExpression); ok {
+		// The block expression is transient, its result is already converted
+		// if it is a union type.
+		return w.WalkBlockExpression(blockExpr)
+	}
+	expr, ok := w.WalkExpression(expr)
+	visitMustNotRemove(expr, ok)
+	if expr, ok := expr.(*ast.CallExpression); ok {
+		namedVariantType, ok := self.typeInfo.MustLookup(expr).(*typed.NamedUnionVariant)
+		if ok {
+			expr = self.createUnionStructCallExpression(namedVariantType.UnionType, expr)
+			self.typeInfo.Set(expr.Args[1].Value, namedVariantType.Type)
+		}
+	}
+	ty := self.typeInfo.MustLookup(expr)
+	finalTy := self.findFinalNodeType(expr)
+	if unionType, ok := finalTy.(*typed.UnionType); ok && ty.Id() != finalTy.Id() {
+		expr = self.createUnionStructCallExpression(unionType, expr)
+	}
 	return expr, true
+}
+
+func (self *unionLoweringStage1) VisitNode(node ast.Node, w TransformWalker) (ast.Node, bool) {
+	self.nodePath = append(self.nodePath, node)
+	node, ok := w.WalkNode(node)
+	visitMustNotRemove(node, ok)
+	self.nodePath = self.nodePath[:len(self.nodePath)-1]
+	return node, true
+}
+
+func (self *unionLoweringStage1) VisitMatchExpression(match *ast.MatchExpression, w TransformWalker) (ast.Expression, bool) {
+	panic("match expressions should have been lowered before")
 }
 
 type unionLoweringStage2 struct {
@@ -48,7 +201,6 @@ type unionLoweringStage2 struct {
 	nodeCreator                        *ast.NodeCreator
 	unionStructType                    *typed.StructType
 	replaceUnionTypeWithStructTypeSeen map[typed.TypeId]typed.Type
-	funcType                           *typed.FunctionType
 }
 
 func FindUnionVariantTag(unionType *typed.UnionType, variantType typed.Type) int {
@@ -60,137 +212,9 @@ func FindUnionVariantTag(unionType *typed.UnionType, variantType typed.Type) int
 		}
 	}
 	if tag == -1 {
-		panic(fmt.Sprintf("unexpected union variant %s for union type %s", variantType, unionType))
+		panic(fmt.Sprintf("unexpected union variant %s\n for union type %s", variantType, unionType))
 	}
 	return tag
-}
-
-// Create a `ast.CallExpression` that creates the `self.unionStructType` from the given valueExpr.
-func createUnionStructCallExpression(
-	unionType *typed.UnionType,
-	valueExpr ast.Expression,
-	typeInfo *typed.TypeInfo,
-	nodeCreator *ast.NodeCreator,
-	unionStructType *typed.StructType,
-) *ast.CallExpression {
-	valueType := typeInfo.MustLookup(valueExpr)
-	tag := FindUnionVariantTag(unionType, valueType)
-	callArgs := make([]ast.CallArg, 2)
-	tagExpr := nodeCreator.NewSignedIntLiteralExpression(int64(tag), valueExpr.Span())
-	typeInfo.Set(tagExpr, &typed.Int64Type{})
-	callArgs[0] = ast.CallArg{Value: tagExpr, Span: valueExpr.Span()}
-	callArgs[1] = ast.CallArg{Value: valueExpr, Span: valueExpr.Span()}
-	calleeExpr := nodeCreator.NewIdentExpression(ast.Ident("$UnionLowering"), valueExpr.Span())
-	typeInfo.Set(calleeExpr, unionStructType)
-	callExpr := nodeCreator.NewCallExpression(calleeExpr, callArgs, valueExpr.Span())
-	typeInfo.Set(callExpr, unionStructType)
-	return callExpr
-}
-
-func (self *unionLoweringStage2) createUnionStructCallExpression(ty *typed.UnionType, valueExpr ast.Expression) *ast.CallExpression {
-	return createUnionStructCallExpression(ty, valueExpr, self.typeInfo, self.nodeCreator, self.unionStructType)
-}
-
-func (self *unionLoweringStage2) VisitVariableDefinition(v *ast.VariableDefinition, w TransformWalker) (*ast.VariableDefinition, bool) {
-	visited, ok := w.WalkVariableDefinition(v)
-	visitMustNotChange(v, visited, ok)
-	varType := self.typeInfo.MustLookup(v).(*typed.VariableType)
-	ty, ok := varType.Type.(*typed.UnionType)
-	if !ok {
-		return v, true
-	}
-	if self.typeInfo.MustLookup(v.Value).Id() == self.unionStructType.Id() {
-		// The value expression has already been converted to a struct type - nothing to do.
-		return v, true
-	}
-	v.Value = self.createUnionStructCallExpression(ty, v.Value)
-	return v, true
-}
-
-func (self *unionLoweringStage2) VisitAssignmentStatement(expr *ast.AssignmentStatement, w TransformWalker) (ast.Node, bool) {
-	visited, ok := w.WalkAssignmentStatement(expr)
-	visitMustNotChange(expr, visited, ok)
-	ty, ok := self.typeInfo.MustLookup(expr.Target).(*typed.UnionType)
-	if !ok {
-		return expr, true
-	}
-	if self.typeInfo.MustLookup(expr.Value).Id() == self.unionStructType.Id() {
-		// The value expression has already been converted to a struct type - nothing to do.
-		return expr, true
-	}
-	expr.Value = self.createUnionStructCallExpression(ty, expr.Value)
-	return expr, true
-}
-
-func (self *unionLoweringStage2) VisitMemberExpression(expr *ast.MemberExpression, w TransformWalker) (ast.Expression, bool) {
-	visited, ok := w.WalkMemberExpression(expr)
-	visitMustNotChange(expr, visited, ok)
-	namedVariantType, ok := self.typeInfo.MustLookup(expr).(*typed.NamedUnionVariant)
-	if !ok || !namedVariantType.IsUnitVariant() {
-		return expr, true
-	}
-	valueExpr := self.nodeCreator.NewTupleLiterarExpression([]ast.Expression{}, expr.Span())
-	self.typeInfo.Set(valueExpr, namedVariantType)
-	callExpr := self.createUnionStructCallExpression(namedVariantType.UnionType, valueExpr)
-	// We need to set the type of the `valueExpr` to the namedVariantType's inner type
-	// to not mess up following passes like tuple lowering.
-	self.typeInfo.Set(valueExpr, namedVariantType.Type)
-	return callExpr, true
-}
-
-// Convert named union variant initialization calls to calls to initiate the union struct:
-//
-//	Color.RGB(1, 2, 3)
-//
-//	will become:
-//
-//	UnionStruct(tag=1, data=(1, 2, 3)) -- `tag` is the tag of `Color.RGB` in this example.
-func (self *unionLoweringStage2) VisitCallExpression(expr *ast.CallExpression, w TransformWalker) (ast.Expression, bool) {
-	visited, ok := w.WalkCallExpression(expr)
-	visitMustNotChange(expr, visited, ok)
-	namedVariantType, ok := self.typeInfo.MustLookup(expr).(*typed.NamedUnionVariant)
-	if !ok {
-		return expr, true
-	}
-	expr = self.createUnionStructCallExpression(namedVariantType.UnionType, expr)
-	self.typeInfo.Set(expr.Args[1].Value, namedVariantType.Type)
-	return expr, true
-}
-
-func (self *unionLoweringStage2) VisitFunctionDefinition(fn *ast.FunctionDefinition, w TransformWalker) (*ast.FunctionDefinition, bool) {
-	if self.funcType != nil {
-		panic("nested functions should have been hoisted before")
-	}
-	self.funcType = self.typeInfo.MustLookup(fn).(*typed.DeclaredType).Type.(*typed.FunctionType)
-	if unionType, ok := self.funcType.Result.(*typed.UnionType); ok && len(fn.Body.Nodes) > 0 {
-		lastNode := fn.Body.Nodes[len(fn.Body.Nodes)-1]
-		if _, ok := lastNode.(*ast.ReturnStatement); !ok {
-			lastNodeType := self.typeInfo.MustLookup(lastNode)
-			if lastNodeType.Id() != unionType.Id() {
-				fn.Body.Nodes[len(fn.Body.Nodes)-1] = self.createUnionStructCallExpression(unionType, lastNode)
-			}
-		}
-	}
-	visited, ok := w.WalkFunctionDefinition(fn)
-	visitMustNotChange(fn, visited, ok)
-	self.funcType = nil
-	return fn, true
-}
-
-func (self *unionLoweringStage2) VisitReturnStatement(stmt *ast.ReturnStatement, w TransformWalker) (*ast.ReturnStatement, bool) {
-	if unionType, ok := self.funcType.Result.(*typed.UnionType); ok {
-		retType := self.typeInfo.MustLookup(stmt.Value)
-		if retType.Id() != unionType.Id() {
-			stmt.Value = self.createUnionStructCallExpression(unionType, stmt.Value)
-		}
-	}
-	visited, ok := w.WalkReturnStatement(stmt)
-	visitMustNotChange(stmt, visited, ok)
-	return stmt, true
-}
-
-func (self *unionLoweringStage2) VisitMatchExpression(match *ast.MatchExpression, w TransformWalker) (ast.Expression, bool) {
-	panic("match expressions should have been lowered before")
 }
 
 func (self *unionLoweringStage2) VisitNode(node ast.Node, w TransformWalker) (ast.Node, bool) {
@@ -290,6 +314,7 @@ func UnionLowering(
 		typeInfo:        typeInfo,
 		nodeCreator:     nodeCreator,
 		unionStructType: unionStructType,
+		nodePath:        []ast.Node{module},
 	}
 	stage1Walker := DefaultTransformWalker{Transformer: stage1Transformer}
 	module, ok := stage1Walker.WalkModule(module)

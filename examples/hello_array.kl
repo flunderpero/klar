@@ -1,36 +1,75 @@
 -- expect.stdout {
--- 2.42.3.3, true.false, b.Boo, 2.b.Boo
+-- Int[]: a[1]: 2, a[1] = 42; a[-2]: 42, a.len(): 3, a.capacity(): 3, a.push(137); a[-1]: 137, a.len(): 4, a.capacity(): 6, 5 x a.pop(): 137, 3, 42, 1, PASS: None, a.len(): 0  Bool[]:  a[2]: true, a[2] = false; a[2]: false  Str[]: a[1]: b, a[1] = "Boo"; a[1]: Boo  Tuple[]: a[1].0: 2, a[1].1: b, a[1] = (42, "Boo"); a[1]: Boo
 -- } expect.stdout
 -- expect.exit_code: 0
 
 fn main() {
+    print("Int[]: ")
     mut int_arr = [1, 2, 3]
+    print("a[1]: ")
     print_int(int_arr[1])
-    print(".")
+    print(", a[1] = 42; a[-2]: ")
     int_arr[1] = 42
     print_int(int_arr[-2])
-    print(".")
+    print(", a.len(): ")
     print_int(int_arr.len())
-    print(".")
+    print(", a.capacity(): ")
     print_int(int_arr.capacity())
+    print(", a.push(137); a[-1]: ")
+    int_arr.push(137)
+    print_int(int_arr[-1])
+    print(", a.len(): ")
+    print_int(int_arr.len())
+    print(", a.capacity(): ")
+    print_int(int_arr.capacity())
+    print(", 5 x a.pop(): ")
+    match int_arr.pop() {
+        case Int as x => print_int(x)
+        case _ => print("FAIL")
+    }
     print(", ")
+    match int_arr.pop() {
+        case Int as x => print_int(x)
+        case _ => print("FAIL")
+    }
+    print(", ")
+    match int_arr.pop() {
+        case Int as x => print_int(x)
+        case _ => print("FAIL")
+    }
+    print(", ")
+    match int_arr.pop() {
+        case Int as x => print_int(x)
+        case _ => print("FAIL")
+    }
+    print(", ")
+    match int_arr.pop() {
+        case None => print("PASS: None")
+        case _ => print("FAIL")
+    }
+    print(", a.len(): ")
+    print_int(int_arr.len())
+    print("  Bool[]: ")
     mut bool_arr = [true, false, true]
+    print(" a[2]: ")
     print_bool(bool_arr[2])
-    print(".")
+    print(", a[2] = false; a[2]: ")
     bool_arr[2] = false
     print_bool(bool_arr[2])
-    print(", ")
+    print("  Str[]: ")
     mut str_arr = ["a", "b", "c"]
+    print("a[1]: ")
     print(str_arr[1])
-    print(".")
+    print(", a[1] = \"Boo\"; a[1]: ")
     str_arr[1] = "Boo"
     print(str_arr[1])
-    print(", ")
+    print("  Tuple[]: ")
     mut tuple_arr = [(1, "a"), (2, "b"), (3, "c")]
+    print("a[1].0: ")
     print_int(tuple_arr[1].0)
-    print(".")
+    print(", a[1].1: ")
     print(tuple_arr[1].1)
-    print(".")
+    print(", a[1] = (42, \"Boo\"); a[1]: ")
     tuple_arr[1] = (42, "Boo")
     print(tuple_arr[1].1)
 }

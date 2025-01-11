@@ -65,6 +65,30 @@ impl InternalArray {
     fn internal_set(self, index Int, val T) {
         internal_write_ptr<T>(self.internal_index_ptr(index), val)
     }
+
+    fn push(mut self, val T) {
+        if self.len_ == self.capacity_ {
+            let new_capacity = self.capacity_ * 2
+            let new_data = internal_malloc(new_capacity * sizeof<T>())
+            internal_memcpy(new_data, self.data_, self.len_ * sizeof<T>())
+            internal_free(self.data_)
+            self.data_ = new_data
+            self.capacity_ = new_capacity
+        }
+        let ptr = self.data_ + self.len_ * sizeof<T>()
+        internal_write_ptr<T>(ptr, val)
+        self.len_ = self.len_ + 1
+    }
+
+    fn pop(mut self) T | None {
+        if self.len_ == 0 => None
+        else {
+            let i = self.len_ - 1
+            let res = internal_read_ptr<T>(self.data_ + i * sizeof<T>())
+            self.len_ = self.len_ - 1
+            res
+        }
+    }
 }
 
 -- [[ Str ]]

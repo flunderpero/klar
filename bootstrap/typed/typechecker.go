@@ -36,15 +36,16 @@ func (self *TypeCreator) newImplementableTypeBase(methods []*Method, traits []*T
 	return implementableTypeBase{typeBase: self.newTypeBase(), methods: methods, traits: traits}
 }
 
-func (self *TypeCreator) NewFunctionType(genericBase *FunctionType, typeParams []TypeParam, typeArgs []Type, receiver Type, params []ParamOrField, result Type) *FunctionType {
+func (self *TypeCreator) NewFunctionType(genericBase *FunctionType, selfTypeParam *TypeParam, typeParams []TypeParam, typeArgs []Type, receiver Type, params []ParamOrField, result Type) *FunctionType {
 	return &FunctionType{
-		typeBase:    self.newTypeBase(),
-		genericBase: genericBase,
-		typeParams:  typeParams,
-		typeArgs:    typeArgs,
-		Receiver:    receiver,
-		Params:      params,
-		Result:      result,
+		typeBase:      self.newTypeBase(),
+		genericBase:   genericBase,
+		typeParams:    typeParams,
+		typeArgs:      typeArgs,
+		Receiver:      receiver,
+		Params:        params,
+		Result:        result,
+		SelfTypeParam: selfTypeParam,
 	}
 }
 
@@ -105,7 +106,7 @@ type ImplementableType interface {
 	TypeWithTraits
 	Methods() []*Method
 	FindMethod(name ast.Ident) (*FunctionType, bool)
-	addMethod(name ast.Ident, funcType *FunctionType) bool
+	addMethod(method *Method) bool
 	addTrait(traitType *TraitType) bool
 }
 
@@ -123,11 +124,11 @@ func (self implementableTypeBase) Methods() []*Method {
 	return self.methods
 }
 
-func (self *implementableTypeBase) addMethod(name ast.Ident, funcType *FunctionType) bool {
-	if _, found := self.FindMethod(name); found {
+func (self *implementableTypeBase) addMethod(method *Method) bool {
+	if _, found := self.FindMethod(method.Name); found {
 		return false
 	}
-	self.methods = append(self.methods, &Method{Name: name, Type: funcType})
+	self.methods = append(self.methods, method)
 	return true
 }
 
@@ -787,14 +788,14 @@ func (ty StructType) FindMember(name ast.MemberExpressionField, span token.Span)
 	return nil, false
 }
 
-func (ty *StructType) addMethod(name ast.Ident, funcType *FunctionType) bool {
-	if _, found := ty.FindMethod(name); found {
+func (ty *StructType) addMethod(method *Method) bool {
+	if _, found := ty.FindMethod(method.Name); found {
 		return false
 	}
-	if _, found := ty.FindField(ast.MemberExpressionField(name)); found {
+	if _, found := ty.FindField(ast.MemberExpressionField(method.Name)); found {
 		return false
 	}
-	return ty.implementableTypeBase.addMethod(name, funcType)
+	return ty.implementableTypeBase.addMethod(method)
 }
 
 func (ty StructType) CallParams() []ParamOrField {
@@ -901,12 +902,13 @@ func (ty ParamOrField) String() string {
 
 type FunctionType struct {
 	typeBase
-	genericBase *FunctionType
-	typeParams  []TypeParam
-	typeArgs    []Type
-	Receiver    Type
-	Params      []ParamOrField
-	Result      Type
+	genericBase   *FunctionType
+	typeParams    []TypeParam
+	typeArgs      []Type
+	Receiver      Type
+	Params        []ParamOrField
+	Result        Type
+	SelfTypeParam *TypeParam // may be nil
 }
 
 func (ty FunctionType) String() string {
@@ -956,25 +958,47 @@ func (ty FunctionType) IsStaticMethod() bool {
 	return ty.IsMethod() && (len(ty.Params) == 0 || ty.Params[0].Type.Id() != ty.Receiver.Id())
 }
 
-func (ty FunctionType) CheckSameSignatureIgnoringReceiverTypes(other *FunctionType, span token.Span) error {
-	match := func(thisType Type, otherType Type) bool {
-		if thisType.Id() == otherType.Id() {
+func checkSameSignatureIgnoringReceiverTypesHelper(this *FunctionType, other *FunctionType, thisType Type, otherType Type) bool {
+	if thisType.Id() == otherType.Id() {
+		return true
+	}
+	if otherType.Id() == other.Receiver.Id() {
+		return thisType.Id() == this.Receiver.Id()
+	}
+	if thisTypeParam, ok := thisType.(*TypeParam); ok {
+		if otherTypeParam, ok := otherType.(*TypeParam); ok {
+			return thisTypeParam.Index == otherTypeParam.Index
+		}
+	}
+	if thisUnionType, ok := thisType.(*UnionType); ok {
+		if otherUnionType, ok := otherType.(*UnionType); ok {
+			if !thisUnionType.IsAnonymous ||
+				!otherUnionType.IsAnonymous ||
+				len(thisUnionType.Variants) != len(otherUnionType.Variants) {
+				return false
+			}
+			for i, variant := range thisUnionType.Variants {
+				if !checkSameSignatureIgnoringReceiverTypesHelper(
+					this, other, variant.AsType(), otherUnionType.Variants[i].AsType()) {
+					return false
+				}
+			}
 			return true
 		}
-		if otherType.Id() == other.Receiver.Id() {
-			return thisType.Id() == ty.Receiver.Id()
-		}
-		return false
 	}
+	return false
+}
+
+func (ty *FunctionType) CheckSameSignatureIgnoringReceiverTypes(other *FunctionType, span token.Span) error {
 	if len(ty.Params) != len(other.Params) {
 		return errors.Errorf("%s: parameter count does not match: %d != %d", span, len(ty.Params), len(other.Params))
 	}
-	if !match(ty.Result, other.Result) {
+	if !checkSameSignatureIgnoringReceiverTypesHelper(ty, other, ty.Result, other.Result) {
 		return errors.Errorf("%s: result types do not match: %s != %s", span, ty.Result, other.Result)
 	}
 	for i, param := range ty.Params {
 		otherParam := other.Params[i]
-		if !match(param.Type, otherParam.Type) {
+		if !checkSameSignatureIgnoringReceiverTypesHelper(ty, other, param.Type, otherParam.Type) {
 			return errors.Errorf("%s: parameter types do not match: %s != %s", span, param, otherParam)
 		}
 	}
@@ -2270,7 +2294,7 @@ func isValueType(ty Type) bool {
 	return false
 }
 
-func (tc *typeChecker) checkFunctionDefinitionDeclaration(fn *ast.FunctionDefinition) error {
+func (tc *typeChecker) checkFunctionDefinitionStage1(fn *ast.FunctionDefinition) error {
 	tc.enterGenericScope()
 	defer tc.exitGenericScope()
 	tc.memoizeScopes(fn)
@@ -2280,7 +2304,7 @@ func (tc *typeChecker) checkFunctionDefinitionDeclaration(fn *ast.FunctionDefini
 	return nil
 }
 
-func (tc *typeChecker) checkFunctionDefinitionBody(fn *ast.FunctionDefinition, w ast.Walker) error {
+func (tc *typeChecker) checkFunctionDefinitionStage2(fn *ast.FunctionDefinition, w ast.Walker) error {
 	declaredType := tc.typeInfo.MustLookup(fn).(*DeclaredType)
 	functionType := declaredType.Type.(*FunctionType)
 	defer tc.useMemoizedScopes(fn)()
@@ -2307,7 +2331,8 @@ func (tc *typeChecker) VisitTraitDeclaration(trait *ast.TraitDeclaration, w ast.
 	return nil
 }
 
-func (tc *typeChecker) checkTraitDeclaration(trait *ast.TraitDeclaration) error {
+func (tc *typeChecker) checkTraitDeclarationStage1(forwardTrait *forwardTraitDecl) error {
+	trait := forwardTrait.traitDecl
 	traitType := tc.typeInfo.MustLookup(trait).(*DeclaredType).Type.(*TraitType)
 	tc.enterScope(trait)
 	defer tc.exitScope()
@@ -2318,7 +2343,9 @@ func (tc *typeChecker) checkTraitDeclaration(trait *ast.TraitDeclaration) error 
 		return err
 	}
 	traitType.typeParams = typeParams
-	if err := tc.typeScope.declareType("Self", traitType, trait.Span()); err != nil {
+	selfType := &TypeParam{
+		typeBase: tc.newTypeBase(), GenericType: traitType, TraitBound: traitType, Name: "Self", Index: len(typeParams)}
+	if err := tc.typeScope.declareType("Self", selfType, trait.Span()); err != nil {
 		return err
 	}
 	tc.enterCheckingMode(insideTraitOrImplMode)
@@ -2327,29 +2354,52 @@ func (tc *typeChecker) checkTraitDeclaration(trait *ast.TraitDeclaration) error 
 	if err != nil {
 		return err
 	}
-	for _, decl := range decls.funcDecls {
+	funcDecls := append([]*ast.FunctionDeclaration{}, decls.funcDecls...)
+	defs, err := tc.forwardDeclare(trait.MethodDefs)
+	forwardTrait.forwardDecls = defs
+	if err != nil {
+		return err
+	}
+	funcDefs := map[ast.NodeId]*ast.FunctionDefinition{}
+	for _, def := range defs.funcDefs {
+		funcDefs[def.Decl.Id()] = def
+		funcDecls = append(funcDecls, def.Decl)
+	}
+	for _, decl := range funcDecls {
 		tc.enterGenericScope()
 		err := tc.checkFunctionDeclaration(decl)
 		if err != nil {
 			tc.exitGenericScope()
 			return err
 		}
+		if def, ok := funcDefs[decl.Id()]; ok {
+			tc.memoizeScopes(def)
+		}
 		tc.exitGenericScope()
 	}
-	for _, methodDecl := range trait.MethodDecls {
+	tc.memoizeScopes(trait)
+	for _, methodDecl := range funcDecls {
 		methodType := tc.typeInfo.MustLookupDeclaredType(methodDecl).Type.(*FunctionType)
-		methodType.Receiver = traitType
-		methodAndName := &Method{Name: methodDecl.Name, Type: methodType}
-		traitType.Methods = append(traitType.Methods, methodAndName)
+		methodType.Receiver = selfType
+		method := &Method{Name: methodDecl.Name, Type: methodType}
+		if _, ok := funcDefs[methodDecl.Id()]; ok {
+			methodType.SelfTypeParam = selfType
+		}
+		traitType.Methods = append(traitType.Methods, method)
 	}
 	return nil
+}
+
+func (tc *typeChecker) checkTraitDeclarationStage2(trait *forwardTraitDecl, w ast.Walker) error {
+	defer tc.useMemoizedScopes(trait.traitDecl)()
+	return tc.checkForwardDeclsStage2(trait.forwardDecls, w)
 }
 
 func (tc *typeChecker) VisitImplDefinition(impl *ast.ImplDefinition, w ast.Walker) error {
 	return nil
 }
 
-func (tc *typeChecker) checkImplDefinitionDeclaration(forwardImpl *forwardImplDef, w ast.Walker) error {
+func (tc *typeChecker) checkImplDefinitionStage1(forwardImpl *forwardImplDef, w ast.Walker) error {
 	impl := forwardImpl.implDef
 	targetType_, found := tc.typeScope.lookupType(string(impl.Target))
 	if !found {
@@ -2406,12 +2456,12 @@ func (tc *typeChecker) checkImplDefinitionDeclaration(forwardImpl *forwardImplDe
 			unimplementedTraitMethods[method.Name] = method
 		}
 	}
-	for _, method := range impl.Methods {
-		decl := method.Decl
-		typeDecl := tc.typeInfo.MustLookupDeclaredType(method)
+	for _, methodDef := range impl.Methods {
+		decl := methodDef.Decl
+		typeDecl := tc.typeInfo.MustLookupDeclaredType(methodDef)
 		methodType, ok := typeDecl.Type.(*FunctionType)
 		if !ok {
-			return errors.Errorf("%s: type is not a function type: %s", method.Span(), typeDecl)
+			return errors.Errorf("%s: type is not a function type: %s", methodDef.Span(), typeDecl)
 		}
 		methodType.Receiver = targetType
 		if traitType != nil {
@@ -2434,28 +2484,39 @@ func (tc *typeChecker) checkImplDefinitionDeclaration(forwardImpl *forwardImplDe
 			}
 			delete(unimplementedTraitMethods, decl.Name)
 		}
-		if !targetType.addMethod(decl.Name, methodType) {
+		method := &Method{Name: decl.Name, Type: methodType}
+		if !targetType.addMethod(method) {
 			targetSymbol := tc.typeInfo.MustLookupSymbol(targetType.Id())
 			return errors.Errorf(
 				"%s: name %q already exists in type %q", decl.Span(), decl.Name, targetSymbol.Name)
 		}
 	}
-	if traitType != nil && len(unimplementedTraitMethods) > 0 {
-		missingTraitMethods := []string{}
-		for _, method := range unimplementedTraitMethods {
-			missingTraitMethods = append(missingTraitMethods, method.String())
-		}
-		structSymbol := tc.typeInfo.MustLookupSymbol(targetType.Id())
-		traitSymbol := tc.typeInfo.MustLookupSymbol(traitType.Id())
-		return errors.Errorf(
-			"%s: impl %q does not implement all methods of trait %q: %s",
-			impl.Span(),
-			structSymbol.Name,
-			traitSymbol.Name,
-			strings.Join(missingTraitMethods, ", "),
-		)
-	}
 	if traitType != nil {
+		for _, method := range unimplementedTraitMethods {
+			if method.Type.SelfTypeParam != nil {
+				if !targetType.addMethod(method) {
+					targetSymbol := tc.typeInfo.MustLookupSymbol(targetType.Id())
+					return errors.Errorf(
+						"%s: name %q already exists in type %q", impl.Span(), method.Name, targetSymbol.Name)
+				}
+				delete(unimplementedTraitMethods, method.Name)
+			}
+		}
+		if len(unimplementedTraitMethods) > 0 {
+			missingTraitMethods := []string{}
+			for _, method := range unimplementedTraitMethods {
+				missingTraitMethods = append(missingTraitMethods, method.String())
+			}
+			structSymbol := tc.typeInfo.MustLookupSymbol(targetType.Id())
+			traitSymbol := tc.typeInfo.MustLookupSymbol(traitType.Id())
+			return errors.Errorf(
+				"%s: impl %q does not implement all methods of trait %q: %s",
+				impl.Span(),
+				structSymbol.Name,
+				traitSymbol.Name,
+				strings.Join(missingTraitMethods, ", "),
+			)
+		}
 		if !targetType.addTrait(traitType) {
 			targetSymbol := tc.typeInfo.MustLookupSymbol(targetType.Id())
 			return errors.Errorf(
@@ -2465,7 +2526,7 @@ func (tc *typeChecker) checkImplDefinitionDeclaration(forwardImpl *forwardImplDe
 	return nil
 }
 
-func (tc *typeChecker) checkImplDefinitionBodies(impl *forwardImplDef, w ast.Walker) error {
+func (tc *typeChecker) checkImplDefinitionStage2(impl *forwardImplDef, w ast.Walker) error {
 	defer tc.useMemoizedScopes(impl.implDef)()
 	return tc.checkForwardDeclsStage2(impl.forwardDecls, w)
 }
@@ -2733,17 +2794,17 @@ func (tc *typeChecker) checkForwardDeclsStage1(decls *forwardDecls, w ast.Walker
 		}
 	}
 	for _, def := range decls.funcDefs {
-		if err := tc.checkFunctionDefinitionDeclaration(def); err != nil {
+		if err := tc.checkFunctionDefinitionStage1(def); err != nil {
 			return err
 		}
 	}
 	for _, decl := range decls.traitDecls {
-		if err := tc.checkTraitDeclaration(decl); err != nil {
+		if err := tc.checkTraitDeclarationStage1(decl); err != nil {
 			return err
 		}
 	}
 	for _, def := range decls.implDefs {
-		if err := tc.checkImplDefinitionDeclaration(def, w); err != nil {
+		if err := tc.checkImplDefinitionStage1(def, w); err != nil {
 			return err
 		}
 	}
@@ -2763,12 +2824,17 @@ func (tc *typeChecker) checkForwardDeclsStage1(decls *forwardDecls, w ast.Walker
 
 func (tc *typeChecker) checkForwardDeclsStage2(decls *forwardDecls, w ast.Walker) error {
 	for _, def := range decls.funcDefs {
-		if err := tc.checkFunctionDefinitionBody(def, w); err != nil {
+		if err := tc.checkFunctionDefinitionStage2(def, w); err != nil {
+			return err
+		}
+	}
+	for _, decl := range decls.traitDecls {
+		if err := tc.checkTraitDeclarationStage2(decl, w); err != nil {
 			return err
 		}
 	}
 	for _, def := range decls.implDefs {
-		if err := tc.checkImplDefinitionBodies(def, w); err != nil {
+		if err := tc.checkImplDefinitionStage2(def, w); err != nil {
 			return err
 		}
 	}

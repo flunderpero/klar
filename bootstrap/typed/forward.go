@@ -9,11 +9,16 @@ type forwardImplDef struct {
 	forwardDecls *forwardDecls
 }
 
+type forwardTraitDecl struct {
+	traitDecl    *ast.TraitDeclaration
+	forwardDecls *forwardDecls
+}
+
 type forwardDecls struct {
 	funcDecls       []*ast.FunctionDeclaration
 	funcDefs        []*ast.FunctionDefinition
 	namedUnionDecls []*ast.NamedUnionTypeDeclaration
-	traitDecls      []*ast.TraitDeclaration
+	traitDecls      []*forwardTraitDecl
 	structDecls     []*ast.StructTypeDeclaration
 	implDefs        []*forwardImplDef
 }
@@ -47,7 +52,7 @@ func forwardDeclare(
 				return nil, err
 			}
 			typeInfo.Set(node, &DeclaredType{Type: ty})
-			res.traitDecls = append(res.traitDecls, node)
+			res.traitDecls = append(res.traitDecls, &forwardTraitDecl{traitDecl: node})
 		case *ast.NamedUnionTypeDeclaration:
 			ty := &UnionType{typeBase: typeCreator.newTypeBase(), IsAnonymous: false}
 			if err := declare(node.Name, ty, node); err != nil {

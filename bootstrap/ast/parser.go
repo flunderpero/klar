@@ -826,6 +826,7 @@ type TraitDeclaration struct {
 	Name        Ident
 	TypeParams  []TypeParam
 	MethodDecls []*FunctionDeclaration
+	MethodDefs  []*FunctionDefinition
 }
 
 func (trait *TraitDeclaration) String() string {
@@ -2017,6 +2018,7 @@ func (p *Parser) parseTraitDeclaration() (*TraitDeclaration, error) {
 		return nil, err
 	}
 	methodDecls := []*FunctionDeclaration{}
+	methodDefs := []*FunctionDefinition{}
 	for p.index < len(p.tokens) {
 		t := p.peek()
 		switch t.Kind {
@@ -2027,13 +2029,24 @@ func (p *Parser) parseTraitDeclaration() (*TraitDeclaration, error) {
 				Name:        Ident(typeIdentToken.Value),
 				TypeParams:  typeParams,
 				MethodDecls: methodDecls,
+				MethodDefs:  methodDefs,
 			}, nil
 		case token.Fn:
 			decl, err := p.parseFunctionDeclaration(true)
 			if err != nil {
 				return nil, err
 			}
-			methodDecls = append(methodDecls, decl)
+			t2 := p.peek()
+			if t2.Kind == token.FatArrow || t2.Kind == token.LCurly {
+				body, err := p.parseBlockExpression()
+				if err != nil {
+					return nil, err
+				}
+				methodDef := &FunctionDefinition{nodeBase: p.newNodeBase(t.Span), Decl: decl, Body: body}
+				methodDefs = append(methodDefs, methodDef)
+			} else {
+				methodDecls = append(methodDecls, decl)
+			}
 		default:
 			return nil, errors.Errorf("unexpected token: %s", t)
 		}

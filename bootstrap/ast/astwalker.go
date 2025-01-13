@@ -326,6 +326,12 @@ func (w *DefaultWalker) WalkTraitDeclaration(impl *TraitDeclaration) error {
 			return err
 		}
 	}
+	for _, def := range impl.MethodDefs {
+		err := w.Visitor.VisitFunctionDefinition(def, w)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

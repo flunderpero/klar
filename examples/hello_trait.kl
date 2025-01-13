@@ -1,5 +1,5 @@
 -- expect.stdout {
--- EarthSurprise
+-- Earth, Surprise, member_default1, member_default2_overridden, 42, PASS, static_default1, static_default2_overridden
 -- } expect.stdout
 -- expect.exit_code: 0
 
@@ -14,6 +14,18 @@ trait Foo {
     fn return_self(self) Self
 
     fn new() Self
+
+    fn member_default1(self) Str => "member_default1"
+
+    fn member_default2(self) Str => "member_default2"
+
+    fn member_generic_default1<I>(self, v I) I => v
+
+    fn member_generic_default2<I>(self, v I) I | None => None
+
+    fn static_default1() Str => "static_default1"
+
+    fn static_default2() Str => "static_default2"
 }
 
 impl Foo for Planet {
@@ -28,10 +40,32 @@ impl Foo for Planet {
     fn new() Self {
         Planet(name="Surprise", radius=4242)
     }
+
+    fn member_default2(self) Str => "member_default2_overridden"
+
+    fn member_generic_default2<T>(self, v T) T | None => v
+
+    fn static_default2() Str => "static_default2_overridden"
 }
 
 fn main() {
     let p = Planet(name = "Earth", radius = 6750)
     print(p.return_self().to_str())
+    print(", ")
     print(Planet.new().return_self().name)
+    print(", ")
+    print(p.member_default1())
+    print(", ")
+    print(p.member_default2())
+    print(", ")
+    print_int(p.member_generic_default1<Int>(42))
+    print(", ")
+    match p.member_generic_default2<Bool>(true) {
+        case Bool => print("PASS")
+        case _ => print("FAIL")
+    }
+    print(", ")
+    print(p.static_default1())
+    print(", ")
+    print(p.static_default2())
 }

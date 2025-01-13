@@ -112,37 +112,42 @@ func (self *mono) resolve(node ast.Node) typed.Type {
 	typeArgs := self.current.specialized.TypeArgs()
 	switch ty := ty.(type) {
 	case *typed.FunctionType:
-		if traitType, ok := ty.Receiver.(*typed.TraitType); ok {
+		if typeParam, ok := ty.Receiver.(*typed.TypeParam); ok {
 			// We know that a `TraitType` can only come from a type parameter.
 			// So we first look up the name of the function and then we find
 			// the struct that is set as the type-arg for the type-param with the
 			// trait-bound.
 			// And finally, we substitute the TraitType's function we got here with
 			// the struct's function.
-			var funcName *ast.Ident = nil
+			traitType := typeParam.TraitBound
+			tyBase := ty
+			if genericBase, ok := ty.GenericBase(); ok {
+				tyBase = genericBase.(*typed.FunctionType)
+			}
+			var traitMethod *typed.Method
 			for _, method := range traitType.Methods {
-				if method.Type.Id() == ty.Id() {
-					funcName = &method.Name
+				if method.Type.Id() == tyBase.Id() {
+					traitMethod = method
 					break
 				}
 			}
-			if funcName == nil {
+			if traitMethod == nil {
 				panic(fmt.Sprintf("method not found in trait: %s", ty))
 			}
 			traitBoundTypeParam := self.globalTypeInfo.MustLookupTraitBoundTypeParam(node)
-			var structType *typed.StructType = nil
+			var targetType typed.ImplementableType = nil
 			for i, typeParam := range typeParams {
 				if traitBoundTypeParam.Id() == typeParam.Id() {
-					structType = typeArgs[i].(*typed.StructType)
+					targetType = typeArgs[i].(typed.ImplementableType)
 					break
 				}
 			}
-			if structType == nil {
-				panic(fmt.Sprintf("struct type not found for trait bound type param: %s", traitBoundTypeParam))
+			if targetType == nil {
+				panic(fmt.Sprintf("type not found for trait bound type param: %s", traitBoundTypeParam))
 			}
-			ty, ok = structType.FindMethod(*funcName)
+			ty, ok = targetType.FindMethod(traitMethod.Name)
 			if !ok {
-				panic(fmt.Sprintf("method %q not found in struct: %s", funcName, structType))
+				panic(fmt.Sprintf("method %q not found in struct: %s", traitMethod.Name, targetType))
 			}
 			return ty
 		}

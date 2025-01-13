@@ -11,8 +11,15 @@ type resolvedType[T GenericType] struct {
 	resolveTypeArgs   []Type
 }
 
+type resolvedFunctionType struct {
+	ty                *FunctionType
+	selfType          Type
+	resolveTypeParams []TypeParam
+	resolveTypeArgs   []Type
+}
+
 type GenericsResolver struct {
-	resolvedFuncTypes   []resolvedType[*FunctionType]
+	resolvedFuncTypes   []resolvedFunctionType
 	resolvedStructTypes []resolvedType[*StructType]
 	resolvedTraitTypes  []resolvedType[*TraitType]
 	resolvedUnionTypes  []resolvedType[*UnionType]
@@ -118,7 +125,7 @@ func (self *GenericsResolver) findResolvedTraitType(ty *TraitType, typeArgs []Ty
 	return nil, false
 }
 
-func (self *GenericsResolver) findResolvedFuncType(ty *FunctionType, typeArgs []Type) (*FunctionType, bool) {
+func (self *GenericsResolver) findResolvedFuncType(ty *FunctionType, typeArgs []Type, selfType Type) (*FunctionType, bool) {
 	tyBase, ok := ty.GenericBase()
 	if !ok {
 		tyBase = ty
@@ -137,6 +144,14 @@ func (self *GenericsResolver) findResolvedFuncType(ty *FunctionType, typeArgs []
 			}
 		} else if resolved.ty.Receiver != nil {
 			continue
+		}
+		if selfType != nil {
+			if resolved.selfType == nil {
+				continue
+			}
+			if selfType.Id() != resolved.selfType.Id() {
+				continue
+			}
 		}
 		if MatchTypeArgs(resolved.ty, typeArgs) {
 			return resolved.ty, true
@@ -259,7 +274,16 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 		}
 		switch ty := ty.(type) {
 		case *FunctionType:
-			if resolved, ok := self.findResolvedFuncType(ty, genericTypeArgs); ok {
+			var selfType Type = nil
+			if ty.SelfTypeParam != nil {
+				for i, typeParam := range typeParams {
+					if typeParam.id == ty.SelfTypeParam.id {
+						selfType = typeArgs[i]
+						break
+					}
+				}
+			}
+			if resolved, ok := self.findResolvedFuncType(ty, genericTypeArgs, selfType); ok {
 				return resolved
 			}
 			params := make([]ParamOrField, len(ty.Params))
@@ -276,8 +300,8 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 				receiver = self.ResolveTypeArgs(ty.Receiver, typeParams, typeArgs)
 			}
 			res := self.typeCreator.NewFunctionType(
-				genericBase(ty), ty.typeParams, genericTypeArgs, receiver, params, ty.Result)
-			self.resolvedFuncTypes = append(self.resolvedFuncTypes, resolvedType[*FunctionType]{res, typeParams, typeArgs})
+				genericBase(ty), ty.SelfTypeParam, ty.typeParams, genericTypeArgs, receiver, params, ty.Result)
+			self.resolvedFuncTypes = append(self.resolvedFuncTypes, resolvedFunctionType{res, selfType, typeParams, typeArgs})
 			for i, param := range ty.Params {
 				param := param // Make a copy.
 				param.Type = self.ResolveTypeArgs(param.Type, typeParams, typeArgs)
@@ -393,7 +417,7 @@ func (self *GenericsResolver) CloneAndMergeReceiverGenerics(ty *FunctionType, re
 	if ty.genericBase != nil {
 		baseType = ty.genericBase
 	}
-	res := self.typeCreator.NewFunctionType(baseType, typeParams, typeArgs, receiver, ty.Params, ty.Result)
+	res := self.typeCreator.NewFunctionType(baseType, ty.SelfTypeParam, typeParams, typeArgs, receiver, ty.Params, ty.Result)
 	self.declareSymbolForSpecializedType(res)
 	return res
 }

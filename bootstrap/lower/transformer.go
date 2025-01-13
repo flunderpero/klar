@@ -383,7 +383,15 @@ func (w *DefaultTransformWalker) WalkTraitDeclaration(trait *ast.TraitDeclaratio
 			methodDecls = append(methodDecls, transformed.(*ast.FunctionDeclaration))
 		}
 	}
+	methodDefs := []*ast.FunctionDefinition{}
+	for _, methodDef := range trait.MethodDefs {
+		transformed, ok := w.Transformer.VisitNode(methodDef, w)
+		if ok {
+			methodDefs = append(methodDefs, transformed.(*ast.FunctionDefinition))
+		}
+	}
 	trait.MethodDecls = methodDecls
+	trait.MethodDefs = methodDefs
 	return trait, true
 }
 

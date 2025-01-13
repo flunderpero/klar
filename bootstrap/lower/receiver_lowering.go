@@ -54,6 +54,14 @@ func (self *receiverLowering) mergeReceiverGenericsIntoFunction(funcType *typed.
 func (self *receiverLowering) mergeMethodMemberExpression(expr *ast.MemberExpression, funcType *typed.FunctionType) *ast.IdentExpression {
 	receiver := expr.Target
 	receiverType := self.typeInfo.MustLookup(receiver)
+	if funcType.SelfTypeParam != nil {
+		// This is the default implementation of a trait. Adapt the type to the actual receiver
+		// by substituting the implicit `Self` type parameter and the receiver.
+		typeParams := append([]typed.TypeParam{*funcType.SelfTypeParam}, funcType.TypeParams()...)
+		typeArgs := append([]typed.Type{receiverType}, funcType.TypeArgs()...)
+		funcType = self.genericsResolver.ResolveTypeArgs(funcType, typeParams, typeArgs).(*typed.FunctionType)
+		funcType.Receiver = receiverType
+	}
 	if typeParam, ok := receiverType.(*typed.TypeParam); ok {
 		receiverType = typeParam.TraitBound
 	}

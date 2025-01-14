@@ -1012,7 +1012,7 @@ func (p *Parser) parseBlockExpression() (*BlockExpression, error) {
 	case token.FatArrow:
 		// Single expression block.
 		p.consumeAny()
-		expr, err := p.parseExpression()
+		expr, err := p.ParseNode()
 		if err != nil {
 			return nil, err
 		}

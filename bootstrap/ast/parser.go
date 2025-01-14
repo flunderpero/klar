@@ -10,10 +10,19 @@ import (
 	"github.com/pkg/errors"
 )
 
+var IncludeNodeIdInString = false
+
+func nid(s string, node Node) string {
+	if !IncludeNodeIdInString {
+		return s
+	}
+	return fmt.Sprintf("(%s;%s)", node.Id(), s)
+}
+
 type NodeId int
 
 func (id NodeId) String() string {
-	return fmt.Sprintf("node%d", id)
+	return fmt.Sprintf("#n%d", id)
 }
 
 func (id NodeId) IdMarker() {}
@@ -103,9 +112,9 @@ type TypeParam struct {
 func (t TypeParam) String() string {
 	traitBound := ""
 	if t.TraitBound != nil {
-		traitBound = fmt.Sprintf("\n(TraitBound)\n%s", base.Indent(t.TraitBound, 1))
+		traitBound = fmt.Sprintf(" impl %s", t.TraitBound)
 	}
-	return fmt.Sprintf("TypeParam %q%s", t.Name, traitBound)
+	return nid(fmt.Sprintf("%s%s", t.Name, traitBound), &t)
 }
 
 func (t TypeParam) TypeName() string {
@@ -113,19 +122,17 @@ func (t TypeParam) TypeName() string {
 }
 
 func typeParamsString(params []TypeParam) string {
-	s := ""
-	if len(params) > 0 {
-		s = fmt.Sprintf("\n(TypeParams)%s", base.IndentSlice(params, 1))
+	if len(params) == 0 {
+		return ""
 	}
-	return s
+	return fmt.Sprintf("<%s>", base.CommaSlice(params))
 }
 
 func typeArgsString(args []Type) string {
-	s := ""
-	if len(args) > 0 {
-		s = fmt.Sprintf("\n(TypeArgs)%s", base.IndentSlice(args, 1))
+	if len(args) == 0 {
+		return ""
 	}
-	return s
+	return fmt.Sprintf("<%s>", base.CommaSlice(args))
 }
 
 type Type interface {
@@ -140,7 +147,7 @@ type SimpleType struct {
 }
 
 func (t SimpleType) String() string {
-	return fmt.Sprintf("SimpleType %q%s", t.Name, base.IndentString(typeArgsString(t.TypeArgs), 1))
+	return nid(fmt.Sprintf("%s%s", t.Name, typeArgsString(t.TypeArgs)), &t)
 }
 
 func (t SimpleType) TypeName() string {
@@ -153,7 +160,7 @@ type TupleType struct {
 }
 
 func (t TupleType) String() string {
-	return fmt.Sprintf("TupleType%s", base.IndentSlice(t.Values, 1))
+	return nid(fmt.Sprintf("(%s)", base.CommaSlice(t.Values)), &t)
 }
 
 func (t TupleType) TypeName() string {
@@ -188,9 +195,9 @@ type FunctionType struct {
 }
 
 func (t FunctionType) String() string {
-	return fmt.Sprintf(
-		"FunctionType%s%s\n%s",
-		base.IndentString(typeParamsString(t.TypeParams), 1), base.IndentSlice(t.Params, 1), base.Indent(t.Result, 1))
+	return nid(fmt.Sprintf(
+		"fn%s(%s)%s",
+		typeParamsString(t.TypeParams), base.CommaSlice(t.Params), t.Result), &t)
 }
 
 func (t FunctionType) TypeName() string {
@@ -219,7 +226,7 @@ type IdentExpression struct {
 }
 
 func (expr *IdentExpression) String() string {
-	return fmt.Sprintf("IdentExpression %q%s", expr.Ident, base.IndentString(typeArgsString(expr.TypeArgs), 1))
+	return nid(fmt.Sprintf("%s%s", expr.Ident, typeArgsString(expr.TypeArgs)), expr)
 }
 
 type StringLiteralExpression struct {
@@ -228,7 +235,7 @@ type StringLiteralExpression struct {
 }
 
 func (expr *StringLiteralExpression) String() string {
-	return fmt.Sprintf("StringLiteralExpression %q", expr.Value)
+	return nid(fmt.Sprintf("%q", expr.Value), expr)
 }
 
 type CharLiteralExpression struct {
@@ -237,7 +244,7 @@ type CharLiteralExpression struct {
 }
 
 func (expr *CharLiteralExpression) String() string {
-	return fmt.Sprintf("CharLiteralExpression '%s'", string(rune(expr.Value)))
+	return nid(fmt.Sprintf("'%s'", string(rune(expr.Value))), expr)
 }
 
 type IntLiteralExpression struct {
@@ -248,13 +255,10 @@ type IntLiteralExpression struct {
 }
 
 func (expr IntLiteralExpression) String() string {
-	var value string
 	if expr.IsUInt64 {
-		value = fmt.Sprintf("%d", expr.UInt64)
-	} else {
-		value = fmt.Sprintf("%d", expr.Int64)
+		return nid(fmt.Sprintf("%d", expr.UInt64), &expr)
 	}
-	return fmt.Sprintf("IntLiteralExpression %q", value)
+	return nid(fmt.Sprintf("%d", expr.Int64), &expr)
 }
 
 type BoolLiteralExpression struct {
@@ -263,7 +267,7 @@ type BoolLiteralExpression struct {
 }
 
 func (expr *BoolLiteralExpression) String() string {
-	return fmt.Sprintf("BoolLiteralExpression \"%t\"", expr.Value)
+	return nid(fmt.Sprintf("%t", expr.Value), expr)
 }
 
 type TupleLiteralExpression struct {
@@ -272,7 +276,7 @@ type TupleLiteralExpression struct {
 }
 
 func (self *TupleLiteralExpression) String() string {
-	return fmt.Sprintf("TupleLiteralExpression%s", base.IndentSlice(self.Values, 1))
+	return nid(fmt.Sprintf("(%s)", base.CommaSlice(self.Values)), self)
 }
 
 type ArrayLiteralExpression struct {
@@ -281,7 +285,7 @@ type ArrayLiteralExpression struct {
 }
 
 func (self *ArrayLiteralExpression) String() string {
-	return fmt.Sprintf("ArrayLiteralExpression%s", base.IndentSlice(self.Values, 1))
+	return nid(fmt.Sprintf("[%s]", base.CommaSlice(self.Values)), self)
 }
 
 type MemberExpressionField string
@@ -318,7 +322,7 @@ type MemberExpression struct {
 }
 
 func (expr *MemberExpression) String() string {
-	return fmt.Sprintf("MemberExpression\n%s\n%s%s", base.Indent(expr.Target, 1), base.Indent(expr.Field, 1), base.IndentString(typeArgsString(expr.TypeArgs), 1))
+	return nid(fmt.Sprintf("%s.%s%s", expr.Target, expr.Field, typeArgsString(expr.TypeArgs)), expr)
 }
 
 type IndexExpression struct {
@@ -328,7 +332,7 @@ type IndexExpression struct {
 }
 
 func (expr *IndexExpression) String() string {
-	return fmt.Sprintf("IndexExpression\n%s\n%s", base.Indent(expr.Target, 1), base.Indent(expr.Index, 1))
+	return nid(fmt.Sprintf("%s[%s]", expr.Target, expr.Index), expr)
 }
 
 type BinaryOperator string
@@ -366,8 +370,7 @@ type BinaryExpression struct {
 }
 
 func (expr *BinaryExpression) String() string {
-	return fmt.Sprintf(
-		"BinaryExpression\n%s\n%s\n%s", base.Indent(expr.Lhs, 1), base.Indent(expr.Op, 1), base.Indent(expr.Rhs, 1))
+	return nid(fmt.Sprintf("%s %s %s", expr.Lhs, expr.Op, expr.Rhs), expr)
 }
 
 type UnaryOperator string
@@ -388,7 +391,7 @@ type UnaryExpression struct {
 }
 
 func (expr *UnaryExpression) String() string {
-	return fmt.Sprintf("UnaryExpression\n%s\n%s", base.Indent(expr.Op, 1), base.Indent(expr.Value, 1))
+	return nid(fmt.Sprintf("%s %s", expr.Op, expr.Value), expr)
 }
 
 type CallArg struct {
@@ -400,7 +403,7 @@ type CallArg struct {
 
 func (f CallArg) String() string {
 	if f.Name != "" {
-		return fmt.Sprintf("%s\n%s", f.Name, base.Indent(f.Value, 1))
+		return fmt.Sprintf("%s = %s", f.Name, f.Value)
 	}
 	return f.Value.String()
 }
@@ -412,7 +415,13 @@ type CallExpression struct {
 }
 
 func (expr *CallExpression) String() string {
-	return fmt.Sprintf("CallExpression\n%s%s", base.Indent(expr.Callee, 1), base.IndentSlice(expr.Args, 1))
+	if len(expr.Args) == 0 {
+		return nid(fmt.Sprintf("%s()", expr.Callee), expr)
+	}
+	if len(expr.Args) == 1 {
+		return nid(fmt.Sprintf("%s(%s)", expr.Callee, base.CommaSlice(expr.Args)), expr)
+	}
+	return nid(fmt.Sprintf("%s(%s\n)", expr.Callee, base.IndentCommaSlice(expr.Args, 1)), expr)
 }
 
 type BlockExpression struct {
@@ -421,7 +430,10 @@ type BlockExpression struct {
 }
 
 func (expr BlockExpression) String() string {
-	return fmt.Sprintf("BlockExpression%s", base.IndentSlice(expr.Nodes, 1))
+	if len(expr.Nodes) == 0 {
+		return nid("{}", &expr)
+	}
+	return nid(fmt.Sprintf("{%s\n}", base.IndentSlice(expr.Nodes, 1)), &expr)
 }
 
 type IfExpression struct {
@@ -433,13 +445,13 @@ type IfExpression struct {
 
 func (expr *IfExpression) String() string {
 	if expr.FalseBody != nil {
-		return fmt.Sprintf(
-			"IfExpression\n%s\n%s\n%s",
-			base.Indent(expr.Condition, 1),
+		return nid(fmt.Sprintf(
+			"if %s {\n%s\n} else {\n%s\n}",
+			expr.Condition,
 			base.Indent(expr.TrueBody, 1),
-			base.Indent(expr.FalseBody, 1))
+			base.Indent(expr.FalseBody, 1)), expr)
 	}
-	return fmt.Sprintf("IfExpression\n%s\n%s", base.Indent(expr.Condition, 1), base.Indent(expr.TrueBody, 1))
+	return nid(fmt.Sprintf("if %s {\n%s\n}", expr.Condition, base.Indent(expr.TrueBody, 1)), expr)
 }
 
 type MatchExpression struct {
@@ -449,7 +461,7 @@ type MatchExpression struct {
 }
 
 func (self *MatchExpression) String() string {
-	return fmt.Sprintf("MatchExpression%s", base.IndentSlice(self.Arms, 1))
+	return nid(fmt.Sprintf("match %s {%s\n}", self.Expression, base.IndentSlice(self.Arms, 1)), self)
 }
 
 type MatchArm struct {
@@ -462,9 +474,9 @@ type MatchArm struct {
 func (self *MatchArm) String() string {
 	alias := ""
 	if self.Alias != nil {
-		alias = fmt.Sprintf("\n    (Alias)\n%s", base.Indent(self.Alias, 2))
+		alias = fmt.Sprintf(" as %s", self.Alias)
 	}
-	return fmt.Sprintf("MatchArm\n%s%s\n%s", base.Indent(self.Pattern, 1), alias, base.Indent(self.Body, 1))
+	return nid(fmt.Sprintf("case %s%s %s", self.Pattern, alias, self.Body), self)
 }
 
 type MatchPattern interface {
@@ -492,13 +504,13 @@ type UnionTypePattern struct {
 func (self UnionTypePattern) String() string {
 	ident := ""
 	if self.NamedVariant != "" {
-		ident = fmt.Sprintf("\n%s", base.Indent(self.NamedVariant, 1))
+		ident = fmt.Sprintf(".%s", self.NamedVariant)
 	}
 	ty := ""
 	if self.Type != nil {
-		ty = fmt.Sprintf("\n%s", base.Indent(self.Type, 1))
+		ty = self.Type.String()
 	}
-	return fmt.Sprintf("UnionTypePattern%s%s", ty, ident)
+	return nid(fmt.Sprintf("%s%s", ty, ident), &self)
 }
 
 type IntPattern struct {
@@ -507,7 +519,7 @@ type IntPattern struct {
 }
 
 func (self IntPattern) String() string {
-	return fmt.Sprintf("IntPattern\n%s", base.Indent(self.Value, 1))
+	return nid(self.Value.String(), &self)
 }
 
 type IntRangePattern struct {
@@ -518,11 +530,11 @@ type IntRangePattern struct {
 }
 
 func (self IntRangePattern) String() string {
-	inclusive := " (exclusive)"
+	inclusive := "..<"
 	if self.InclusiveTo {
-		inclusive = " (inclusive)"
+		inclusive = ".."
 	}
-	return fmt.Sprintf("IntRangePattern\n%s\n%s%s", base.Indent(self.From, 1), base.Indent(self.To, 1), inclusive)
+	return nid(fmt.Sprintf("%s%s%s", self.From, inclusive, self.To), &self)
 }
 
 type CharRangePattern struct {
@@ -533,11 +545,11 @@ type CharRangePattern struct {
 }
 
 func (self CharRangePattern) String() string {
-	inclusive := " (exclusive)"
+	inclusive := "..<"
 	if self.InclusiveTo {
-		inclusive = " (inclusive)"
+		inclusive = ".."
 	}
-	return fmt.Sprintf("CharRangePattern\n%s\n%s%s", base.Indent(&self.From, 1), base.Indent(&self.To, 1), inclusive)
+	return nid(fmt.Sprintf("%s%s%s", &self.From, inclusive, &self.To), &self)
 }
 
 type StrPattern struct {
@@ -546,7 +558,7 @@ type StrPattern struct {
 }
 
 func (self StrPattern) String() string {
-	return fmt.Sprintf("StrPattern\n%s", base.Indent(&self.Value, 1))
+	return nid(fmt.Sprintf("%q", &self.Value), &self)
 }
 
 type CharPattern struct {
@@ -555,7 +567,7 @@ type CharPattern struct {
 }
 
 func (self CharPattern) String() string {
-	return fmt.Sprintf("CharPattern\n%s", base.Indent(&self.Value, 1))
+	return nid(fmt.Sprintf("'%s'", &self.Value), &self)
 }
 
 type WildcardPattern struct {
@@ -563,7 +575,7 @@ type WildcardPattern struct {
 }
 
 func (self WildcardPattern) String() string {
-	return "WildcardPattern"
+	return nid("_", &self)
 }
 
 type LoopStatement struct {
@@ -572,7 +584,7 @@ type LoopStatement struct {
 }
 
 func (l *LoopStatement) String() string {
-	return fmt.Sprintf("LoopStatement\n%s", base.Indent(l.Body, 1))
+	return nid(fmt.Sprintf("loop %s", l.Body), l)
 }
 
 type BreakStatement struct {
@@ -580,7 +592,7 @@ type BreakStatement struct {
 }
 
 func (b *BreakStatement) String() string {
-	return "BreakStatement"
+	return nid("break", b)
 }
 
 type ContinueStatement struct {
@@ -588,7 +600,7 @@ type ContinueStatement struct {
 }
 
 func (b *ContinueStatement) String() string {
-	return "ContinueStatement"
+	return nid("continue", b)
 }
 
 type ReturnStatement struct {
@@ -597,7 +609,7 @@ type ReturnStatement struct {
 }
 
 func (r *ReturnStatement) String() string {
-	return fmt.Sprintf("ReturnStatement\n%s", base.Indent(r.Value, 1))
+	return nid(fmt.Sprintf("return %s", r.Value), r)
 }
 
 type AssignmentStatement struct {
@@ -608,7 +620,7 @@ type AssignmentStatement struct {
 }
 
 func (a *AssignmentStatement) String() string {
-	return fmt.Sprintf("AssignmentStatement\n%s\n%s", base.Indent(a.Target, 1), base.Indent(a.Value, 1))
+	return nid(fmt.Sprintf("%s = %s", a.Target, a.Value), a)
 }
 
 func (a *AssignmentStatement) VariableExpr() *IdentExpression {
@@ -654,7 +666,7 @@ type Module struct {
 }
 
 func (m Module) String() string {
-	return fmt.Sprintf("Module\n%s%s", base.Indent(m.Name, 1), base.IndentSlice(m.Nodes, 1))
+	return nid(fmt.Sprintf("module %s {%s\n}", m.Name, base.IndentSlice(m.Nodes, 1)), &m)
 }
 
 type NamedVariant struct {
@@ -663,7 +675,7 @@ type NamedVariant struct {
 }
 
 func (self NamedVariant) String() string {
-	return fmt.Sprintf("NamedVariant\n%s\n%s", base.Indent(self.Name, 1), base.Indent(self.Type, 1))
+	return fmt.Sprintf(".%s%s", self.Name, self.Type)
 }
 
 type UnionVariantKind int
@@ -681,9 +693,9 @@ type UnionVariant struct {
 
 func (self UnionVariant) String() string {
 	if self.Kind == UnionVariantKindType {
-		return fmt.Sprintf("UnionVariant\n%s", base.Indent(self.Type, 1))
+		return self.Type.String()
 	}
-	return fmt.Sprintf("UnionVariant\n%s", base.Indent(self.Named, 1))
+	return self.Named.String()
 }
 
 type UnionType struct {
@@ -692,7 +704,7 @@ type UnionType struct {
 }
 
 func (self UnionType) String() string {
-	return fmt.Sprintf("UnionType%s", base.IndentSlice(self.Variants, 1))
+	return nid(base.PipeSlice(self.Variants), &self)
 }
 
 func (self UnionType) TypeName() string {
@@ -718,7 +730,7 @@ type NamedUnionTypeDeclaration struct {
 }
 
 func (self NamedUnionTypeDeclaration) String() string {
-	return fmt.Sprintf("NamedUnionTypeDeclaration\n%s%s%s", base.Indent(self.Name, 1), base.IndentString(typeParamsString(self.TypeParams), 1), base.Indent(self.UnionType, 1))
+	return nid(fmt.Sprintf("union %s%s = %s", self.Name, typeParamsString(self.TypeParams), self.UnionType), &self)
 }
 
 type StructTypeField struct {
@@ -731,9 +743,9 @@ type StructTypeField struct {
 func (f StructTypeField) String() string {
 	mutable := ""
 	if f.Mutable {
-		mutable = "\n    (mutable)"
+		mutable = "mut "
 	}
-	return fmt.Sprintf("%s%s\n%s", f.Name, mutable, base.Indent(f.Type, 1))
+	return fmt.Sprintf("%s%s %s", mutable, f.Name, f.Type)
 }
 
 type StructTypeDeclaration struct {
@@ -744,11 +756,11 @@ type StructTypeDeclaration struct {
 }
 
 func (st StructTypeDeclaration) String() string {
-	return fmt.Sprintf(
-		"StructTypeDeclaration%s\n%s%s",
-		base.IndentString(typeParamsString(st.TypeParams), 1),
-		base.Indent(st.Name, 1),
-		base.IndentSlice(st.Fields, 1))
+	return nid(fmt.Sprintf(
+		"struct %s%s {%s\n}",
+		st.Name,
+		typeParamsString(st.TypeParams),
+		base.IndentSlice(st.Fields, 1)), &st)
 }
 
 func (st *StructTypeDeclaration) FindField(name Ident) (*StructTypeField, error) {
@@ -769,9 +781,9 @@ type FunctionParam struct {
 func (f FunctionParam) String() string {
 	mutable := ""
 	if f.Mutable {
-		mutable = "\n    (mutable)"
+		mutable = "mut "
 	}
-	return fmt.Sprintf("%s%s\n%s", f.Name, mutable, base.Indent(f.Type, 1))
+	return fmt.Sprintf("%s%s %s", mutable, f.Name, f.Type)
 }
 
 type FunctionDeclaration struct {
@@ -783,12 +795,14 @@ type FunctionDeclaration struct {
 }
 
 func (f FunctionDeclaration) String() string {
-	return fmt.Sprintf(
-		"FunctionDeclaration\n%s%s%s\n%s",
-		base.Indent(f.Name, 1),
-		base.IndentString(typeParamsString(f.TypeParams), 1),
-		base.IndentSlice(f.Params, 1),
-		base.Indent(f.Result, 1))
+	if len(f.Params) == 0 {
+		return nid(fmt.Sprintf("fn %s%s() %s", f.Name, typeParamsString(f.TypeParams), f.Result), &f)
+	}
+	if len(f.Params) == 1 {
+		return nid(
+			fmt.Sprintf("fn %s%s(%s) %s", f.Name, typeParamsString(f.TypeParams), base.CommaSlice(f.Params), f.Result), &f)
+	}
+	return nid(fmt.Sprintf("fn %s%s(%s\n) %s", f.Name, typeParamsString(f.TypeParams), base.IndentCommaSlice(f.Params, 1), f.Result), &f)
 }
 
 type FunctionDefinition struct {
@@ -798,7 +812,7 @@ type FunctionDefinition struct {
 }
 
 func (f *FunctionDefinition) String() string {
-	return fmt.Sprintf("FunctionDefinition\n%s\n%s", base.Indent(f.Decl, 1), base.Indent(f.Body, 1))
+	return nid(fmt.Sprintf("%s %s", f.Decl, f.Body), f)
 }
 
 type ImplDefinition struct {
@@ -814,11 +828,11 @@ func (impl *ImplDefinition) ImplementsTrait() bool {
 }
 
 func (impl ImplDefinition) String() string {
-	trait := ""
+	s := "impl "
 	if impl.Trait != "" {
-		trait = fmt.Sprintf("\n(Trait)\n%s%s", base.IndentString(impl.Trait.String(), 1), base.IndentString(typeArgsString(impl.TraitTypeArgs), 1))
+		s = fmt.Sprintf("impl %s%s for ", impl.Trait, typeArgsString(impl.TraitTypeArgs))
 	}
-	return fmt.Sprintf("ImplDefinition\n%s%s%s", base.Indent(impl.Target, 1), base.IndentString(trait, 1), base.IndentSlice(impl.Methods, 1))
+	return nid(fmt.Sprintf("%s%s {%s\n}", s, impl.Target, base.IndentSlice(impl.Methods, 1)), &impl)
 }
 
 type TraitDeclaration struct {
@@ -830,11 +844,8 @@ type TraitDeclaration struct {
 }
 
 func (trait *TraitDeclaration) String() string {
-	return fmt.Sprintf(
-		"TraitDeclaration\n%s%s%s",
-		base.Indent(trait.Name, 1),
-		base.IndentString(typeParamsString(trait.TypeParams), 1),
-		base.IndentSlice(trait.MethodDecls, 1))
+	return nid(fmt.Sprintf(
+		"trait %s%s {%s\n}", trait.Name, typeParamsString(trait.TypeParams), base.IndentSlice(trait.MethodDecls, 1)), trait)
 }
 
 type VariableDefinition struct {
@@ -847,17 +858,15 @@ type VariableDefinition struct {
 }
 
 func (v *VariableDefinition) String() string {
-	mutable := ""
+	keyword := "let "
 	if v.Mutable {
-		mutable = "\n    (mutable)"
+		keyword = "mut "
 	}
 	ty := ""
 	if v.Type != nil {
-		ty = fmt.Sprintf("\n(Type)\n%s", base.Indent(v.Type, 1))
+		ty = fmt.Sprintf("%s ", v.Type)
 	}
-	return fmt.Sprintf(
-		"VariableDefinition\n%s%s%s\n%s",
-		base.Indent(v.Name, 1), mutable, base.IndentString(ty, 1), base.Indent(v.Value, 1))
+	return nid(fmt.Sprintf("%s%s %s= %s", keyword, v.Name, ty, v.Value), v)
 }
 
 type Parser struct {

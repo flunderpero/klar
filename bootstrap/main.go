@@ -178,6 +178,6 @@ func (v *printTypedASTWalker) VisitNode(node ast.Node, w ast.Walker) error {
 			suffix = " !typebinding"
 		}
 	}
-	fmt.Printf("%s\n=> %s (#%s)%s\n\n", node, ty, ty.Id(), suffix)
+	fmt.Printf("%s\n=> %s (%s)%s\n\n", node, ty, ty.Id(), suffix)
 	return nil
 }

@@ -14,7 +14,7 @@ import (
 type TypeId int
 
 func (id TypeId) String() string {
-	return fmt.Sprintf("type%d", id)
+	return fmt.Sprintf("#t%d", id)
 }
 
 func (id TypeId) IdMarker() {}
@@ -93,6 +93,22 @@ type Type interface {
 	String() string
 	Id() TypeId
 	IsAssignableFrom(other Type) bool
+}
+
+func simpleString(ty Type) string {
+	if ty.Id() == 1 {
+		return "Str"
+	}
+	if ty, ok := ty.(TypeParam); ok {
+		return ty.String()
+	}
+	tyStr := strings.Split(fmt.Sprintf("%T", ty), ".")[1]
+	if generic, ok := ty.(GenericType); ok {
+		if base, ok := generic.GenericBase(); ok {
+			tyStr += fmt.Sprintf(" (base %s)", base.Id())
+		}
+	}
+	return fmt.Sprintf("%s %s", tyStr, ty.Id())
 }
 
 type TypeWithTraits interface {
@@ -489,7 +505,7 @@ func (ty TypeParam) String() string {
 	if ty.TraitBound != nil {
 		traitBound = fmt.Sprintf("\n(TraitBound)\n%s", base.Indent(ty.TraitBound, 1))
 	}
-	return fmt.Sprintf("TypeParam %s #%s of %s[%d]%s", ty.Name, ty.Id(), ty.GenericType.Id(), ty.Index, traitBound)
+	return fmt.Sprintf("TypeParam %s %s of %s[%d]%s", ty.Name, ty.Id(), ty.GenericType.Id(), ty.Index, traitBound)
 }
 
 func (t TypeParam) Equal(other TypeParam) bool {
@@ -552,7 +568,11 @@ type TupleType struct {
 }
 
 func (self TupleType) String() string {
-	return fmt.Sprintf("TupleType%s", base.IndentSlice(self.Values, 1))
+	values := []string{}
+	for _, ty := range self.Values {
+		values = append(values, simpleString(ty))
+	}
+	return fmt.Sprintf("TupleType%s", base.IndentStringSlice(values, 1))
 }
 
 func (self TupleType) IsAssignableFrom(other Type) bool {
@@ -634,9 +654,9 @@ type UnionVariant struct {
 func (self UnionVariant) String() string {
 	switch self.Kind {
 	case UnionVariantKindNamed:
-		return fmt.Sprintf("NamedVariant\n%s", base.Indent(self.Named, 1))
+		return self.Named.String()
 	case UnionVariantKindType:
-		return fmt.Sprintf("TypeVariant\n%s", base.Indent(self.Type, 1))
+		return fmt.Sprintf("TypeVariant %s", simpleString(self.Type))
 	default:
 		panic(fmt.Sprintf("unexpected union variant kind: %d", self.Kind))
 	}
@@ -732,22 +752,25 @@ type StructType struct {
 }
 
 func (ty StructType) String() string {
+	if ty.Id() == 1 {
+		return "Str"
+	}
 	typeToString := func(t Type) string {
 		if t.Id() == ty.Id() {
 			return "Self"
 		}
-		return t.Id().String()
+		return simpleString(t)
 	}
 	fields := make([]string, len(ty.Fields))
 	for i, field := range ty.Fields {
-		fields[i] = fmt.Sprintf("%s\n%s", field.Name, base.IndentString(typeToString(field.Type), 1))
+		fields[i] = fmt.Sprintf("%s %s", field.Name, base.BreakIfMultiline(typeToString(field.Type), 1))
 	}
 	baseType := ""
 	if ty.genericBase != nil {
-		baseType = fmt.Sprintf(" (base #%s)", ty.genericBase.id)
+		baseType = fmt.Sprintf(" (base %s)", ty.genericBase.id)
 	}
 	return fmt.Sprintf(
-		"StructType #%s%s%s%s\n    (Fields)%s\n    (Methods)%s",
+		"StructType %s%s%s%s\n    (Fields)%s\n    (Methods)%s",
 		ty.id,
 		baseType,
 		base.IndentString(typeParamsString(ty.typeParams), 1),
@@ -914,13 +937,13 @@ type FunctionType struct {
 func (ty FunctionType) String() string {
 	typeToString := func(t Type) string {
 		if ty.Receiver != nil && t.Id() == ty.Receiver.Id() {
-			return "Self"
+			return fmt.Sprintf("Self %s", t.Id())
 		}
-		return t.Id().String()
+		return simpleString(t)
 	}
 	receiverType := ""
 	if ty.Receiver != nil {
-		receiverType = fmt.Sprintf("\n    (Receiver\n%s", base.Indent(ty.Receiver.Id(), 2))
+		receiverType = fmt.Sprintf("\n    (Receiver %s)", typeToString(ty.Receiver))
 	}
 	params := make([]string, len(ty.Params))
 	for i, param := range ty.Params {
@@ -930,17 +953,17 @@ func (ty FunctionType) String() string {
 		}
 		mutable := ""
 		if param.Mutable {
-			mutable = "\n    (mutable)"
+			mutable = "mut "
 		}
-		params[i] = fmt.Sprintf("%s%s\n%s", paramName, mutable, base.IndentString(typeToString(param.Type), 1))
+		params[i] = fmt.Sprintf("%s%s %s", mutable, paramName, base.BreakIfMultiline(typeToString(param.Type), 1))
 	}
 	result := typeToString(ty.Result)
 	baseType := ""
 	if ty.genericBase != nil {
-		baseType = fmt.Sprintf(" (base #%s)", ty.genericBase.id)
+		baseType = fmt.Sprintf(" (base %s)", ty.genericBase.id)
 	}
 	return fmt.Sprintf(
-		"FunctionType #%s%s%s%s%s\n    (Parameters)%s\n    (Result)\n%s",
+		"FunctionType %s%s%s%s%s\n    (Parameters)%s\n    (Result)\n%s",
 		ty.id,
 		baseType,
 		receiverType,
@@ -1259,7 +1282,7 @@ func (m *TypeInfo) Lookup(node ast.Node) (Type, bool) {
 func (m *TypeInfo) MustLookup(node ast.Node) Type {
 	ty, ok := m.Lookup(node)
 	if !ok {
-		panic(errors.Errorf("%s: type not found for node #%d: %s", node.Span(), node.Id(), node))
+		panic(errors.Errorf("%s: type not found for node %s: %s", node.Span(), node.Id(), node))
 	}
 	return ty
 }
@@ -1384,7 +1407,7 @@ func (tc *typeChecker) exitInferGenericScope() {
 
 func (tc *typeChecker) memoizeScopes(node ast.Node) {
 	if _, ok := tc.memoizedScopes[node.Id()]; ok {
-		panic(fmt.Sprintf("scopes already memoized for node #%d", node.Id()))
+		panic(fmt.Sprintf("scopes already memoized for node %s", node.Id()))
 	}
 	tc.memoizedScopes[node.Id()] = &memoizedScopes{
 		genericScope: tc.genericScope,
@@ -1396,7 +1419,7 @@ func (tc *typeChecker) memoizeScopes(node ast.Node) {
 func (tc *typeChecker) useMemoizedScopes(node ast.Node) func() {
 	memoizedScopes, ok := tc.memoizedScopes[node.Id()]
 	if !ok {
-		panic(fmt.Sprintf("scopes not memoized for node #%d", node.Id()))
+		panic(fmt.Sprintf("scopes not memoized for node %s", node.Id()))
 	}
 	oldGenericScope := tc.genericScope
 	oldTypeScope := tc.typeScope

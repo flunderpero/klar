@@ -376,7 +376,7 @@ func (c *ASMText) decIndent() *ASMText {
 
 func funcName(id typed.TypeId, typeInfo *typed.TypeInfo) string {
 	fqn := typeInfo.MustLookupSymbol(id).FQN()
-	return "." + strings.ReplaceAll(fqn, "::", "$$")
+	return "." + strings.ReplaceAll(strings.ReplaceAll(fqn, "::", "$$"), "#", "")
 }
 
 type blockCode struct {

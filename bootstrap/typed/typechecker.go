@@ -1401,7 +1401,7 @@ type typeChecker struct {
 	symbolScope       *SymbolScope
 	genericScope      *genericScope
 	inferGenericScope *inferGenericScope
-	genericsResolver  *GenericsResolver
+	genericsResolver  *TypeResolver
 	loopDepth         int
 	checkingMode      checkingMode
 	typeCreator       *TypeCreator
@@ -1686,7 +1686,7 @@ func (tc *typeChecker) VisitArrayLiteralExpression(expr *ast.ArrayLiteralExpress
 		return err
 	}
 	elementType := tc.typeInfo.MustLookup(expr.Values[0])
-	arrayType := tc.genericsResolver.ResolveTypeArgs(
+	arrayType := tc.genericsResolver.ResolveType(
 		tc.typeInfo.BuiltIns.InternalArray, tc.typeInfo.BuiltIns.InternalArray.typeParams, []Type{elementType})
 	tc.typeInfo.Set(expr, arrayType)
 	return nil
@@ -1716,7 +1716,7 @@ func (tc *typeChecker) resolveGenericType(ty GenericType, astTypeArgs []ast.Type
 		}
 		typeArgs[i] = typeArg
 	}
-	return tc.genericsResolver.ResolveTypeArgs(ty, typeParams, typeArgs), nil
+	return tc.genericsResolver.ResolveType(ty, typeParams, typeArgs), nil
 }
 
 func (tc *typeChecker) inferGenericType(ty GenericType, span token.Span) (Type, error) {
@@ -1738,7 +1738,7 @@ func (tc *typeChecker) inferGenericType(ty GenericType, span token.Span) (Type, 
 		}
 	}
 	if foundTypeParam {
-		return tc.genericsResolver.ResolveTypeArgs(ty, typeParams, typeArgs), nil
+		return tc.genericsResolver.ResolveType(ty, typeParams, typeArgs), nil
 	} else {
 		return ty, nil
 	}
@@ -2910,7 +2910,7 @@ func (tc *typeChecker) check(node ast.Node, w ast.Walker) (Type, error) {
 	return nodeType, nil
 }
 
-func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *GenericsResolver, error) {
+func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *TypeResolver, error) {
 	typeInfo := &TypeInfo{
 		types:                make(map[ast.NodeId]Type),
 		symbols:              make(map[string]*Symbol),
@@ -2928,7 +2928,7 @@ func TypeCheck(node *ast.Module, typeCreator *TypeCreator) (*TypeInfo, *Generics
 		typeCreator:       typeCreator,
 		genericScope:      newGenericScope(nil),
 		inferGenericScope: newInferGenericScope(nil),
-		genericsResolver:  newGenericsResolver(typeInfo, typeCreator),
+		genericsResolver:  newTypeResolver(typeInfo, typeCreator),
 		memoizedScopes:    make(map[ast.NodeId]*memoizedScopes),
 	}
 	walker := &ast.DefaultWalker{Visitor: tc}

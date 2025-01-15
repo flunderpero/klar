@@ -22,7 +22,7 @@ func (l *LoweredAST) String() string {
 func Lower(
 	module *ast.Module,
 	typeInfo *typed.TypeInfo,
-	genericsResolver *typed.GenericsResolver,
+	genericsResolver *typed.TypeResolver,
 	nodeCreator *ast.NodeCreator,
 	typeCreator *typed.TypeCreator,
 ) *LoweredAST {

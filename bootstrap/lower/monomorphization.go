@@ -82,7 +82,7 @@ type mono struct {
 	current          *workItem
 	globalTypeInfo   *typed.TypeInfo
 	funcSpecs        []*FunctionSpecialization
-	genericsResolver *typed.GenericsResolver
+	genericsResolver *typed.TypeResolver
 }
 
 func (self *mono) VisitNode(node ast.Node, w ast.Walker) error {
@@ -154,7 +154,7 @@ func (self *mono) resolve(node ast.Node) typed.Type {
 	case *typed.DeclaredType:
 		return ty
 	}
-	return self.genericsResolver.ResolveTypeArgs(ty, typeParams, typeArgs)
+	return self.genericsResolver.ResolveType(ty, typeParams, typeArgs)
 }
 
 func (self *mono) lookupOrCreateSpecializedFunction(ty typed.Type) (*typed.FunctionType, bool) {
@@ -232,7 +232,7 @@ func (self *collectFuncInfos) VisitFunctionDefinition(def *ast.FunctionDefinitio
 func Monomorphization(
 	module *ast.Module,
 	typeInfo *typed.TypeInfo,
-	genericsResolver *typed.GenericsResolver,
+	genericsResolver *typed.TypeResolver,
 ) []*FunctionSpecialization {
 	collectVisitor := &collectFuncInfos{
 		DefaultVisitor: ast.DefaultVisitor{},

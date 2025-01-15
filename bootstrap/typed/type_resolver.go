@@ -18,7 +18,7 @@ type resolvedFunctionType struct {
 	resolveTypeArgs   []Type
 }
 
-type GenericsResolver struct {
+type TypeResolver struct {
 	resolvedFuncTypes   []resolvedFunctionType
 	resolvedStructTypes []resolvedType[*StructType]
 	resolvedTraitTypes  []resolvedType[*TraitType]
@@ -28,8 +28,8 @@ type GenericsResolver struct {
 	typeCreator         *TypeCreator
 }
 
-func newGenericsResolver(typeInfo *TypeInfo, typeCreator *TypeCreator) *GenericsResolver {
-	return &GenericsResolver{typeInfo: typeInfo, typeCreator: typeCreator, anonUnionTypes: make(map[string]*UnionType)}
+func newTypeResolver(typeInfo *TypeInfo, typeCreator *TypeCreator) *TypeResolver {
+	return &TypeResolver{typeInfo: typeInfo, typeCreator: typeCreator, anonUnionTypes: make(map[string]*UnionType)}
 }
 
 func MatchTypeArgs(resolved GenericType, typeArgs []Type) bool {
@@ -45,7 +45,7 @@ func MatchTypeArgs(resolved GenericType, typeArgs []Type) bool {
 	return true
 }
 
-func (tc *GenericsResolver) FindOrSetAnonUnionType(ty *UnionType) *UnionType {
+func (tc *TypeResolver) FindOrSetAnonUnionType(ty *UnionType) *UnionType {
 	typeIds := make([]TypeId, len(ty.Variants))
 	for i, variant := range ty.Variants {
 		typeIds[i] = variant.AsType().Id()
@@ -63,7 +63,7 @@ func (tc *GenericsResolver) FindOrSetAnonUnionType(ty *UnionType) *UnionType {
 	return ty
 }
 
-func (self *GenericsResolver) findResolvedStructType(ty *StructType, typeArgs []Type) (*StructType, bool) {
+func (self *TypeResolver) findResolvedStructType(ty *StructType, typeArgs []Type) (*StructType, bool) {
 	tyBase, ok := ty.GenericBase()
 	if !ok {
 		tyBase = ty
@@ -83,7 +83,7 @@ func (self *GenericsResolver) findResolvedStructType(ty *StructType, typeArgs []
 	return nil, false
 }
 
-func (self *GenericsResolver) findResolvedUnionType(ty *UnionType, typeArgs []Type, typeParams []TypeParam) (*UnionType, bool) {
+func (self *TypeResolver) findResolvedUnionType(ty *UnionType, typeArgs []Type, typeParams []TypeParam) (*UnionType, bool) {
 	tyBase, ok := ty.GenericBase()
 	if !ok {
 		tyBase = ty
@@ -111,7 +111,7 @@ func (self *GenericsResolver) findResolvedUnionType(ty *UnionType, typeArgs []Ty
 	return nil, false
 }
 
-func (self *GenericsResolver) findResolvedTraitType(ty *TraitType, typeArgs []Type) (*TraitType, bool) {
+func (self *TypeResolver) findResolvedTraitType(ty *TraitType, typeArgs []Type) (*TraitType, bool) {
 	tyBase, ok := ty.GenericBase()
 	if !ok {
 		tyBase = ty
@@ -131,7 +131,7 @@ func (self *GenericsResolver) findResolvedTraitType(ty *TraitType, typeArgs []Ty
 	return nil, false
 }
 
-func (self *GenericsResolver) findResolvedFuncType(ty *FunctionType, typeArgs []Type, selfType Type, receiver Type) (*FunctionType, bool) {
+func (self *TypeResolver) findResolvedFuncType(ty *FunctionType, typeArgs []Type, selfType Type, receiver Type) (*FunctionType, bool) {
 	tyBase, ok := ty.GenericBase()
 	if !ok {
 		tyBase = ty
@@ -166,7 +166,7 @@ func (self *GenericsResolver) findResolvedFuncType(ty *FunctionType, typeArgs []
 	return nil, false
 }
 
-func (self *GenericsResolver) declareSymbolForSpecializedType(resolved GenericType) {
+func (self *TypeResolver) declareSymbolForSpecializedType(resolved GenericType) {
 	base, ok := resolved.GenericBase()
 	if !ok {
 		return
@@ -265,7 +265,7 @@ func willResolve(ty Type, typeParams []TypeParam, seen map[TypeId]bool) bool {
 	}
 }
 
-func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, typeArgs []Type) Type {
+func (self *TypeResolver) ResolveType(ty Type, typeParams []TypeParam, typeArgs []Type) Type {
 	if len(typeParams) != len(typeArgs) {
 		panic(fmt.Sprintf("expected %d type arguments, got %d while resolving: %s", len(typeParams), len(typeArgs), ty))
 	}
@@ -276,7 +276,7 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 		}
 		genericTypeArgs := make([]Type, len(ty.TypeArgs()))
 		for i, typeArg := range ty.TypeArgs() {
-			genericTypeArgs[i] = self.ResolveTypeArgs(typeArg, typeParams, typeArgs)
+			genericTypeArgs[i] = self.ResolveType(typeArg, typeParams, typeArgs)
 		}
 		switch ty := ty.(type) {
 		case *FunctionType:
@@ -299,7 +299,7 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 				// to, because we first add the new struct to the list of resolved structs before
 				// resolving its methods. That way, we will find the correct struct when calling
 				// `ResolveTypeArgs` on the receiver.
-				receiver = self.ResolveTypeArgs(ty.Receiver, typeParams, typeArgs)
+				receiver = self.ResolveType(ty.Receiver, typeParams, typeArgs)
 			}
 			if resolved, ok := self.findResolvedFuncType(ty, genericTypeArgs, selfType, receiver); ok {
 				return resolved
@@ -310,10 +310,10 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 			self.resolvedFuncTypes = append(self.resolvedFuncTypes, resolvedFunctionType{res, selfType, typeParams, typeArgs})
 			for i, param := range ty.Params {
 				param := param // Make a copy.
-				param.Type = self.ResolveTypeArgs(param.Type, typeParams, typeArgs)
+				param.Type = self.ResolveType(param.Type, typeParams, typeArgs)
 				params[i] = param
 			}
-			res.Result = self.ResolveTypeArgs(ty.Result, typeParams, typeArgs)
+			res.Result = self.ResolveType(ty.Result, typeParams, typeArgs)
 			self.declareSymbolForSpecializedType(res)
 			return res
 		case *StructType:
@@ -331,7 +331,7 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 			self.resolvedStructTypes = append(self.resolvedStructTypes, resolvedType[*StructType]{res, typeParams, typeArgs})
 			for i, field := range ty.Fields {
 				field := field // Make a copy.
-				field.Type = self.ResolveTypeArgs(field.Type, typeParams, typeArgs)
+				field.Type = self.ResolveType(field.Type, typeParams, typeArgs)
 				res.Fields[i] = field
 			}
 			res.methods = self.resolveMethods(ty.methods, typeParams, typeArgs)
@@ -355,11 +355,11 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 				switch variant.Kind {
 				case UnionVariantKindType:
 					newVariant := variant
-					newVariant.Type = self.ResolveTypeArgs(variant.Type, typeParams, typeArgs)
+					newVariant.Type = self.ResolveType(variant.Type, typeParams, typeArgs)
 					variants[i] = newVariant
 				case UnionVariantKindNamed:
 					newVariant := variant
-					newVariant.Named.Type = self.ResolveTypeArgs(variant.Named.Type, typeParams, typeArgs).(*TupleType)
+					newVariant.Named.Type = self.ResolveType(variant.Named.Type, typeParams, typeArgs).(*TupleType)
 					variants[i] = newVariant
 				default:
 					panic(fmt.Sprintf("unexpected union variant kind: %d", variant.Kind))
@@ -378,7 +378,7 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 	case *TupleType:
 		values := make([]Type, len(ty.Values))
 		for i, value := range ty.Values {
-			values[i] = self.ResolveTypeArgs(value, typeParams, typeArgs)
+			values[i] = self.ResolveType(value, typeParams, typeArgs)
 		}
 		return self.typeCreator.NewTupleType(values)
 	default:
@@ -391,25 +391,25 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 	}
 }
 
-func (self *GenericsResolver) resolveMethods(methods []*Method, typeParams []TypeParam, typeArgs []Type) []*Method {
+func (self *TypeResolver) resolveMethods(methods []*Method, typeParams []TypeParam, typeArgs []Type) []*Method {
 	res := make([]*Method, len(methods))
 	for i, method := range methods {
 		method := *method // Make a copy.
-		method.Type = self.ResolveTypeArgs(method.Type, typeParams, typeArgs).(*FunctionType)
+		method.Type = self.ResolveType(method.Type, typeParams, typeArgs).(*FunctionType)
 		res[i] = &method
 	}
 	return res
 
 }
 
-func (self *GenericsResolver) reResolveStructMethods() {
+func (self *TypeResolver) reResolveStructMethods() {
 	for _, resolved := range self.resolvedStructTypes {
 		base := resolved.ty.genericBase
 		resolved.ty.methods = self.resolveMethods(base.methods, resolved.resolveTypeParams, resolved.resolveTypeArgs)
 	}
 }
 
-func (self *GenericsResolver) CloneAndMergeReceiverGenerics(ty *FunctionType, receiver Type) *FunctionType {
+func (self *TypeResolver) CloneAndMergeReceiverGenerics(ty *FunctionType, receiver Type) *FunctionType {
 	genericReceiverType, ok := receiver.(GenericType)
 	if !ok {
 		return ty

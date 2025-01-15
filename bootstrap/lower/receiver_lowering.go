@@ -16,7 +16,7 @@ import (
 type receiverLowering struct {
 	DefaultTransformer
 	typeInfo                        *typed.TypeInfo
-	genericsResolver                *typed.GenericsResolver
+	genericsResolver                *typed.TypeResolver
 	nodeCreator                     *ast.NodeCreator
 	mergedReceiverGenericsFunctions []*typed.FunctionType
 }
@@ -59,7 +59,7 @@ func (self *receiverLowering) mergeMethodMemberExpression(expr *ast.MemberExpres
 		// by substituting the implicit `Self` type parameter and the receiver.
 		typeParams := append([]typed.TypeParam{*funcType.SelfTypeParam}, funcType.TypeParams()...)
 		typeArgs := append([]typed.Type{receiverType}, funcType.TypeArgs()...)
-		funcType = self.genericsResolver.ResolveTypeArgs(funcType, typeParams, typeArgs).(*typed.FunctionType)
+		funcType = self.genericsResolver.ResolveType(funcType, typeParams, typeArgs).(*typed.FunctionType)
 		funcType.Receiver = receiverType
 	}
 	if typeParam, ok := receiverType.(*typed.TypeParam); ok {
@@ -130,7 +130,7 @@ func (self *receiverLowering) VisitCallExpression(expr *ast.CallExpression, w Tr
 func ReceiverLowering(
 	module *ast.Module,
 	typeInfo *typed.TypeInfo,
-	genericsResolver *typed.GenericsResolver,
+	genericsResolver *typed.TypeResolver,
 	nodeCreator *ast.NodeCreator,
 ) *ast.Module {
 	transformer := &receiverLowering{typeInfo: typeInfo, genericsResolver: genericsResolver, nodeCreator: nodeCreator}

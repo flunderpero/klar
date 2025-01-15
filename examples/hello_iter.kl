@@ -14,7 +14,7 @@ struct TripleIter<I> {
     mut index Int
 }
 
-impl Iter for TripleIter {
+impl Iter<I> for TripleIter {
     fn next(mut self) I | None {
         self.index = self.index + 1
         match self.index {
@@ -26,13 +26,13 @@ impl Iter for TripleIter {
     }
 }
 
-impl Triple {
-    fn iter(self) TripleIter<T> => TripleIter<T>(self, 0)
+impl ToIter<T> for Triple {
+    fn to_iter(self) TripleIter<T> => TripleIter<T>(self, 0)
 }
 
 fn main() {
     let triple = Triple("a", "b", "c")
-    let iter = triple.iter()
+    let iter = triple.to_iter()
     loop {
         match iter.next() {
             case Str as s => print(s)

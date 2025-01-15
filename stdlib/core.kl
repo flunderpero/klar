@@ -37,6 +37,10 @@ trait Iter<T> {
     fn next(mut self) T | None
 }
 
+trait ToIter<T> {
+    fn to_iter(self) Iter<T>
+}
+
 -- [[ Basic Types ]]
 
 -- [[ Array ]]

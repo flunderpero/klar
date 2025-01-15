@@ -919,8 +919,35 @@ func (ty TraitType) GenericBase() (GenericType, bool) {
 	return ty.genericBase, true
 }
 
-func (self TraitType) IsAssignableFrom(other Type) bool {
+func (self *TraitType) IsAssignableFrom(other Type) bool {
 	if other.Id() == self.Id() {
+		return true
+	}
+	otherTrait, ok := other.(*TraitType)
+	if ok {
+		thisBase := self.genericBase
+		if thisBase == nil {
+			thisBase = self
+		}
+		otherBase := otherTrait.genericBase
+		if otherBase == nil {
+			otherBase = otherTrait
+		}
+		if thisBase.id != otherBase.id {
+			return false
+		}
+		for i, thisTypeParam := range self.typeParams {
+			otherTypeParam := otherTrait.typeParams[i]
+			if thisTypeParam.TraitBound != otherTypeParam.TraitBound {
+				return false
+			}
+		}
+		for i, thisTypeArg := range self.typeArgs {
+			otherTypeArg := otherTrait.typeArgs[i]
+			if !thisTypeArg.IsAssignableFrom(otherTypeArg) {
+				return false
+			}
+		}
 		return true
 	}
 	typeWithTraits, ok := other.(TypeWithTraits)
@@ -1025,7 +1052,7 @@ func checkSameSignatureIgnoringReceiverTypesHelper(this *FunctionType, other *Fu
 	}
 	if thisTypeParam, ok := thisType.(*TypeParam); ok {
 		if otherTypeParam, ok := otherType.(*TypeParam); ok {
-			return thisTypeParam.Index == otherTypeParam.Index
+			return thisTypeParam.TraitBound == otherTypeParam.TraitBound
 		}
 	}
 	if thisUnionType, ok := thisType.(*UnionType); ok {
@@ -1044,7 +1071,7 @@ func checkSameSignatureIgnoringReceiverTypesHelper(this *FunctionType, other *Fu
 			return true
 		}
 	}
-	return false
+	return thisType.IsAssignableFrom(otherType)
 }
 
 func (ty *FunctionType) CheckSameSignatureIgnoringReceiverTypes(other *FunctionType, span token.Span) error {
@@ -2469,17 +2496,6 @@ func (tc *typeChecker) checkImplDefinitionStage1(forwardImpl *forwardImplDef, w 
 	}
 	tc.enterScope(impl)
 	defer tc.exitScope()
-	var traitType *TraitType = nil
-	if impl.ImplementsTrait() {
-		traitType_, found := tc.typeScope.lookupType(string(impl.Trait))
-		if !found {
-			return errors.Errorf("%s: trait %q not found for impl definition", impl.Span(), impl.Trait)
-		}
-		traitType, ok = traitType_.(*TraitType)
-		if !ok {
-			return errors.Errorf("%s: type %q is not a trait type", impl.Span(), traitType_)
-		}
-	}
 	if genericType, ok := targetType.(GenericType); ok && HasTypeParams(genericType) {
 		tc.enterGenericScope()
 		defer tc.exitGenericScope()
@@ -2488,6 +2504,25 @@ func (tc *typeChecker) checkImplDefinitionStage1(forwardImpl *forwardImplDef, w 
 				return err
 			}
 		}
+	}
+	var traitType *TraitType = nil
+	if impl.ImplementsTrait() {
+		traitType_, found := tc.typeScope.lookupType(string(impl.Trait))
+		if !found {
+			return errors.Errorf("%s: trait %q not found for impl definition", impl.Span(), impl.Trait)
+		}
+		traitType__, ok := traitType_.(*TraitType)
+		if !ok {
+			return errors.Errorf("%s: type %q is not a trait type", impl.Span(), traitType_)
+		}
+		if len(impl.TraitTypeArgs) != len(traitType__.TypeParams()) {
+			return errors.Errorf("%s: trait %q expects %d type arguments, got %d", impl.Span(), impl.Trait, len(traitType__.TypeParams()), len(impl.TraitTypeArgs))
+		}
+		traitType___, err := tc.resolveGenericType(traitType__, impl.TraitTypeArgs, impl.Span())
+		if err != nil {
+			return err
+		}
+		traitType = traitType___.(*TraitType)
 	}
 	tc.memoizeScopes(impl)
 	if traitType != nil && HasTypeParams(traitType) {

@@ -523,6 +523,9 @@ func (t TypeParam) IsAssignableFrom(other Type) bool {
 }
 
 func (t TypeParam) Traits() []*TraitType {
+	if t.TraitBound == nil {
+		return []*TraitType{}
+	}
 	return []*TraitType{t.TraitBound}
 }
 
@@ -842,6 +845,38 @@ func (ty StructType) GenericBase() (GenericType, bool) {
 		return nil, false
 	}
 	return ty.genericBase, true
+}
+
+func (ty StructType) IsAssignableFrom(other Type) bool {
+	if ty.Id() == other.Id() {
+		return true
+	}
+	otherStructType, ok := other.(*StructType)
+	if !ok {
+		return false
+	}
+	thisBase := &ty
+	if ty.genericBase != nil {
+		thisBase = ty.genericBase
+	}
+	otherBase := otherStructType
+	if otherStructType.genericBase != nil {
+		otherBase = otherStructType.genericBase
+	}
+	if thisBase.id != otherBase.id {
+		return false
+	}
+	for i, thisTypeArg := range ty.typeArgs {
+		otherTypeArg := otherStructType.typeArgs[i]
+		if thisTypeParam, ok := thisTypeArg.(*TypeParam); ok {
+			if otherTypeParam, ok := otherTypeArg.(*TypeParam); ok {
+				if thisTypeParam.TraitBound != otherTypeParam.TraitBound {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 type TraitType struct {
@@ -1554,7 +1589,7 @@ func (tc *typeChecker) lookupTypeOfNode(node ast.Type) (Type, error) {
 	if res, found := tc.genericScope.lookupTypeParam(node.TypeName()); found {
 		return res, nil
 	}
-	return nil, errors.Errorf("undefined type: %s", node.TypeName())
+	return nil, errors.Errorf("%s: undefined type: %s", node.Span(), node.TypeName())
 }
 
 func (tc *typeChecker) VisitStringLiteralExpression(expr *ast.StringLiteralExpression) error {
@@ -1972,7 +2007,7 @@ func (tc *typeChecker) VisitMemberExpression(expr *ast.MemberExpression, w ast.W
 			tc.typeInfo.Set(expr, ty)
 			tc.typeInfo.SetTraitBoundTypeParam(expr, ty)
 		default:
-			panic(fmt.Sprintf("unexpected type %T", ty))
+			panic(fmt.Sprintf("%s: unexpected type %s", expr.Span(), ty))
 		}
 	}
 	if genericType, ok := memberType.(GenericType); ok {

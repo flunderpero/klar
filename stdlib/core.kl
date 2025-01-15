@@ -33,6 +33,10 @@ trait ToStr {
     fn to_str(self) Str
 }
 
+trait Iter<T> {
+    fn next(mut self) T | None
+}
+
 -- [[ Basic Types ]]
 
 -- [[ Array ]]

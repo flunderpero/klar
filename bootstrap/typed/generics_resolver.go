@@ -35,9 +35,7 @@ func newGenericsResolver(typeInfo *TypeInfo, typeCreator *TypeCreator) *Generics
 func MatchTypeArgs(resolved GenericType, typeArgs []Type) bool {
 	resolvedTypeArgs := resolved.TypeArgs()
 	if len(resolvedTypeArgs) != len(typeArgs) {
-		panic(
-			fmt.Sprintf(
-				"expected %d type arguments, got %d while resolving: %s", len(resolvedTypeArgs), len(typeArgs), resolved))
+		return false
 	}
 	for i, typeArg := range typeArgs {
 		if resolvedTypeArgs[i].Id() != typeArg.Id() {
@@ -85,7 +83,7 @@ func (self *GenericsResolver) findResolvedStructType(ty *StructType, typeArgs []
 	return nil, false
 }
 
-func (self *GenericsResolver) findResolvedUnionType(ty *UnionType, typeArgs []Type) (*UnionType, bool) {
+func (self *GenericsResolver) findResolvedUnionType(ty *UnionType, typeArgs []Type, typeParams []TypeParam) (*UnionType, bool) {
 	tyBase, ok := ty.GenericBase()
 	if !ok {
 		tyBase = ty
@@ -99,6 +97,14 @@ func (self *GenericsResolver) findResolvedUnionType(ty *UnionType, typeArgs []Ty
 			continue
 		}
 		if MatchTypeArgs(resolved.ty, typeArgs) {
+			for _, variant := range resolved.ty.Variants {
+				for _, typeParam := range typeParams {
+					if variant.AsType().Id() == typeParam.Id() {
+						// A variant is a type parameter that we can resolve.
+						return nil, false
+					}
+				}
+			}
 			return resolved.ty, true
 		}
 	}
@@ -125,7 +131,7 @@ func (self *GenericsResolver) findResolvedTraitType(ty *TraitType, typeArgs []Ty
 	return nil, false
 }
 
-func (self *GenericsResolver) findResolvedFuncType(ty *FunctionType, typeArgs []Type, selfType Type) (*FunctionType, bool) {
+func (self *GenericsResolver) findResolvedFuncType(ty *FunctionType, typeArgs []Type, selfType Type, receiver Type) (*FunctionType, bool) {
 	tyBase, ok := ty.GenericBase()
 	if !ok {
 		tyBase = ty
@@ -138,8 +144,8 @@ func (self *GenericsResolver) findResolvedFuncType(ty *FunctionType, typeArgs []
 		if base.Id() != tyBase.Id() {
 			continue
 		}
-		if ty.Receiver != nil {
-			if resolved.ty.Receiver == nil || resolved.ty.Receiver.Id() != ty.Receiver.Id() {
+		if receiver != nil {
+			if resolved.ty.Receiver == nil || resolved.ty.Receiver.Id() != receiver.Id() {
 				continue
 			}
 		} else if resolved.ty.Receiver != nil {
@@ -163,7 +169,7 @@ func (self *GenericsResolver) findResolvedFuncType(ty *FunctionType, typeArgs []
 func (self *GenericsResolver) declareSymbolForSpecializedType(resolved GenericType) {
 	base, ok := resolved.GenericBase()
 	if !ok {
-		panic(fmt.Sprintf("expected to have a generic base type: %s", resolved))
+		return
 	}
 	baseSymbol, ok := self.typeInfo.LookupSymbol(base.Id())
 	if !ok {
@@ -283,10 +289,6 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 					}
 				}
 			}
-			if resolved, ok := self.findResolvedFuncType(ty, genericTypeArgs, selfType); ok {
-				return resolved
-			}
-			params := make([]ParamOrField, len(ty.Params))
 			receiver := ty.Receiver
 			if receiver != nil {
 				// If you call `ResolveTypeArgs` on the method only (and not on the struct it
@@ -299,6 +301,10 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 				// `ResolveTypeArgs` on the receiver.
 				receiver = self.ResolveTypeArgs(ty.Receiver, typeParams, typeArgs)
 			}
+			if resolved, ok := self.findResolvedFuncType(ty, genericTypeArgs, selfType, receiver); ok {
+				return resolved
+			}
+			params := make([]ParamOrField, len(ty.Params))
 			res := self.typeCreator.NewFunctionType(
 				genericBase(ty), ty.SelfTypeParam, ty.typeParams, genericTypeArgs, receiver, params, ty.Result)
 			self.resolvedFuncTypes = append(self.resolvedFuncTypes, resolvedFunctionType{res, selfType, typeParams, typeArgs})
@@ -341,7 +347,7 @@ func (self *GenericsResolver) ResolveTypeArgs(ty Type, typeParams []TypeParam, t
 			self.declareSymbolForSpecializedType(res)
 			return res
 		case *UnionType:
-			if resolved, ok := self.findResolvedUnionType(ty, genericTypeArgs); ok {
+			if resolved, ok := self.findResolvedUnionType(ty, genericTypeArgs, typeParams); ok {
 				return resolved
 			}
 			variants := make([]UnionVariant, len(ty.Variants))

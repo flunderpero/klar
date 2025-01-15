@@ -1,0 +1,42 @@
+-- expect.stdout {
+-- abc
+-- } expect.stdout
+-- expect.exit_code: 0
+
+struct Triple<T> {
+    a T
+    b T
+    c T
+}
+
+struct TripleIter<I> {
+    value Triple<I>
+    mut index Int
+}
+
+impl Iter for TripleIter {
+    fn next(mut self) I | None {
+        self.index = self.index + 1
+        match self.index {
+            case 1 => self.value.a
+            case 2 => self.value.b
+            case 3 => self.value.c
+            case _ => None
+        }
+    }
+}
+
+impl Triple {
+    fn iter(self) TripleIter<T> => TripleIter<T>(self, 0)
+}
+
+fn main() {
+    let triple = Triple("a", "b", "c")
+    let iter = triple.iter()
+    loop {
+        match iter.next() {
+            case Str as s => print(s)
+            case None => break
+        }
+    }
+}

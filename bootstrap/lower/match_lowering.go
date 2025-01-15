@@ -52,12 +52,10 @@ func (self *matchLowering) VisitMatchExpression(match *ast.MatchExpression, t Tr
 			arm.Body.Nodes = append([]ast.Node{varDef}, arm.Body.Nodes...)
 		}
 		ifExpr := self.nodeCreator.NewIfExpression(condition, arm.Body, nil, arm.Span())
-		// todo: The type of the if expression should be the union type of its branches
-		self.typeInfo.Set(ifExpr, &typed.NoneType{})
+		self.typeInfo.Set(ifExpr, matchType)
 		if lastIfExpr != nil {
 			lastIfExpr.FalseBody = self.nodeCreator.NewBlockExpression([]ast.Node{ifExpr}, ifExpr.Span())
-			// todo: The type of the false body should be calculated properly
-			self.typeInfo.Set(lastIfExpr.FalseBody, &typed.NoneType{})
+			self.typeInfo.Set(lastIfExpr.FalseBody, matchType)
 		}
 		lastIfExpr = ifExpr
 		if result == nil {

@@ -1,0 +1,51 @@
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+ignore = [ 
+    "A002", 
+    "B904", 
+    "BLE001", 
+    "C901",
+    "COM812", 
+    "D100", 
+    "D101", 
+    "D102", 
+    "D103", 
+    "D104", 
+    "D105", 
+    "D107", 
+    "D203", 
+    "D211", 
+    "D213", 
+    "D205", 
+    "D401", 
+    "E722", 
+    "EM101",
+    "EM102",
+    "ERA001",
+    "ISC001", 
+    "PLR0913", 
+    "PLR0915", 
+    "PLR2004", 
+    "PLR0911",
+    "PLR0912", 
+    "PLR1722", 
+    "PLW2901", 
+    "PT018",
+    "PTH123", 
+    "PYI024", 
+    "S101",
+    "S603",
+    "S607",
+    "SIM115", 
+    "T201", 
+    "TRY003", 
+    "UP007",
+]
+select = [ "ALL" ]
+
+[tool.ruff.format]
+docstring-code-format = true
+preview = true
+

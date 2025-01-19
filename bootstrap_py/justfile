@@ -1,0 +1,11 @@
+precommit: format lint
+
+format:
+    @echo "Formatting ..."
+    ruff format
+    npx prettier -w *.md
+
+lint:
+    @echo "Linting..."
+    pyright
+    ruff check

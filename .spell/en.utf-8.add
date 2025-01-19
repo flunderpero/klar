@@ -117,3 +117,15 @@ structs
 args
 kl
 iter
+gitignore
+mypy
+ropeproject
+py
+init
+tokenizer
+pyproject
+toml
+pycache
+asm
+arm64
+darwin

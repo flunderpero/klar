@@ -24,6 +24,18 @@ class StrLit:
 
 
 @dataclass
+class IntLit:
+    id: NodeId
+    bits: int
+    signed: bool
+    value: int
+    span: Span
+
+    def __str__(self) -> str:
+        return nid(self.id) + f"I{self.bits}" if self.signed else f"U{self.bits}"
+
+
+@dataclass
 class Ident:
     id: NodeId
     name: str
@@ -86,7 +98,7 @@ class Module:
         return nid(self.id) + "\n".join(str(x) for x in self.nodes)
 
 
-Expr = Block | StrLit | Ident | Call
+Expr = Block | IntLit | StrLit | Ident | Call
 Node = Expr | FnDecl | FnDef | Module
 
 
@@ -112,7 +124,7 @@ def walk(node: Node, visit: ASTVisitor) -> bool:
             visit(node.callee)
             for arg in node.args:
                 visit(arg)
-        case Ident() | StrLit() | FnDecl():
+        case Ident() | IntLit() | StrLit() | FnDecl():
             return False
         case _:
             raise AssertionError(f"Don't know how to walk: {node}")

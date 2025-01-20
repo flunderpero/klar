@@ -79,7 +79,7 @@ def unexpected_token(span: Span, got: str, *expected: str) -> Error:
 
 
 def expected_block_node(span: Span, token: str) -> Error:
-    return SimpleError(span, f"Expected a block node, got `{token}`")
+    return SimpleError(span, f"Expected a block node, got token `{token}`")
 
 
 def duplicate_fn(name: str, span: Span, defined_here: Span) -> Error:

@@ -89,7 +89,7 @@ def main() -> None:
         print(asm)
         return
     p = run(
-        ["clang", "-o", "a.out", "-x", "assembler", "-"],
+        ["clang", "-o", "a.out", "-g", "-x", "assembler", "-"],
         input=str(asm),
         text=True,
         check=False,

@@ -124,13 +124,6 @@ class Parser:
         self.input.next()
         return ast.Call(self.id(), callee, args, self.input.span_merge(callee.span))
 
-    def parse_str_lit(self) -> ast.StrLit | None:
-        t = self.input.next()
-        if t.kind != token.Kind.str_lit:
-            self.error(error.unexpected_token(t.span, t.kind.name, token.Kind.str_lit.name))
-            return None
-        return ast.StrLit(self.id(), str(t.value), t.span)
-
     def parse_expr(self) -> ast.Expr | None:
         t = self.input.peek()
         expr: ast.Expr | None
@@ -142,7 +135,11 @@ class Parser:
                 expr = self.parse_ident_expr()
                 expr_callable = True
             case token.Kind.str_lit:
-                expr = self.parse_str_lit()
+                self.input.next()
+                expr = ast.StrLit(self.id(), str(t.value), t.span)
+            case token.Kind.int_lit:
+                self.input.next()
+                expr = ast.IntLit(self.id(), bits=64, signed=True, value=int(str(t.value)), span=t.span)
             case _:
                 self.error(
                     error.unexpected_token(t.span, t.kind.name, token.Kind.curly_left.name, token.Kind.ident.name)
@@ -176,7 +173,7 @@ class Parser:
         match t.kind:
             case token.Kind.fn:
                 return self.parse_fn_def()
-            case token.Kind.ident | token.Kind.curly_left | token.Kind.str_lit:
+            case token.Kind.ident | token.Kind.curly_left | token.Kind.str_lit | token.Kind.int_lit:
                 return self.parse_expr()
             case _:
                 self.error(error.expected_block_node(t.span, t.kind.name))

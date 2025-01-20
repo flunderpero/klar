@@ -60,11 +60,20 @@ def run_test(test: Test) -> list:
             check=False,
             capture_output=True,
         )
-        p.check_returncode()
+        if p.returncode != 0:
+            print(f"Compilation failed, clang exited with: {p.returncode}\n{p.stdout}\n{p.stderr}")
+            if p.stdout:
+                print(p.stdout)
+            if p.stderr:
+                print(p.stderr)
+            return [f"Compilation failed, clang exited with: {p.returncode}"]
         p = run([tmp_file.name], check=False, capture_output=True, text=True)
-        p.check_returncode()
-        if p.stdout.strip() != test.expected_stdout.strip():
-            return [f"Expected:\n\n{test.expected_stdout}\n\ngot:\n\n{p.stdout}"]
+        if p.returncode != 0:
+            return [f"Test exited with code {p.returncode}\n{p.stdout}\n{p.stderr}"]
+
+        stdout = p.stdout.strip().replace("\0", "")
+        if stdout != test.expected_stdout:
+            return [f"Expected:\n\n`{test.expected_stdout}`\n\ngot:\n\n`{stdout}`"]
 
     return []
 
@@ -91,7 +100,7 @@ def find_tests(src: str, chapter: str) -> list[Test]:
                 i += 1
                 if line.startswith("```klar"):
                     test_line = i - 1
-                    expected_stdout = ""
+                    expected_stdout = []
                     code = []
                     while i < len(lines):
                         line = lines[i]
@@ -99,13 +108,19 @@ def find_tests(src: str, chapter: str) -> list[Test]:
                         if line.startswith("```"):
                             break
                         if line.startswith("-- Output:"):
-                            expected_stdout = line[len("-- Output: ") :]
+                            while i < len(lines):
+                                line = lines[i]
+                                i += 1
+                                if not line.startswith("-- "):
+                                    break
+                                expected_stdout.append(line.split("-- ")[1].rstrip())
+                            break
                         code.append(line)
                     code_str = "\n".join(code)
                     if "fn main()" not in code_str:
                         code_str = f"fn main() {{\n{code_str}\n}}"
 
-                    test = Test(headings, test_line, code_str, expected_stdout)
+                    test = Test(headings, test_line, code_str, "\n".join(expected_stdout))
                     tests.append(test)
     return tests
 

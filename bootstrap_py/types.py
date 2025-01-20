@@ -32,6 +32,17 @@ class Str:
 
 
 @dataclass
+class Int:
+    id: TypeId
+    bits: int
+    signed: bool
+    span: Span
+
+    def __str__(self) -> str:
+        return tid(self.id) + f"I{self.bits}" if self.signed else f"U{self.bits}"
+
+
+@dataclass
 class NoneTyp:
     id: TypeId
     span: Span
@@ -64,21 +75,27 @@ class Builtins:
     def new(next_id: Callable[[], int]) -> Builtins:
         span = Span("<built-in>", "", 0, 0)
         str_typ = Str(next_id(), span)
+        int_typ = Int(next_id(), bits=64, signed=True, span=span)
         none_typ = NoneTyp(next_id(), span)
         print_typ = Fn(next_id(), span, [Param("s", str_typ)], none_typ)
-        return Builtins(str_typ, none_typ, print_typ)
+        int_to_str = Fn(next_id(), span, [Param("i", int_typ)], str_typ)
+        return Builtins(str_typ, int_typ, none_typ, print_typ, int_to_str)
 
     Str: Str
+    Int: Int
     NoneTyp: NoneTyp
     print: Fn
+    int_to_str: Fn
 
 
-Type = Str | Fn | NoneTyp | TypeCheckError
+Type = Int | Str | Fn | NoneTyp | TypeCheckError
 
 
 def is_assignable_from(target: Type, from_: Type) -> bool:
     match target:
         case Str():
             return isinstance(from_, Str)
+        case Int():
+            return isinstance(from_, Int)
         case _:
             raise AssertionError(f"unhandled target type: {target}")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from . import ast, typechecker
+from . import ast, typechecker, types
 
 
 @dataclass
@@ -66,6 +66,15 @@ NoneReg = Reg("none", NoneTyp())
 
 
 @dataclass
+class IntConst:
+    reg: Reg
+    value: int
+
+    def __str__(self) -> str:
+        return f"{self.reg.id} = {self.value}"
+
+
+@dataclass
 class GetPtr:
     reg: Reg
     src: Reg
@@ -86,7 +95,7 @@ class Call:
         return f"{prefix} {self.callee}, {', '.join(f'{x.typ} {x.id}' for x in self.args)}"
 
 
-Inst = GetPtr | Call
+Inst = IntConst | GetPtr | Call
 
 BlockId = int
 
@@ -146,6 +155,33 @@ class FnGen:
         self.fn_ir = FnIR(fn_def=fn, blocks=[self.block])
         self.node_regs = {}
 
+    def typ(self, typ: types.Type) -> Type:
+        match typ:
+            case types.Int():
+                match (typ.bits, typ.signed):
+                    case (8, True):
+                        return I8
+                    case (8, False):
+                        return U8
+                    case (16, True):
+                        return I16
+                    case (16, False):
+                        return U16
+                    case (32, True):
+                        return I32
+                    case (32, False):
+                        return U32
+                    case (64, True):
+                        return I64
+                    case (64, False):
+                        return U64
+                    case (_, _):
+                        raise AssertionError(f"Unsupported int type: {typ}")
+            case types.Str():
+                return Str
+            case _:
+                raise AssertionError(f"Unsupported type: {typ}")
+
     def reg(self, typ: Type, prefix: str = "%") -> Reg:
         self.next_reg += 1
         return Reg(id=f"{prefix}{self.next_reg}", typ=typ)
@@ -166,13 +202,20 @@ class FnGen:
                     const = StrConst(reg, node.value)
                     self.ir.constant_pool[node.value] = const
                 self.emit(GetPtr(reg=self.reg(Str), src=const.reg), node)
+            case ast.IntLit():
+                reg = self.reg(I64)
+                self.emit(IntConst(reg, value=node.value), node)
             case ast.Call():
-                assert isinstance(node.callee, ast.Ident) and node.callee.name == "print", (
-                    "Currently, only `print` is supported"
+                assert isinstance(node.callee, ast.Ident) and node.callee.name in ("print", "int_to_str"), (
+                    "Currently, only `print` and `int_to_str` are supported"
                 )
+                result_typ = self.type_env.get_node_type(node)
                 ast.walk(node, self.generate)
                 arg = self.node_regs[node.args[0].id]
-                self.emit(Call(NoneReg, "print", [arg]), node)
+                reg = NoneReg
+                if not isinstance(result_typ, types.NoneTyp):
+                    reg = self.reg(self.typ(result_typ))
+                self.emit(Call(reg, node.callee.name, [arg]), node)
             case _:
                 ast.walk(node, self.generate)
 

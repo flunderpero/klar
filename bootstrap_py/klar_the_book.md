@@ -6,7 +6,9 @@ Let's start with - of course - "Hello, world!":
 fn main() {
     print("Hello, world!")
 }
--- Output: Hello, world!
+
+-- Output:
+-- Hello, world!
 ```
 
 ## Built-in Types And Literals
@@ -17,6 +19,25 @@ fn main() {
 
 ```klar
 "This is a Str literal."
+print("This is a Str literal.")
+
+-- Output:
+-- This is a Str literal.
+```
+
+### Integer Types
+
+The default integer type in Klar is `Int` which is a 64-bit signed integer and an alias for `I64`.
+
+```klar
+123 -- This is an Int literal.
+-123 -- A negative Int literal.
+print(int_to_str(123))
+print(int_to_str(-123))
+
+-- Output:
+-- 123
+-- -123
 ```
 
 ## Appendix - The Tokenizer

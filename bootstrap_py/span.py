@@ -73,7 +73,7 @@ class Span:
             if len(lines) > 1 and i == 0:
                 result.append(empty_line_prefix + " " * start[1] + "^")
         if len(lines) == 1:
-            result.append(empty_line_prefix + " " * start[1] + "^" * (end[1] - start[1] - 1))
+            result.append(empty_line_prefix + " " * start[1] + "^" * (end[1] - start[1]))
         result.extend(code_line(x) for x in after)
         result.append(empty_line_prefix)
         return result

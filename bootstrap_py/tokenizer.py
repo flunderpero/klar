@@ -15,6 +15,7 @@ class Kind(Enum):
     eof = "eof"
     fn = "fn"
     ident = "ident"
+    int_lit = "int_lit"
     minus = "-"
     paren_left = "("
     paren_right = ")"
@@ -89,14 +90,21 @@ def tokenize(input: Input) -> tuple[list[Token], list[error.Error]]:
             case ",":
                 kind = Kind.comma
             case "-":
-                # Comment
                 if input.peek() == "-":
+                    # Comment
                     input.next()
                     kind = Kind.comment
                     value = "--"
                     while (c := input.peek()) not in ("", "\n"):
                         input.next()
                         value += c
+                elif input.peek().isnumeric():
+                    # Negative number
+                    value = c
+                    while (c := input.peek()).isnumeric():
+                        input.next()
+                        value += c
+                    kind = Kind.int_lit
                 else:
                     kind = Kind.minus
             case '"':
@@ -110,11 +118,18 @@ def tokenize(input: Input) -> tuple[list[Token], list[error.Error]]:
                     continue
                 input.next()
                 kind = Kind.str_lit
+            case c if c.isnumeric():
+                # Int
+                value = c
+                while (c := input.peek()).isnumeric():
+                    input.next()
+                    value += c
+                kind = Kind.int_lit
             case c if c.islower() and c.isascii():
                 # Identifier
                 kind = Kind.ident
                 value = c
-                while (c := input.peek()).isalnum() and c.isascii():
+                while ((c := input.peek()).isalnum() and c.isascii()) or c == "_":
                     input.next()
                     value += c
                 keyword = keywords.get(value)

@@ -140,6 +140,9 @@ class Parser:
             case token.Kind.int_lit:
                 self.input.next()
                 expr = ast.IntLit(self.id(), bits=64, signed=True, value=int(str(t.value)), span=t.span)
+            case token.Kind.true | token.Kind.false:
+                self.input.next()
+                expr = ast.BoolLit(self.id(), value=t.kind == token.Kind.true, span=t.span)
             case _:
                 self.error(
                     error.unexpected_token(t.span, t.kind.name, token.Kind.curly_left.name, token.Kind.ident.name)
@@ -173,11 +176,8 @@ class Parser:
         match t.kind:
             case token.Kind.fn:
                 return self.parse_fn_def()
-            case token.Kind.ident | token.Kind.curly_left | token.Kind.str_lit | token.Kind.int_lit:
-                return self.parse_expr()
             case _:
-                self.error(error.expected_block_node(t.span, t.kind.name))
-                return None
+                return self.parse_expr()
 
     def parse_module(self) -> ast.Module:
         span = self.input.span()

@@ -80,6 +80,12 @@ class FnGen:
     def inst(self, inst: ir.Inst) -> None:
         match inst:
             case ir.IntConst():
+                if inst.reg.typ == ir.I1:
+                    assert inst.value in (0, 1), f"Invalid I1 value: {inst.value}"
+                    reg = self.reg_allocator.allocate(inst.reg)
+                    self.asm.emit(f"movz {reg.reg}, #{inst.value}")
+                    self.ir_regs[inst.reg.id] = reg
+                    return
                 assert inst.reg.typ == ir.I64, "For now, only I64 is supported"
                 reg = self.reg_allocator.allocate(inst.reg)
                 # It is not straight forward to load int values > 16bit. There are a lot of ways to optimize
@@ -167,6 +173,21 @@ def generate_builtins(asm: ASM) -> None:
     mov x0, xzr
     ret
 
+.bool_to_str:
+    stp fp, lr, [sp, #-16]!
+    mov fp, sp
+    cmp x0, #1
+    b.eq .bool_to_str_true
+    adrp x0, .false@PAGE
+    add x0, x0, .false@PAGEOFF
+    b .bool_to_str_done
+.bool_to_str_true:
+    adrp x0, .true@PAGE
+    add x0, x0, .true@PAGEOFF
+.bool_to_str_done:
+    ldp fp, lr, [sp], #16
+    ret
+
 .int_to_str:
     stp fp, lr, [sp, #-16]!
     mov fp, sp
@@ -219,7 +240,10 @@ def generate(ir_: ir.IR) -> str:
         asm.emit("")
         FnGen(fn_ir, asm).generate()
     asm.emit("\n.data")
-    for text, const in ir_.constant_pool.items():
+    constants = dict(ir_.constant_pool)
+    constants["true"] = ir.StrConst(ir.Reg("true", ir.Str), "true")
+    constants["false"] = ir.StrConst(ir.Reg("false", ir.Str), "false")
+    for text, const in constants.items():
         asm.emit(".align 3")
         asm.emit(f".{const.reg}_bytes:")
         asm.emit(f'    .ascii "{text}"')

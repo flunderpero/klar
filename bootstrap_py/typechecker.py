@@ -50,9 +50,11 @@ class TypeChecker:
         self.errors = []
         self.scope.declare("Str", self.type_env.builtins.Str)
         self.scope.declare("Int", self.type_env.builtins.Int)
+        self.scope.declare("Bool", self.type_env.builtins.Bool)
         self.scope.declare("None", self.type_env.builtins.NoneTyp)
         self.scope.declare("print", self.type_env.builtins.print)
         self.scope.declare("int_to_str", self.type_env.builtins.int_to_str)
+        self.scope.declare("bool_to_str", self.type_env.builtins.bool_to_str)
 
     def error(self, err: error.Error) -> None:
         self.errors.append(err)
@@ -90,6 +92,8 @@ class TypeChecker:
                 self.type_env.set_node_type(node, self.type_env.builtins.Str)
             case ast.IntLit():
                 self.type_env.set_node_type(node, self.type_env.builtins.Int)
+            case ast.BoolLit():
+                self.type_env.set_node_type(node, self.type_env.builtins.Bool)
             case ast.Ident():
                 typ = self.scope.find(node.name)
                 if not typ:

@@ -40,6 +40,19 @@ print(int_to_str(-123))
 -- -123
 ```
 
+### Boolean
+
+```klar
+true
+false
+print(bool_to_str(true))
+print(bool_to_str(false))
+
+-- Output:
+-- true
+-- false
+```
+
 ## Appendix - The Tokenizer
 
 ```klar

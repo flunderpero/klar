@@ -13,6 +13,7 @@ class Kind(Enum):
     curly_left = "{"
     curly_right = "}"
     eof = "eof"
+    false = "false"
     fn = "fn"
     ident = "ident"
     int_lit = "int_lit"
@@ -20,6 +21,7 @@ class Kind(Enum):
     paren_left = "("
     paren_right = ")"
     str_lit = "str_lit"
+    true = "true"
 
 
 @dataclass
@@ -40,7 +42,7 @@ class Token:
         return f"{self.span}: [{self.kind.name}] {value}"
 
 
-keywords = {x.name: x for x in [Kind.fn]}
+keywords = {x.name: x for x in [Kind.fn, Kind.true, Kind.false]}
 
 
 @dataclass

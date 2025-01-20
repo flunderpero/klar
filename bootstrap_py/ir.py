@@ -40,6 +40,7 @@ class NoneTyp:
 Type = Int | Struct | Ptr | NoneTyp
 
 
+I1 = Int(bits=1, signed=True)
 I8 = Int(bits=8, signed=True)
 U8 = Int(bits=8, signed=False)
 I16 = Int(bits=16, signed=True)
@@ -177,6 +178,8 @@ class FnGen:
                         return U64
                     case (_, _):
                         raise AssertionError(f"Unsupported int type: {typ}")
+            case types.Bool():
+                return I1
             case types.Str():
                 return Str
             case _:
@@ -205,10 +208,11 @@ class FnGen:
             case ast.IntLit():
                 reg = self.reg(I64)
                 self.emit(IntConst(reg, value=node.value), node)
+            case ast.BoolLit():
+                reg = self.reg(I1)
+                self.emit(IntConst(reg, value=int(node.value)), node)
             case ast.Call():
-                assert isinstance(node.callee, ast.Ident) and node.callee.name in ("print", "int_to_str"), (
-                    "Currently, only `print` and `int_to_str` are supported"
-                )
+                assert isinstance(node.callee, ast.Ident), "Currently, only named functions are supported."
                 result_typ = self.type_env.get_node_type(node)
                 ast.walk(node, self.generate)
                 arg = self.node_regs[node.args[0].id]

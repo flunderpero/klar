@@ -36,6 +36,16 @@ class IntLit:
 
 
 @dataclass
+class BoolLit:
+    id: NodeId
+    value: bool
+    span: Span
+
+    def __str__(self) -> str:
+        return nid(self.id) + str(self.value).lower()
+
+
+@dataclass
 class Ident:
     id: NodeId
     name: str
@@ -98,7 +108,7 @@ class Module:
         return nid(self.id) + "\n".join(str(x) for x in self.nodes)
 
 
-Expr = Block | IntLit | StrLit | Ident | Call
+Expr = Block | IntLit | StrLit | BoolLit | Ident | Call
 Node = Expr | FnDecl | FnDef | Module
 
 
@@ -124,7 +134,7 @@ def walk(node: Node, visit: ASTVisitor) -> bool:
             visit(node.callee)
             for arg in node.args:
                 visit(arg)
-        case Ident() | IntLit() | StrLit() | FnDecl():
+        case Ident() | IntLit() | StrLit() | BoolLit() | FnDecl():
             return False
         case _:
             raise AssertionError(f"Don't know how to walk: {node}")

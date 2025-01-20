@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import sys
-from subprocess import run
 from typing import Never
 
-from . import asm_darwin_arm64, ast, ir, parser, typechecker
+from . import compiler
 from . import tokenizer as token
 
 commands = ("tokens", "ast", "types", "ir", "asm", "compile", "run")
@@ -38,83 +37,60 @@ def read_src(argv_pos: int) -> token.Input:
 
 
 def main() -> None:
-    cur_id = 0
-
-    def next_id() -> int:
-        nonlocal cur_id
-        cur_id += 1
-        return cur_id
-
     command = sys.argv[1] if len(sys.argv) > 1 else None
     if not command:
         usage("Missing `command`")
     if command not in commands:
         usage(f"Unknown command `{command}`")
-    tokens, tokenize_errors = token.tokenize(read_src(2))
-    if command == "tokens":
-        print("\n".join(str(x) for x in tokens))
-        return
-    if tokenize_errors:
-        print("\nTokenize errors:\n" + "\n".join(str(x) for x in tokenize_errors))
-    module, parse_errors = parser.parse(parser.Input(tokens, next_id))
-    if parse_errors:
-        print("\nParse errors:\n" + "\n".join(str(x) for x in parse_errors))
-    if command == "ast":
-        print(module)
-        return
-    type_env, type_errors = typechecker.typecheck(module, next_id)
-    if type_errors:
-        print("\nType errors:\n" + "\n".join(str(x) for x in type_errors))
-    if command == "types":
-
-        def print_typed(node: ast.Node) -> None:
-            typ = type_env.node_types.get(node.id)
-            typ_str = str(typ) if typ else "NOT_FOUND"
-            print(node.span)
-            print(node)
-            print("=>", typ_str, "\n")
-            ast.walk(node, print_typed)
-
-        ast.walk(module, print_typed)
-        return
-    if tokenize_errors or parse_errors or type_errors:
-        print("\nErrors occurred, skipping further processing")
-        sys.exit(1)
-    ir_ = ir.generate_ir(module, type_env)
-    if command == "ir":
-        print(ir_)
-        return
-    asm = asm_darwin_arm64.generate(ir_)
-    if command == "asm":
-        print(asm)
-        return
-    p = run(
-        ["clang", "-o", "a.out", "-g", "-x", "assembler", "-"],
-        input=str(asm),
-        text=True,
-        check=False,
-        capture_output=True,
-    )
-    if p.returncode != 0:
-        print(f"Compilation failed, clang exited with: {p.returncode}")
-        if p.stdout:
-            print(p.stdout)
-        if p.stderr:
-            print(p.stderr)
-        sys.exit(p.returncode)
-    if command == "compile":
-        print("Compilation complete")
-        return
-    if command == "run":
-        p = run(["./a.out"], check=False, capture_output=True, text=True)
-        if p.stdout:
-            print(p.stdout, end="")
-        if p.stderr:
-            print(p.stderr)
-        if p.returncode != 0:
-            print(f"\nRun failed, process exited with: {p.returncode}")
-            sys.exit(p.returncode)
-        return
+    for step in compiler.compile(read_src(2), "./a.out"):
+        match step:
+            case compiler.TokenStep():
+                if step.errors:
+                    print("\nTokenize errors:\n" + "\n".join(str(x) for x in step.errors))
+                if command == "tokens":
+                    print(step)
+                    break
+            case compiler.ParseStep():
+                if step.errors:
+                    print("\nParse errors:\n" + "\n".join(str(x) for x in step.errors))
+                if command == "ast":
+                    print(step)
+                    break
+            case compiler.TypecheckStep():
+                if step.errors:
+                    print("\nType errors:\n" + "\n".join(str(x) for x in step.errors))
+                if command == "types":
+                    print(step)
+                    break
+            case compiler.AbortStep():
+                print("\nErrors occurred, skipping further processing")
+                sys.exit(1)
+            case compiler.IRStep():
+                if command == "ir":
+                    print(step)
+                    break
+            case compiler.ASMStep():
+                if command == "asm":
+                    print(step)
+                    break
+            case compiler.CompileStep():
+                if step.returncode != 0:
+                    print(f"Compilation (clang) failed with status {step.returncode}")
+                    print(f"stdout:\n{step.stdout}\nstderr:\n{step.stderr}")
+                    sys.exit(step.returncode)
+                if command == "compile":
+                    break
+            case compiler.RunStep():
+                if step.stdout:
+                    print(step.stdout, end="")
+                if step.stderr:
+                    print(step.stderr)
+                if step.returncode != 0:
+                    print(f"\nRun failed, process exited with: {step.returncode}")
+                    sys.exit(step.returncode)
+                break
+            case _:
+                raise AssertionError(f"Unknown step: {step}")
 
 
 if __name__ == "__main__":

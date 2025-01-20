@@ -66,3 +66,11 @@ print("Hello, world!")
 fn main()
     "Hello, world!" -- Compile error: Expected `curly_left`
 ```
+
+## Appendix - The Type-Checker
+
+```klar
+fn main() {
+    print(true) -- Compile error: Type `Bool` is not assignable to type `Str`
+}
+```

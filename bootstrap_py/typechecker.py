@@ -73,7 +73,11 @@ class TypeChecker:
                     for param, arg_node in zip(fn.params, node.args):
                         arg_typ = self.type_env.get_node_type(arg_node)
                         if not types.is_assignable_from(param.typ, arg_typ):
-                            self.error(error.type_not_assignable_from(arg_node.span, str(param.typ), str(arg_typ)))
+                            self.error(
+                                error.type_not_assignable_from(
+                                    arg_node.span, types.pretty(param.typ), types.pretty(arg_typ)
+                                )
+                            )
                             typ = types.TypeCheckError(self.id(), "type not assignable", node.span)
                             break
                     else:

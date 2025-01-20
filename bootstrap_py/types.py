@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Callable
 
@@ -102,6 +103,12 @@ class Builtins:
 
 
 Type = Int | Str | Bool | Fn | NoneTyp | TypeCheckError
+
+
+def pretty(typ: Type) -> str:
+    """Return the type string without any debug information like type-ids."""
+    pattern = re.compile(r"\{\d+\}")
+    return pattern.sub("", str(typ))
 
 
 def is_assignable_from(target: Type, from_: Type) -> bool:

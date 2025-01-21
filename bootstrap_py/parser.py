@@ -57,7 +57,7 @@ class Parser:
     def expect_ident(self) -> str | None:
         t = self.input.next()
         if t.kind == token.Kind.ident:
-            return t.value
+            return t.value_str()
         self.error(error.unexpected_token(t.span, t.kind.name, token.Kind.ident.name))
         return None
 
@@ -71,6 +71,13 @@ class Parser:
     def id(self) -> ast.NodeId:
         return self.input.next_id()
 
+    def parse_type(self) -> ast.Type | None:
+        t = self.input.next()
+        if t.kind == token.Kind.type_ident:
+            return ast.Type(self.id(), t.value_str(), t.span)
+        self.error(error.unexpected_token(t.span, t.kind.name, token.Kind.type_ident.name))
+        return None
+
     def parse_fn_decl(self) -> ast.FnDecl | None:
         span = self.input.span()
         if not self.expect(token.Kind.fn):
@@ -80,9 +87,48 @@ class Parser:
             return None
         if not self.expect(token.Kind.paren_left):
             return None
+        params = []
+        while True:
+            t = self.input.peek()
+            match t.kind:
+                case token.Kind.ident:
+                    self.input.next()
+                    param_name = t.value_str()
+                    existing = next((x for x in params if x.name == param_name), None)
+                    if existing:
+                        self.error(error.duplicate_param_name(param_name, t.span, existing.span))
+                        return None
+                    param_type = self.parse_type()
+                    if not param_type:
+                        return None
+                    params.append(ast.Param(param_name, param_type, t.span.merge(param_type.span)))
+                    match self.input.peek().kind:
+                        case token.Kind.comma:
+                            self.input.next()
+                        case token.Kind.paren_right:
+                            break
+                        case _:
+                            self.error(
+                                error.unexpected_token(
+                                    t.span, t.kind.name, token.Kind.comma.name, token.Kind.paren_right.name
+                                )
+                            )
+                            return None
+                case token.Kind.paren_right:
+                    break
+                case _:
+                    self.error(
+                        error.unexpected_token(t.span, t.kind.name, token.Kind.ident.name, token.Kind.paren_right.name)
+                    )
+                    return None
+
         if not self.expect(token.Kind.paren_right):
             return None
-        return ast.FnDecl(self.id(), name, self.input.span_merge(span))
+        result: ast.Type | None = None
+        if self.input.peek().kind == token.Kind.type_ident:
+            result = self.parse_type()
+
+        return ast.FnDecl(self.id(), name, params, result, self.input.span_merge(span))
 
     def parse_fn_def(self) -> ast.FnDef | None:
         span = self.input.span()
@@ -125,6 +171,21 @@ class Parser:
         return ast.Call(self.id(), callee, args, self.input.span_merge(callee.span))
 
     def parse_expr(self) -> ast.Expr | None:
+        lhs = self.parse_primary_expr()
+        if not lhs:
+            return None
+        while True:
+            t = self.input.peek()
+            if t.kind == token.Kind.plus:
+                self.input.next()
+                rhs = self.parse_expr()
+                if not rhs:
+                    return None
+                lhs = ast.BinaryExpr(self.id(), ast.BinaryOp.add, lhs, rhs, self.input.span_merge(lhs.span))
+            else:
+                return lhs
+
+    def parse_primary_expr(self) -> ast.Expr | None:
         t = self.input.peek()
         expr: ast.Expr | None
         expr_callable = False
@@ -136,10 +197,10 @@ class Parser:
                 expr_callable = True
             case token.Kind.str_lit:
                 self.input.next()
-                expr = ast.StrLit(self.id(), str(t.value), t.span)
+                expr = ast.StrLit(self.id(), t.value_str(), t.span)
             case token.Kind.int_lit:
                 self.input.next()
-                expr = ast.IntLit(self.id(), bits=64, signed=True, value=int(str(t.value)), span=t.span)
+                expr = ast.IntLit(self.id(), bits=64, signed=True, value=int(t.value_str()), span=t.span)
             case token.Kind.true | token.Kind.false:
                 self.input.next()
                 expr = ast.BoolLit(self.id(), value=t.kind == token.Kind.true, span=t.span)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, cast
 
 from . import ast, error, types
 
@@ -62,6 +62,13 @@ class TypeChecker:
     def id(self) -> types.TypeId:
         return self.next_id()
 
+    def type_node_type(self, node: ast.Type) -> types.Type:
+        typ = self.scope.find(node.name)
+        if not typ:
+            self.error(error.undefined_name(node.name, node.span))
+            return types.TypeCheckError(self.id(), f"`{node.name}` not found", node.span)
+        return typ
+
     def typecheck_call(self, node: ast.Call) -> None:
         ast.walk(node, self.typecheck)
         match self.type_env.get_node_type(node.callee):
@@ -107,18 +114,45 @@ class TypeChecker:
             case ast.Call():
                 self.typecheck_call(node)
             case ast.FnDecl():
-                typ = types.Fn(self.id(), node.span, [], self.type_env.builtins.NoneTyp)
+                params: list[types.Param] = []
+                for param in node.params:
+                    param_typ = self.type_node_type(param.typ)
+                    params.append(types.Param(param.name, param_typ))
+                result = self.type_env.builtins.NoneTyp
+                if node.result:
+                    result = self.type_node_type(node.result)
+                typ = types.Fn(self.id(), node.span, params, result)
                 if existing := self.scope.declare(node.name, typ):
                     self.error(error.duplicate_fn(node.name, node.span, existing.span))
                 self.type_env.set_node_type(node, typ)
             case ast.FnDef():
-                ast.walk(node, self.typecheck)
+                self.typecheck(node.decl)
+                fn = cast(types.Fn, self.type_env.get_node_type(node.decl))
+                # todo: enter a new scope
+                for param in fn.params:
+                    self.scope.declare(param.name, param.typ)
+                ast.walk(node.body, self.typecheck)
                 self.type_env.set_node_type(node, self.type_env.builtins.NoneTyp)
             case ast.Block():
                 typ = self.type_env.builtins.NoneTyp
                 if node.nodes:
                     ast.walk(node, self.typecheck)
                     typ = self.type_env.get_node_type(node.nodes[-1])
+                self.type_env.set_node_type(node, typ)
+            case ast.BinaryExpr():
+                assert node.op == ast.BinaryOp.add, f"Binary op {node.op} not supported yet"
+                ast.walk(node, self.typecheck)
+                lhs = self.type_env.get_node_type(node.lhs)
+                rhs = self.type_env.get_node_type(node.rhs)
+                typ = lhs
+                match lhs:
+                    case types.Int():
+                        pass
+                    case types.TypeCheckError():
+                        typ = types.TypeCheckError(self.id(), "lhs is an error", node.span)
+                if not types.is_assignable_from(lhs, rhs):
+                    self.error(error.type_not_assignable_from(node.rhs.span, types.pretty(lhs), types.pretty(rhs)))
+                    typ = types.TypeCheckError(self.id(), "rhs not assignable to lhs", node.span)
                 self.type_env.set_node_type(node, typ)
             case _:
                 raise AssertionError(f"Type checking not implemented for: {node}")

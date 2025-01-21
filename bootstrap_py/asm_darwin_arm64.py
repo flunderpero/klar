@@ -63,6 +63,11 @@ class FnGen:
         self.asm.inc_indent()
         self.asm.emit("stp fp, lr, [sp, #-16]!")
         self.asm.emit("mov fp, sp")
+        # Define parameters.
+        for i, param in enumerate(self.ir.params):
+            reg = self.reg_allocator.allocate(param.reg)
+            self.ir_regs[param.reg.id] = reg
+            self.asm.emit(f"mov {reg.reg}, x{i}")
         self.asm.dec_indent()
         for block in self.ir.blocks:
             self.asm.emit(f".{fn_name}_${block.id}:")
@@ -70,10 +75,10 @@ class FnGen:
             for inst in block.insts:
                 self.inst(inst)
             self.asm.dec_indent()
+        self.asm.emit(f"{fn_name}_ret:")
         self.asm.inc_indent()
         # Release stack frame and return.
         self.asm.emit("ldp fp, lr, [sp], #16")
-        self.asm.emit("mov x0, xzr")
         self.asm.emit("ret")
         self.asm.dec_indent()
 
@@ -128,6 +133,16 @@ class FnGen:
                     reg = self.reg_allocator.allocate(inst.reg)
                     self.asm.emit(f"mov {reg.reg}, x0")
                     self.ir_regs[inst.reg.id] = reg
+            case ir.IAddO():
+                lhs = self.ir_regs[inst.lhs.id]
+                rhs = self.ir_regs[inst.rhs.id]
+                reg = self.reg_allocator.allocate(inst.reg)
+                self.asm.emit(f"add {reg.reg}, {lhs.reg}, {rhs.reg}")
+                self.ir_regs[inst.reg.id] = reg
+            case ir.Return():
+                reg = self.ir_regs[inst.reg.id]
+                self.asm.emit(f"mov x0, {reg.reg}")
+                self.asm.emit(f"b {self.fn_name(self.ir.fn_def.decl.name)}_ret")
             case _:
                 raise AssertionError(f"Unknown instruction: {inst}")
 

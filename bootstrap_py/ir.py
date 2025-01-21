@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 from . import ast, typechecker, types
 
@@ -96,7 +97,27 @@ class Call:
         return f"{prefix} {self.callee}, {', '.join(f'{x.typ} {x.id}' for x in self.args)}"
 
 
-Inst = IntConst | GetPtr | Call
+@dataclass
+class IAddO:
+    """Signed addition with overflow."""
+
+    reg: Reg
+    lhs: Reg
+    rhs: Reg
+
+    def __str__(self) -> str:
+        return f"{self.reg} = iaddo {self.lhs.typ} {self.lhs}, {self.rhs.typ} {self.rhs}"
+
+
+@dataclass
+class Return:
+    reg: Reg
+
+    def __str__(self) -> str:
+        return f"ret {self.reg.typ} {self.reg.id}"
+
+
+Inst = IntConst | GetPtr | Call | IAddO | Return
 
 BlockId = int
 
@@ -131,30 +152,50 @@ class IR:
 
 
 @dataclass
+class Param:
+    reg: Reg
+    typ: Type
+
+
+@dataclass
 class FnIR:
     fn_def: ast.FnDef
+    params: list[Param]
+    result: Type
     blocks: list[Block]
 
     def __str__(self) -> str:
-        return f"declare {self.fn_def.decl.name}():\n\n".join(str(block) for block in self.blocks)
+        params = ", ".join(str(param) for param in self.params)
+        blocks = "\n".join(str(block) for block in self.blocks)
+        return f"declare {self.fn_def.decl.name}({params}) {self.result}:\n" + blocks
 
 
 class FnGen:
     type_env: typechecker.TypeEnv
     block: Block
     node_regs: dict[ast.NodeId, Reg]
+    vars: dict[str, Reg]
     ir: IR
     fn_ir: FnIR
     next_reg = 0
     next_const = 0
     next_block = 0
 
-    def __init__(self, fn: ast.FnDef, type_env: typechecker.TypeEnv, ir: IR) -> None:
+    def __init__(self, fn_def: ast.FnDef, type_env: typechecker.TypeEnv, ir: IR) -> None:
         self.type_env = type_env
         self.ir = ir
         self.block = Block(id=0, insts=[])
-        self.fn_ir = FnIR(fn_def=fn, blocks=[self.block])
         self.node_regs = {}
+        self.vars = {}
+        types_fn = cast(types.Fn, type_env.get_node_type(fn_def.decl))
+        params: list[Param] = []
+        for p in types_fn.params:
+            typ = self.typ(p.typ)
+            reg = self.reg(typ)
+            self.vars[p.name] = reg
+            params.append(Param(reg, typ))
+        result = self.typ(types_fn.result)
+        self.fn_ir = FnIR(fn_def, params, result, [self.block])
 
     def typ(self, typ: types.Type) -> Type:
         match typ:
@@ -182,6 +223,8 @@ class FnGen:
                 return I1
             case types.Str():
                 return Str
+            case types.NoneTyp():
+                return NoneTyp()
             case _:
                 raise AssertionError(f"Unsupported type: {typ}")
 
@@ -197,6 +240,18 @@ class FnGen:
 
     def generate(self, node: ast.Node) -> None:
         match node:
+            case ast.FnDef():
+                ast.walk(node, self.generate)
+                if isinstance(self.fn_ir.result, NoneTyp):
+                    return
+                reg = self.node_regs[node.body.id]
+                self.emit(Return(reg), node)
+            case ast.Block():
+                ast.walk(node, self.generate)
+                reg = NoneReg
+                if node.nodes:
+                    reg = self.node_regs[node.nodes[-1].id]
+                self.node_regs[node.id] = reg
             case ast.StrLit():
                 const = self.ir.constant_pool.get(node.value)
                 if not const:
@@ -211,6 +266,9 @@ class FnGen:
             case ast.BoolLit():
                 reg = self.reg(I1)
                 self.emit(IntConst(reg, value=int(node.value)), node)
+            case ast.Ident():
+                if node.name in self.vars:
+                    self.node_regs[node.id] = self.vars[node.name]
             case ast.Call():
                 assert isinstance(node.callee, ast.Ident), "Currently, only named functions are supported."
                 result_typ = self.type_env.get_node_type(node)
@@ -220,8 +278,20 @@ class FnGen:
                 if not isinstance(result_typ, types.NoneTyp):
                     reg = self.reg(self.typ(result_typ))
                 self.emit(Call(reg, node.callee.name, [arg]), node)
-            case _:
+            case ast.BinaryExpr():
                 ast.walk(node, self.generate)
+                lhs_reg = self.node_regs[node.lhs.id]
+                rhs_reg = self.node_regs[node.rhs.id]
+                match node.op:
+                    case ast.BinaryOp.add:
+                        reg = self.reg(I64)
+                        self.emit(IAddO(reg, lhs_reg, rhs_reg), node)
+                    case _:
+                        raise AssertionError(f"Unsupported binary op: {node.op}")
+            case ast.FnDecl():
+                pass
+            case _:
+                raise AssertionError(f"Unsupported node: {node.__class__}")
 
 
 def generate_ir(module: ast.Module, type_env: typechecker.TypeEnv) -> IR:
@@ -237,7 +307,7 @@ def generate_ir(module: ast.Module, type_env: typechecker.TypeEnv) -> IR:
     ir = IR(fn_irs=[], constant_pool={})
     for fn_def in fn_defs:
         gen = FnGen(fn_def, type_env, ir)
-        ast.walk(fn_def, gen.generate)
+        gen.generate(fn_def)
         ir.fn_irs.append(gen.fn_ir)
 
     return ir

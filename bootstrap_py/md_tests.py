@@ -1,4 +1,5 @@
 """Run tests found in a markdown file."""
+# ruff: noqa: T201
 
 import sys
 from dataclasses import dataclass
@@ -57,6 +58,8 @@ def run_test(test: Test, print_code: str) -> list:
                 case compiler.AbortStep():
                     pass
                 case compiler.IRStep():
+                    if "-- Compile error:" in test.code:
+                        return ["Expected compile error did not occur"]
                     if print_code == "ir":
                         print(step)
                         return []
@@ -133,6 +136,7 @@ def main() -> int:
         if f"--{stage}" in args:
             print_code = stage
             break
+    print_error_stack = "--err-stack" in args
     args = [x for x in args if not x.startswith("--")]
     if len(args) == 1:
         print("Usage: md_tests.py [--asm] <file> [chapter]")
@@ -149,6 +153,8 @@ def main() -> int:
             for err in errors:
                 print()
                 print(err)
+                if print_error_stack:
+                    print("at", err.stacktrace)
         elif not print_code:
             print(" \033[0;32mPASS\033[0m")
     if failed:

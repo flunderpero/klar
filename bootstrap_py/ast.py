@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
@@ -56,6 +57,16 @@ class Ident:
 
 
 @dataclass
+class Type:
+    id: NodeId
+    name: str
+    span: Span
+
+    def __str__(self) -> str:
+        return nid(self.id) + self.name
+
+
+@dataclass
 class Call:
     id: NodeId
     callee: Expr
@@ -64,6 +75,22 @@ class Call:
 
     def __str__(self) -> str:
         return nid(self.id) + f"{self.callee}({', '.join(str(x) for x in self.args)})"
+
+
+class BinaryOp(Enum):
+    add = "+"
+
+
+@dataclass
+class BinaryExpr:
+    id: NodeId
+    op: BinaryOp
+    lhs: Expr
+    rhs: Expr
+    span: Span
+
+    def __str__(self) -> str:
+        return nid(self.id) + f"{self.lhs} {self.op} {self.rhs}"
 
 
 @dataclass
@@ -78,13 +105,25 @@ class Block:
 
 
 @dataclass
-class FnDecl:
-    id: NodeId
+class Param:
     name: str
+    typ: Type
     span: Span
 
     def __str__(self) -> str:
-        return nid(self.id) + f"fn {self.name}()"
+        return f"{self.name} {self.typ}"
+
+
+@dataclass
+class FnDecl:
+    id: NodeId
+    name: str
+    params: list[Param]
+    result: Type | None
+    span: Span
+
+    def __str__(self) -> str:
+        return nid(self.id) + f"{self.name}({', '.join(str(x) for x in self.params)}) -> {self.result}"
 
 
 @dataclass
@@ -108,8 +147,8 @@ class Module:
         return nid(self.id) + "\n".join(str(x) for x in self.nodes)
 
 
-Expr = Block | IntLit | StrLit | BoolLit | Ident | Call
-Node = Expr | FnDecl | FnDef | Module
+Expr = Block | IntLit | StrLit | BoolLit | Ident | Call | BinaryExpr
+Node = Expr | FnDecl | FnDef | Module | Type
 
 
 ASTVisitor = Callable[[Node], None]
@@ -134,6 +173,9 @@ def walk(node: Node, visit: ASTVisitor) -> bool:
             visit(node.callee)
             for arg in node.args:
                 visit(arg)
+        case BinaryExpr():
+            visit(node.lhs)
+            visit(node.rhs)
         case Ident() | IntLit() | StrLit() | BoolLit() | FnDecl():
             return False
         case _:

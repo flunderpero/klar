@@ -20,8 +20,10 @@ class Kind(Enum):
     minus = "-"
     paren_left = "("
     paren_right = ")"
+    plus = "+"
     str_lit = "str_lit"
     true = "true"
+    type_ident = "type_ident"
 
 
 @dataclass
@@ -40,6 +42,10 @@ class Token:
             case _:
                 raise AssertionError(f"Unexpected value: {self.value}")
         return f"{self.span}: [{self.kind.name}] {value}"
+
+    def value_str(self) -> str:
+        assert self.value is not None, "Token has no value"
+        return self.value
 
 
 keywords = {x.name: x for x in [Kind.fn, Kind.true, Kind.false]}
@@ -91,6 +97,8 @@ def tokenize(input: Input) -> tuple[list[Token], list[error.Error]]:
                 kind = Kind.curly_right
             case ",":
                 kind = Kind.comma
+            case "+":
+                kind = Kind.plus
             case "-":
                 if input.peek() == "-":
                     # Comment
@@ -127,9 +135,9 @@ def tokenize(input: Input) -> tuple[list[Token], list[error.Error]]:
                     input.next()
                     value += c
                 kind = Kind.int_lit
-            case c if c.islower() and c.isascii():
-                # Identifier
-                kind = Kind.ident
+            case c if c.isalpha() and c.isascii():
+                # Identifier or type identifier
+                kind = Kind.ident if c.islower() else Kind.type_ident
                 value = c
                 while ((c := input.peek()).isalnum() and c.isascii()) or c == "_":
                     input.next()

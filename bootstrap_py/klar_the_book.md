@@ -53,6 +53,20 @@ print(bool_to_str(false))
 -- false
 ```
 
+## Functions
+
+```klar
+fn double(i Int) Int {
+    i + i
+}
+
+fn main() {
+    print(int_to_str(double(2)))
+}
+-- Output:
+-- 4
+```
+
 ## Appendix - The Tokenizer
 
 ```klar
@@ -65,6 +79,12 @@ print("Hello, world!")
 ```klar
 fn main()
     "Hello, world!" -- Compile error: Expected `curly_left`
+```
+
+Duplicate parameter names:
+
+```klar
+fn test(a Int, a Int) {} -- Compile error: Duplicate `a`
 ```
 
 ## Appendix - The Type-Checker

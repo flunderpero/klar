@@ -119,5 +119,7 @@ def is_assignable_from(target: Type, from_: Type) -> bool:
             return isinstance(from_, Int)
         case Bool():
             return isinstance(from_, Bool)
+        case TypeCheckError():
+            return False
         case _:
             raise AssertionError(f"unhandled target type: {target}")

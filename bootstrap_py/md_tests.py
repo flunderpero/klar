@@ -11,9 +11,13 @@ from . import compiler, error, tokenizer
 @dataclass
 class Test:
     headings: list[str]
+    test_num: int
     line: int
     code: str
     expected_stdout: str
+
+    def name(self) -> str:
+        return " > ".join(self.headings) + f" ({self.test_num})"
 
 
 def run_test(test: Test, print_code: str) -> list:
@@ -93,6 +97,7 @@ def find_tests(src: str, chapter: str) -> list[Test]:
         if line.startswith("#") and chapter.lower() in line.lower():
             headings.append(line)
             heading_level = len(line.split(" ")[0])
+            test_num = 1
             while i < len(lines):
                 line = lines[i]
                 if line.startswith("#"):
@@ -101,6 +106,7 @@ def find_tests(src: str, chapter: str) -> list[Test]:
                         break
                     headings = [x for x in headings if len(x.split(" ")[0]) < this_level]
                     headings.append(line)
+                    test_num = 1
                 i += 1
                 if line.startswith("```klar"):
                     test_line = i - 1
@@ -124,7 +130,8 @@ def find_tests(src: str, chapter: str) -> list[Test]:
                     if "fn main()" not in code_str:
                         code_str = f"fn main() {{\n{code_str}\n}}"
 
-                    test = Test(headings, test_line, code_str, "\n".join(expected_stdout))
+                    test = Test(headings, test_num, test_line, code_str, "\n".join(expected_stdout))
+                    test_num += 1
                     tests.append(test)
     return tests
 
@@ -139,14 +146,17 @@ def main() -> int:
     print_error_stack = "--err-stack" in args
     args = [x for x in args if not x.startswith("--")]
     if len(args) == 1:
-        print("Usage: md_tests.py [--asm] <file> [chapter]")
+        print("Usage: md_tests.py [--asm] <file> [chapter] [#test]")
         return 1
     file = args[1]
     src = open(file).read()
     tests = find_tests(src, "" if len(args) == 2 else args[2])
+    if len(args) > 3:
+        test_num = int(args[3]) - 1
+        tests = tests[test_num:test_num+1]
     failed = 0
     for test in tests:
-        print(" | ".join(test.headings), f"at {file}:{test.line}", end="")
+        print(test.name(), f"at {file}:{test.line}", end="")
         if errors := run_test(test, print_code):
             failed += 1
             print(" \033[0;31mFAIL\033[0m")

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from typing import Callable, cast
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Callable, cast
 
 from . import ast, error, types
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 
 class TypeEnv:
@@ -21,9 +25,13 @@ class TypeEnv:
 
 
 class Scope:
+    parent: Scope | None
+    node: ast.Node
     names: dict[str, types.Type]
 
-    def __init__(self) -> None:
+    def __init__(self, node: ast.Node, parent: Scope | None) -> None:
+        self.node = node
+        self.parent = parent
         self.names = {}
 
     def declare(self, name: str, typ: types.Type) -> types.Type | None:
@@ -34,7 +42,10 @@ class Scope:
         return None
 
     def find(self, name: str) -> types.Type | None:
-        return self.names.get(name)
+        res = self.names.get(name)
+        if not res and self.parent:
+            return self.parent.find(name)
+        return res
 
 
 class TypeChecker:
@@ -55,6 +66,15 @@ class TypeChecker:
         self.scope.declare("print", self.type_env.builtins.print)
         self.scope.declare("int_to_str", self.type_env.builtins.int_to_str)
         self.scope.declare("bool_to_str", self.type_env.builtins.bool_to_str)
+
+    @contextmanager
+    def enter_scope(self, node: ast.Node) -> Generator[None]:
+        prev = self.scope
+        self.scope = Scope(node, self.scope)
+        try:
+            yield
+        finally:
+            self.scope = prev
 
     def error(self, err: error.Error) -> None:
         self.errors.append(err)
@@ -128,11 +148,11 @@ class TypeChecker:
             case ast.FnDef():
                 self.typecheck(node.decl)
                 fn = cast(types.Fn, self.type_env.get_node_type(node.decl))
-                # todo: enter a new scope
-                for param in fn.params:
-                    self.scope.declare(param.name, param.typ)
-                ast.walk(node.body, self.typecheck)
-                self.type_env.set_node_type(node, self.type_env.builtins.NoneTyp)
+                with self.enter_scope(node):
+                    for param in fn.params:
+                        self.scope.declare(param.name, param.typ)
+                    ast.walk(node.body, self.typecheck)
+                    self.type_env.set_node_type(node, self.type_env.builtins.NoneTyp)
             case ast.Block():
                 typ = self.type_env.builtins.NoneTyp
                 if node.nodes:
@@ -167,6 +187,6 @@ class TypeChecker:
 
 
 def typecheck(module: ast.Module, next_id: Callable[[], int]) -> tuple[TypeEnv, list[error.Error]]:
-    tc = TypeChecker(type_env=TypeEnv(builtins=types.Builtins.new(next_id)), scope=Scope(), next_id=next_id)
+    tc = TypeChecker(type_env=TypeEnv(builtins=types.Builtins.new(next_id)), scope=Scope(module, None), next_id=next_id)
     ast.walk(module, tc.typecheck)
     return tc.type_env, tc.errors

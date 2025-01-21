@@ -67,6 +67,30 @@ fn main() {
 -- 4
 ```
 
+<details>
+<summary>More examples</summary>
+
+Shadowing:
+
+```klar
+fn str(i Int) Str {
+    int_to_str(i)
+}
+
+fn foo(str Str) {
+    -- Here, the parameter `str` shadows the function `str()`.
+    print(str)
+}
+
+fn main() {
+    foo("Hello")
+}
+-- Output:
+-- Hello
+```
+
+</details>
+
 ### Arithmetic
 
 Integer operators:

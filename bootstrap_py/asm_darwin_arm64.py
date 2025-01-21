@@ -79,6 +79,8 @@ class FnGen:
         self.asm.inc_indent()
         # Release stack frame and return.
         self.asm.emit("ldp fp, lr, [sp], #16")
+        if fn_name == "_main":
+            self.asm.emit("mov x0, xzr")
         self.asm.emit("ret")
         self.asm.dec_indent()
 

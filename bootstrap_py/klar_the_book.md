@@ -67,6 +67,39 @@ fn main() {
 -- 4
 ```
 
+### Arithmetic
+
+Integer operators:
+
+todo: merge these examples
+
+```klar
+print(int_to_str(40 + 2))
+-- Output:
+-- 42
+```
+
+```klar
+print(int_to_str(44 - 2))
+-- Output:
+-- 42
+```
+
+All arithmetic operators are left-associative. So the following example evaluates to `(40 - 2) + 4`
+and not `40 - (2 + 4)`.
+
+```klar
+print(int_to_str(40 - 2 + 4))
+-- Output:
+-- 42
+```
+
+> **Note**: Klar does not prevent addition (`+`), subtraction (`-`), or multiplication (`*`) operations from
+> over- or underflowing. We think that this is expected behavior and should be natural to every
+> developer. If you need over- or underflow safety, use `Int.add()`, `Int.sub()`, and `Int.mul()`.
+> Division by zero using the division operator (`/`) causes a `panic` for integer types and
+> results in `NaN` for floating point types.
+
 ## Appendix - The Tokenizer
 
 ```klar
@@ -90,7 +123,10 @@ fn test(a Int, a Int) {} -- Compile error: Duplicate `a`
 ## Appendix - The Type-Checker
 
 ```klar
-fn main() {
-    print(true) -- Compile error: Type `Bool` is not assignable to type `Str`
-}
+print(true) -- Compile error: Type `Bool` is not assignable to type `Str`
+```
+
+```klar
+1 + "str" -- Compile error: Type `Str` is not assignable to type `I64`
+
 ```

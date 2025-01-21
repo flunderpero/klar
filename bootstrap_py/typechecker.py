@@ -140,20 +140,28 @@ class TypeChecker:
                     typ = self.type_env.get_node_type(node.nodes[-1])
                 self.type_env.set_node_type(node, typ)
             case ast.BinaryExpr():
-                assert node.op == ast.BinaryOp.add, f"Binary op {node.op} not supported yet"
-                ast.walk(node, self.typecheck)
-                lhs = self.type_env.get_node_type(node.lhs)
-                rhs = self.type_env.get_node_type(node.rhs)
-                typ = lhs
-                match lhs:
-                    case types.Int():
-                        pass
-                    case types.TypeCheckError():
-                        typ = types.TypeCheckError(self.id(), "lhs is an error", node.span)
-                if not types.is_assignable_from(lhs, rhs):
-                    self.error(error.type_not_assignable_from(node.rhs.span, types.pretty(lhs), types.pretty(rhs)))
-                    typ = types.TypeCheckError(self.id(), "rhs not assignable to lhs", node.span)
-                self.type_env.set_node_type(node, typ)
+                match node.op:
+                    case ast.BinaryOp.add | ast.BinaryOp.sub:
+                        ast.walk(node, self.typecheck)
+                        lhs = self.type_env.get_node_type(node.lhs)
+                        rhs = self.type_env.get_node_type(node.rhs)
+                        typ = lhs
+                        match lhs:
+                            case types.Int():
+                                pass
+                            case types.TypeCheckError():
+                                typ = types.TypeCheckError(self.id(), "lhs is an error", node.span)
+                            case _:
+                                self.error(error.unexpected_type("Int", types.pretty(lhs), node.lhs.span))
+                                typ = types.TypeCheckError(self.id(), "lhs not an Int", node.span)
+                        if not types.is_assignable_from(lhs, rhs):
+                            self.error(
+                                error.type_not_assignable_from(node.rhs.span, types.pretty(lhs), types.pretty(rhs))
+                            )
+                            typ = types.TypeCheckError(self.id(), "rhs not assignable to lhs", node.span)
+                        self.type_env.set_node_type(node, typ)
+                    case _:
+                        raise AssertionError(f"Type checking not implemented for: {node}")
             case _:
                 raise AssertionError(f"Type checking not implemented for: {node}")
 

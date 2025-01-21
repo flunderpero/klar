@@ -133,11 +133,19 @@ class FnGen:
                     reg = self.reg_allocator.allocate(inst.reg)
                     self.asm.emit(f"mov {reg.reg}, x0")
                     self.ir_regs[inst.reg.id] = reg
-            case ir.IAddO():
+            case ir.IAddO() | ir.ISubO():
+                asm_inst = ""
+                match inst:
+                    case ir.IAddO():
+                        asm_inst = "add"
+                    case ir.ISubO():
+                        asm_inst = "sub"
+                    case _:
+                        raise AssertionError(f"Unknown instruction: {inst}")
                 lhs = self.ir_regs[inst.lhs.id]
                 rhs = self.ir_regs[inst.rhs.id]
                 reg = self.reg_allocator.allocate(inst.reg)
-                self.asm.emit(f"add {reg.reg}, {lhs.reg}, {rhs.reg}")
+                self.asm.emit(f"{asm_inst} {reg.reg}, {lhs.reg}, {rhs.reg}")
                 self.ir_regs[inst.reg.id] = reg
             case ir.Return():
                 reg = self.ir_regs[inst.reg.id]

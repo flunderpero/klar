@@ -110,6 +110,18 @@ class IAddO:
 
 
 @dataclass
+class ISubO:
+    """Signed subtraction with overflow."""
+
+    reg: Reg
+    lhs: Reg
+    rhs: Reg
+
+    def __str__(self) -> str:
+        return f"{self.reg} = isubo {self.lhs.typ} {self.lhs}, {self.rhs.typ} {self.rhs}"
+
+
+@dataclass
 class Return:
     reg: Reg
 
@@ -117,7 +129,7 @@ class Return:
         return f"ret {self.reg.typ} {self.reg.id}"
 
 
-Inst = IntConst | GetPtr | Call | IAddO | Return
+Inst = IntConst | GetPtr | Call | IAddO | ISubO | Return
 
 BlockId = int
 
@@ -286,6 +298,9 @@ class FnGen:
                     case ast.BinaryOp.add:
                         reg = self.reg(I64)
                         self.emit(IAddO(reg, lhs_reg, rhs_reg), node)
+                    case ast.BinaryOp.sub:
+                        reg = self.reg(I64)
+                        self.emit(ISubO(reg, lhs_reg, rhs_reg), node)
                     case _:
                         raise AssertionError(f"Unsupported binary op: {node.op}")
             case ast.FnDecl():

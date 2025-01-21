@@ -170,20 +170,27 @@ class Parser:
         self.input.next()
         return ast.Call(self.id(), callee, args, self.input.span_merge(callee.span))
 
-    def parse_expr(self) -> ast.Expr | None:
+    def parse_expr(self, min_precedence: int = 0) -> ast.Expr | None:
         lhs = self.parse_primary_expr()
         if not lhs:
             return None
         while True:
             t = self.input.peek()
-            if t.kind == token.Kind.plus:
-                self.input.next()
-                rhs = self.parse_expr()
-                if not rhs:
-                    return None
-                lhs = ast.BinaryExpr(self.id(), ast.BinaryOp.add, lhs, rhs, self.input.span_merge(lhs.span))
-            else:
+            op_by_token = {token.Kind.plus: ast.BinaryOp.add, token.Kind.minus: ast.BinaryOp.sub}
+            precendence_by_op = {ast.BinaryOp.add: 1, ast.BinaryOp.sub: 1}
+            op = op_by_token.get(t.kind)
+            if not op:
                 return lhs
+            precedence = precendence_by_op[op]
+            if precedence < min_precedence:
+                return lhs
+            self.input.next()
+            # `+ 1` because all of our binary operators are left associative, i.e. `1 + 3 - 4`
+            # becomes `(1 + 3) - 4`.
+            rhs = self.parse_expr(precedence + 1)
+            if not rhs:
+                return None
+            lhs = ast.BinaryExpr(self.id(), op, lhs, rhs, self.input.span_merge(lhs.span))
 
     def parse_primary_expr(self) -> ast.Expr | None:
         t = self.input.peek()

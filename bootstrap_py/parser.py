@@ -61,12 +61,12 @@ class Parser:
         self.error(error.unexpected_token(t.span, t.kind.value, token.Kind.ident.value))
         return None
 
-    def expect(self, kind: token.Kind) -> bool:
+    def expect(self, *kind: token.Kind) -> token.Token | None:
         t = self.input.next()
-        if t.kind == kind:
-            return True
-        self.error(error.unexpected_token(t.span, t.kind.value, kind.value))
-        return False
+        if t.kind in kind:
+            return t
+        self.error(error.unexpected_token(t.span, t.kind.value, *(x.value for x in kind)))
+        return None
 
     def id(self) -> ast.NodeId:
         return self.input.next_id()
@@ -201,7 +201,7 @@ class Parser:
         expr: ast.Expr | None
         expr_callable = False
         match t.kind:
-            case token.Kind.curly_left:
+            case token.Kind.curly_left | token.Kind.fat_arrow:
                 expr = self.parse_block()
             case token.Kind.ident:
                 expr = self.parse_ident_expr()
@@ -217,7 +217,13 @@ class Parser:
                 expr = ast.BoolLit(self.id(), value=t.kind == token.Kind.true, span=t.span)
             case _:
                 self.error(
-                    error.unexpected_token(t.span, t.kind.value, token.Kind.curly_left.value, token.Kind.ident.value)
+                    error.unexpected_token(
+                        t.span,
+                        t.kind.value,
+                        token.Kind.curly_left.value,
+                        token.Kind.fat_arrow.value,
+                        token.Kind.ident.value,
+                    )
                 )
                 return None
         if not expr:
@@ -231,16 +237,23 @@ class Parser:
 
     def parse_block(self) -> ast.Block | None:
         span = self.input.span()
-        if not self.expect(token.Kind.curly_left):
+        entry_token = self.expect(token.Kind.curly_left, token.Kind.fat_arrow)
+        if not entry_token:
             return None
         nodes: list[ast.Node] = []
-        while (t := self.input.peek()).kind != token.Kind.eof:
-            if t.kind == token.Kind.curly_right:
-                self.input.next()
-                break
+        if entry_token.kind == token.Kind.fat_arrow:
             node = self.parse_block_node()
-            if node:
-                nodes.append(node)
+            if not node:
+                return None
+            nodes.append(node)
+        else:
+            while (t := self.input.peek()).kind != token.Kind.eof:
+                if t.kind == token.Kind.curly_right:
+                    self.input.next()
+                    break
+                node = self.parse_block_node()
+                if node:
+                    nodes.append(node)
         return ast.Block(self.id(), nodes, self.input.span_merge(span))
 
     def parse_block_node(self) -> ast.Node | None:

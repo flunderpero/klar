@@ -42,7 +42,7 @@ class TypecheckStep:
             typ = self.type_env.node_types.get(node.id)
             typ_str = str(typ) if typ else "NOT_FOUND"
             lines.append(str(node.span))
-            lines.append(node)
+            lines.append(str(node))
             lines.append(f"=> {typ_str}\n")
             ast.walk(node, visit)
 

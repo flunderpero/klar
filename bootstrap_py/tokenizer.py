@@ -13,7 +13,9 @@ class Kind(Enum):
     curly_left = "{"
     curly_right = "}"
     eof = "end of file"
+    eq = "="
     false = "false"
+    fat_arrow = "=>"
     fn = "fn"
     ident = "identifier"
     int_lit = "int literal"
@@ -99,6 +101,12 @@ def tokenize(input: Input) -> tuple[list[Token], list[error.Error]]:
                 kind = Kind.comma
             case "+":
                 kind = Kind.plus
+            case "=":
+                if input.peek() == ">":
+                    input.next()
+                    kind = Kind.fat_arrow
+                else:
+                    kind = Kind.eq
             case "-":
                 if input.peek() == "-":
                     # Comment

@@ -53,12 +53,36 @@ print(bool_to_str(false))
 -- false
 ```
 
+## Block Expression
+
+In Klar, blocks are expressions, i.e. they represent a value.
+
+A regular block is enclosed by curly braces (`{ }`).
+
+```klar
+print(
+    {
+        "Hello"
+    }
+)
+-- Output:
+-- Hello
+```
+
+Klar also supports a shorthand notation for single-expression blocks:
+
+```klar
+print(
+    => "Hello"
+)
+-- Output:
+-- Hello
+```
+
 ## Functions
 
 ```klar
-fn double(i Int) Int {
-    i + i
-}
+fn double(i Int) Int => i + i
 
 fn main() {
     print(int_to_str(double(2)))
@@ -73,9 +97,7 @@ fn main() {
 Shadowing:
 
 ```klar
-fn str(i Int) Str {
-    int_to_str(i)
-}
+fn str(i Int) Str => int_to_str(i)
 
 fn foo(str Str) {
     -- Here, the parameter `str` shadows the function `str()`.
@@ -129,7 +151,7 @@ print("Hello, world!")
 
 ```klar
 fn main()
-    "Hello, world!" -- Compile error: Expected `{`, got `str literal`
+    "Hello, world!" -- Compile error: Expected one of `{`, `=>`, got `str literal`
 ```
 
 Duplicate parameter names:

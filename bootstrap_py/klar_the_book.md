@@ -129,7 +129,7 @@ print("Hello, world!")
 
 ```klar
 fn main()
-    "Hello, world!" -- Compile error: Expected `curly_left`
+    "Hello, world!" -- Compile error: Expected `{`, got `str literal`
 ```
 
 Duplicate parameter names:

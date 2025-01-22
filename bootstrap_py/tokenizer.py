@@ -12,18 +12,18 @@ class Kind(Enum):
     comment = "--"
     curly_left = "{"
     curly_right = "}"
-    eof = "eof"
+    eof = "end of file"
     false = "false"
     fn = "fn"
-    ident = "ident"
-    int_lit = "int_lit"
+    ident = "identifier"
+    int_lit = "int literal"
     minus = "-"
     paren_left = "("
     paren_right = ")"
     plus = "+"
-    str_lit = "str_lit"
+    str_lit = "str literal"
     true = "true"
-    type_ident = "type_ident"
+    type_ident = "type identifier"
 
 
 @dataclass
@@ -41,7 +41,7 @@ class Token:
                 value = ""
             case _:
                 raise AssertionError(f"Unexpected value: {self.value}")
-        return f"{self.span}: [{self.kind.name}] {value}"
+        return f"{self.span}: [{self.kind.value}] {value}"
 
     def value_str(self) -> str:
         assert self.value is not None, "Token has no value"

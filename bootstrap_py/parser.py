@@ -58,14 +58,14 @@ class Parser:
         t = self.input.next()
         if t.kind == token.Kind.ident:
             return t.value_str()
-        self.error(error.unexpected_token(t.span, t.kind.name, token.Kind.ident.name))
+        self.error(error.unexpected_token(t.span, t.kind.value, token.Kind.ident.value))
         return None
 
     def expect(self, kind: token.Kind) -> bool:
         t = self.input.next()
         if t.kind == kind:
             return True
-        self.error(error.unexpected_token(t.span, t.kind.name, kind.name))
+        self.error(error.unexpected_token(t.span, t.kind.value, kind.value))
         return False
 
     def id(self) -> ast.NodeId:
@@ -75,7 +75,7 @@ class Parser:
         t = self.input.next()
         if t.kind == token.Kind.type_ident:
             return ast.Type(self.id(), t.value_str(), t.span)
-        self.error(error.unexpected_token(t.span, t.kind.name, token.Kind.type_ident.name))
+        self.error(error.unexpected_token(t.span, t.kind.value, token.Kind.type_ident.value))
         return None
 
     def parse_fn_decl(self) -> ast.FnDecl | None:
@@ -110,7 +110,7 @@ class Parser:
                         case _:
                             self.error(
                                 error.unexpected_token(
-                                    t.span, t.kind.name, token.Kind.comma.name, token.Kind.paren_right.name
+                                    t.span, t.kind.value, token.Kind.comma.value, token.Kind.paren_right.value
                                 )
                             )
                             return None
@@ -118,7 +118,9 @@ class Parser:
                     break
                 case _:
                     self.error(
-                        error.unexpected_token(t.span, t.kind.name, token.Kind.ident.name, token.Kind.paren_right.name)
+                        error.unexpected_token(
+                            t.span, t.kind.value, token.Kind.ident.value, token.Kind.paren_right.value
+                        )
                     )
                     return None
 
@@ -164,7 +166,9 @@ class Parser:
                     break
                 case _:
                     self.error(
-                        error.unexpected_token(t.span, t.kind.name, token.Kind.comma.name, token.Kind.paren_right.name)
+                        error.unexpected_token(
+                            t.span, t.kind.value, token.Kind.comma.value, token.Kind.paren_right.value
+                        )
                     )
                     return None
         self.input.next()
@@ -213,7 +217,7 @@ class Parser:
                 expr = ast.BoolLit(self.id(), value=t.kind == token.Kind.true, span=t.span)
             case _:
                 self.error(
-                    error.unexpected_token(t.span, t.kind.name, token.Kind.curly_left.name, token.Kind.ident.name)
+                    error.unexpected_token(t.span, t.kind.value, token.Kind.curly_left.value, token.Kind.ident.value)
                 )
                 return None
         if not expr:

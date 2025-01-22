@@ -95,17 +95,11 @@ fn main() {
 
 Integer operators:
 
-todo: merge these examples
-
 ```klar
 print(int_to_str(40 + 2))
--- Output:
--- 42
-```
-
-```klar
 print(int_to_str(44 - 2))
 -- Output:
+-- 42
 -- 42
 ```
 

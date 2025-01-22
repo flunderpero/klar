@@ -43,18 +43,21 @@ def run_test(test: Test, print_code: str) -> list:
             match step:
                 case compiler.TokenStep():
                     if print_code == "tokens":
+                        print()
                         print(step)
                         return handle_errors(step.errors)
                     if step.errors:
                         return handle_errors(step.errors)
                 case compiler.ParseStep():
                     if print_code == "ast":
+                        print()
                         print(step)
                         return handle_errors(step.errors)
                     if step.errors:
                         return handle_errors(step.errors)
                 case compiler.TypecheckStep():
                     if print_code == "types":
+                        print()
                         print(step)
                         return handle_errors(step.errors)
                     if step.errors:
@@ -65,10 +68,12 @@ def run_test(test: Test, print_code: str) -> list:
                     if "-- Compile error:" in test.code:
                         return ["Expected compile error did not occur"]
                     if print_code == "ir":
+                        print()
                         print(step)
                         return []
                 case compiler.ASMStep():
                     if print_code == "asm":
+                        print()
                         print(step)
                         return []
                 case compiler.CompileStep():
@@ -153,7 +158,7 @@ def main() -> int:
     tests = find_tests(src, "" if len(args) == 2 else args[2])
     if len(args) > 3:
         test_num = int(args[3]) - 1
-        tests = tests[test_num:test_num+1]
+        tests = tests[test_num : test_num + 1]
     failed = 0
     for test in tests:
         print(test.name(), f"at {file}:{test.line}", end="")

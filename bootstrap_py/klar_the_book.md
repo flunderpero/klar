@@ -208,6 +208,9 @@ print("Hello, world!")
 
 ## Appendix - The Parser
 
+<details>
+    <summary>Parse Errors</summary>
+
 ```klar
 fn main()
     "Hello, world!" -- Compile error: Expected one of `{`, `=>`, got `str literal`
@@ -219,7 +222,29 @@ Duplicate parameter names:
 fn test(a Int, a Int) {} -- Compile error: Duplicate `a`
 ```
 
+</details>
+
 ## Appendix - The Type-Checker
+
+### Forward Declaration
+
+In Klar, all types are forward declared, i.e. you can use them before they are declared in the
+source code.
+
+```klar
+fn main() {
+    forward()
+}
+
+fn forward() => forward2()
+
+fn forward2() => print("PASS")
+-- Output:
+-- PASS
+```
+
+<details>
+    <summary>Type-Check Errors</summary>
 
 ```klar
 print(true) -- Compile error: Type `Bool` is not assignable to type `Str`
@@ -229,3 +254,5 @@ print(true) -- Compile error: Type `Bool` is not assignable to type `Str`
 1 + "str" -- Compile error: Type `Str` is not assignable to type `I64`
 
 ```
+
+</details>

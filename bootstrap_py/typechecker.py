@@ -28,11 +28,13 @@ class Scope:
     parent: Scope | None
     node: ast.Node
     names: dict[str, types.Type]
+    forwards: dict[str, types.Type]
 
     def __init__(self, node: ast.Node, parent: Scope | None) -> None:
         self.node = node
         self.parent = parent
         self.names = {}
+        self.forwards = {}
 
     def declare(self, name: str, typ: types.Type) -> types.Type | None:
         existing = self.names.get(name)
@@ -40,6 +42,19 @@ class Scope:
             return existing
         self.names[name] = typ
         return None
+
+    def forward_declare(self, name: str, typ: types.Type) -> types.Type | None:
+        existing = self.declare(name, typ)
+        if existing:
+            return existing
+        self.forwards[name] = typ
+        return None
+
+    def get_forward_declared(self, name: str) -> types.Type:
+        return self.forwards[name]
+
+    def finish_forward_declared(self, name: str) -> None:
+        del self.forwards[name]
 
     def find(self, name: str) -> types.Type | None:
         res = self.names.get(name)
@@ -89,6 +104,39 @@ class TypeChecker:
             return types.TypeCheckError(self.id(), f"`{node.name}` not found", node.span)
         return typ
 
+    def declare_all(self, scope_node: ast.Node) -> None:
+        match scope_node:
+            case ast.Module():
+                nodes = scope_node.nodes
+            case _:
+                raise AssertionError(f"Unexpected node type: {scope_node}")
+        # Stage 1: Make all types known without actually parsing them.
+        for node in nodes:
+            match node:
+                case ast.FnDecl() | ast.FnDef():
+                    decl = node if isinstance(node, ast.FnDecl) else node.decl
+                    typ = types.Fn(self.id(), decl.span, [], self.type_env.builtins.NoneTyp)
+                    existing = self.scope.forward_declare(decl.name, typ)
+                    if existing:
+                        self.error(error.duplicate_fn(decl.name, decl.span, existing.span))
+        # Stage 2: Fully parse all previously forward declared types.
+        for node in nodes:
+            match node:
+                case ast.FnDecl() | ast.FnDef():
+                    decl = node if isinstance(node, ast.FnDecl) else node.decl
+                    typ = cast(types.Fn, self.scope.get_forward_declared(decl.name))
+                    params: list[types.Param] = []
+                    for param in decl.params:
+                        param_typ = self.type_node_type(param.typ)
+                        params.append(types.Param(param.name, param_typ))
+                    result = self.type_env.builtins.NoneTyp
+                    if decl.result:
+                        result = self.type_node_type(decl.result)
+                    typ.params = params
+                    typ.result = result
+                    self.scope.finish_forward_declared(decl.name)
+                    self.type_env.set_node_type(decl, typ)
+
     def typecheck_call(self, node: ast.Call) -> None:
         ast.walk(node, self.typecheck)
         match self.type_env.get_node_type(node.callee):
@@ -119,6 +167,9 @@ class TypeChecker:
 
     def typecheck(self, node: ast.Node) -> None:
         match node:
+            case ast.Module():
+                self.declare_all(node)
+                ast.walk(node, self.typecheck)
             case ast.StrLit():
                 self.type_env.set_node_type(node, self.type_env.builtins.Str)
             case ast.IntLit():
@@ -133,20 +184,7 @@ class TypeChecker:
                 self.type_env.set_node_type(node, ident_typ)
             case ast.Call():
                 self.typecheck_call(node)
-            case ast.FnDecl():
-                params: list[types.Param] = []
-                for param in node.params:
-                    param_typ = self.type_node_type(param.typ)
-                    params.append(types.Param(param.name, param_typ))
-                result = self.type_env.builtins.NoneTyp
-                if node.result:
-                    result = self.type_node_type(node.result)
-                typ = types.Fn(self.id(), node.span, params, result)
-                if existing := self.scope.declare(node.name, typ):
-                    self.error(error.duplicate_fn(node.name, node.span, existing.span))
-                self.type_env.set_node_type(node, typ)
             case ast.FnDef():
-                self.typecheck(node.decl)
                 fn = cast(types.Fn, self.type_env.get_node_type(node.decl))
                 with self.enter_scope(node):
                     for param in fn.params:
@@ -201,11 +239,14 @@ class TypeChecker:
                         self.type_env.set_node_type(node, typ)
                     case _:
                         raise AssertionError(f"Type checking not implemented for: {node}")
+            case ast.FnDecl():
+                # Declaration has already been handled in `self.declare_all()`.
+                pass
             case _:
                 raise AssertionError(f"Type checking not implemented for: {node}")
 
 
 def typecheck(module: ast.Module, next_id: Callable[[], int]) -> tuple[TypeEnv, list[error.Error]]:
     tc = TypeChecker(type_env=TypeEnv(builtins=types.Builtins.new(next_id)), scope=Scope(module, None), next_id=next_id)
-    ast.walk(module, tc.typecheck)
+    tc.typecheck(module)
     return tc.type_env, tc.errors

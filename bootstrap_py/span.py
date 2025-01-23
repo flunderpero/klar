@@ -41,7 +41,6 @@ class Span:
         for _ in range(pad):
             while before_start > 0 and self.src[before_start] != "\n":
                 before_start -= 1
-            before_start += 1
             while after_end < len(self.src) - 1 and self.src[after_end] != "\n":
                 after_end += 1
             after_end += 1

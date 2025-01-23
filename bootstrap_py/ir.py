@@ -380,11 +380,11 @@ class FnGen:
                 assert isinstance(node.callee, ast.Ident), "Currently, only named functions are supported."
                 result_typ = self.type_env.get_node_type(node)
                 ast.walk(node, self.generate)
-                arg = self.node_regs[node.args[0].id]
+                args = [self.node_regs[x.id] for x in node.args]
                 reg = NoneReg
                 if not isinstance(result_typ, types.NoneTyp):
                     reg = self.reg(self.typ(result_typ))
-                self.emit(Call(reg, node.callee.name, [arg]), node)
+                self.emit(Call(reg, node.callee.name, args), node)
             case ast.BinaryExpr():
                 ast.walk(node, self.generate)
                 lhs_reg = self.node_regs[node.lhs.id]

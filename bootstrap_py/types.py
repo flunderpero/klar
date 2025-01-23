@@ -123,3 +123,7 @@ def is_assignable_from(target: Type, from_: Type) -> bool:
             return False
         case _:
             raise AssertionError(f"unhandled target type: {target}")
+
+
+def is_same(target: Type, from_: Type) -> bool:
+    return target.id == from_.id

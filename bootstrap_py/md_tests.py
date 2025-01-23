@@ -24,7 +24,7 @@ def run_test(test: Test, print_code: str) -> list:
     def handle_errors(errors: list[error.Error]) -> list[error.Error]:
         if errors:
             for err in list(errors):
-                line_number = err.span.end_line_col()[0]
+                line_number = err.span.start_line_col()[0]
                 line = test.code.split("\n")[line_number - 1]
                 try:
                     index = line.index("-- Compile error: ")

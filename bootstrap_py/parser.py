@@ -174,6 +174,24 @@ class Parser:
         self.input.next()
         return ast.Call(self.id(), callee, args, self.input.span_merge(callee.span))
 
+    def parse_if(self) -> ast.If | None:
+        span = self.input.span()
+        if not self.expect(token.Kind.if_):
+            return None
+        cond = self.parse_expr()
+        if not cond:
+            return None
+        then_block = self.parse_block()
+        if not then_block:
+            return None
+        else_block: ast.Block | None = None
+        if self.input.peek().kind == token.Kind.else_:
+            self.input.next()
+            else_block = self.parse_block()
+            if not else_block:
+                return None
+        return ast.If(self.id(), cond, then_block, else_block, self.input.span_merge(span))
+
     def parse_expr(self, min_precedence: int = 0) -> ast.Expr | None:
         lhs = self.parse_primary_expr()
         if not lhs:
@@ -215,6 +233,8 @@ class Parser:
             case token.Kind.true | token.Kind.false:
                 self.input.next()
                 expr = ast.BoolLit(self.id(), value=t.kind == token.Kind.true, span=t.span)
+            case token.Kind.if_:
+                expr = self.parse_if()
             case _:
                 self.error(
                     error.unexpected_token(
@@ -223,6 +243,11 @@ class Parser:
                         token.Kind.curly_left.value,
                         token.Kind.fat_arrow.value,
                         token.Kind.ident.value,
+                        token.Kind.if_.value,
+                        token.Kind.str_lit.value,
+                        token.Kind.int_lit.value,
+                        token.Kind.true.value,
+                        token.Kind.false.value,
                     )
                 )
                 return None

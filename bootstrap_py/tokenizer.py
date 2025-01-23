@@ -12,12 +12,14 @@ class Kind(Enum):
     comment = "--"
     curly_left = "{"
     curly_right = "}"
+    else_ = "else"
     eof = "end of file"
     eq = "="
     false = "false"
     fat_arrow = "=>"
     fn = "fn"
     ident = "identifier"
+    if_ = "if"
     int_lit = "int literal"
     minus = "-"
     paren_left = "("
@@ -50,7 +52,7 @@ class Token:
         return self.value
 
 
-keywords = {x.name: x for x in [Kind.fn, Kind.true, Kind.false]}
+keywords = {x.value: x for x in (Kind.else_, Kind.false, Kind.fn, Kind.if_, Kind.true)}
 
 
 @dataclass

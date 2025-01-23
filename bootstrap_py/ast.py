@@ -77,6 +77,20 @@ class Call:
         return nid(self.id) + f"{self.callee}({', '.join(str(x) for x in self.args)})"
 
 
+@dataclass
+class If:
+    id: NodeId
+    cond: Expr
+    then_block: Block
+    else_block: Block | None
+    span: Span
+
+    def __str__(self) -> str:
+        if self.else_block:
+            return nid(self.id) + f"if {self.cond} {self.then_block} else {self.else_block}"
+        return nid(self.id) + f"if {self.cond} {self.then_block}"
+
+
 class BinaryOp(Enum):
     add = "+"
     sub = "-"
@@ -148,7 +162,7 @@ class Module:
         return nid(self.id) + "\n".join(str(x) for x in self.nodes)
 
 
-Expr = Block | IntLit | StrLit | BoolLit | Ident | Call | BinaryExpr
+Expr = Block | IntLit | StrLit | BoolLit | Ident | Call | BinaryExpr | If
 Node = Expr | FnDecl | FnDef | Module | Type
 
 
@@ -177,6 +191,11 @@ def walk(node: Node, visit: ASTVisitor) -> bool:
         case BinaryExpr():
             visit(node.lhs)
             visit(node.rhs)
+        case If():
+            visit(node.cond)
+            visit(node.then_block)
+            if node.else_block:
+                visit(node.else_block)
         case Ident() | IntLit() | StrLit() | BoolLit() | FnDecl():
             return False
         case _:

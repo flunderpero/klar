@@ -64,7 +64,7 @@ class Reg:
         return self.id
 
 
-NoneReg = Reg("none", NoneTyp())
+NoneReg = Reg("%none", NoneTyp())
 
 
 @dataclass
@@ -122,6 +122,61 @@ class ISubO:
 
 
 @dataclass
+class PhiIncoming:
+    reg: Reg
+    block: Block
+
+    def __str__(self) -> str:
+        return f"[{self.reg}, {self.block.id}]"
+
+
+@dataclass
+class Phi:
+    reg: Reg
+    incoming: list[PhiIncoming]
+
+    def __str__(self) -> str:
+        return f"{self.reg} = phi {', '.join(str(reg) for reg in self.incoming)}"
+
+
+Inst = IntConst | GetPtr | Call | IAddO | ISubO | Phi
+
+BlockId = str
+
+
+@dataclass
+class Block:
+    id: BlockId
+    insts: list[Inst]
+    terminator: Terminator | None
+
+    def __str__(self) -> str:
+        insts = "\n".join(f"    {inst}" for inst in self.insts)
+        if insts:
+            insts += "\n"
+        term = str(self.terminator) if self.terminator else "<TERMINATOR MISSING>"
+        return f"{self.id}:\n{insts}    {term}"
+
+
+@dataclass
+class Branch:
+    reg: Reg
+    then_block: Block
+    else_block: Block
+
+    def __str__(self) -> str:
+        return f"br {self.reg.typ} {self.reg.id}, {self.then_block.id}, {self.else_block.id}"
+
+
+@dataclass
+class Jump:
+    target: Block
+
+    def __str__(self) -> str:
+        return f"b {self.target.id}"
+
+
+@dataclass
 class Return:
     reg: Reg
 
@@ -129,18 +184,7 @@ class Return:
         return f"ret {self.reg.typ} {self.reg.id}"
 
 
-Inst = IntConst | GetPtr | Call | IAddO | ISubO | Return
-
-BlockId = int
-
-
-@dataclass
-class Block:
-    id: BlockId
-    insts: list[Inst]
-
-    def __str__(self) -> str:
-        return f"{self.id}:\n" + "\n".join(f"    {inst}" for inst in self.insts)
+Terminator = Branch | Jump | Return
 
 
 @dataclass
@@ -196,7 +240,6 @@ class FnGen:
     def __init__(self, fn_def: ast.FnDef, type_env: typechecker.TypeEnv, ir: IR) -> None:
         self.type_env = type_env
         self.ir = ir
-        self.block = Block(id=0, insts=[])
         self.node_regs = {}
         self.vars = {}
         types_fn = cast(types.Fn, type_env.get_node_type(fn_def.decl))
@@ -207,7 +250,14 @@ class FnGen:
             self.vars[p.name] = reg
             params.append(Param(reg, typ))
         result = self.typ(types_fn.result)
-        self.fn_ir = FnIR(fn_def, params, result, [self.block])
+        self.fn_ir = FnIR(fn_def, params, result, [])
+        self.block = self.new_block()
+
+    def new_block(self) -> Block:
+        self.next_block += 1
+        res = Block(id=f"block_{self.next_block}", insts=[], terminator=None)
+        self.fn_ir.blocks.append(res)
+        return res
 
     def typ(self, typ: types.Type) -> Type:
         match typ:
@@ -254,16 +304,61 @@ class FnGen:
         match node:
             case ast.FnDef():
                 ast.walk(node, self.generate)
-                if isinstance(self.fn_ir.result, NoneTyp):
-                    return
-                reg = self.node_regs[node.body.id]
-                self.emit(Return(reg), node)
+                assert self.block.terminator is None
+                reg = NoneReg if isinstance(self.fn_ir.result, NoneTyp) else self.node_regs[node.body.id]
+                self.block.terminator = Return(reg)
             case ast.Block():
                 ast.walk(node, self.generate)
                 reg = NoneReg
                 if node.nodes:
                     reg = self.node_regs[node.nodes[-1].id]
                 self.node_regs[node.id] = reg
+            case ast.If():
+                self.generate(node.cond)
+                prev_block = self.block
+                cond_reg = self.node_regs[node.cond.id]
+                then_block = self.new_block()
+                # Walk the `then_block`.
+                self.block = then_block
+                self.generate(node.then_block)
+                if not node.else_block:
+                    merge_block = self.new_block()
+                    assert not self.block.terminator
+                    self.block.terminator = Jump(merge_block)
+                    # There is no `else_block` so the result of the if expression is None.
+                    self.node_regs[node.id] = NoneReg
+                    prev_block.terminator = Branch(cond_reg, then_block, merge_block)
+                else:
+                    else_block = self.new_block()
+                    merge_block = self.new_block()
+                    # We are still at the end of the `then_block`, so we have to terminate it
+                    # properly.
+                    # This might look like duplicate code (in the branch above we do the same).
+                    # We do it this way to have the `then`, `else`, and merge block in order.
+                    # (Blocks are added in the order of calls to `self.new_block()`).
+                    assert not self.block.terminator
+                    self.block.terminator = Jump(merge_block)
+                    # Walk `else_block`.
+                    prev_block.terminator = Branch(cond_reg, then_block, else_block)
+                    self.block = else_block
+                    self.generate(node.else_block)
+                    assert not self.block.terminator
+                    self.block.terminator = Jump(merge_block)
+                    # Insert a phi node to signal that the result of the if expression is based
+                    # on the branch taken.
+                    reg = self.reg(self.typ(self.type_env.get_node_type(node)))
+                    self.block = merge_block
+                    self.emit(
+                        Phi(
+                            reg,
+                            [
+                                PhiIncoming(self.node_regs[node.then_block.id], then_block),
+                                PhiIncoming(self.node_regs[node.else_block.id], else_block),
+                            ],
+                        ),
+                        node,
+                    )
+                self.block = merge_block
             case ast.StrLit():
                 const = self.ir.constant_pool.get(node.value)
                 if not const:

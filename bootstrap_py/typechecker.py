@@ -126,11 +126,11 @@ class TypeChecker:
             case ast.BoolLit():
                 self.type_env.set_node_type(node, self.type_env.builtins.Bool)
             case ast.Ident():
-                typ = self.scope.find(node.name)
-                if not typ:
+                ident_typ = self.scope.find(node.name)
+                if not ident_typ:
                     self.error(error.undefined_name(node.name, node.span))
-                    typ = types.TypeCheckError(self.id(), f"`{node.name}` not found", node.span)
-                self.type_env.set_node_type(node, typ)
+                    ident_typ = types.TypeCheckError(self.id(), f"`{node.name}` not found", node.span)
+                self.type_env.set_node_type(node, ident_typ)
             case ast.Call():
                 self.typecheck_call(node)
             case ast.FnDecl():
@@ -158,6 +158,25 @@ class TypeChecker:
                 if node.nodes:
                     ast.walk(node, self.typecheck)
                     typ = self.type_env.get_node_type(node.nodes[-1])
+                self.type_env.set_node_type(node, typ)
+            case ast.If():
+                ast.walk(node, self.typecheck)
+                cond = self.type_env.get_node_type(node.cond)
+                if not isinstance(cond, types.Bool):
+                    self.error(error.unexpected_type("Bool", types.pretty(cond), node.cond.span))
+                then_block = self.type_env.get_node_type(node.then_block)
+                typ: types.Type = self.type_env.builtins.NoneTyp
+                if node.else_block:
+                    else_block = self.type_env.get_node_type(node.else_block)
+                    if not types.is_same(then_block, else_block):
+                        # For now, both branches must have the same type.
+                        self.error(
+                            error.unexpected_type(
+                                types.pretty(then_block), types.pretty(else_block), node.else_block.span
+                            )
+                        )
+                        typ = types.TypeCheckError(self.id(), "then and else blocks have different types", node.span)
+                    typ = then_block
                 self.type_env.set_node_type(node, typ)
             case ast.BinaryExpr():
                 match node.op:

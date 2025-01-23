@@ -33,7 +33,7 @@ class StackAllocator:
 @dataclass
 class RegAlloc:
     reg: Reg
-    ir_reg: ir.Reg
+    ir_regs: list[ir.Reg]
     stack_offset: int = 0
 
     def allocate_on_stack_if_needed(self, stack_allocator: StackAllocator) -> int:
@@ -42,23 +42,42 @@ class RegAlloc:
         return self.stack_offset
 
 
+IRRegConstraint = set[ir.RegId]
+
+
 class RegAllocator:
     regs: dict[ir.RegId, RegAlloc]
     used: dict[Reg, RegAlloc]
     next_free_reg_idx = 0
     stack_allocator: StackAllocator
+    # All IR-registers in each entry have to map to the same ASM register.
+    constraints: list[IRRegConstraint]
 
-    def __init__(self, stack_allocator: StackAllocator) -> None:
+    def __init__(self, stack_allocator: StackAllocator, constraints: list[IRRegConstraint]) -> None:
         self.used = {}
         self.regs = {}
+        self.constraints = constraints
         self.stack_allocator = stack_allocator
 
+    def already_constrained(self, ir_reg: ir.Reg) -> RegAlloc | None:
+        for constraint in self.constraints:
+            if ir_reg.id in constraint:
+                for reg_id in constraint:
+                    if reg_id in self.regs:
+                        return self.regs[reg_id]
+        return None
+
     def allocate(self, ir_reg: ir.Reg) -> RegAlloc:
+        alloc = self.already_constrained(ir_reg)
+        if alloc:
+            alloc.ir_regs.append(ir_reg)
+            self.regs[ir_reg.id] = alloc
+            return alloc
         if self.next_free_reg_idx == len(regs) - 1:
             raise AssertionError("Out of registers")
         reg = regs[self.next_free_reg_idx]
         self.next_free_reg_idx += 1
-        alloc = RegAlloc(reg, ir_reg)
+        alloc = RegAlloc(reg, [ir_reg])
         self.regs[ir_reg.id] = alloc
         self.used[reg] = alloc
         return alloc
@@ -99,7 +118,25 @@ class FnGen:
         self.asm = ASM()
         self.ir_regs = {}
         self.stack_allocator = StackAllocator()
-        self.reg_allocator = RegAllocator(self.stack_allocator)
+        self.reg_allocator = RegAllocator(self.stack_allocator, self.allocator_constraints())
+
+    def allocator_constraints(self) -> list[IRRegConstraint]:
+        """Go through all `phi` nodes and build a list of register constraints,
+        that is a list of sets of register ids that have to be mapped to the same
+        ASM register.
+        """
+        res: list[IRRegConstraint] = []
+        for block in self.ir.blocks:
+            for phi in (x for x in block.insts if isinstance(x, ir.Phi)):
+                regs = [x.reg for x in phi.incoming] + [phi.reg]
+                # Find existing constraint.
+                for constraint in res:
+                    if any(x.id in constraint for x in regs):
+                        constraint.update(x.id for x in regs)
+                        break
+                else:
+                    res.append({x.id for x in regs})
+        return res
 
     def fn_name(self, name: str) -> str:
         if name == "main":
@@ -127,6 +164,23 @@ class FnGen:
             self.asm.inc_indent()
             for inst in block.insts:
                 self.inst(inst)
+            term = block.terminator
+            match term:
+                case ir.Jump():
+                    self.asm.emit(f"b {self.block_label(term.target.id)}")
+                case ir.Branch():
+                    cond = self.ir_regs[term.reg.id]
+                    self.asm.emit(f"cbnz {cond.reg}, {self.block_label(term.then_block.id)}")
+                    self.asm.emit(f"b {self.block_label(term.else_block.id)}")
+                case ir.Return():
+                    if term.reg == ir.NoneReg:
+                        self.asm.emit("mov x0, xzr")
+                    else:
+                        alloc = self.ir_regs[term.reg.id]
+                        self.asm.emit(f"mov x0, {alloc.reg}")
+                    self.asm.emit(f"b {self.block_label('ret')}")
+                case _:
+                    raise AssertionError(f"Unknown terminator: {term}")
             self.asm.dec_indent()
         # Now generate the surrounding code.
         asm = ASM()
@@ -152,6 +206,9 @@ class FnGen:
 
     def inst(self, inst: ir.Inst) -> None:
         match inst:
+            case ir.Phi():
+                alloc = self.reg_allocator.allocate(inst.reg)
+                self.ir_regs[inst.reg.id] = alloc
             case ir.IntConst():
                 if inst.reg.typ == ir.I1:
                     assert inst.value in (0, 1), f"Invalid I1 value: {inst.value}"
@@ -216,10 +273,6 @@ class FnGen:
                 alloc = self.reg_allocator.allocate(inst.reg)
                 self.asm.emit(f"{asm_inst} {alloc.reg}, {lhs.reg}, {rhs.reg}")
                 self.ir_regs[inst.reg.id] = alloc
-            case ir.Return():
-                alloc = self.ir_regs[inst.reg.id]
-                self.asm.emit(f"mov x0, {alloc.reg}")
-                self.asm.emit(f"b {self.block_label('ret')}")
             case _:
                 raise AssertionError(f"Unknown instruction: {inst}")
 

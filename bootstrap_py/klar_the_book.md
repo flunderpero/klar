@@ -79,6 +79,65 @@ print(
 -- Hello
 ```
 
+## Control Flow
+
+### `if` Expressions
+
+```klar
+if true => print("PASS") else => print("FAIL")
+-- Output:
+-- PASS
+```
+
+An `if` expression can be used just like every other expression:
+
+```klar
+print(
+    if true => "PASS" else => "FAIL"
+)
+-- Output:
+-- PASS
+```
+
+<details>
+    <summary>More examples</summary>
+
+Nested `if` expression:
+
+```klar
+print(
+    if true {
+        if false {
+            "FAIL"
+        } else {
+            if true {
+                "PASS"
+            } else {
+                "FAIL"
+            }
+        }
+    } else {
+        "FAIL"
+    }
+)
+-- Output:
+-- PASS
+```
+
+Conditions must be of type `Bool`:
+
+```klar
+if 1 => print("Hello") -- Compile error: Expected Bool, got I64
+```
+
+Then and else block must have the same type:
+
+```klar
+if true => "str" else => 42 -- Compile error: Expected Str, got I64
+```
+
+</details>
+
 ## Functions
 
 ```klar
@@ -113,7 +172,7 @@ fn main() {
 
 </details>
 
-### Arithmetic
+## Arithmetic
 
 Integer operators:
 

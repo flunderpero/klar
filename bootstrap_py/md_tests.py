@@ -27,11 +27,11 @@ def run_test(test: Test, print_code: str) -> list:
                 line_number = err.span.start_line_col()[0]
                 line = test.code.split("\n")[line_number - 1]
                 try:
-                    index = line.index("-- Compile error: ")
+                    index = line.index("-- ERROR: ")
                 except ValueError:
                     index = -1
                 if index >= 0:
-                    expected_error_message = line[index + len("-- Compile error: ") :].strip()
+                    expected_error_message = line[index + len("-- ERROR: ") :].strip()
                     if expected_error_message in str(err).split("\n")[0]:
                         # This error is expected.
                         errors = [x for x in errors if x != err]
@@ -65,7 +65,7 @@ def run_test(test: Test, print_code: str) -> list:
                 case compiler.AbortStep():
                     pass
                 case compiler.IRStep():
-                    if "-- Compile error:" in test.code:
+                    if "-- ERROR:" in test.code:
                         return ["Expected compile error did not occur"]
                     if print_code == "ir":
                         print()
@@ -122,18 +122,16 @@ def find_tests(src: str, chapter: str) -> list[Test]:
                         i += 1
                         if line.startswith("```"):
                             break
-                        if line.startswith("-- Output:"):
-                            while i < len(lines):
-                                line = lines[i]
-                                i += 1
-                                if not line.startswith("-- "):
-                                    break
-                                expected_stdout.append(line.split("-- ")[1].rstrip())
-                            break
                         code.append(line)
                     code_str = "\n".join(code)
-                    if "fn main()" not in code_str:
-                        code_str = f"fn main() {{\n{code_str}\n}}"
+                    if lines[i].strip() == "" and lines[i + 1].strip() == "```":
+                        i += 2
+                        while i < len(lines):
+                            line = lines[i]
+                            if line.strip() == "```":
+                                break
+                            expected_stdout.append(line)
+                            i += 1
 
                     test = Test(headings, test_num, test_line, code_str, "\n".join(expected_stdout))
                     test_num += 1

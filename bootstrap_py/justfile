@@ -6,7 +6,7 @@ precommit:
 format:
     @echo "Formatting ..."
     ruff format
-    npx prettier -w *.md
+    npx prettier -w *.md ../*.md
 
 lint *args:
     @echo "Linting ..."

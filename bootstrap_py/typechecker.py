@@ -83,7 +83,7 @@ class TypeChecker:
         self.scope.declare("bool_to_str", self.type_env.builtins.bool_to_str)
 
     @contextmanager
-    def enter_scope(self, node: ast.Node) -> Generator[None]:
+    def child_scope(self, node: ast.Node) -> Generator[None]:
         prev = self.scope
         self.scope = Scope(node, self.scope)
         try:
@@ -186,17 +186,18 @@ class TypeChecker:
                 self.typecheck_call(node)
             case ast.FnDef():
                 fn = cast(types.Fn, self.type_env.get_node_type(node.decl))
-                with self.enter_scope(node):
+                with self.child_scope(node):
                     for param in fn.params:
                         self.scope.declare(param.name, param.typ)
                     ast.walk(node.body, self.typecheck)
                     self.type_env.set_node_type(node, self.type_env.builtins.NoneTyp)
             case ast.Block():
-                typ = self.type_env.builtins.NoneTyp
-                if node.nodes:
-                    ast.walk(node, self.typecheck)
-                    typ = self.type_env.get_node_type(node.nodes[-1])
-                self.type_env.set_node_type(node, typ)
+                with self.child_scope(node):
+                    typ = self.type_env.builtins.NoneTyp
+                    if node.nodes:
+                        ast.walk(node, self.typecheck)
+                        typ = self.type_env.get_node_type(node.nodes[-1])
+                    self.type_env.set_node_type(node, typ)
             case ast.If():
                 ast.walk(node, self.typecheck)
                 cond = self.type_env.get_node_type(node.cond)
@@ -215,6 +216,15 @@ class TypeChecker:
                         )
                         typ = types.TypeCheckError(self.id(), "then and else blocks have different types", node.span)
                     typ = then_block
+                self.type_env.set_node_type(node, typ)
+            case ast.Let():
+                ast.walk(node, self.typecheck)
+                value_typ = self.type_env.get_node_type(node.value)
+                existing = self.scope.declare(node.name, value_typ)
+                typ = value_typ
+                if existing:
+                    self.error(error.duplicate_param_name(node.name, node.span, existing.span))
+                    typ = types.TypeCheckError(self.id(), "duplicate name", node.span)
                 self.type_env.set_node_type(node, typ)
             case ast.BinaryExpr():
                 match node.op:

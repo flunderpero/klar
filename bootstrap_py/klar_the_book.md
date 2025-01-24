@@ -79,6 +79,40 @@ print(
 -- Hello
 ```
 
+## Variables
+
+```klar
+let s = "Hello"
+print(s)
+-- Output:
+-- Hello
+```
+
+Variables are scoped:
+
+```klar
+let s = "world"
+if true {
+    let s = "Hello"
+    print(s)
+}
+print(s)
+-- Output:
+-- Hello
+-- world
+```
+
+The value can be a block expression, too:
+
+```klar
+let s = {
+    if true => "Hello" else => "world"
+}
+print(s)
+-- Output:
+-- Hello
+```
+
 ## Control Flow
 
 ### `if` Expressions
@@ -197,7 +231,7 @@ print(int_to_str(40 - 2 + 4))
 > over- or underflowing. We think that this is expected behavior and should be natural to every
 > developer. If you need over- or underflow safety, use `Int.add()`, `Int.sub()`, and `Int.mul()`.
 > Division by zero using the division operator (`/`) causes a `panic` for integer types and
-> results in `NaN` for floating point types.
+> results in `NaN` for floating point types. Use `Int.div()` to catch division by zero errors.
 
 ## Appendix - The Tokenizer
 

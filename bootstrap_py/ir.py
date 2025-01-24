@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from . import ast, typechecker, types
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 
 @dataclass
@@ -214,6 +218,23 @@ class Param:
 
 
 @dataclass
+class Scope:
+    parent: Scope | None
+    vars: dict[str, Reg]
+
+    def declare(self, name: str, reg: Reg) -> None:
+        self.vars[name] = reg
+
+    def find(self, name: str) -> Reg | None:
+        res = self.vars.get(name)
+        if res:
+            return res
+        if self.parent:
+            return self.parent.find(name)
+        return None
+
+
+@dataclass
 class FnIR:
     fn_def: ast.FnDef
     params: list[Param]
@@ -230,7 +251,7 @@ class FnGen:
     type_env: typechecker.TypeEnv
     block: Block
     node_regs: dict[ast.NodeId, Reg]
-    vars: dict[str, Reg]
+    scope: Scope
     ir: IR
     fn_ir: FnIR
     next_reg = 0
@@ -241,13 +262,13 @@ class FnGen:
         self.type_env = type_env
         self.ir = ir
         self.node_regs = {}
-        self.vars = {}
+        self.scope = Scope(None, {})
         types_fn = cast(types.Fn, type_env.get_node_type(fn_def.decl))
         params: list[Param] = []
         for p in types_fn.params:
             typ = self.typ(p.typ)
             reg = self.reg(typ)
-            self.vars[p.name] = reg
+            self.scope.declare(p.name, reg)
             params.append(Param(reg, typ))
         result = self.typ(types_fn.result)
         self.fn_ir = FnIR(fn_def, params, result, [])
@@ -258,6 +279,13 @@ class FnGen:
         res = Block(id=f"block_{self.next_block}", insts=[], terminator=None)
         self.fn_ir.blocks.append(res)
         return res
+
+    @contextmanager
+    def child_scope(self) -> Generator[None]:
+        scope = self.scope
+        self.scope = Scope(scope, {})
+        yield
+        self.scope = scope
 
     def typ(self, typ: types.Type) -> Type:
         match typ:
@@ -308,11 +336,12 @@ class FnGen:
                 reg = NoneReg if isinstance(self.fn_ir.result, NoneTyp) else self.node_regs[node.body.id]
                 self.block.terminator = Return(reg)
             case ast.Block():
-                ast.walk(node, self.generate)
-                reg = NoneReg
-                if node.nodes:
-                    reg = self.node_regs[node.nodes[-1].id]
-                self.node_regs[node.id] = reg
+                with self.child_scope():
+                    ast.walk(node, self.generate)
+                    reg = NoneReg
+                    if node.nodes:
+                        reg = self.node_regs[node.nodes[-1].id]
+                    self.node_regs[node.id] = reg
             case ast.If():
                 self.generate(node.cond)
                 prev_block = self.block
@@ -374,8 +403,9 @@ class FnGen:
                 reg = self.reg(I1)
                 self.emit(IntConst(reg, value=int(node.value)), node)
             case ast.Ident():
-                if node.name in self.vars:
-                    self.node_regs[node.id] = self.vars[node.name]
+                reg = self.scope.find(node.name)
+                if reg:
+                    self.node_regs[node.id] = reg
             case ast.Call():
                 assert isinstance(node.callee, ast.Ident), "Currently, only named functions are supported."
                 result_typ = self.type_env.get_node_type(node)
@@ -385,6 +415,9 @@ class FnGen:
                 if not isinstance(result_typ, types.NoneTyp):
                     reg = self.reg(self.typ(result_typ))
                 self.emit(Call(reg, node.callee.name, args), node)
+            case ast.Let():
+                ast.walk(node, self.generate)
+                self.scope.declare(node.name, self.node_regs[node.value.id])
             case ast.BinaryExpr():
                 ast.walk(node, self.generate)
                 lhs_reg = self.node_regs[node.lhs.id]

@@ -67,6 +67,21 @@ class Type:
 
 
 @dataclass
+class Let:
+    id: NodeId
+    name: str
+    typ: Type | None
+    value: Expr
+    span: Span
+    mutable: bool
+
+    def __str__(self) -> str:
+        keyword = "mut" if self.mutable else "let"
+        typ = f"{self.typ} " if self.typ else ""
+        return nid(self.id) + f"{keyword} {self.name} {typ}= {self.value}"
+
+
+@dataclass
 class Call:
     id: NodeId
     callee: Expr
@@ -163,7 +178,7 @@ class Module:
 
 
 Expr = Block | IntLit | StrLit | BoolLit | Ident | Call | BinaryExpr | If
-Node = Expr | FnDecl | FnDef | Module | Type
+Node = Expr | FnDecl | FnDef | Module | Type | Let
 
 
 ASTVisitor = Callable[[Node], None]
@@ -196,6 +211,8 @@ def walk(node: Node, visit: ASTVisitor) -> bool:
             visit(node.then_block)
             if node.else_block:
                 visit(node.else_block)
+        case Let():
+            visit(node.value)
         case Ident() | IntLit() | StrLit() | BoolLit() | FnDecl():
             return False
         case _:

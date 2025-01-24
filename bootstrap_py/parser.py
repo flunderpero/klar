@@ -260,6 +260,20 @@ class Parser:
                 expr = self.parse_call(expr)
         return expr
 
+    def parse_let(self) -> ast.Let | None:
+        span = self.input.span()
+        if not self.expect(token.Kind.let):
+            return None
+        name = self.expect_ident()
+        if not name:
+            return None
+        if not self.expect(token.Kind.eq):
+            return None
+        value = self.parse_expr()
+        if not value:
+            return None
+        return ast.Let(self.id(), name, None, value, self.input.span_merge(span), mutable=False)
+
     def parse_block(self) -> ast.Block | None:
         span = self.input.span()
         entry_token = self.expect(token.Kind.curly_left, token.Kind.fat_arrow)
@@ -286,6 +300,8 @@ class Parser:
         match t.kind:
             case token.Kind.fn:
                 return self.parse_fn_def()
+            case token.Kind.let:
+                return self.parse_let()
             case _:
                 return self.parse_expr()
 

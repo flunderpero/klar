@@ -58,6 +58,45 @@ true
 false
 ```
 
+Boolean expressions:
+
+```klar
+fn main() {
+    print(bool_to_str(1 == 1))
+    print(bool_to_str(1 == 2))
+    print(bool_to_str(true == true))
+    print(bool_to_str(true == false))
+}
+```
+
+```
+true
+false
+true
+false
+```
+
+<details>
+    <summary>More Examples</summary>
+
+Not equal (`!=`):
+
+```klar
+fn main() {
+    print(bool_to_str(1 != 2))
+    print(bool_to_str(2 != 2))
+    print(bool_to_str(true != false))
+    print(bool_to_str(true != true))
+}
+```
+
+```
+true
+false
+true
+false
+```
+
 ## Block Expression
 
 In Klar, blocks are expressions, i.e. they represent a value.

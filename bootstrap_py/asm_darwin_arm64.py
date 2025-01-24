@@ -273,6 +273,13 @@ class FnGen:
                 alloc = self.reg_allocator.allocate(inst.reg)
                 self.asm.emit(f"{asm_inst} {alloc.reg}, {lhs.reg}, {rhs.reg}")
                 self.ir_regs[inst.reg.id] = alloc
+            case ir.ICmp():
+                lhs = self.ir_regs[inst.lhs.id]
+                rhs = self.ir_regs[inst.rhs.id]
+                alloc = self.reg_allocator.allocate(inst.reg)
+                self.asm.emit(f"cmp {lhs.reg}, {rhs.reg}")
+                self.asm.emit(f"cset {alloc.reg}, {inst.op.value}")
+                self.ir_regs[inst.reg.id] = alloc
             case _:
                 raise AssertionError(f"Unknown instruction: {inst}")
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from . import ast, typechecker, types
@@ -125,6 +126,22 @@ class ISubO:
         return f"{self.reg} = isubo {self.lhs.typ} {self.lhs}, {self.rhs.typ} {self.rhs}"
 
 
+class ICmpOp(Enum):
+    eq = "eq"
+    ne = "ne"
+
+
+@dataclass
+class ICmp:
+    reg: Reg
+    op: ICmpOp
+    lhs: Reg
+    rhs: Reg
+
+    def __str__(self) -> str:
+        return f"{self.reg} = icmp {self.op.value} {self.lhs.typ} {self.lhs}, {self.rhs.typ} {self.rhs}"
+
+
 @dataclass
 class PhiIn:
     reg: Reg
@@ -143,7 +160,7 @@ class Phi:
         return f"{self.reg} = phi {', '.join(str(reg) for reg in self.incoming)}"
 
 
-Inst = IntConst | GetPtr | Call | IAddO | ISubO | Phi
+Inst = IntConst | GetPtr | Call | IAddO | ISubO | ICmp | Phi
 
 BlockId = str
 
@@ -476,6 +493,14 @@ class FnGen:
                     case ast.BinaryOp.sub:
                         reg = self.reg(I64)
                         self.emit(ISubO(reg, lhs_reg, rhs_reg), node)
+                    case ast.BinaryOp.eq | ast.BinaryOp.ne:
+                        match lhs_reg.typ:
+                            case Int():
+                                op = ICmpOp.eq if node.op == ast.BinaryOp.eq else ICmpOp.ne
+                                reg = self.reg(I1)
+                                self.emit(ICmp(reg, op, lhs_reg, rhs_reg), node)
+                            case _:
+                                raise AssertionError(f"Unsupported type for equality comparison: {lhs_reg.typ}")
                     case _:
                         raise AssertionError(f"Unsupported binary op: {node.op}")
             case ast.FnDecl():

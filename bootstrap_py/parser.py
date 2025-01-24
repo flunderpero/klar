@@ -198,8 +198,13 @@ class Parser:
             return None
         while True:
             t = self.input.peek()
-            op_by_token = {token.Kind.plus: ast.BinaryOp.add, token.Kind.minus: ast.BinaryOp.sub}
-            precendence_by_op = {ast.BinaryOp.add: 1, ast.BinaryOp.sub: 1}
+            op_by_token = {
+                token.Kind.plus: ast.BinaryOp.add,
+                token.Kind.minus: ast.BinaryOp.sub,
+                token.Kind.eqeq: ast.BinaryOp.eq,
+                token.Kind.neq: ast.BinaryOp.ne,
+            }
+            precendence_by_op = {ast.BinaryOp.eq: 1, ast.BinaryOp.ne: 1, ast.BinaryOp.add: 2, ast.BinaryOp.sub: 2}
             op = op_by_token.get(t.kind)
             if not op:
                 return lhs

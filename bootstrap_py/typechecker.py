@@ -257,11 +257,21 @@ class TypeChecker:
                     )
                 self.type_env.set_node_type(node, self.type_env.builtins.NoneTyp)
             case ast.BinaryExpr():
+                ast.walk(node, self.typecheck)
+                lhs = self.type_env.get_node_type(node.lhs)
+                rhs = self.type_env.get_node_type(node.rhs)
                 match node.op:
+                    case ast.BinaryOp.eq | ast.BinaryOp.ne:
+                        typ = self.type_env.builtins.Bool
+                        if not isinstance(lhs, (types.Bool, types.Int)):
+                            self.error(error.unexpected_type("Bool or Int", types.pretty(lhs), node.lhs.span))
+                            typ = types.TypeCheckError(self.id(), "lhs not Bool or Int", node.span)
+                        if not types.is_assignable_from(lhs, rhs):
+                            self.error(
+                                error.type_not_assignable_from(node.rhs.span, types.pretty(lhs), types.pretty(rhs))
+                            )
+                            typ = types.TypeCheckError(self.id(), "rhs not assignable to lhs", node.span)
                     case ast.BinaryOp.add | ast.BinaryOp.sub:
-                        ast.walk(node, self.typecheck)
-                        lhs = self.type_env.get_node_type(node.lhs)
-                        rhs = self.type_env.get_node_type(node.rhs)
                         typ = lhs
                         match lhs:
                             case types.Int():
@@ -276,9 +286,9 @@ class TypeChecker:
                                 error.type_not_assignable_from(node.rhs.span, types.pretty(lhs), types.pretty(rhs))
                             )
                             typ = types.TypeCheckError(self.id(), "rhs not assignable to lhs", node.span)
-                        self.type_env.set_node_type(node, typ)
                     case _:
                         raise AssertionError(f"Type checking not implemented for: {node}")
+                self.type_env.set_node_type(node, typ)
             case ast.FnDecl():
                 # Declaration has already been handled in `self.declare_all()`.
                 pass

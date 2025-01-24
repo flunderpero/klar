@@ -15,6 +15,7 @@ class Kind(Enum):
     else_ = "else"
     eof = "end of file"
     eq = "="
+    eqeq = "=="
     false = "false"
     fat_arrow = "=>"
     fn = "fn"
@@ -24,6 +25,7 @@ class Kind(Enum):
     let = "let"
     minus = "-"
     mut = "mut"
+    neq = "!="
     paren_left = "("
     paren_right = ")"
     plus = "+"
@@ -105,12 +107,23 @@ def tokenize(input: Input) -> tuple[list[Token], list[error.Error]]:
                 kind = Kind.comma
             case "+":
                 kind = Kind.plus
-            case "=":
-                if input.peek() == ">":
+            case "!":
+                if input.peek() == "=":
                     input.next()
-                    kind = Kind.fat_arrow
+                    kind = Kind.neq
                 else:
-                    kind = Kind.eq
+                    errors.append(error.unknown_token(span, c))
+                    continue
+            case "=":
+                match input.peek():
+                    case ">":
+                        input.next()
+                        kind = Kind.fat_arrow
+                    case "=":
+                        input.next()
+                        kind = Kind.eqeq
+                    case _:
+                        kind = Kind.eq
             case "-":
                 if input.peek() == "-":
                     # Comment

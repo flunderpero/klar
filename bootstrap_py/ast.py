@@ -119,6 +119,8 @@ class If:
 
 class BinaryOp(Enum):
     add = "+"
+    eq = "=="
+    ne = "!="
     sub = "-"
 
 

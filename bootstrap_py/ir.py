@@ -268,6 +268,12 @@ class Scope:
 
 
 @dataclass
+class LoopScope:
+    continue_block: Block
+    break_block: Block
+
+
+@dataclass
 class FnIR:
     fn_def: ast.FnDef
     params: list[Param]
@@ -285,6 +291,7 @@ class FnGen:
     block: Block
     node_regs: dict[ast.NodeId, Reg]
     scope: Scope
+    loop_scopes: list[LoopScope]
     ir: IR
     fn_ir: FnIR
     next_reg = 0
@@ -295,6 +302,7 @@ class FnGen:
         self.type_env = type_env
         self.ir = ir
         self.node_regs = {}
+        self.loop_scopes = []
         self.scope = Scope(None, {})
         types_fn = type_env.get_node_type(fn_def.decl)
         assert isinstance(types_fn, types.Fn)
@@ -376,6 +384,36 @@ class FnGen:
                     if node.nodes:
                         reg = self.node_regs[node.nodes[-1].id]
                     self.node_regs[node.id] = reg
+            case ast.Loop():
+                scope_snapshot = self.scope.snapshot()
+                loop_block = self.new_block()
+                break_block = self.new_block()
+                self.loop_scopes.append(LoopScope(loop_block, break_block))
+                prev_block = self.block
+                self.block.terminator = Jump(loop_block)
+                self.block = loop_block
+                self.generate(node.block)
+                body_scope_snapshot = self.scope.snapshot()
+                # Insert phi nodes for every variable that has been changed in the loop body.
+                for name, prev_reg in scope_snapshot.items():
+                    loop_reg = body_scope_snapshot[name]
+                    if prev_reg == loop_reg:
+                        continue
+                    reg = self.reg(prev_reg.typ)
+                    self.scope.update(name, reg)
+                    self.emit(Phi(reg, [PhiIn(prev_reg, prev_block), PhiIn(loop_reg, loop_block)]), None)
+                self.block.terminator = Jump(loop_block)
+                self.block = break_block
+                self.loop_scopes.pop()
+                self.node_regs[node.id] = NoneReg
+            case ast.Continue():
+                loop_scope = self.loop_scopes[-1]
+                self.block.terminator = Jump(loop_scope.continue_block)
+                self.node_regs[node.id] = NoneReg
+            case ast.Break():
+                loop_scope = self.loop_scopes[-1]
+                self.block.terminator = Jump(loop_scope.break_block)
+                self.node_regs[node.id] = NoneReg
             case ast.If():
                 self.generate(node.cond)
                 prev_block = self.block
@@ -392,8 +430,8 @@ class FnGen:
                     self.scope = scope_copy
                     merge_block = self.new_block()
                     # End the then-branch by jumping to the merge-block.
-                    assert not self.block.terminator
-                    self.block.terminator = Jump(merge_block)
+                    if not self.block.terminator:
+                        self.block.terminator = Jump(merge_block)
                     # There is no `else_block` so the result of the if expression is None.
                     self.node_regs[node.id] = NoneReg
                     prev_block.terminator = Branch(cond_reg, then_block, merge_block)
@@ -412,8 +450,8 @@ class FnGen:
                     else_block = self.new_block()
                     merge_block = self.new_block()
                     # End the then-branch by jumping to the merge-block.
-                    assert not self.block.terminator
-                    self.block.terminator = Jump(merge_block)
+                    if not self.block.terminator:
+                        self.block.terminator = Jump(merge_block)
                     # Walk the `else_block`.
                     prev_block.terminator = Branch(cond_reg, then_block, else_block)
                     self.block = else_block

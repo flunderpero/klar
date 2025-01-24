@@ -79,6 +79,8 @@ def unterminated_str_lit(span: Span, *, eof: bool) -> Error:
 
 
 def unexpected_token(span: Span, got: str, *expected: str) -> Error:
+    if not expected:
+        return SimpleError(span, f"Unexpected token `{got}`", _stack())
     expected_names = ", ".join(f"`{x}`" for x in expected)
     prefix = "Expected one of " if len(expected) > 1 else "Expected "
     return SimpleError(span, f"{prefix}{expected_names}, got `{got}`", _stack())
@@ -122,3 +124,11 @@ def type_not_assignable_from(span: Span, target: str, from_: str) -> Error:
 
 def not_mutable(name: str, span: Span) -> Error:
     return SimpleError(span, f"`{name}` is not mutable", _stack())
+
+
+def break_outside_loop(span: Span) -> Error:
+    return SimpleError(span, "`break` outside of a loop", _stack())
+
+
+def continue_outside_loop(span: Span) -> Error:
+    return SimpleError(span, "`continue` outside of a loop", _stack())

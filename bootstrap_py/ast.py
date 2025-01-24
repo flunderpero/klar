@@ -117,6 +117,34 @@ class If:
         return nid(self.id) + f"if {self.cond} {self.then_block}"
 
 
+@dataclass
+class Loop:
+    id: NodeId
+    block: Block
+    span: Span
+
+    def __str__(self) -> str:
+        return nid(self.id) + f"loop {self.block}"
+
+
+@dataclass
+class Break:
+    id: NodeId
+    span: Span
+
+    def __str__(self) -> str:
+        return nid(self.id) + "break"
+
+
+@dataclass
+class Continue:
+    id: NodeId
+    span: Span
+
+    def __str__(self) -> str:
+        return nid(self.id) + "continue"
+
+
 class BinaryOp(Enum):
     add = "+"
     eq = "=="
@@ -191,7 +219,7 @@ class Module:
 
 
 Expr = Block | IntLit | StrLit | BoolLit | Ident | Call | BinaryExpr | If
-Node = Expr | FnDecl | FnDef | Module | Type | Let | Assign
+Node = Expr | FnDecl | FnDef | Module | Type | Let | Assign | Loop | Break | Continue
 
 
 ASTVisitor = Callable[[Node], None]
@@ -224,12 +252,14 @@ def walk(node: Node, visit: ASTVisitor) -> bool:
             visit(node.then_block)
             if node.else_block:
                 visit(node.else_block)
+        case Loop():
+            visit(node.block)
         case Let():
             visit(node.value)
         case Assign():
             visit(node.target)
             visit(node.value)
-        case Ident() | IntLit() | StrLit() | BoolLit() | FnDecl():
+        case Ident() | IntLit() | StrLit() | BoolLit() | FnDecl() | Break() | Continue():
             return False
         case _:
             raise AssertionError(f"Don't know how to walk: {node}")

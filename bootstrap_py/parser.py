@@ -192,6 +192,15 @@ class Parser:
                 return None
         return ast.If(self.id(), cond, then_block, else_block, self.input.span_merge(span))
 
+    def parse_loop(self) -> ast.Loop | None:
+        span = self.input.span()
+        if not self.expect(token.Kind.loop):
+            return None
+        block = self.parse_block()
+        if not block:
+            return None
+        return ast.Loop(self.id(), block, self.input.span_merge(span))
+
     def parse_expr(self, min_precedence: int = 0) -> ast.Expr | None:
         lhs = self.parse_primary_expr()
         if not lhs:
@@ -241,20 +250,7 @@ class Parser:
             case token.Kind.if_:
                 expr = self.parse_if()
             case _:
-                self.error(
-                    error.unexpected_token(
-                        t.span,
-                        t.kind.value,
-                        token.Kind.curly_left.value,
-                        token.Kind.fat_arrow.value,
-                        token.Kind.ident.value,
-                        token.Kind.if_.value,
-                        token.Kind.str_lit.value,
-                        token.Kind.int_lit.value,
-                        token.Kind.true.value,
-                        token.Kind.false.value,
-                    )
-                )
+                self.error(error.unexpected_token(t.span, t.kind.value))
                 return None
         if not expr:
             return None
@@ -310,6 +306,14 @@ class Parser:
                 return self.parse_fn_def()
             case token.Kind.let | token.Kind.mut:
                 return self.parse_let_or_mut()
+            case token.Kind.loop:
+                return self.parse_loop()
+            case token.Kind.break_:
+                span = self.input.next().span
+                return ast.Break(self.id(), span)
+            case token.Kind.continue_:
+                span = self.input.next().span
+                return ast.Continue(self.id(), span)
             case _:
                 expr = self.parse_expr()
                 if not expr:

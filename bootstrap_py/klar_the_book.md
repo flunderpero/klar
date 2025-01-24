@@ -337,6 +337,79 @@ fn main() {
 
 </details>
 
+### Loops
+
+Klar supports simple unconditional loops with the `loop` keyword.
+
+```klar
+fn main() {
+    mut i = 0
+    loop {
+        i = i + 1
+        if i == 2 => continue
+        print(int_to_str(i))
+        if i == 5 => break
+    }
+}
+```
+
+```
+1
+3
+4
+5
+```
+
+<details>
+    <summary>More Examples</summary>
+
+Nested loops:
+
+```klar
+fn main() {
+    mut i = 0
+    loop {
+        i = i + 1
+        if i == 3 => break
+        print("A")
+        mut j = 0
+        loop {
+            j = j + 1
+            if j == 4 => break
+            if j == 2 => continue
+            print(int_to_str(j))
+        }
+    }
+}
+```
+
+```
+A
+1
+3
+A
+1
+3
+```
+
+`break` can only occur inside a loop:
+
+```klar
+fn main() {
+    break -- ERROR: `break` outside of a loop
+}
+```
+
+`continue` can only occur inside a loop:
+
+```klar
+fn main() {
+    continue -- ERROR: `continue` outside of a loop
+}
+```
+
+</details>
+
 ## Functions
 
 ```klar

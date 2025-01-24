@@ -70,6 +70,11 @@ class Scope:
             return self.parent.find(name)
         return res
 
+    def is_within(self, node_typ: type) -> bool:
+        if not isinstance(self.node, node_typ):
+            return self.parent.is_within(node_typ) if self.parent else False
+        return True
+
 
 class TypeChecker:
     type_env: TypeEnv
@@ -230,6 +235,18 @@ class TypeChecker:
                         typ = types.TypeCheckError(self.id(), "then and else blocks have different types", node.span)
                     typ = then_block
                 self.type_env.set_node_type(node, typ)
+            case ast.Loop():
+                with self.child_scope(node):
+                    ast.walk(node, self.typecheck)
+                    self.type_env.set_node_type(node, self.type_env.builtins.NoneTyp)
+            case ast.Continue():
+                if not self.scope.is_within(ast.Loop):
+                    self.error(error.continue_outside_loop(node.span))
+                self.type_env.set_node_type(node, self.type_env.builtins.NoneTyp)
+            case ast.Break():
+                if not self.scope.is_within(ast.Loop):
+                    self.error(error.break_outside_loop(node.span))
+                self.type_env.set_node_type(node, self.type_env.builtins.NoneTyp)
             case ast.Let():
                 ast.walk(node, self.typecheck)
                 value_typ = self.type_env.get_node_type(node.value)
@@ -293,7 +310,7 @@ class TypeChecker:
                 # Declaration has already been handled in `self.declare_all()`.
                 pass
             case _:
-                raise AssertionError(f"Type checking not implemented for: {node}")
+                raise AssertionError(f"Type checking not implemented for: {node.__class__}")
 
 
 def typecheck(module: ast.Module, next_id: Callable[[], int]) -> tuple[TypeEnv, list[error.Error]]:

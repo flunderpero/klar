@@ -8,8 +8,10 @@ Value = str | None
 
 
 class Kind(Enum):
+    break_ = "break"
     comma = ","
     comment = "--"
+    continue_ = "continue"
     curly_left = "{"
     curly_right = "}"
     else_ = "else"
@@ -23,6 +25,7 @@ class Kind(Enum):
     if_ = "if"
     int_lit = "int literal"
     let = "let"
+    loop = "loop"
     minus = "-"
     mut = "mut"
     neq = "!="
@@ -56,7 +59,21 @@ class Token:
         return self.value
 
 
-keywords = {x.value: x for x in (Kind.else_, Kind.false, Kind.fn, Kind.if_, Kind.let, Kind.mut, Kind.true)}
+keywords = {
+    x.value: x
+    for x in (
+        Kind.break_,
+        Kind.continue_,
+        Kind.else_,
+        Kind.false,
+        Kind.fn,
+        Kind.if_,
+        Kind.let,
+        Kind.loop,
+        Kind.mut,
+        Kind.true,
+    )
+}
 
 
 @dataclass

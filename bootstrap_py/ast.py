@@ -82,6 +82,17 @@ class Let:
 
 
 @dataclass
+class Assign:
+    id: NodeId
+    target: Expr
+    value: Expr
+    span: Span
+
+    def __str__(self) -> str:
+        return nid(self.id) + f"{self.target} = {self.value}"
+
+
+@dataclass
 class Call:
     id: NodeId
     callee: Expr
@@ -178,7 +189,7 @@ class Module:
 
 
 Expr = Block | IntLit | StrLit | BoolLit | Ident | Call | BinaryExpr | If
-Node = Expr | FnDecl | FnDef | Module | Type | Let
+Node = Expr | FnDecl | FnDef | Module | Type | Let | Assign
 
 
 ASTVisitor = Callable[[Node], None]
@@ -212,6 +223,9 @@ def walk(node: Node, visit: ASTVisitor) -> bool:
             if node.else_block:
                 visit(node.else_block)
         case Let():
+            visit(node.value)
+        case Assign():
+            visit(node.target)
             visit(node.value)
         case Ident() | IntLit() | StrLit() | BoolLit() | FnDecl():
             return False

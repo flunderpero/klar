@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Callable, cast
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Callable
 
 from . import ast, error, types
 
@@ -24,11 +25,18 @@ class TypeEnv:
         return self.node_types[node.id]
 
 
+@dataclass
+class ScopeDeclared:
+    name: str
+    typ: types.Type
+    mutable: bool
+
+
 class Scope:
     parent: Scope | None
     node: ast.Node
-    names: dict[str, types.Type]
-    forwards: dict[str, types.Type]
+    names: dict[str, ScopeDeclared]
+    forwards: dict[str, ScopeDeclared]
 
     def __init__(self, node: ast.Node, parent: Scope | None) -> None:
         self.node = node
@@ -36,27 +44,27 @@ class Scope:
         self.names = {}
         self.forwards = {}
 
-    def declare(self, name: str, typ: types.Type) -> types.Type | None:
+    def declare(self, name: str, typ: types.Type, *, mutable: bool = False) -> ScopeDeclared | None:
         existing = self.names.get(name)
         if existing:
             return existing
-        self.names[name] = typ
+        self.names[name] = ScopeDeclared(name, typ, mutable)
         return None
 
-    def forward_declare(self, name: str, typ: types.Type) -> types.Type | None:
-        existing = self.declare(name, typ)
+    def forward_declare(self, name: str, typ: types.Type, *, mutable: bool = False) -> ScopeDeclared | None:
+        existing = self.declare(name, typ, mutable=mutable)
         if existing:
             return existing
-        self.forwards[name] = typ
+        self.forwards[name] = ScopeDeclared(name, typ, mutable)
         return None
 
-    def get_forward_declared(self, name: str) -> types.Type:
+    def get_forward_declared(self, name: str) -> ScopeDeclared:
         return self.forwards[name]
 
     def finish_forward_declared(self, name: str) -> None:
         del self.forwards[name]
 
-    def find(self, name: str) -> types.Type | None:
+    def find(self, name: str) -> ScopeDeclared | None:
         res = self.names.get(name)
         if not res and self.parent:
             return self.parent.find(name)
@@ -98,11 +106,11 @@ class TypeChecker:
         return self.next_id()
 
     def type_node_type(self, node: ast.Type) -> types.Type:
-        typ = self.scope.find(node.name)
-        if not typ:
+        declared = self.scope.find(node.name)
+        if not declared:
             self.error(error.undefined_name(node.name, node.span))
             return types.TypeCheckError(self.id(), f"`{node.name}` not found", node.span)
-        return typ
+        return declared.typ
 
     def declare_all(self, scope_node: ast.Node) -> None:
         match scope_node:
@@ -118,13 +126,14 @@ class TypeChecker:
                     typ = types.Fn(self.id(), decl.span, [], self.type_env.builtins.NoneTyp)
                     existing = self.scope.forward_declare(decl.name, typ)
                     if existing:
-                        self.error(error.duplicate_fn(decl.name, decl.span, existing.span))
+                        self.error(error.duplicate_fn(decl.name, decl.span, existing.typ.span))
         # Stage 2: Fully parse all previously forward declared types.
         for node in nodes:
             match node:
                 case ast.FnDecl() | ast.FnDef():
                     decl = node if isinstance(node, ast.FnDecl) else node.decl
-                    typ = cast(types.Fn, self.scope.get_forward_declared(decl.name))
+                    typ = self.scope.get_forward_declared(decl.name).typ
+                    assert isinstance(typ, types.Fn)
                     params: list[types.Param] = []
                     for param in decl.params:
                         param_typ = self.type_node_type(param.typ)
@@ -177,15 +186,19 @@ class TypeChecker:
             case ast.BoolLit():
                 self.type_env.set_node_type(node, self.type_env.builtins.Bool)
             case ast.Ident():
-                ident_typ = self.scope.find(node.name)
-                if not ident_typ:
+                declared = self.scope.find(node.name)
+                if not declared:
                     self.error(error.undefined_name(node.name, node.span))
-                    ident_typ = types.TypeCheckError(self.id(), f"`{node.name}` not found", node.span)
-                self.type_env.set_node_type(node, ident_typ)
+                    self.type_env.set_node_type(
+                        node, types.TypeCheckError(self.id(), f"`{node.name}` not found", node.span)
+                    )
+                else:
+                    self.type_env.set_node_type(node, declared.typ)
             case ast.Call():
                 self.typecheck_call(node)
             case ast.FnDef():
-                fn = cast(types.Fn, self.type_env.get_node_type(node.decl))
+                fn = self.type_env.get_node_type(node.decl)
+                assert isinstance(fn, types.Fn)
                 with self.child_scope(node):
                     for param in fn.params:
                         self.scope.declare(param.name, param.typ)
@@ -220,11 +233,29 @@ class TypeChecker:
             case ast.Let():
                 ast.walk(node, self.typecheck)
                 value_typ = self.type_env.get_node_type(node.value)
-                existing = self.scope.declare(node.name, value_typ)
                 typ = value_typ
-                if existing:
-                    self.error(error.duplicate_param_name(node.name, node.span, existing.span))
+                declared = self.scope.declare(node.name, value_typ, mutable=node.mutable)
+                if declared:
+                    self.error(error.duplicate_param_name(node.name, node.span, declared.typ.span))
                     typ = types.TypeCheckError(self.id(), "duplicate name", node.span)
+                self.type_env.set_node_type(node, typ)
+            case ast.Assign():
+                ast.walk(node, self.typecheck)
+                assert isinstance(node.target, ast.Ident)
+                typ = self.type_env.get_node_type(node.target)
+                value_typ = self.type_env.get_node_type(node.value)
+                declared = self.scope.find(node.target.name)
+                if not declared:
+                    self.error(error.undefined_name(node.target.name, node.target.span))
+                    typ = types.TypeCheckError(self.id(), "undefined name", node.span)
+                elif not declared.mutable:
+                    self.error(error.not_mutable(node.target.name, node.span))
+                    typ = types.TypeCheckError(self.id(), "immutable", node.span)
+                elif not types.is_assignable_from(typ, value_typ):
+                    self.error(
+                        error.type_not_assignable_from(node.value.span, types.pretty(typ), types.pretty(value_typ))
+                    )
+                    typ = types.TypeCheckError(self.id(), "value not assignable to target", node.span)
                 self.type_env.set_node_type(node, typ)
             case ast.BinaryExpr():
                 match node.op:

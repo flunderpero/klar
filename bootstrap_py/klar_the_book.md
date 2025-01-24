@@ -113,6 +113,25 @@ print(s)
 -- Hello
 ```
 
+### Mutability
+
+Declare mutable variables with `mut` instead of `let`:
+
+```klar
+mut s = "Hello"
+print(s)
+s = "world"
+print(s)
+-- Output:
+-- Hello
+-- world
+```
+
+```klar
+let s = "Hello"
+s = "world" -- Compile error: `s` is not mutable
+```
+
 ## Control Flow
 
 ### `if` Expressions

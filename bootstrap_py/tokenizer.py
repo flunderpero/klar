@@ -23,6 +23,7 @@ class Kind(Enum):
     int_lit = "int literal"
     let = "let"
     minus = "-"
+    mut = "mut"
     paren_left = "("
     paren_right = ")"
     plus = "+"
@@ -53,7 +54,7 @@ class Token:
         return self.value
 
 
-keywords = {x.value: x for x in (Kind.else_, Kind.false, Kind.fn, Kind.if_, Kind.let, Kind.true)}
+keywords = {x.value: x for x in (Kind.else_, Kind.false, Kind.fn, Kind.if_, Kind.let, Kind.mut, Kind.true)}
 
 
 @dataclass

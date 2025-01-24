@@ -260,9 +260,10 @@ class Parser:
                 expr = self.parse_call(expr)
         return expr
 
-    def parse_let(self) -> ast.Let | None:
+    def parse_let_or_mut(self) -> ast.Let | None:
         span = self.input.span()
-        if not self.expect(token.Kind.let):
+        keyword = self.expect(token.Kind.let, token.Kind.mut)
+        if not keyword:
             return None
         name = self.expect_ident()
         if not name:
@@ -272,7 +273,9 @@ class Parser:
         value = self.parse_expr()
         if not value:
             return None
-        return ast.Let(self.id(), name, None, value, self.input.span_merge(span), mutable=False)
+        return ast.Let(
+            self.id(), name, None, value, self.input.span_merge(span), mutable=keyword.kind == token.Kind.mut
+        )
 
     def parse_block(self) -> ast.Block | None:
         span = self.input.span()
@@ -300,10 +303,22 @@ class Parser:
         match t.kind:
             case token.Kind.fn:
                 return self.parse_fn_def()
-            case token.Kind.let:
-                return self.parse_let()
+            case token.Kind.let | token.Kind.mut:
+                return self.parse_let_or_mut()
             case _:
-                return self.parse_expr()
+                expr = self.parse_expr()
+                if not expr:
+                    return None
+                if self.input.peek().kind == token.Kind.eq:
+                    self.input.next()
+                    if not isinstance(expr, ast.Ident):
+                        self.error(error.expected_ident(str(expr), t.span))
+                        return None
+                    value = self.parse_expr()
+                    if not value:
+                        return None
+                    return ast.Assign(self.id(), expr, value, self.input.span_merge(expr.span))
+                return expr
 
     def parse_module(self) -> ast.Module:
         span = self.input.span()

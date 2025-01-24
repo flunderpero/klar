@@ -88,6 +88,10 @@ def expected_block_node(span: Span, token: str) -> Error:
     return SimpleError(span, f"Expected a block node, got token `{token}`", _stack())
 
 
+def expected_ident(expr: str, span: Span) -> Error:
+    return SimpleError(span, f"Expected an identifier, got `{expr}`", _stack())
+
+
 def duplicate_fn(name: str, span: Span, defined_here: Span) -> Error:
     return DuplicateError(name, span, defined_here, _stack())
 
@@ -114,3 +118,7 @@ def wrong_number_of_args(span: Span, params: int, args: int, defined_here: Span)
 
 def type_not_assignable_from(span: Span, target: str, from_: str) -> Error:
     return SimpleError(span, f"Type `{from_}` is not assignable to type `{target}`", _stack())
+
+
+def not_mutable(name: str, span: Span) -> Error:
+    return SimpleError(span, f"`{name}` is not mutable", _stack())

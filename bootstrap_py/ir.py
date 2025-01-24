@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from . import ast, typechecker, types
 
@@ -223,6 +223,10 @@ class Scope:
     vars: dict[str, Reg]
 
     def declare(self, name: str, reg: Reg) -> None:
+        assert name not in self.vars, f"Variable {name} already declared in scope"
+        self.vars[name] = reg
+
+    def update(self, name: str, reg: Reg) -> None:
         self.vars[name] = reg
 
     def find(self, name: str) -> Reg | None:
@@ -263,7 +267,8 @@ class FnGen:
         self.ir = ir
         self.node_regs = {}
         self.scope = Scope(None, {})
-        types_fn = cast(types.Fn, type_env.get_node_type(fn_def.decl))
+        types_fn = type_env.get_node_type(fn_def.decl)
+        assert isinstance(types_fn, types.Fn)
         params: list[Param] = []
         for p in types_fn.params:
             typ = self.typ(p.typ)
@@ -418,6 +423,12 @@ class FnGen:
             case ast.Let():
                 ast.walk(node, self.generate)
                 self.scope.declare(node.name, self.node_regs[node.value.id])
+            case ast.Assign():
+                ast.walk(node, self.generate)
+                target = node.target
+                assert isinstance(target, ast.Ident)
+                self.scope.update(target.name, self.node_regs[node.value.id])
+                self.node_regs[node.id] = NoneReg
             case ast.BinaryExpr():
                 ast.walk(node, self.generate)
                 lhs_reg = self.node_regs[node.lhs.id]

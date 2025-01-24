@@ -1,14 +1,17 @@
-precommit: format lint test
+precommit: 
+    just format 
+    just lint --fix
+    just test
 
 format:
     @echo "Formatting ..."
     ruff format
     npx prettier -w *.md
 
-lint:
+lint *args:
     @echo "Linting ..."
     pyright
-    ruff check
+    ruff check {{args}}
 
 test *args:
     @echo "Testing \"The Book\" ..."

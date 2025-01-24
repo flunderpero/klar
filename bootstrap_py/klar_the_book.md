@@ -118,19 +118,73 @@ print(s)
 Declare mutable variables with `mut` instead of `let`:
 
 ```klar
-mut s = "Hello"
-print(s)
-s = "world"
-print(s)
+fn main() {
+    mut s = "Hello"
+    print(s)
+    s = "world"
+    print(s)
+}
 -- Output:
 -- Hello
 -- world
 ```
 
 ```klar
-let s = "Hello"
-s = "world" -- Compile error: `s` is not mutable
+fn main() {
+    let s = "Hello"
+    s = "world" -- Compile error: `s` is not mutable
+}
 ```
+
+<detail>
+    <summary>More Examples</summary>
+
+Mutating a variable in both branches of an `if` expression:
+
+```klar
+fn main() {
+    mut s = ""
+    if true => s = "PASS1" else => s = "FAIL"
+    print(s)
+    if false => s = "FAIL" else => s = "PASS2"
+    print(s)
+}
+-- Output:
+-- PASS1
+-- PASS2
+```
+
+Mutating a variable in the `then` branch only of an `if` expression:
+
+```klar
+fn main() {
+    mut s = "BEFORE"
+    if true => s = "PASS" else => print(s)
+    print(s)
+}
+-- Output:
+-- PASS
+```
+
+Mutating a variable in the `else` branch only of an `if` expression:
+
+```klar
+fn main() {
+    mut s = "FAIL"
+    if false {} else => s = "PASS"
+    print(s)
+}
+-- Output:
+-- PASS
+```
+
+Function parameters are immutable by default:
+
+````klar
+fn foo(x Int) {
+    x = 12  -- Compile error: `x` is not mutable
+}
+</detail>
 
 ## Control Flow
 
@@ -281,7 +335,7 @@ fn test(a Int, a Int) {} -- Compile error: Duplicate `a`
 
 ### Forward Declaration
 
-In Klar, all types are forward declared, i.e. you can use them before they are declared in the
+In Klar, all types are forward declared, i.e. they can be used before they are declared in the
 source code.
 
 ```klar
@@ -309,3 +363,5 @@ print(true) -- Compile error: Type `Bool` is not assignable to type `Str`
 ```
 
 </details>
+````
+

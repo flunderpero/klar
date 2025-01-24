@@ -126,7 +126,7 @@ class ISubO:
 
 
 @dataclass
-class PhiIncoming:
+class PhiIn:
     reg: Reg
     block: Block
 
@@ -137,7 +137,7 @@ class PhiIncoming:
 @dataclass
 class Phi:
     reg: Reg
-    incoming: list[PhiIncoming]
+    incoming: list[PhiIn]
 
     def __str__(self) -> str:
         return f"{self.reg} = phi {', '.join(str(reg) for reg in self.incoming)}"
@@ -227,7 +227,10 @@ class Scope:
         self.vars[name] = reg
 
     def update(self, name: str, reg: Reg) -> None:
-        self.vars[name] = reg
+        if name in self.vars:
+            self.vars[name] = reg
+        elif self.parent:
+            self.parent.update(name, reg)
 
     def find(self, name: str) -> Reg | None:
         res = self.vars.get(name)
@@ -236,6 +239,15 @@ class Scope:
         if self.parent:
             return self.parent.find(name)
         return None
+
+    def snapshot(self) -> dict[str, Reg]:
+        res = self.vars.copy()
+        if self.parent:
+            res.update(self.parent.snapshot())
+        return res
+
+    def deep_copy(self) -> Scope:
+        return Scope(self.parent.deep_copy() if self.parent else None, self.vars.copy())
 
 
 @dataclass
@@ -352,47 +364,71 @@ class FnGen:
                 prev_block = self.block
                 cond_reg = self.node_regs[node.cond.id]
                 then_block = self.new_block()
+                scope_copy = self.scope.deep_copy()
+                scope_snapshot = self.scope.snapshot()
                 # Walk the `then_block`.
                 self.block = then_block
                 self.generate(node.then_block)
+                then_scope_snapshot = self.scope.snapshot()
                 if not node.else_block:
+                    # Reset the scope.
+                    self.scope = scope_copy
                     merge_block = self.new_block()
+                    # End the then-branch by jumping to the merge-block.
                     assert not self.block.terminator
                     self.block.terminator = Jump(merge_block)
                     # There is no `else_block` so the result of the if expression is None.
                     self.node_regs[node.id] = NoneReg
                     prev_block.terminator = Branch(cond_reg, then_block, merge_block)
+                    self.block = merge_block
+                    # Insert phi nodes for every variable that has been changed in the then-branch.
+                    for name, prev_reg in scope_snapshot.items():
+                        then_reg = then_scope_snapshot[name]
+                        if prev_reg == then_reg:
+                            continue
+                        reg = self.reg(prev_reg.typ)
+                        self.scope.update(name, reg)
+                        self.emit(Phi(reg, [PhiIn(prev_reg, prev_block), PhiIn(then_reg, then_block)]), None)
                 else:
+                    # Reset the scope.
+                    self.scope = scope_copy
                     else_block = self.new_block()
                     merge_block = self.new_block()
-                    # We are still at the end of the `then_block`, so we have to terminate it
-                    # properly.
-                    # This might look like duplicate code (in the branch above we do the same).
-                    # We do it this way to have the `then`, `else`, and merge block in order.
-                    # (Blocks are added in the order of calls to `self.new_block()`).
+                    # End the then-branch by jumping to the merge-block.
                     assert not self.block.terminator
                     self.block.terminator = Jump(merge_block)
-                    # Walk `else_block`.
+                    # Walk the `else_block`.
                     prev_block.terminator = Branch(cond_reg, then_block, else_block)
                     self.block = else_block
                     self.generate(node.else_block)
+                    else_scope_snapshot = self.scope.snapshot()
                     assert not self.block.terminator
                     self.block.terminator = Jump(merge_block)
-                    # Insert a phi node to signal that the result of the if expression is based
-                    # on the branch taken.
-                    reg = self.reg(self.typ(self.type_env.get_node_type(node)))
                     self.block = merge_block
-                    self.emit(
-                        Phi(
-                            reg,
-                            [
-                                PhiIncoming(self.node_regs[node.then_block.id], then_block),
-                                PhiIncoming(self.node_regs[node.else_block.id], else_block),
-                            ],
-                        ),
-                        node,
-                    )
-                self.block = merge_block
+                    # Insert a phi node to signal that the result of the if expression is based
+                    # on the branch taken if it is not none.
+                    then_reg = self.node_regs[node.then_block.id]
+                    else_reg = self.node_regs[node.else_block.id]
+                    if NoneReg not in (then_reg, else_reg):
+                        reg = self.reg(self.typ(self.type_env.get_node_type(node)))
+                        self.emit(Phi(reg, [PhiIn(then_reg, then_block), PhiIn(else_reg, else_block)]), node)
+                    else:
+                        self.node_regs[node.id] = NoneReg
+                    # Reset the scope again.
+                    self.scope = scope_copy
+                    # Insert phi nodes for every variable that has been changed in either branches.
+                    for name, prev_reg in scope_snapshot.items():
+                        then_reg = then_scope_snapshot[name]
+                        else_reg = else_scope_snapshot[name]
+                        if prev_reg == then_reg and prev_reg == else_reg:
+                            continue
+                        reg = self.reg(prev_reg.typ)
+                        if prev_reg not in (then_reg, else_reg):
+                            self.emit(Phi(reg, [PhiIn(then_reg, then_block), PhiIn(else_reg, else_block)]), None)
+                        elif prev_reg != then_reg:
+                            self.emit(Phi(reg, [PhiIn(prev_reg, prev_block), PhiIn(then_reg, then_block)]), None)
+                        else:
+                            self.emit(Phi(reg, [PhiIn(prev_reg, prev_block), PhiIn(else_reg, else_block)]), None)
             case ast.StrLit():
                 const = self.ir.constant_pool.get(node.value)
                 if not const:

@@ -242,21 +242,20 @@ class TypeChecker:
             case ast.Assign():
                 ast.walk(node, self.typecheck)
                 assert isinstance(node.target, ast.Ident)
-                typ = self.type_env.get_node_type(node.target)
+                target_typ = self.type_env.get_node_type(node.target)
                 value_typ = self.type_env.get_node_type(node.value)
                 declared = self.scope.find(node.target.name)
                 if not declared:
                     self.error(error.undefined_name(node.target.name, node.target.span))
-                    typ = types.TypeCheckError(self.id(), "undefined name", node.span)
                 elif not declared.mutable:
                     self.error(error.not_mutable(node.target.name, node.span))
-                    typ = types.TypeCheckError(self.id(), "immutable", node.span)
-                elif not types.is_assignable_from(typ, value_typ):
+                elif not types.is_assignable_from(target_typ, value_typ):
                     self.error(
-                        error.type_not_assignable_from(node.value.span, types.pretty(typ), types.pretty(value_typ))
+                        error.type_not_assignable_from(
+                            node.value.span, types.pretty(target_typ), types.pretty(value_typ)
+                        )
                     )
-                    typ = types.TypeCheckError(self.id(), "value not assignable to target", node.span)
-                self.type_env.set_node_type(node, typ)
+                self.type_env.set_node_type(node, self.type_env.builtins.NoneTyp)
             case ast.BinaryExpr():
                 match node.op:
                     case ast.BinaryOp.add | ast.BinaryOp.sub:

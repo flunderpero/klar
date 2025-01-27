@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 
@@ -77,9 +79,20 @@ class Span:
         result.append(empty_line_prefix)
         return result
 
-    def merge(self, other: "Span") -> "Span":
+    def merge(self, other: Span) -> Span:
         return Span(self.file, self.src, self.start, other.end)
 
     def __str__(self) -> str:
         line, col = self.start_line_col()
         return f"{self.file}:{line}:{col}"
+
+
+@dataclass
+class FQN:
+    path: list[str]
+
+    def __str__(self) -> str:
+        return "::".join(self.path)
+
+    def concat(self, *parts: str) -> FQN:
+        return FQN(self.path + list(parts))

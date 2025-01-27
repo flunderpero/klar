@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Callable
 
-from .span import Span
+from .span import FQN, Span
 
 TypeId = int
 
@@ -70,13 +70,14 @@ class Param:
 @dataclass
 class Fn:
     id: TypeId
+    fqn: FQN
     span: Span
     params: list[Param]
     result: Type
 
     def __str__(self) -> str:
         params = ", ".join(f"{p.name}: {p.typ}" for p in self.params)
-        return tid(self.id) + f"Fn({params}) -> {self.result}"
+        return tid(self.id) + f"fn {self.fqn}({params}) -> {self.result}"
 
 
 @dataclass
@@ -88,9 +89,9 @@ class Builtins:
         int_typ = Int(next_id(), bits=64, signed=True, span=span)
         bool_typ = Bool(next_id(), span)
         none_typ = NoneTyp(next_id(), span)
-        print_typ = Fn(next_id(), span, [Param("s", str_typ)], none_typ)
-        int_to_str = Fn(next_id(), span, [Param("i", int_typ)], str_typ)
-        bool_to_str = Fn(next_id(), span, [Param("b", bool_typ)], str_typ)
+        print_typ = Fn(next_id(), FQN(["print"]), span, [Param("s", str_typ)], none_typ)
+        int_to_str = Fn(next_id(), FQN(["int_to_str"]), span, [Param("i", int_typ)], str_typ)
+        bool_to_str = Fn(next_id(), FQN(["bool_to_str"]), span, [Param("b", bool_typ)], str_typ)
         return Builtins(str_typ, int_typ, bool_typ, none_typ, print_typ, int_to_str, bool_to_str)
 
     Str: Str

@@ -5,7 +5,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
-    from .span import Span
+    from .span import FQN, Span
 
 NodeId = int
 
@@ -211,11 +211,12 @@ class FnDef:
 @dataclass
 class Module:
     id: NodeId
+    fqn: FQN
     nodes: list[Node]
     span: Span
 
     def __str__(self) -> str:
-        return nid(self.id) + "\n".join(str(x) for x in self.nodes)
+        return nid(self.id) + f"mod {self.fqn}\n" + "\n".join(str(x) for x in self.nodes)
 
 
 Expr = Block | IntLit | StrLit | BoolLit | Ident | Call | BinaryExpr | If

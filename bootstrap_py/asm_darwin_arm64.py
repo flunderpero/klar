@@ -141,18 +141,18 @@ class FnGen:
     def fn_name(self, name: str) -> str:
         if name == "main":
             return "_main"
-        return f".{name}"
+        return f".{name.replace('::', '$$')}"
 
     def block_label(self, suffix: str | int) -> str:
         if isinstance(suffix, int):
             suffix = str(suffix)
-        name = self.ir.fn_def.decl.name
+        name = self.ir.fn_name.replace("::", "$$")
         return f".{name}_{suffix}"
 
     def generate(self) -> ASM:
         # First generate all the code so that we know how large the stack frame will have to be
         # and which callee-saved registers have to be preserved.
-        fn_name = self.fn_name(self.ir.fn_def.decl.name)
+        fn_name = self.fn_name(self.ir.fn_name)
         self.asm.inc_indent()
         for i, param in enumerate(self.ir.params):
             alloc = self.reg_allocator.allocate(param.reg)

@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import Callable
 
 from . import ast, error
 from . import tokenizer as token
-
-if TYPE_CHECKING:
-    from .span import Span
+from .span import FQN, Span
 
 
 @dataclass
@@ -338,7 +336,8 @@ class Parser:
             node = self.parse_block_node()
             if node:
                 nodes.append(node)
-        return ast.Module(self.id(), nodes, self.input.span_merge(span))
+        module_name = span.file.split("/")[-1].split(".")[0]
+        return ast.Module(self.id(), FQN([module_name]), nodes, self.input.span_merge(span))
 
 
 def parse(tokens: Input) -> tuple[ast.Module, list[error.Error]]:

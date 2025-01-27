@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
 from . import ast, error, types
+from .span import FQN
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -75,6 +76,18 @@ class Scope:
             return self.parent.is_within(node_typ) if self.parent else False
         return True
 
+    def fqn(self) -> FQN:
+        scope = self
+        path = []
+        while scope:
+            match scope.node:
+                case ast.Module():
+                    path = scope.node.fqn.path + path
+                case ast.FnDef():
+                    path.insert(0, scope.node.decl.name)
+            scope = self.parent
+        return FQN(path)
+
 
 class TypeChecker:
     type_env: TypeEnv
@@ -128,7 +141,8 @@ class TypeChecker:
             match node:
                 case ast.FnDecl() | ast.FnDef():
                     decl = node if isinstance(node, ast.FnDecl) else node.decl
-                    typ = types.Fn(self.id(), decl.span, [], self.type_env.builtins.NoneTyp)
+                    fqn = self.scope.fqn().concat(decl.name)
+                    typ = types.Fn(self.id(), fqn, decl.span, [], self.type_env.builtins.NoneTyp)
                     existing = self.scope.forward_declare(decl.name, typ)
                     if existing:
                         self.error(error.duplicate_fn(decl.name, decl.span, existing.typ.span))

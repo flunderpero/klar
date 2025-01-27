@@ -233,6 +233,9 @@ class Param:
     reg: Reg
     typ: Type
 
+    def __str__(self) -> str:
+        return f"{self.typ} {self.reg.id}"
+
 
 @dataclass
 class Scope:
@@ -276,6 +279,7 @@ class LoopScope:
 @dataclass
 class FnIR:
     fn_def: ast.FnDef
+    fn_name: str
     params: list[Param]
     result: Type
     blocks: list[Block]
@@ -283,7 +287,7 @@ class FnIR:
     def __str__(self) -> str:
         params = ", ".join(str(param) for param in self.params)
         blocks = "\n".join(str(block) for block in self.blocks)
-        return f"declare {self.fn_def.decl.name}({params}) {self.result}:\n" + blocks
+        return f"declare {self.fn_name}({params}) {self.result}:\n" + blocks
 
 
 class FnGen:
@@ -313,7 +317,8 @@ class FnGen:
             self.scope.declare(p.name, reg)
             params.append(Param(reg, typ))
         result = self.typ(types_fn.result)
-        self.fn_ir = FnIR(fn_def, params, result, [])
+        fn_name = str(types_fn.fqn) if fn_def.decl.name != "main" else "main"
+        self.fn_ir = FnIR(fn_def, fn_name, params, result, [])
         self.block = self.new_block()
 
     def new_block(self) -> Block:
@@ -503,14 +508,15 @@ class FnGen:
                 if reg:
                     self.node_regs[node.id] = reg
             case ast.Call():
-                assert isinstance(node.callee, ast.Ident), "Currently, only named functions are supported."
+                fn_typ = self.type_env.get_node_type(node.callee)
+                assert isinstance(fn_typ, types.Fn)
                 result_typ = self.type_env.get_node_type(node)
                 ast.walk(node, self.generate)
                 args = [self.node_regs[x.id] for x in node.args]
                 reg = NoneReg
                 if not isinstance(result_typ, types.NoneTyp):
                     reg = self.reg(self.typ(result_typ))
-                self.emit(Call(reg, node.callee.name, args), node)
+                self.emit(Call(reg, str(fn_typ.fqn), args), node)
             case ast.Let():
                 ast.walk(node, self.generate)
                 self.scope.declare(node.name, self.node_regs[node.value.id])

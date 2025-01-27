@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from subprocess import run
 from typing import TYPE_CHECKING
 
-from . import asm_darwin_arm64, ast, error, ir, parser, typechecker
+from . import asm_darwin_arm64, ast, error, ir, lower, monomorphize, parser, typechecker
 from . import tokenizer as token
 
 if TYPE_CHECKING:
@@ -59,6 +59,14 @@ class AbortStep:
 
 
 @dataclass
+class LowerStep:
+    fn_specs: list[lower.FnSpec]
+
+    def __str__(self) -> str:
+        return "\n".join(str(x) for x in self.fn_specs)
+
+
+@dataclass
 class IRStep:
     ir: ir.IR
 
@@ -94,7 +102,9 @@ class RunStep:
         return f"statuscode: {self.returncode}\nstdout: {self.stdout}\nstderr: {self.stderr}"
 
 
-CompilationStep = TokenStep | ParseStep | TypecheckStep | AbortStep | IRStep | ASMStep | CompileStep | RunStep
+CompilationStep = (
+    TokenStep | ParseStep | TypecheckStep | AbortStep | LowerStep | IRStep | ASMStep | CompileStep | RunStep
+)
 
 
 def compile(input: token.Input, outfile: str) -> Generator[CompilationStep]:  # noqa: A001
@@ -114,7 +124,9 @@ def compile(input: token.Input, outfile: str) -> Generator[CompilationStep]:  # 
     if tokenize_errors or parse_errors or type_errors:
         yield AbortStep(tokenize_errors + parse_errors + type_errors)
         return
-    ir_ = ir.generate_ir(module, type_env)
+    specs = monomorphize.monomorphize(module, type_env)
+    yield LowerStep(specs)
+    ir_ = ir.generate_ir(specs)
     yield IRStep(ir_)
     asm = asm_darwin_arm64.generate(ir_)
     yield ASMStep(asm)

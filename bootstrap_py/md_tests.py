@@ -64,9 +64,14 @@ def run_test(test: Test, print_code: str) -> list:
                         return handle_errors(step.errors)
                 case compiler.AbortStep():
                     pass
-                case compiler.IRStep():
+                case compiler.LowerStep():
                     if "-- ERROR:" in test.code:
                         return ["Expected compile error did not occur"]
+                    if print_code == "lower":
+                        print()
+                        print(step)
+                        return []
+                case compiler.IRStep():
                     if print_code == "ir":
                         print()
                         print(step)
@@ -142,7 +147,7 @@ def find_tests(src: str, chapter: str) -> list[Test]:
 def main() -> int:
     args = sys.argv
     print_code = ""
-    for stage in ("tokens", "ast", "types", "ir", "asm"):
+    for stage in ("tokens", "ast", "types", "lower", "ir", "asm"):
         if f"--{stage}" in args:
             print_code = stage
             break

@@ -99,6 +99,7 @@ class TypeChecker:
         self.type_env = type_env
         self.scope = scope
         self.next_id = next_id
+        self.type_res_scope = types.TypeResScope(None, None)
         self.errors = []
         self.scope.declare("Str", self.type_env.builtins.Str)
         self.scope.declare("Int", self.type_env.builtins.Int)
@@ -142,32 +143,47 @@ class TypeChecker:
                 case ast.FnDecl() | ast.FnDef():
                     decl = node if isinstance(node, ast.FnDecl) else node.decl
                     fqn = self.scope.fqn().concat(decl.name)
-                    typ = types.Fn(self.id(), fqn, decl.span, [], self.type_env.builtins.NoneTyp)
+                    typ = types.Fn(self.id(), fqn, [], [], self.type_env.builtins.NoneTyp, decl.span)
                     existing = self.scope.forward_declare(decl.name, typ)
                     if existing:
                         self.error(error.duplicate_fn(decl.name, decl.span, existing.typ.span))
-        # Stage 2: Fully parse all previously forward declared types.
+        # Stage 2: Parse type parameters.
         for node in nodes:
             match node:
                 case ast.FnDecl() | ast.FnDef():
                     decl = node if isinstance(node, ast.FnDecl) else node.decl
                     typ = self.scope.get_forward_declared(decl.name).typ
                     assert isinstance(typ, types.Fn)
-                    params: list[types.Param] = []
-                    for param in decl.params:
-                        param_typ = self.type_node_type(param.typ)
-                        params.append(types.Param(param.name, param_typ))
-                    result = self.type_env.builtins.NoneTyp
-                    if decl.result:
-                        result = self.type_node_type(decl.result)
-                    typ.params = params
-                    typ.result = result
+                    for type_param in decl.type_params:
+                        typ.type_params.append(types.TypeParam(self.id(), type_param.name, type_param.span))
+        # Stage 3: Fully parse all previously forward declared types.
+        for node in nodes:
+            match node:
+                case ast.FnDecl() | ast.FnDef():
+                    decl = node if isinstance(node, ast.FnDecl) else node.decl
+                    typ = self.scope.get_forward_declared(decl.name).typ
+                    assert isinstance(typ, types.Fn)
+                    with self.child_scope(node):
+                        for type_param in typ.type_params:
+                            self.scope.declare(type_param.name, type_param)
+                        params: list[types.Param] = []
+                        for param in decl.params:
+                            param_typ = self.type_node_type(param.typ)
+                            params.append(types.Param(param.name, param_typ))
+                        result = self.type_env.builtins.NoneTyp
+                        if decl.result:
+                            result = self.type_node_type(decl.result)
+                        typ.params = params
+                        typ.result = result
                     self.scope.finish_forward_declared(decl.name)
                     self.type_env.set_node_type(decl, typ)
 
     def typecheck_call(self, node: ast.Call) -> None:
         ast.walk(node, self.typecheck)
-        match self.type_env.get_node_type(node.callee):
+        callee = self.type_env.get_node_type(node.callee)
+        if isinstance(callee, types.Instance):
+            callee = callee.type_res_scope.resolve(callee.typ)
+        match callee:
             case types.Fn() as fn:
                 if len(node.args) != len(fn.params):
                     self.error(error.wrong_number_of_args(node.callee.span, len(fn.params), len(node.args), fn.span))
@@ -185,8 +201,7 @@ class TypeChecker:
                             break
                     else:
                         typ = fn.result
-            case types.TypeCheckError as err:
-                self.error(error.cascaded_error(node.callee.span, err.message, err.span))
+            case types.TypeCheckError():
                 typ = types.TypeCheckError(self.id(), "cascaded error", node.span)
             case _ as t:
                 self.error(error.unexpected_type("a callable type", str(t), node.callee.span))
@@ -212,7 +227,24 @@ class TypeChecker:
                         node, types.TypeCheckError(self.id(), f"`{node.name}` not found", node.span)
                     )
                 else:
-                    self.type_env.set_node_type(node, declared.typ)
+                    typ = declared.typ
+                    match declared.typ:
+                        case types.Fn():
+                            type_params = declared.typ.type_params
+                            if node.type_args and len(node.type_args) != len(type_params):
+                                self.error(
+                                    error.wrong_number_of_type_args(
+                                        len(type_params), len(node.type_args), node.span, typ.span
+                                    )
+                                )
+                                typ = types.TypeCheckError(self.id(), "wrong number of type args", node.span)
+                            else:
+                                type_res_scope = types.TypeResScope(None, None)
+                                for arg, type_param in zip(node.type_args, type_params):
+                                    type_arg = self.type_node_type(arg)
+                                    type_res_scope.declare(type_param, type_arg)
+                                typ = types.Instance(declared.typ, type_res_scope)
+                    self.type_env.set_node_type(node, typ)
             case ast.Call():
                 self.typecheck_call(node)
             case ast.FnDef():
@@ -221,6 +253,8 @@ class TypeChecker:
                 with self.child_scope(node):
                     for param in fn.params:
                         self.scope.declare(param.name, param.typ)
+                    for type_param in fn.type_params:
+                        self.scope.declare(type_param.name, type_param)
                     ast.walk(node.body, self.typecheck)
                     self.type_env.set_node_type(node, self.type_env.builtins.NoneTyp)
             case ast.Block():

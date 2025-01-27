@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from . import ast, typechecker, types
+from . import ast, lower, types
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -291,7 +291,7 @@ class FnIR:
 
 
 class FnGen:
-    type_env: typechecker.TypeEnv
+    type_env: lower.TypeEnv
     block: Block
     node_regs: dict[ast.NodeId, Reg]
     scope: Scope
@@ -302,7 +302,7 @@ class FnGen:
     next_const = 0
     next_block = 0
 
-    def __init__(self, fn_def: ast.FnDef, type_env: typechecker.TypeEnv, ir: IR) -> None:
+    def __init__(self, fn_def: ast.FnDef, type_env: lower.TypeEnv, ir: IR) -> None:
         self.type_env = type_env
         self.ir = ir
         self.node_regs = {}
@@ -317,9 +317,22 @@ class FnGen:
             self.scope.declare(p.name, reg)
             params.append(Param(reg, typ))
         result = self.typ(types_fn.result)
-        fn_name = str(types_fn.fqn) if fn_def.decl.name != "main" else "main"
-        self.fn_ir = FnIR(fn_def, fn_name, params, result, [])
+        name = self.fn_name(types.Instance(types_fn, type_env.type_res_scope)) if fn_def.decl.name != "main" else "main"
+        self.fn_ir = FnIR(fn_def, name, params, result, [])
         self.block = self.new_block()
+
+    def fn_name(self, typ: types.Instance) -> str:
+        fn = self.type_env.resolve(typ)
+        assert isinstance(fn, types.Fn)
+        name = str(fn.fqn)
+        # We need to first resolve the type parameter with the Instance's TypeResScope to
+        # resolve it to the type it had at type-checking time.
+        # If it resolved to another type parameter, it will be resolved to the final type.
+        instance = types.Instance(fn, types.TypeResScope(typ.type_res_scope, self.type_env.type_res_scope))
+        type_args = instance.type_args()
+        if type_args:
+            name += "$" + "$".join(types.full_id(x) for x in type_args)
+        return name
 
     def new_block(self) -> Block:
         self.next_block += 1
@@ -335,6 +348,7 @@ class FnGen:
         self.scope = scope
 
     def typ(self, typ: types.Type) -> Type:
+        typ = self.type_env.resolve(typ)
         match typ:
             case types.Int():
                 match (typ.bits, typ.signed):
@@ -508,15 +522,15 @@ class FnGen:
                 if reg:
                     self.node_regs[node.id] = reg
             case ast.Call():
-                fn_typ = self.type_env.get_node_type(node.callee)
-                assert isinstance(fn_typ, types.Fn)
+                fn_typ = self.type_env.get_unresolved_node_type(node.callee)
+                assert isinstance(fn_typ, types.Instance), f"Expected instance type, got {fn_typ}"
                 result_typ = self.type_env.get_node_type(node)
                 ast.walk(node, self.generate)
                 args = [self.node_regs[x.id] for x in node.args]
                 reg = NoneReg
                 if not isinstance(result_typ, types.NoneTyp):
                     reg = self.reg(self.typ(result_typ))
-                self.emit(Call(reg, str(fn_typ.fqn), args), node)
+                self.emit(Call(reg, self.fn_name(fn_typ), args), node)
             case ast.Let():
                 ast.walk(node, self.generate)
                 self.scope.declare(node.name, self.node_regs[node.value.id])
@@ -553,20 +567,11 @@ class FnGen:
                 raise AssertionError(f"Unsupported node: {node.__class__}")
 
 
-def generate_ir(module: ast.Module, type_env: typechecker.TypeEnv) -> IR:
-    fn_defs: list[ast.FnDef] = []
-
-    def collect_fn(node: ast.Node) -> None:
-        if isinstance(node, ast.FnDef):
-            fn_defs.append(node)
-        ast.walk(node, collect_fn)
-
-    ast.walk(module, collect_fn)
-
+def generate_ir(specs: list[lower.FnSpec]) -> IR:
     ir = IR(fn_irs=[], constant_pool={})
-    for fn_def in fn_defs:
-        gen = FnGen(fn_def, type_env, ir)
-        gen.generate(fn_def)
+    for spec in specs:
+        gen = FnGen(spec.fn_def, spec.type_env, ir)
+        gen.generate(spec.fn_def)
         ir.fn_irs.append(gen.fn_ir)
 
     return ir

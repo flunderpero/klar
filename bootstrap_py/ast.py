@@ -50,10 +50,11 @@ class BoolLit:
 class Ident:
     id: NodeId
     name: str
+    type_args: TypeArgs
     span: Span
 
     def __str__(self) -> str:
-        return nid(self.id) + self.name
+        return nid(self.id) + self.name + generics_to_str(self.type_args)
 
 
 @dataclass
@@ -176,6 +177,25 @@ class Block:
 
 
 @dataclass
+class TypeParam:
+    name: str
+    span: Span
+
+    def __str__(self) -> str:
+        return self.name
+
+
+TypeParams = list[TypeParam]
+TypeArgs = list[Type]
+
+
+def generics_to_str(type_params: TypeParams | TypeArgs) -> str:
+    if not type_params:
+        return ""
+    return f"<{', '.join(str(x) for x in type_params)}>"
+
+
+@dataclass
 class Param:
     name: str
     typ: Type
@@ -191,10 +211,12 @@ class FnDecl:
     name: str
     params: list[Param]
     result: Type | None
+    type_params: TypeParams
     span: Span
 
     def __str__(self) -> str:
-        return nid(self.id) + f"{self.name}({', '.join(str(x) for x in self.params)}) -> {self.result}"
+        type_params = generics_to_str(self.type_params)
+        return nid(self.id) + f"{self.name}{type_params}({', '.join(str(x) for x in self.params)}) -> {self.result}"
 
 
 @dataclass

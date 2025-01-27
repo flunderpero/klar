@@ -21,11 +21,13 @@ class Kind(Enum):
     false = "false"
     fat_arrow = "=>"
     fn = "fn"
+    gt = ">"
     ident = "identifier"
     if_ = "if"
     int_lit = "int literal"
     let = "let"
     loop = "loop"
+    lt = "<"
     minus = "-"
     mut = "mut"
     neq = "!="
@@ -124,6 +126,10 @@ def tokenize(input: Input) -> tuple[list[Token], list[error.Error]]:
                 kind = Kind.comma
             case "+":
                 kind = Kind.plus
+            case "<":
+                kind = Kind.lt
+            case ">":
+                kind = Kind.gt
             case "!":
                 if input.peek() == "=":
                     input.next()

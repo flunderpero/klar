@@ -487,6 +487,99 @@ developer. If you need over- or underflow safety, use `Int.add()`, `Int.sub()`, 
 Division by zero using the division operator (`/`) causes a `panic` for integer types and
 results in `NaN` for floating point types. Use `Int.div()` to catch division by zero errors.
 
+## Parametric Polymorphism - Generics
+
+Klar aims to provide robust parametric polymorphism without going overboard with the type-system
+becoming too complex.
+
+```klar
+fn return_it<T>(value T) T => value
+
+fn main() {
+    print(return_it<Str>("Hello"))
+    print(int_to_str(return_it<Int>(42)))
+}
+```
+
+```
+Hello
+42
+```
+
+Type parameter resolution is cascading:
+
+```klar
+fn return_it_again<U>(value U) U => value
+
+fn return_it<T>(value T) T => return_it_again<T>(value)
+
+fn main() {
+    print(return_it<Str>("Hello"))
+}
+```
+
+```
+Hello
+```
+
+<details>
+<summary>More Examples</summary>
+
+Multiple type parameters:
+
+```klar
+
+fn ignore_second<T, U>(first T, second U) T => first
+
+fn main() {
+    print(ignore_second<Str, Int>("Hello", 42))
+}
+
+```
+
+```
+Hello
+```
+
+Only one specialized version of a function is created:
+
+```klar
+fn return_it<T>(value T) T => value
+
+fn main() {
+    print(return_it<Str>("Hello"))
+    print(return_it<Str>("world"))
+}
+```
+
+```
+Hello
+world
+```
+
+The number of type arguments must match the number of type parameters:
+
+```klar
+fn return_it<T>(value T) T => value
+
+fn main() {
+    return_it<Str, Int>("test") -- ERROR: Expected 1 type arguments, got 2
+}
+```
+
+Parameter type must match type argument:
+
+```klar
+fn return_it<T>(value T) T => value
+
+fn main() {
+    return_it<Str>(42) -- ERROR: Type `I64` is not assignable to type `Str`
+}
+
+```
+
+</details>
+
 ## Appendix - The Tokenizer
 
 <details>

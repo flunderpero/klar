@@ -7,7 +7,7 @@ from typing import Never
 from . import compiler
 from . import tokenizer as token
 
-commands = ("tokens", "ast", "types", "ir", "asm", "compile", "run")
+commands = ("tokens", "ast", "types", "lower", "ir", "asm", "compile", "run")
 
 
 def usage(err: str | None) -> Never:
@@ -18,6 +18,7 @@ def usage(err: str | None) -> Never:
     print("  tokens <file>  : Tokenize and print the tokens")
     print("  ast <file>     : Parse and print the AST")
     print("  types <file>   : Type-check and print the typed AST")
+    print("  lower <file>   : Lower the AST")
     print("  ir <file>      : Generate and print the IR")
     print("  asm <file>     : Generate and print the assembly code")
     print("  compile <file> : Compile the source to `a.out`")
@@ -66,6 +67,10 @@ def main() -> None:
             case compiler.AbortStep():
                 print("\nErrors occurred, skipping further processing")
                 sys.exit(1)
+            case compiler.LowerStep():
+                if command == "lower":
+                    print(step)
+                    break
             case compiler.IRStep():
                 if command == "ir":
                     print(step)

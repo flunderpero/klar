@@ -118,6 +118,10 @@ def wrong_number_of_args(span: Span, params: int, args: int, defined_here: Span)
     return WithDefinitionError(span, f"Expected {params} arguments, got {args}", defined_here, _stack())
 
 
+def wrong_number_of_type_args(type_params: int, type_args: int, span: Span, defined_here: Span) -> Error:
+    return WithDefinitionError(span, f"Expected {type_params} type arguments, got {type_args}", defined_here, _stack())
+
+
 def type_not_assignable_from(span: Span, target: str, from_: str) -> Error:
     return SimpleError(span, f"Type `{from_}` is not assignable to type `{target}`", _stack())
 

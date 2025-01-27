@@ -76,12 +76,71 @@ class Parser:
         self.error(error.unexpected_token(t.span, t.kind.value, token.Kind.type_ident.value))
         return None
 
+    def parse_type_params(self) -> ast.TypeParams | None:
+        if self.input.peek().kind != token.Kind.lt:
+            return []
+        self.input.next()
+        if self.input.peek().kind == token.Kind.gt:
+            self.error(error.unexpected_token(self.input.span(), token.Kind.gt.value, token.Kind.type_ident.value))
+            return None
+        res: ast.TypeParams = []
+        while True:
+            t = self.input.peek()
+            if t.kind == token.Kind.type_ident:
+                self.input.next()
+                res.append(ast.TypeParam(t.value_str(), t.span))
+                match self.input.peek().kind:
+                    case token.Kind.comma:
+                        self.input.next()
+                    case token.Kind.gt:
+                        self.input.next()
+                        break
+                    case _:
+                        self.error(
+                            error.unexpected_token(t.span, t.kind.value, token.Kind.comma.value, token.Kind.gt.value)
+                        )
+                        return None
+            else:
+                self.error(error.unexpected_token(t.span, t.kind.value, token.Kind.type_ident.value))
+                return None
+        return res
+
+    def parse_type_args(self) -> ast.TypeArgs | None:
+        if self.input.peek().kind != token.Kind.lt:
+            return []
+        self.input.next()
+        if self.input.peek().kind == token.Kind.gt:
+            self.error(error.unexpected_token(self.input.span(), token.Kind.gt.value, token.Kind.type_ident.value))
+            return None
+        res: ast.TypeArgs = []
+        while True:
+            typ = self.parse_type()
+            if not typ:
+                return None
+            res.append(typ)
+            t = self.input.peek()
+            match t.kind:
+                case token.Kind.comma:
+                    self.input.next()
+                case token.Kind.gt:
+                    self.input.next()
+                    break
+                case _:
+                    self.error(
+                        error.unexpected_token(t.span, t.kind.value, token.Kind.comma.value, token.Kind.gt.value)
+                    )
+                    return None
+        return res
+
     def parse_fn_decl(self) -> ast.FnDecl | None:
         span = self.input.span()
         if not self.expect(token.Kind.fn):
             return None
         name = self.expect_ident()
         if not name:
+            return None
+        type_params = self.parse_type_params()
+        if type_params is None:
             return None
         if not self.expect(token.Kind.paren_left):
             return None
@@ -128,7 +187,7 @@ class Parser:
         if self.input.peek().kind == token.Kind.type_ident:
             result = self.parse_type()
 
-        return ast.FnDecl(self.id(), name, params, result, self.input.span_merge(span))
+        return ast.FnDecl(self.id(), name, params, result, type_params, self.input.span_merge(span))
 
     def parse_fn_def(self) -> ast.FnDef | None:
         span = self.input.span()
@@ -140,12 +199,15 @@ class Parser:
             return None
         return ast.FnDef(self.id(), fn_decl, body, self.input.span_merge(span))
 
-    def parse_ident_expr(self) -> ast.Ident | None:
+    def parse_ident(self) -> ast.Ident | None:
         span = self.input.span()
         ident = self.expect_ident()
         if not ident:
             return None
-        return ast.Ident(self.id(), ident, self.input.span_merge(span))
+        type_args = self.parse_type_args()
+        if type_args is None:
+            return None
+        return ast.Ident(self.id(), ident, type_args, self.input.span_merge(span))
 
     def parse_call(self, callee: ast.Expr) -> ast.Call | None:
         if not self.expect(token.Kind.paren_left):
@@ -234,7 +296,7 @@ class Parser:
             case token.Kind.curly_left | token.Kind.fat_arrow:
                 expr = self.parse_block()
             case token.Kind.ident:
-                expr = self.parse_ident_expr()
+                expr = self.parse_ident()
                 expr_callable = True
             case token.Kind.str_lit:
                 self.input.next()

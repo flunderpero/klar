@@ -23,10 +23,10 @@ class Monomorphize:
     def run(self) -> None:
         while self.queue:
             self.current = self.queue.pop()
-            self.scan_fn_def(self.current.fn_def)
+            self.scan_fn_def(self.current.fn_def, None)
             self.fn_specs.append(self.current)
 
-    def scan_fn_def(self, node: ast.Node) -> None:
+    def scan_fn_def(self, node: ast.Node, _parent: ast.Node | None) -> None:
         ast.walk(node, self.scan_fn_def)
         match node:
             case ast.Ident():
@@ -65,7 +65,7 @@ def monomorphize(module: ast.Module, type_env: typechecker.TypeEnv) -> list[lowe
 
     runner = Monomorphize(type_env, fn_defs)
 
-    def visit(node: ast.Node) -> None:
+    def visit(node: ast.Node, _parent: ast.Node | None) -> None:
         match node:
             case ast.FnDef():
                 typ = type_env.get_node_type(node.decl)
@@ -76,7 +76,7 @@ def monomorphize(module: ast.Module, type_env: typechecker.TypeEnv) -> list[lowe
                     main = typ
         ast.walk(node, visit)
 
-    visit(module)
+    visit(module, None)
     assert isinstance(main, types.Fn)
     runner.enqueue_if_needed(types.Instance(main, types.TypeResScope(None, None)))
     runner.run()

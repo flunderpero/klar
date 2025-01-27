@@ -245,7 +245,7 @@ Expr = Block | IntLit | StrLit | BoolLit | Ident | Call | BinaryExpr | If
 Node = Expr | FnDecl | FnDef | Module | Type | Let | Assign | Loop | Break | Continue
 
 
-ASTVisitor = Callable[[Node], None]
+ASTVisitor = Callable[[Node, Node | None], None]
 
 
 def walk(node: Node, visit: ASTVisitor) -> bool:
@@ -256,32 +256,32 @@ def walk(node: Node, visit: ASTVisitor) -> bool:
     match node:
         case Module():
             for n in node.nodes:
-                visit(n)
+                visit(n, node)
         case Block():
             for n in node.nodes:
-                visit(n)
+                visit(n, node)
         case FnDef():
-            visit(node.decl)
-            visit(node.body)
+            visit(node.decl, node)
+            visit(node.body, node)
         case Call():
-            visit(node.callee)
+            visit(node.callee, node)
             for arg in node.args:
-                visit(arg)
+                visit(arg, node)
         case BinaryExpr():
-            visit(node.lhs)
-            visit(node.rhs)
+            visit(node.lhs, node)
+            visit(node.rhs, node)
         case If():
-            visit(node.cond)
-            visit(node.then_block)
+            visit(node.cond, node)
+            visit(node.then_block, node)
             if node.else_block:
-                visit(node.else_block)
+                visit(node.else_block, node)
         case Loop():
-            visit(node.block)
+            visit(node.block, node)
         case Let():
-            visit(node.value)
+            visit(node.value, node)
         case Assign():
-            visit(node.target)
-            visit(node.value)
+            visit(node.target, node)
+            visit(node.value, node)
         case Ident() | IntLit() | StrLit() | BoolLit() | FnDecl() | Break() | Continue():
             return False
         case _:

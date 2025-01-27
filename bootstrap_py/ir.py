@@ -389,7 +389,7 @@ class FnGen:
             assert node.id not in self.node_regs, f"Node {node.id} already has a register"
             self.node_regs[node.id] = inst.reg
 
-    def generate(self, node: ast.Node) -> None:
+    def generate(self, node: ast.Node, _parent: ast.Node | None) -> None:
         match node:
             case ast.FnDef():
                 ast.walk(node, self.generate)
@@ -411,7 +411,7 @@ class FnGen:
                 prev_block = self.block
                 self.block.terminator = Jump(loop_block)
                 self.block = loop_block
-                self.generate(node.block)
+                self.generate(node.block, node)
                 body_scope_snapshot = self.scope.snapshot()
                 # Insert phi nodes for every variable that has been changed in the loop body.
                 for name, prev_reg in scope_snapshot.items():
@@ -434,7 +434,7 @@ class FnGen:
                 self.block.terminator = Jump(loop_scope.break_block)
                 self.node_regs[node.id] = NoneReg
             case ast.If():
-                self.generate(node.cond)
+                self.generate(node.cond, node)
                 prev_block = self.block
                 cond_reg = self.node_regs[node.cond.id]
                 then_block = self.new_block()
@@ -442,7 +442,7 @@ class FnGen:
                 scope_snapshot = self.scope.snapshot()
                 # Walk the `then_block`.
                 self.block = then_block
-                self.generate(node.then_block)
+                self.generate(node.then_block, node)
                 then_scope_snapshot = self.scope.snapshot()
                 if not node.else_block:
                     # Reset the scope.
@@ -474,7 +474,7 @@ class FnGen:
                     # Walk the `else_block`.
                     prev_block.terminator = Branch(cond_reg, then_block, else_block)
                     self.block = else_block
-                    self.generate(node.else_block)
+                    self.generate(node.else_block, node)
                     else_scope_snapshot = self.scope.snapshot()
                     assert not self.block.terminator
                     self.block.terminator = Jump(merge_block)
@@ -571,7 +571,7 @@ def generate_ir(specs: list[lower.FnSpec]) -> IR:
     ir = IR(fn_irs=[], constant_pool={})
     for spec in specs:
         gen = FnGen(spec.fn_def, spec.type_env, ir)
-        gen.generate(spec.fn_def)
+        gen.generate(spec.fn_def, None)
         ir.fn_irs.append(gen.fn_ir)
 
     return ir

@@ -208,7 +208,7 @@ class TypeChecker:
                 typ = types.TypeCheckError(self.id(), "unexpected type", node.span)
         self.type_env.set_node_type(node, typ)
 
-    def typecheck(self, node: ast.Node) -> None:
+    def typecheck(self, node: ast.Node, _parent: ast.Node | None) -> None:
         match node:
             case ast.Module():
                 self.declare_all(node)
@@ -363,5 +363,5 @@ class TypeChecker:
 
 def typecheck(module: ast.Module, next_id: Callable[[], int]) -> tuple[TypeEnv, list[error.Error]]:
     tc = TypeChecker(type_env=TypeEnv(builtins=types.Builtins.new(next_id)), scope=Scope(module, None), next_id=next_id)
-    tc.typecheck(module)
+    tc.typecheck(module, None)
     return tc.type_env, tc.errors

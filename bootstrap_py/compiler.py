@@ -38,7 +38,7 @@ class TypecheckStep:
     def __str__(self) -> str:
         lines = []
 
-        def visit(node: ast.Node) -> None:
+        def visit(node: ast.Node, _parent: ast.Node | None) -> None:
             typ = self.type_env.node_types.get(node.id)
             typ_str = str(typ) if typ else "NOT_FOUND"
             lines.append(str(node.span))

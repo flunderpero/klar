@@ -33,7 +33,8 @@ class Monomorphize:
                 typ = self.type_env.get_node_type(node)
                 if not isinstance(typ, types.Instance):
                     return
-                assert isinstance(typ.typ, types.Fn)
+                if not isinstance(typ.typ, types.Fn):
+                    return
                 fn = typ.typ
                 if self.type_env.builtins.is_builtin(fn):
                     return

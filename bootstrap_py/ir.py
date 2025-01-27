@@ -6,6 +6,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from . import ast, lower, types
+from .span import FQN
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -22,11 +23,11 @@ class Int:
 
 @dataclass
 class Struct:
-    name: str
+    fqn: FQN
     fields: list[Type]
 
     def __str__(self) -> str:
-        return f"{self.name}{{{', '.join(str(f) for f in self.fields)}}}"
+        return f"{self.fqn}{{{', '.join(str(f) for f in self.fields)}}}"
 
 
 @dataclass
@@ -55,7 +56,7 @@ I32 = Int(bits=32, signed=True)
 U32 = Int(bits=32, signed=False)
 I64 = Int(bits=64, signed=True)
 U64 = Int(bits=64, signed=False)
-Str = Struct(name="Str", fields=[I64, Ptr(U8)])
+Str = Struct(fqn=FQN(["Str"]), fields=[I64, Ptr(U8)])
 
 RegId = str
 
@@ -92,6 +93,15 @@ class GetPtr:
 
 
 @dataclass
+class Load:
+    reg: Reg
+    src: Reg
+
+    def __str__(self) -> str:
+        return f"{self.reg} = load {self.src.typ} {self.src}"
+
+
+@dataclass
 class Call:
     reg: Reg
     callee: str
@@ -100,6 +110,15 @@ class Call:
     def __str__(self) -> str:
         prefix = f"{self.reg} = call {self.reg.typ}" if self.reg != NoneReg else "call none"
         return f"{prefix} {self.callee}, {', '.join(f'{x.typ} {x.id}' for x in self.args)}"
+
+
+@dataclass
+class Alloc:
+    reg: Reg
+    args: list[Reg]
+
+    def __str__(self) -> str:
+        return f"{self.reg.id} = alloc {self.reg.typ}, {', '.join(f'{x.typ} {x.id}' for x in self.args)}"
 
 
 @dataclass
@@ -160,7 +179,7 @@ class Phi:
         return f"{self.reg} = phi {', '.join(str(reg) for reg in self.incoming)}"
 
 
-Inst = IntConst | GetPtr | Call | IAddO | ISubO | ICmp | Phi
+Inst = IntConst | GetPtr | Load | Call | Alloc | IAddO | ISubO | ICmp | Phi
 
 BlockId = str
 
@@ -376,6 +395,8 @@ class FnGen:
                 return Str
             case types.NoneTyp():
                 return NoneTyp()
+            case types.Struct():
+                return Struct(typ.fqn, [self.typ(x.typ) for x in typ.fields])
             case _:
                 raise AssertionError(f"Unsupported type: {typ}")
 
@@ -521,24 +542,45 @@ class FnGen:
                 reg = self.scope.find(node.name)
                 if reg:
                     self.node_regs[node.id] = reg
+            case ast.Member():
+                ast.walk(node, self.generate)
+                src = self.node_regs[node.target.id]
+                types_src = self.type_env.get_node_type(node.target)
+                assert isinstance(src.typ, Struct)
+                assert isinstance(types_src, types.Struct)
+                field_index = types_src.field_index(node.name)
+                assert field_index is not None
+                getptr_reg = self.reg(Ptr(src.typ.fields[field_index]))
+                self.emit(GetPtr(getptr_reg, src, field_index), None)
+                reg = self.reg(src.typ.fields[field_index])
+                self.emit(Load(reg, getptr_reg), node)
             case ast.Call():
-                fn_typ = self.type_env.get_unresolved_node_type(node.callee)
-                assert isinstance(fn_typ, types.Instance), f"Expected instance type, got {fn_typ}"
+                callee = self.type_env.get_unresolved_node_type(node.callee)
+                assert isinstance(callee, types.Instance), f"Expected instance type, got {callee}"
                 result_typ = self.type_env.get_node_type(node)
                 ast.walk(node, self.generate)
                 args = [self.node_regs[x.id] for x in node.args]
-                reg = NoneReg
-                if not isinstance(result_typ, types.NoneTyp):
-                    reg = self.reg(self.typ(result_typ))
-                self.emit(Call(reg, self.fn_name(fn_typ), args), node)
+                match callee.typ:
+                    case types.Fn():
+                        reg = NoneReg
+                        if not isinstance(result_typ, types.NoneTyp):
+                            reg = self.reg(self.typ(result_typ))
+                        self.emit(Call(reg, self.fn_name(callee), args), node)
+                    case types.Struct():
+                        typ = self.typ(callee)
+                        reg = self.reg(typ)
+                        self.emit(Alloc(reg, args), node)
+                    case _:
+                        raise AssertionError(f"Unsupported callee type: {callee.typ}")
             case ast.Let():
                 ast.walk(node, self.generate)
                 self.scope.declare(node.name, self.node_regs[node.value.id])
+                self.node_regs[node.id] = NoneReg
             case ast.Assign():
                 ast.walk(node, self.generate)
-                target = node.target
-                assert isinstance(target, ast.Ident)
-                self.scope.update(target.name, self.node_regs[node.value.id])
+                src = node.target
+                assert isinstance(src, ast.Ident)
+                self.scope.update(src.name, self.node_regs[node.value.id])
                 self.node_regs[node.id] = NoneReg
             case ast.BinaryExpr():
                 ast.walk(node, self.generate)

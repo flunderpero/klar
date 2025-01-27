@@ -62,7 +62,7 @@ class NoneTyp:
 
 
 @dataclass
-class Param:
+class FieldOrParam:
     name: str
     typ: Type
 
@@ -72,14 +72,40 @@ class Fn:
     id: TypeId
     fqn: FQN
     type_params: TypeParams
-    params: list[Param]
+    params: list[FieldOrParam]
     result: Type
     span: Span
 
     def __str__(self) -> str:
         type_params = type_params_to_str(self.type_params)
         params = ", ".join(f"{p.name}: {p.typ}" for p in self.params)
-        return tid(self.id) + f"fn {self.fqn}{type_params}({params}) -> {self.result}"
+        return tid(self.id) + f"fn {self.fqn}{type_params}({params})->{self.result}"
+
+
+@dataclass
+class Struct:
+    id: TypeId
+    fqn: FQN
+    type_params: TypeParams
+    fields: list[FieldOrParam]
+    span: Span
+
+    def __str__(self) -> str:
+        type_params = type_params_to_str(self.type_params)
+        fields = ", ".join(f"{f.name}: {f.typ}" for f in self.fields)
+        return tid(self.id) + f"struct {self.fqn}{type_params}{{{fields}}}"
+
+    def field(self, name: str) -> FieldOrParam | None:
+        for f in self.fields:
+            if f.name == name:
+                return f
+        return None
+
+    def field_index(self, name: str) -> int | None:
+        for i, f in enumerate(self.fields):
+            if f.name == name:
+                return i
+        return None
 
 
 @dataclass
@@ -152,8 +178,16 @@ class TypeResScope:
                     typ.id,
                     typ.fqn,
                     typ.type_params,
-                    [Param(p.name, self.resolve(p.typ)) for p in typ.params],
+                    [FieldOrParam(p.name, self.resolve(p.typ)) for p in typ.params],
                     self.resolve(typ.result),
+                    typ.span,
+                )
+            case Struct():
+                return Struct(
+                    typ.id,
+                    typ.fqn,
+                    typ.type_params,
+                    [FieldOrParam(p.name, self.resolve(p.typ)) for p in typ.fields],
                     typ.span,
                 )
         return typ
@@ -181,7 +215,7 @@ class TypeResScope:
 
 @dataclass
 class Instance:
-    typ: TypeParam | Fn
+    typ: TypeParam | Fn | Struct
     type_res_scope: TypeResScope
 
     def __str__(self) -> str:
@@ -199,7 +233,7 @@ class Instance:
         match self.typ:
             case TypeParam():
                 return [self.typ]
-            case Fn():
+            case Fn() | Struct():
                 return self.typ.type_params
             case _:
                 raise AssertionError(f"unhandled type: {self.typ}")
@@ -226,9 +260,9 @@ class Builtins:
         int_typ = Int(next_id(), bits=64, signed=True, span=span)
         bool_typ = Bool(next_id(), span)
         none_typ = NoneTyp(next_id(), span)
-        print_typ = Fn(next_id(), FQN(["print"]), [], [Param("s", str_typ)], none_typ, span)
-        int_to_str = Fn(next_id(), FQN(["int_to_str"]), [], [Param("i", int_typ)], str_typ, span)
-        bool_to_str = Fn(next_id(), FQN(["bool_to_str"]), [], [Param("b", bool_typ)], str_typ, span)
+        print_typ = Fn(next_id(), FQN(["print"]), [], [FieldOrParam("s", str_typ)], none_typ, span)
+        int_to_str = Fn(next_id(), FQN(["int_to_str"]), [], [FieldOrParam("i", int_typ)], str_typ, span)
+        bool_to_str = Fn(next_id(), FQN(["bool_to_str"]), [], [FieldOrParam("b", bool_typ)], str_typ, span)
         return Builtins(str_typ, int_typ, bool_typ, none_typ, print_typ, int_to_str, bool_to_str)
 
     Str: Str
@@ -251,7 +285,7 @@ class Builtins:
         }
 
 
-Type = Int | Str | Bool | Fn | NoneTyp | TypeParam | Instance | TypeCheckError
+Type = Int | Str | Bool | Fn | Struct | NoneTyp | TypeParam | Instance | TypeCheckError
 
 
 def pretty(typ: Type) -> str:
@@ -271,6 +305,9 @@ def is_assignable_from(target: Type, from_: Type) -> bool:
         case TypeCheckError():
             return False
         case TypeParam():
+            return target.id == from_.id
+        case Struct():
+            # todo: This does not include type arguments
             return target.id == from_.id
         case _:
             raise AssertionError(f"unhandled target type: {target}")

@@ -158,7 +158,7 @@ class Parser:
                     param_type = self.parse_type()
                     if not param_type:
                         return None
-                    params.append(ast.Param(param_name, param_type, t.span.merge(param_type.span)))
+                    params.append(ast.FieldOrParam(param_name, param_type, t.span.merge(param_type.span)))
                     match self.input.peek().kind:
                         case token.Kind.comma:
                             self.input.next()
@@ -201,13 +201,13 @@ class Parser:
 
     def parse_ident(self) -> ast.Ident | None:
         span = self.input.span()
-        ident = self.expect_ident()
+        ident = self.expect(token.Kind.ident, token.Kind.type_ident)
         if not ident:
             return None
         type_args = self.parse_type_args()
         if type_args is None:
             return None
-        return ast.Ident(self.id(), ident, type_args, self.input.span_merge(span))
+        return ast.Ident(self.id(), ident.value_str(), type_args, self.input.span_merge(span))
 
     def parse_call(self, callee: ast.Expr) -> ast.Call | None:
         if not self.expect(token.Kind.paren_left):
@@ -233,6 +233,17 @@ class Parser:
                     return None
         self.input.next()
         return ast.Call(self.id(), callee, args, self.input.span_merge(callee.span))
+
+    def parse_member(self, target: ast.Expr) -> ast.Member | None:
+        if not self.expect(token.Kind.dot):
+            return None
+        name = self.expect_ident()
+        if not name:
+            return None
+        type_args = self.parse_type_args()
+        if type_args is None:
+            return None
+        return ast.Member(self.id(), target, name, type_args, self.input.span_merge(target.span))
 
     def parse_if(self) -> ast.If | None:
         span = self.input.span()
@@ -291,34 +302,32 @@ class Parser:
     def parse_primary_expr(self) -> ast.Expr | None:
         t = self.input.peek()
         expr: ast.Expr | None
-        expr_callable = False
         match t.kind:
             case token.Kind.curly_left | token.Kind.fat_arrow:
-                expr = self.parse_block()
-            case token.Kind.ident:
+                return self.parse_block()
+            case token.Kind.ident | token.Kind.type_ident:
                 expr = self.parse_ident()
-                expr_callable = True
             case token.Kind.str_lit:
                 self.input.next()
-                expr = ast.StrLit(self.id(), t.value_str(), t.span)
+                return ast.StrLit(self.id(), t.value_str(), t.span)
             case token.Kind.int_lit:
                 self.input.next()
-                expr = ast.IntLit(self.id(), bits=64, signed=True, value=int(t.value_str()), span=t.span)
+                return ast.IntLit(self.id(), bits=64, signed=True, value=int(t.value_str()), span=t.span)
             case token.Kind.true | token.Kind.false:
                 self.input.next()
-                expr = ast.BoolLit(self.id(), value=t.kind == token.Kind.true, span=t.span)
+                return ast.BoolLit(self.id(), value=t.kind == token.Kind.true, span=t.span)
             case token.Kind.if_:
-                expr = self.parse_if()
+                return self.parse_if()
             case _:
                 self.error(error.unexpected_token(t.span, t.kind.value))
                 return None
         if not expr:
             return None
-        if not expr_callable:
-            return expr
         match self.input.peek().kind:
             case token.Kind.paren_left:
                 expr = self.parse_call(expr)
+            case token.Kind.dot:
+                expr = self.parse_member(expr)
         return expr
 
     def parse_let_or_mut(self) -> ast.Let | None:
@@ -337,6 +346,37 @@ class Parser:
         return ast.Let(
             self.id(), name, None, value, self.input.span_merge(span), mutable=keyword.kind == token.Kind.mut
         )
+
+    def parse_struct(self) -> ast.Struct | None:
+        span = self.input.span()
+        if not self.expect(token.Kind.struct):
+            return None
+        name = self.expect(token.Kind.type_ident)
+        if not name:
+            return None
+        type_params = self.parse_type_params()
+        if type_params is None:
+            return None
+        if not self.expect(token.Kind.curly_left):
+            return None
+        fields: list[ast.FieldOrParam] = []
+        while self.input.peek().kind != token.Kind.curly_right:
+            param_span = self.input.span()
+            param_name = self.expect_ident()
+            if not param_name:
+                return None
+            param_type = self.parse_type()
+            if not param_type:
+                return None
+            fields.append(ast.FieldOrParam(param_name, param_type, self.input.span_merge(param_span)))
+            match self.input.peek():
+                case token.Kind.comma:
+                    self.input.next()
+                case token.Kind.curly_right:
+                    break
+        if not self.expect(token.Kind.curly_right):
+            return None
+        return ast.Struct(self.id(), name.value_str(), fields, type_params, self.input.span_merge(span))
 
     def parse_block(self) -> ast.Block | None:
         span = self.input.span()
@@ -374,6 +414,8 @@ class Parser:
             case token.Kind.continue_:
                 span = self.input.next().span
                 return ast.Continue(self.id(), span)
+            case token.Kind.struct:
+                return self.parse_struct()
             case _:
                 expr = self.parse_expr()
                 if not expr:

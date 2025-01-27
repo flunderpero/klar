@@ -98,12 +98,20 @@ def duplicate_fn(name: str, span: Span, defined_here: Span) -> Error:
     return DuplicateError(name, span, defined_here, _stack())
 
 
+def duplicate_struct(name: str, span: Span, defined_here: Span) -> Error:
+    return DuplicateError(name, span, defined_here, _stack())
+
+
 def duplicate_param_name(name: str, span: Span, defined_here: Span) -> Error:
     return DuplicateError(name, span, defined_here, _stack())
 
 
 def undefined_name(name: str, span: Span) -> Error:
     return SimpleError(span, f"Undefined name `{name}`", _stack())
+
+
+def no_member(name: str, target: str, span: Span, target_defined_here: Span) -> Error:
+    return WithDefinitionError(span, f"No member `{name}` in type `{target}`", target_defined_here, _stack())
 
 
 def unexpected_type(expected: str, got: str, span: Span) -> Error:

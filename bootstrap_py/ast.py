@@ -58,6 +58,18 @@ class Ident:
 
 
 @dataclass
+class Member:
+    id: NodeId
+    target: Expr
+    name: str
+    type_args: TypeArgs
+    span: Span
+
+    def __str__(self) -> str:
+        return nid(self.id) + f"{self.target}.{self.name}{generics_to_str(self.type_args)}"
+
+
+@dataclass
 class Type:
     id: NodeId
     name: str
@@ -65,6 +77,20 @@ class Type:
 
     def __str__(self) -> str:
         return nid(self.id) + self.name
+
+
+@dataclass
+class Struct:
+    id: NodeId
+    name: str
+    fields: list[FieldOrParam]
+    type_params: TypeParams
+    span: Span
+
+    def __str__(self) -> str:
+        fields = ", ".join(str(x) for x in self.fields)
+        type_params = generics_to_str(self.type_params)
+        return nid(self.id) + f"struct {self.name}{type_params}{{{fields}}}"
 
 
 @dataclass
@@ -196,7 +222,7 @@ def generics_to_str(type_params: TypeParams | TypeArgs) -> str:
 
 
 @dataclass
-class Param:
+class FieldOrParam:
     name: str
     typ: Type
     span: Span
@@ -209,7 +235,7 @@ class Param:
 class FnDecl:
     id: NodeId
     name: str
-    params: list[Param]
+    params: list[FieldOrParam]
     result: Type | None
     type_params: TypeParams
     span: Span
@@ -241,8 +267,8 @@ class Module:
         return nid(self.id) + f"mod {self.fqn}\n" + "\n".join(str(x) for x in self.nodes)
 
 
-Expr = Block | IntLit | StrLit | BoolLit | Ident | Call | BinaryExpr | If
-Node = Expr | FnDecl | FnDef | Module | Type | Let | Assign | Loop | Break | Continue
+Expr = Block | IntLit | StrLit | BoolLit | Ident | Member | Call | BinaryExpr | If
+Node = Expr | FnDecl | FnDef | Module | Type | Let | Assign | Loop | Break | Continue | Struct
 
 
 ASTVisitor = Callable[[Node, Node | None], None]
@@ -282,7 +308,9 @@ def walk(node: Node, visit: ASTVisitor) -> bool:
         case Assign():
             visit(node.target, node)
             visit(node.value, node)
-        case Ident() | IntLit() | StrLit() | BoolLit() | FnDecl() | Break() | Continue():
+        case Member():
+            visit(node.target, node)
+        case Ident() | IntLit() | StrLit() | BoolLit() | FnDecl() | Break() | Continue() | Struct():
             return False
         case _:
             raise AssertionError(f"Don't know how to walk: {node}")

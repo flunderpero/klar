@@ -137,3 +137,4 @@ justfile
 amd
 monomorphize
 monomorphize
+regs

@@ -97,6 +97,33 @@ true
 false
 ```
 
+## Product Types (Struct)
+
+```klar
+struct Planet {
+    radius Int
+    has_moons Bool
+    name Str
+}
+
+fn print_planet(p Planet) {
+    print(p.name)
+    print(int_to_str(p.radius))
+    print(bool_to_str(p.has_moons))
+}
+
+fn main() {
+    let p = Planet(6371, true, "Earth")
+    print_planet(p)
+}
+```
+
+```
+Earth
+6371
+true
+```
+
 ## Block Expression
 
 In Klar, blocks are expressions, i.e. they represent a value.
@@ -624,9 +651,13 @@ fn main() {
     forward()
 }
 
-fn forward() => forward2()
+fn forward() => forward2(Named("PASS"))
 
-fn forward2() => print("PASS")
+fn forward2(named Named) => print(named.name)
+
+struct Named {
+    name Str
+}
 ```
 
 ```

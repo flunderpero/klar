@@ -18,6 +18,48 @@ all_regs = call_regs + caller_saved + callee_saved
 regs = caller_saved + callee_saved
 
 
+def to_32bit(reg: Reg) -> str:
+    return reg.replace("x", "w")
+
+
+class DataLayout:
+    @staticmethod
+    def sizeof(typ: ir.Type) -> int:
+        match typ:
+            case ir.NoneTyp:
+                return 0
+            case ir.Int():
+                return max(typ.bits // 8, 1)
+            case ir.Ptr():
+                return 8
+            case ir.Struct():
+                size = DataLayout.field_offset(typ, len(typ.fields) - 1) + DataLayout.sizeof(typ.fields[-1])
+                return (size + 7) & ~7
+            case _:
+                raise AssertionError(f"Unknown type: {typ}")
+
+    @staticmethod
+    def field_offset(typ: ir.Struct, index: int) -> int:
+        offset = 0
+        for field in typ.fields[:index]:
+            offset += DataLayout.sizeof(field)
+            alignment = DataLayout.alignment(field)
+            offset += (alignment - offset % alignment) % alignment
+        return offset
+
+    @staticmethod
+    def alignment(typ: ir.Type) -> int:
+        match typ:
+            case ir.Int():
+                return max(typ.bits // 8, 1)
+            case ir.Ptr():
+                return 8
+            case ir.Struct():
+                return 8
+            case _:
+                raise AssertionError(f"Unknown type: {typ}")
+
+
 class StackAllocator:
     size: int = 16
 
@@ -241,13 +283,39 @@ class FnGen:
                     self.asm.emit(f"{mov} {alloc.reg}, #{chunk0}")
                 self.ir_regs[inst.reg.id] = alloc
             case ir.GetPtr():
-                assert inst.field == 0, "For now, only field 0 is supported"
                 alloc = self.reg_allocator.allocate(inst.reg)
-                # For now, we know that the source is a string constant and we
-                # know its asm label.
-                src = inst.src
-                self.asm.emit(f"adrp {alloc.reg}, .{src}@PAGE")
-                self.asm.emit(f"add {alloc.reg}, {alloc.reg}, .{src}@PAGEOFF")
+                match inst.src.typ:
+                    case ir.Struct() as typ:
+                        if typ == ir.Str:
+                            src = inst.src
+                            self.asm.emit(f"adrp {alloc.reg}, .{src}@PAGE")
+                            self.asm.emit(f"add {alloc.reg}, {alloc.reg}, .{src}@PAGEOFF")
+                        else:
+                            src = self.ir_regs[inst.src.id]
+                            offset = DataLayout().field_offset(typ, inst.field)
+                            self.asm.emit(f"add {alloc.reg}, {src.reg}, #{offset}")
+                    case _:
+                        raise AssertionError(f"Unknown type: {inst.reg.typ}")
+                self.ir_regs[inst.reg.id] = alloc
+            case ir.Load():
+                alloc = self.reg_allocator.allocate(inst.reg)
+                src = self.ir_regs[inst.src.id]
+                assert isinstance(inst.src.typ, ir.Ptr)
+                typ = inst.src.typ.typ
+                match typ:
+                    case ir.Int():
+                        if typ.bits <= 8:
+                            self.asm.emit(f"ldrb {to_32bit(alloc.reg)}, [{src.reg}]")
+                        elif typ.bits == 16:
+                            self.asm.emit(f"ldrh {to_32bit(alloc.reg)}, [{src.reg}]")
+                        elif typ.bits == 32:
+                            self.asm.emit(f"ldr {to_32bit(alloc.reg)}, [{src.reg}]")
+                        else:
+                            self.asm.emit(f"ldr {alloc.reg}, [{src.reg}]")
+                    case ir.Struct() | ir.Ptr():
+                        self.asm.emit(f"ldr {alloc.reg}, [{src.reg}]")
+                    case _:
+                        raise AssertionError(f"Unexpected type: {typ}")
                 self.ir_regs[inst.reg.id] = alloc
             case ir.Call():
                 for i, arg in enumerate(inst.args):
@@ -259,6 +327,28 @@ class FnGen:
                     alloc = self.reg_allocator.allocate(inst.reg)
                     self.asm.emit(f"mov {alloc.reg}, x0")
                     self.ir_regs[inst.reg.id] = alloc
+            case ir.Alloc():
+                typ = inst.reg.typ
+                assert isinstance(typ, ir.Struct)
+                size = DataLayout.sizeof(typ)
+                with self.reg_allocator.with_spilled_caller_saved_regs(self.asm):
+                    alloc = self.reg_allocator.allocate(inst.reg)
+                    self.asm.emit(f"mov x0, #{size}")
+                    self.asm.emit("bl _malloc")
+                    self.asm.emit(f"mov {alloc.reg}, x0")
+                    self.ir_regs[inst.reg.id] = alloc
+                for i, field in enumerate(inst.args):
+                    offset = DataLayout.field_offset(typ, i)
+                    field_reg = self.ir_regs[field.id]
+                    match DataLayout.sizeof(field.typ):
+                        case 1:
+                            self.asm.emit(f"strb {to_32bit(field_reg.reg)}, [{alloc.reg}, #{offset}]")
+                        case 2:
+                            self.asm.emit(f"strh {to_32bit(field_reg.reg)}, [{alloc.reg}, #{offset}]")
+                        case 4:
+                            self.asm.emit(f"str {to_32bit(field_reg.reg)}, [{alloc.reg}, #{offset}]")
+                        case _:
+                            self.asm.emit(f"str {field_reg.reg}, [{alloc.reg}, #{offset}]")
             case ir.IAddO() | ir.ISubO():
                 asm_inst = ""
                 match inst:

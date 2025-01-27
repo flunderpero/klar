@@ -14,6 +14,7 @@ class Kind(Enum):
     continue_ = "continue"
     curly_left = "{"
     curly_right = "}"
+    dot = "."
     else_ = "else"
     eof = "end of file"
     eq = "="
@@ -35,6 +36,7 @@ class Kind(Enum):
     paren_right = ")"
     plus = "+"
     str_lit = "str literal"
+    struct = "struct"
     true = "true"
     type_ident = "type identifier"
 
@@ -73,6 +75,7 @@ keywords = {
         Kind.let,
         Kind.loop,
         Kind.mut,
+        Kind.struct,
         Kind.true,
     )
 }
@@ -122,6 +125,8 @@ def tokenize(input: Input) -> tuple[list[Token], list[error.Error]]:
                 kind = Kind.curly_left
             case "}":
                 kind = Kind.curly_right
+            case ".":
+                kind = Kind.dot
             case ",":
                 kind = Kind.comma
             case "+":

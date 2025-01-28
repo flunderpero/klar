@@ -225,26 +225,32 @@ class FnGen:
                     raise AssertionError(f"Unknown terminator: {term}")
             self.asm.dec_indent()
         # Now generate the surrounding code.
-        asm = ASM()
-        asm.emit(f"{fn_name}:")
-        # Prepare stack frame.
-        asm.inc_indent()
-        asm.emit(f"stp fp, lr, [sp, #-{self.stack_allocator.aligned_size()}]!")
-        asm.emit("mov fp, sp")
-        with self.reg_allocator.with_spilled_callee_saved_regs(asm):
-            asm.dec_indent()
+        res = ASM()
+        res.emit(f"{fn_name}:")
+        # `with_spilled_callee_saved_regs` might increase the stack size, so we call it
+        # first and then prepare the stack frame.
+        body = ASM()
+        body.inc_indent()
+        with self.reg_allocator.with_spilled_callee_saved_regs(body):
             # Add the generated code.
-            asm.extend(self.asm)
+            body.extend(self.asm)
             # Return block.
-            asm.emit(f"{self.block_label('ret')}:")
-            asm.inc_indent()
+            body.dec_indent()
+            body.emit(f"{self.block_label('ret')}:")
+            body.inc_indent()
+
+        # Prepare stack frame.
+        res.inc_indent()
+        res.emit(f"stp fp, lr, [sp, #-{self.stack_allocator.aligned_size()}]!")
+        res.emit("mov fp, sp")
+        # Add the body.
+        res.extend(body)
         # Release stack frame and return.
-        asm.emit(f"ldp fp, lr, [sp], #{self.stack_allocator.aligned_size()}")
+        res.emit(f"ldp fp, lr, [sp], #{self.stack_allocator.aligned_size()}")
         if fn_name == "_main":
-            asm.emit("mov x0, xzr")
-        asm.emit("ret")
-        asm.dec_indent()
-        return asm
+            res.emit("mov x0, xzr")
+        res.emit("ret")
+        return res
 
     def inst(self, inst: ir.Inst) -> None:
         match inst:
@@ -384,8 +390,15 @@ class ASM:
     def emit(self, s: str, indent: int = 0) -> None:
         self.lines.append(" " * (self.indent + indent) * 4 + s)
 
-    def extend(self, other: ASM) -> None:
-        self.lines.extend(other.lines)
+    def extend(self, other: ASM | list[str]) -> None:
+        if isinstance(other, ASM):
+            other = other.lines
+        self.lines.extend(other)
+
+    def prepend(self, other: ASM | list[str]) -> None:
+        if isinstance(other, ASM):
+            other = other.lines
+        self.lines = other + self.lines
 
     def inc_indent(self) -> None:
         self.indent += 1

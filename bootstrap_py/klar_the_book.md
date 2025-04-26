@@ -124,6 +124,31 @@ Earth
 true
 ```
 
+Nested structs:
+
+```klar
+struct A {
+    a Str
+}
+
+struct B {
+    b A
+}
+
+fn print_nested(b B) {
+    print(b.b.a)
+}
+
+fn main() {
+    let b = B(A("Hello"))
+    print_nested(b)
+}
+```
+
+```
+Hello
+```
+
 ## Block Expression
 
 In Klar, blocks are expressions, i.e. they represent a value.
@@ -647,10 +672,8 @@ struct Pair<A, B> {
 }
 
 fn print_pair(p Pair<Str, Int>) {
-    let a = p.a
-    print(a.value)
-    let b = p.b
-    print(int_to_str(b.value))
+    print(p.a.value)
+    print(int_to_str(p.b.value))
 }
 
 fn main() {

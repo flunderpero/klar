@@ -330,7 +330,10 @@ class Parser:
             case token.Kind.paren_left:
                 expr = self.parse_call(expr)
             case token.Kind.dot:
-                expr = self.parse_member(expr)
+                while True:
+                    expr = self.parse_member(expr)
+                    if expr is None or self.input.peek().kind != token.Kind.dot:
+                        break
         return expr
 
     def parse_let_or_mut(self) -> ast.Let | None:

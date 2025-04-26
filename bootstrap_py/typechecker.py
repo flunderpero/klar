@@ -280,6 +280,8 @@ class TypeChecker:
                     typ = types.TypeCheckError(self.id(), "no member", node.span)
                 else:
                     typ = field.typ
+                if isinstance(typ, (types.Struct, types.Fn)):
+                    typ = self.instance(typ, node.type_args, node.span)
                 self.type_env.set_node_type(node, typ)
             case ast.Call():
                 self.typecheck_call(node)

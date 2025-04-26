@@ -161,7 +161,15 @@ def main() -> int:
     print_error_stack = "--err-stack" in args
     args = [x for x in args if not x.startswith("--")]
     if len(args) == 1:
-        print("Usage: md_tests.py [--asm] <file> [chapter] [#test]")
+        print("Usage: md_tests.py <file> [chapter] [#test] [options]")
+        print("   Options:")
+        print("     --tokens        Print tokens")
+        print("     --ast           Print AST")
+        print("     --types         Print types")
+        print("     --lower         Print lowered code")
+        print("     --ir            Print IR")
+        print("     --asm           Print assembly")
+        print("     --err-stack     Print error stack")
         return 1
     file = args[1]
     src = open(file).read()

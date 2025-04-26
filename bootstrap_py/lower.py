@@ -16,8 +16,6 @@ class TypeEnv:
         return self.type_env.get_node_type(node)
 
     def resolve(self, typ: types.Type) -> types.Type:
-        if isinstance(typ, types.Instance):
-            typ = typ.type_res_scope.resolve(typ.typ)
         return self.type_res_scope.resolve(typ)
 
 

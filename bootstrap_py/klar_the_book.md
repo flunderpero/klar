@@ -549,6 +549,35 @@ fn main() {
 Hello
 ```
 
+Parameterized structs:
+
+```klar
+struct Pair<A, B> {
+    a A
+    b B
+}
+
+fn print_str_int_pair(p Pair<Str, Int>) {
+    print(p.a)
+    print(int_to_str(p.b))
+}
+
+fn main() {
+    let p1 = Pair<Str, Int>("Hello", 42)
+    print_str_int_pair(p1)
+    let p2 = Pair<Bool, Str>(true, "world")
+    print(bool_to_str(p2.a))
+    print(p2.b)
+}
+```
+
+```
+Hello
+42
+true
+world
+```
+
 <details>
 <summary>More Examples</summary>
 
@@ -603,6 +632,37 @@ fn main() {
     return_it<Str>(42) -- ERROR: Type `I64` is not assignable to type `Str`
 }
 
+```
+
+Nested type arguments:
+
+```klar
+struct Value<A> {
+    value A
+}
+
+struct Pair<A, B> {
+    a Value<A>
+    b Value<B>
+}
+
+fn print_pair(p Pair<Str, Int>) {
+    let a = p.a
+    print(a.value)
+    let b = p.b
+    print(int_to_str(b.value))
+}
+
+fn main() {
+    let v = Value<Str>("Hello")
+    let p = Pair<Str, Int>(v, Value<Int>(42))
+    print_pair(p)
+}
+```
+
+```
+Hello
+42
 ```
 
 </details>

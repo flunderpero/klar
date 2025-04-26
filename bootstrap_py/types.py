@@ -164,7 +164,8 @@ class TypeResScope:
     def resolve(self, typ: Type) -> Type:
         match typ:
             case Instance():
-                return self.resolve(typ.typ)
+                typ = typ.resolve()
+                return self.resolve(typ)
             case TypeParam():
                 res = typ
                 while isinstance(res, TypeParam):
@@ -228,6 +229,9 @@ class Instance:
     @property
     def span(self) -> Span:
         return self.typ.span
+
+    def resolve(self) -> Type:
+        return self.type_res_scope.resolve(self.typ)
 
     def type_params(self) -> TypeParams:
         match self.typ:

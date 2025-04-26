@@ -1,9 +1,12 @@
 """Run tests found in a markdown file."""
 # ruff: noqa: T201
 
+import contextlib
+import re
 import sys
+import tempfile
 from dataclasses import dataclass
-from tempfile import NamedTemporaryFile
+from pathlib import Path
 
 from . import compiler, error, tokenizer
 
@@ -38,8 +41,9 @@ def run_test(test: Test, print_code: str) -> list:
                         continue
         return errors
 
-    with NamedTemporaryFile() as tmp_file:
-        for step in compiler.compile(tokenizer.Input("test.kl", test.code), tmp_file.name):
+    tmp_file = Path(tempfile.gettempdir(), re.sub(r"[^a-zA-Z0-9]", "_", test.name()))
+    try:
+        for step in compiler.compile(tokenizer.Input("test.kl", test.code), str(tmp_file)):
             match step:
                 case compiler.TokenStep():
                     if print_code == "tokens":
@@ -92,6 +96,9 @@ def run_test(test: Test, print_code: str) -> list:
                         return [f"Expected:\n\n`{test.expected_stdout}`\n\ngot:\n\n`{stdout}`"]
                 case _:
                     raise ValueError(f"Unknown step: {step}")
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            tmp_file.unlink()
 
     return []
 

@@ -73,10 +73,11 @@ class Member:
 class Type:
     id: NodeId
     name: str
+    type_args: TypeArgs
     span: Span
 
     def __str__(self) -> str:
-        return nid(self.id) + self.name
+        return nid(self.id) + f"{self.name}{generics_to_str(self.type_args)}"
 
 
 @dataclass

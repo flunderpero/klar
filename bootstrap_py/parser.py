@@ -71,10 +71,13 @@ class Parser:
 
     def parse_type(self) -> ast.Type | None:
         t = self.input.next()
-        if t.kind == token.Kind.type_ident:
-            return ast.Type(self.id(), t.value_str(), t.span)
-        self.error(error.unexpected_token(t.span, t.kind.value, token.Kind.type_ident.value))
-        return None
+        if t.kind != token.Kind.type_ident:
+            self.error(error.unexpected_token(t.span, t.kind.value, token.Kind.type_ident.value))
+            return None
+        type_args = self.parse_type_args()
+        if type_args is None:
+            return None
+        return ast.Type(self.id(), t.value_str(), type_args, t.span)
 
     def parse_type_params(self) -> ast.TypeParams | None:
         if self.input.peek().kind != token.Kind.lt:

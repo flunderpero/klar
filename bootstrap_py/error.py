@@ -144,3 +144,7 @@ def break_outside_loop(span: Span) -> Error:
 
 def continue_outside_loop(span: Span) -> Error:
     return SimpleError(span, "`continue` outside of a loop", _stack())
+
+
+def not_generic(span: Span, defined_here: Span) -> Error:
+    return WithDefinitionError(span, "Type is not generic", defined_here, _stack())

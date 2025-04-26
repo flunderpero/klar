@@ -398,7 +398,7 @@ class FnGen:
             case types.Struct():
                 return Struct(typ.fqn, [self.typ(x.typ) for x in typ.fields])
             case _:
-                raise AssertionError(f"Unsupported type: {typ}")
+                raise AssertionError(f"Unsupported type: {typ} ({typ.__class__})")
 
     def reg(self, typ: Type, prefix: str = "%") -> Reg:
         self.next_reg += 1

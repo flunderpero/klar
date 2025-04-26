@@ -129,6 +129,8 @@ class TypeChecker:
         if not declared:
             self.error(error.undefined_name(node.name, node.span))
             return types.TypeCheckError(self.id(), f"`{node.name}` not found", node.span)
+        if node.type_args:
+            return self.instance(declared.typ, node.type_args, node.span)
         return declared.typ
 
     def declare_all(self, scope_node: ast.Node) -> None:
@@ -201,7 +203,7 @@ class TypeChecker:
         ast.walk(node, self.typecheck)
         callee = self.type_env.get_node_type(node.callee)
         if isinstance(callee, types.Instance):
-            callee = callee.type_res_scope.resolve(callee.typ)
+            callee = callee.resolve()
 
         def check_params(params: list[types.FieldOrParam], result_typ: types.Type, span: Span) -> types.Type:
             if len(node.args) != len(params):
@@ -228,6 +230,20 @@ class TypeChecker:
                 typ = types.TypeCheckError(self.id(), "unexpected type", node.span)
         self.type_env.set_node_type(node, typ)
 
+    def instance(self, typ: types.Type, type_args: ast.TypeArgs, span: Span) -> types.Type:
+        if not isinstance(typ, (types.Fn, types.Struct)):
+            self.error(error.not_generic(span, typ.span))
+            return types.TypeCheckError(typ.id, "not generic", span)
+        type_params = typ.type_params
+        if type_args and len(type_args) != len(type_params):
+            self.error(error.wrong_number_of_type_args(len(type_params), len(type_args), span, typ.span))
+            return types.TypeCheckError(typ.id, "wrong number of type args", span)
+        type_res_scope = types.TypeResScope(None, None)
+        for arg, type_param in zip(type_args, type_params):
+            type_arg = self.type_node_type(arg)
+            type_res_scope.declare(type_param, type_arg)
+        return types.Instance(typ, type_res_scope)
+
     def typecheck(self, node: ast.Node, _parent: ast.Node | None) -> None:
         match node:
             case ast.Module():
@@ -250,26 +266,13 @@ class TypeChecker:
                     typ = declared.typ
                     match declared.typ:
                         case types.Fn() | types.Struct():
-                            type_params = declared.typ.type_params
-                            if node.type_args and len(node.type_args) != len(type_params):
-                                self.error(
-                                    error.wrong_number_of_type_args(
-                                        len(type_params), len(node.type_args), node.span, typ.span
-                                    )
-                                )
-                                typ = types.TypeCheckError(self.id(), "wrong number of type args", node.span)
-                            else:
-                                type_res_scope = types.TypeResScope(None, None)
-                                for arg, type_param in zip(node.type_args, type_params):
-                                    type_arg = self.type_node_type(arg)
-                                    type_res_scope.declare(type_param, type_arg)
-                                typ = types.Instance(declared.typ, type_res_scope)
+                            typ = self.instance(typ, node.type_args, node.span)
                     self.type_env.set_node_type(node, typ)
             case ast.Member():
                 ast.walk(node, self.typecheck)
                 target_typ = self.type_env.get_node_type(node.target)
                 assert isinstance(target_typ, types.Instance), f"Expected an instance, got: {target_typ}"
-                target_typ = target_typ.typ
+                target_typ = target_typ.resolve()
                 assert isinstance(target_typ, types.Struct)
                 field = target_typ.field(node.name)
                 if not field:

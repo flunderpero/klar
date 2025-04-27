@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from subprocess import run
 from typing import TYPE_CHECKING
 
-from . import asm_darwin_arm64, ast, error, ir, lower, monomorphize, parser, typechecker
+from . import asm_darwin_arm64, ast, error, ir, lower, lower_instance_methods, lower_monomorphize, parser, typechecker
 from . import tokenizer as token
 
 if TYPE_CHECKING:
@@ -41,7 +41,7 @@ class TypecheckStep:
         def visit(node: ast.Node, _parent: ast.Node | None) -> None:
             typ = self.type_env.node_types.get(node.id)
             typ_str = str(typ) if typ else "NOT_FOUND"
-            lines.append(str(node.span))
+            lines.append(str(node.span) + "    " + node.span.lines(0)[1][0].strip())
             lines.append(str(node))
             lines.append(f"=> {typ_str}\n")
             ast.walk(node, visit)
@@ -61,9 +61,10 @@ class AbortStep:
 @dataclass
 class LowerStep:
     fn_specs: list[lower.FnSpec]
+    module: ast.Module
 
     def __str__(self) -> str:
-        return "\n".join(str(x) for x in self.fn_specs)
+        return str(self.module) + "\n\nSpecs:\n" + "\n".join(str(x) for x in self.fn_specs)
 
 
 @dataclass
@@ -124,8 +125,9 @@ def compile(input: token.Input, outfile: str) -> Generator[CompilationStep]:  # 
     if tokenize_errors or parse_errors or type_errors:
         yield AbortStep(tokenize_errors + parse_errors + type_errors)
         return
-    specs = monomorphize.monomorphize(module, type_env)
-    yield LowerStep(specs)
+    lower_instance_methods.lower_instance_methods(module, type_env)
+    specs = lower_monomorphize.monomorphize(module, type_env)
+    yield LowerStep(specs, module)
     ir_ = ir.generate_ir(specs)
     yield IRStep(ir_)
     asm = asm_darwin_arm64.generate(ir_)

@@ -81,6 +81,14 @@ class Fn:
         params = ", ".join(f"{p.name}: {p.typ}" for p in self.params)
         return tid(self.id) + f"fn {self.fqn}{type_params}({params})->{self.result}"
 
+    def is_instance_method(self) -> bool:
+        return len(self.params) > 0 and self.params[0].name == "self"
+
+    def params_without_self(self) -> list[FieldOrParam]:
+        if self.is_instance_method():
+            return self.params[1:]
+        return self.params
+
 
 @dataclass
 class Struct:
@@ -88,6 +96,7 @@ class Struct:
     fqn: FQN
     type_params: TypeParams
     fields: list[FieldOrParam]
+    methods: list[FieldOrParam]
     span: Span
 
     def __str__(self) -> str:
@@ -95,15 +104,18 @@ class Struct:
         fields = ", ".join(f"{f.name}: {f.typ}" for f in self.fields)
         return tid(self.id) + f"struct {self.fqn}{type_params}{{{fields}}}"
 
-    def field(self, name: str) -> FieldOrParam | None:
-        for f in self.fields:
-            if f.name == name:
-                return f
+    def field_or_method(self, name: str) -> FieldOrParam | None:
+        for x in self.fields:
+            if x.name == name:
+                return x
+        for x in self.methods:
+            if x.name == name:
+                return x
         return None
 
     def field_index(self, name: str) -> int | None:
-        for i, f in enumerate(self.fields):
-            if f.name == name:
+        for i, x in enumerate(self.fields):
+            if x.name == name:
                 return i
         return None
 
@@ -161,36 +173,56 @@ class TypeResScope:
             return self.parent.find(type_param)
         return None
 
-    def resolve(self, typ: Type) -> Type:
+    def resolve(self, typ: Type, seen: dict[TypeId, Type] | None = None) -> Type:
+        if seen is not None:
+            seen_typ = seen.get(typ.id)
+            if seen_typ is not None:
+                return seen_typ
+
+        def resolve_field_or_param(typ: Type) -> Type:
+            typ = self.resolve(typ, seen)
+            if isinstance(typ, (Fn, Struct)):
+                typ = Instance(typ, self)
+            return typ
+
         match typ:
             case Instance():
                 typ = typ.resolve()
-                return self.resolve(typ)
+                typ = self.resolve(typ)
             case TypeParam():
-                res = typ
-                while isinstance(res, TypeParam):
-                    res2 = self.find(res)
-                    if not res2:
-                        return res
-                    res = res2
-                return res
+                while isinstance(typ, TypeParam):
+                    typ2 = self.find(typ)
+                    if not typ2:
+                        break
+                    typ = typ2
             case Fn():
-                return Fn(
+                typ = Fn(
                     typ.id,
                     typ.fqn,
                     typ.type_params,
-                    [FieldOrParam(p.name, self.resolve(p.typ)) for p in typ.params],
-                    self.resolve(typ.result),
+                    list(typ.params),
+                    typ.result,
                     typ.span,
                 )
+                if seen is None:
+                    seen = {}
+                seen[typ.id] = typ
+                typ.params = [FieldOrParam(x.name, resolve_field_or_param(x.typ)) for x in typ.params]
+                typ.result = resolve_field_or_param(typ.result)
             case Struct():
-                return Struct(
+                typ = Struct(
                     typ.id,
                     typ.fqn,
                     typ.type_params,
-                    [FieldOrParam(p.name, self.resolve(p.typ)) for p in typ.fields],
+                    list(typ.fields),
+                    list(typ.methods),
                     typ.span,
                 )
+                if seen is None:
+                    seen = {}
+                seen[typ.id] = typ
+                typ.fields = [FieldOrParam(x.name, self.resolve(x.typ, seen)) for x in typ.fields]
+                typ.methods = [FieldOrParam(x.name, self.resolve(x.typ, seen)) for x in typ.methods]
         return typ
 
     def keys(self) -> set[TypeId]:
@@ -311,8 +343,20 @@ def is_assignable_from(target: Type, from_: Type) -> bool:
         case TypeParam():
             return target.id == from_.id
         case Struct():
-            # todo: This does not include type arguments
             return target.id == from_.id
+        case Instance():
+            # todo: This does not include type arguments
+            if target.id != from_.id:
+                return False
+            target_args = target.type_args()
+            if not isinstance(from_, Instance):
+                if len(target_args) == 0:
+                    return target.id == from_.id
+                return False
+            from_args = from_.type_args()
+            return all(
+                isinstance(x, TypeParam) or is_assignable_from(x, from_args[i]) for i, x in enumerate(target_args)
+            )
         case _:
             raise AssertionError(f"unhandled target type: {target}")
 

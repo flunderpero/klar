@@ -149,6 +149,29 @@ fn main() {
 Hello
 ```
 
+### Struct Implementations
+
+```klar
+struct Planet {
+    radius Int
+    has_moons Bool
+    name Str
+}
+
+fn Planet::diameter(self) Int {
+    self.radius + self.radius
+}
+
+fn main() {
+    let p = Planet(6371, true, "Earth")
+    print(int_to_str(p.diameter()))
+}
+```
+
+```
+12742
+```
+
 ## Block Expression
 
 In Klar, blocks are expressions, i.e. they represent a value.
@@ -603,6 +626,27 @@ true
 world
 ```
 
+Parameterized struct with instance methods:
+
+```klar
+struct Value<T> {
+    value T
+}
+
+fn Value::get(self) T {
+    self.value
+}
+
+fn main() {
+    let v = Value<Str>("Hello")
+    print(v.get())
+}
+```
+
+```
+Hello
+```
+
 <details>
 <summary>More Examples</summary>
 
@@ -688,6 +732,30 @@ Hello
 42
 ```
 
+Parameterized instance methods:
+
+```klar
+struct Value<A> {
+    value A
+}
+
+-- This shadows the type parameter `A` of `Value<A>`.
+fn Value::pass_through<A>(self, x A) A {
+    x
+}
+
+fn main() {
+    let v = Value<Bool>(false)
+    print(int_to_str(v.pass_through<Int>(42)))
+    print(v.pass_through<Str>("Hello"))
+}
+```
+
+```
+42
+Hello
+```
+
 </details>
 
 ## Appendix - The Tokenizer
@@ -760,7 +828,22 @@ fn main() {
 fn main() {
     1 + "str" -- ERROR: Type `Str` is not assignable to type `I64`
 }
+```
 
+`self` parameter must be the first parameter:
+
+```klar
+struct Value {
+    value Str
+}
+
+fn Value::print(i Int, self) {} -- ERROR: `self` is not allowed here
+```
+
+`self` parameter cannot be used in regular functions:
+
+```klar
+fn say_hello(self) => {} -- ERROR: `self` is not allowed here
 ```
 
 </details>

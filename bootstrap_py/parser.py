@@ -34,6 +34,7 @@ class Input:
         return span.merge(self.span())
 
 
+# todo: Forbid reserved keywords like `Self` or `self`
 class Parser:
     input: Input
     errors: list[error.Error]
@@ -53,11 +54,16 @@ class Parser:
                     break
 
     def expect_ident(self) -> str | None:
-        t = self.input.next()
-        if t.kind == token.Kind.ident:
-            return t.value_str()
-        self.error(error.unexpected_token(t.span, t.kind.value, token.Kind.ident.value))
-        return None
+        t = self.expect(token.Kind.ident)
+        if t is None:
+            return t
+        return t.value_str()
+
+    def expect_type_ident(self) -> str | None:
+        t = self.expect(token.Kind.type_ident)
+        if t is None:
+            return t
+        return t.value_str()
 
     def expect(self, *kind: token.Kind) -> token.Token | None:
         t = self.input.next()
@@ -139,7 +145,23 @@ class Parser:
         span = self.input.span()
         if not self.expect(token.Kind.fn):
             return None
-        name = self.expect_ident()
+        receiver: str | None = None
+        name: str | None = None
+        t = self.input.next()
+        match t.kind:
+            case token.Kind.type_ident:
+                receiver = t.value_str()
+                if not self.expect(token.Kind.douple_colon):
+                    return None
+                name = self.expect_ident()
+                if name is None:
+                    return None
+            case token.Kind.ident:
+                name = t.value_str()
+            case _:
+                self.error(
+                    error.unexpected_token(t.span, t.kind.value, token.Kind.ident.value, token.Kind.type_ident.value)
+                )
         if not name:
             return None
         type_params = self.parse_type_params()
@@ -158,7 +180,7 @@ class Parser:
                     if existing:
                         self.error(error.duplicate_param_name(param_name, t.span, existing.span))
                         return None
-                    param_type = self.parse_type()
+                    param_type = ast.Type(self.id(), "Self", [], t.span) if param_name == "self" else self.parse_type()
                     if not param_type:
                         return None
                     params.append(ast.FieldOrParam(param_name, param_type, t.span.merge(param_type.span)))
@@ -190,7 +212,7 @@ class Parser:
         if self.input.peek().kind == token.Kind.type_ident:
             result = self.parse_type()
 
-        return ast.FnDecl(self.id(), name, params, result, type_params, self.input.span_merge(span))
+        return ast.FnDecl(self.id(), name, receiver, params, result, type_params, self.input.span_merge(span))
 
     def parse_fn_def(self) -> ast.FnDef | None:
         span = self.input.span()
@@ -326,14 +348,15 @@ class Parser:
                 return None
         if not expr:
             return None
-        match self.input.peek().kind:
-            case token.Kind.paren_left:
-                expr = self.parse_call(expr)
-            case token.Kind.dot:
-                while True:
+
+        while expr is not None:
+            match self.input.peek().kind:
+                case token.Kind.paren_left:
+                    expr = self.parse_call(expr)
+                case token.Kind.dot:
                     expr = self.parse_member(expr)
-                    if expr is None or self.input.peek().kind != token.Kind.dot:
-                        break
+                case _:
+                    break
         return expr
 
     def parse_let_or_mut(self) -> ast.Let | None:
@@ -357,7 +380,7 @@ class Parser:
         span = self.input.span()
         if not self.expect(token.Kind.struct):
             return None
-        name = self.expect(token.Kind.type_ident)
+        name = self.expect_type_ident()
         if not name:
             return None
         type_params = self.parse_type_params()
@@ -382,7 +405,7 @@ class Parser:
                     break
         if not self.expect(token.Kind.curly_right):
             return None
-        return ast.Struct(self.id(), name.value_str(), fields, type_params, self.input.span_merge(span))
+        return ast.Struct(self.id(), name, fields, type_params, self.input.span_merge(span))
 
     def parse_block(self) -> ast.Block | None:
         span = self.input.span()

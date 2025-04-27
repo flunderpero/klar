@@ -102,6 +102,10 @@ def duplicate_struct(name: str, span: Span, defined_here: Span) -> Error:
     return DuplicateError(name, span, defined_here, _stack())
 
 
+def duplicate_field(name: str, span: Span, defined_here: Span) -> Error:
+    return DuplicateError(name, span, defined_here, _stack())
+
+
 def duplicate_param_name(name: str, span: Span, defined_here: Span) -> Error:
     return DuplicateError(name, span, defined_here, _stack())
 
@@ -148,3 +152,7 @@ def continue_outside_loop(span: Span) -> Error:
 
 def not_generic(span: Span, defined_here: Span) -> Error:
     return WithDefinitionError(span, "Type is not generic", defined_here, _stack())
+
+
+def self_not_allowed_here(span: Span) -> Error:
+    return SimpleError(span, "`self` is not allowed here", _stack())

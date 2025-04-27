@@ -154,7 +154,8 @@ def find_tests(src: str, chapter: str) -> list[Test]:
 def main() -> int:
     args = sys.argv
     print_code = ""
-    for stage in ("tokens", "ast", "types", "lower", "ir", "asm"):
+    stages = ("tokens", "ast", "types", "lower", "ir", "asm")
+    for stage in stages:
         if f"--{stage}" in args:
             print_code = stage
             break
@@ -162,14 +163,10 @@ def main() -> int:
     args = [x for x in args if not x.startswith("--")]
     if len(args) == 1:
         print("Usage: md_tests.py <file> [chapter] [#test] [options]")
-        print("   Options:")
-        print("     --tokens        Print tokens")
-        print("     --ast           Print AST")
-        print("     --types         Print types")
-        print("     --lower         Print lowered code")
-        print("     --ir            Print IR")
-        print("     --asm           Print assembly")
-        print("     --err-stack     Print error stack")
+        print("  Options:")
+        print("    --err-stack     Print error stack")
+        for stage in stages:
+            print(f"    --{stage}        Print {stage} output")
         return 1
     file = args[1]
     src = open(file).read()

@@ -236,14 +236,24 @@ class FieldOrParam:
 class FnDecl:
     id: NodeId
     name: str
+    receiver: str | None
     params: list[FieldOrParam]
     result: Type | None
     type_params: TypeParams
     span: Span
 
+    def fullname(self) -> str:
+        if self.receiver is None:
+            return self.name
+        return f"{self.receiver}::{self.name}"
+
     def __str__(self) -> str:
         type_params = generics_to_str(self.type_params)
-        return nid(self.id) + f"{self.name}{type_params}({', '.join(str(x) for x in self.params)}) -> {self.result}"
+        receiver = (self.receiver + "::") if self.receiver is not None else ""
+        return (
+            nid(self.id)
+            + f"{receiver}{self.name}{type_params}({', '.join(str(x) for x in self.params)}) -> {self.result}"
+        )
 
 
 @dataclass

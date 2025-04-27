@@ -15,6 +15,7 @@ class Kind(Enum):
     curly_left = "{"
     curly_right = "}"
     dot = "."
+    douple_colon = "::"
     else_ = "else"
     eof = "end of file"
     eq = "="
@@ -135,6 +136,13 @@ def tokenize(input: Input) -> tuple[list[Token], list[error.Error]]:
                 kind = Kind.lt
             case ">":
                 kind = Kind.gt
+            case ":":
+                if input.peek() == ":":
+                    input.next()
+                    kind = Kind.douple_colon
+                else:
+                    errors.append(error.unknown_token(span, c))
+                    continue
             case "!":
                 if input.peek() == "=":
                     input.next()

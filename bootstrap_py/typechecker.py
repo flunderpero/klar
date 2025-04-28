@@ -235,35 +235,44 @@ class TypeChecker:
         callee_instance: types.Instance | None = None
         if isinstance(callee, types.Instance):
             callee_instance = callee
+            callee_instance.infer_type_args_from_call_args([self.type_env.get_node_type(x) for x in node.args])
             callee = callee.resolve()
 
-        def check_params(params: list[types.FieldOrParam], result_typ: types.Type, span: Span) -> types.Type:
-            nonlocal callee_instance
-            if len(node.args) != len(params):
-                self.error(error.wrong_number_of_args(node.callee.span, len(params), len(node.args), span))
-                return types.TypeCheckError(self.id(), "wrong number of args", node.span)
-            for param, arg_node in zip(params, node.args):
-                arg_typ = self.type_env.get_node_type(arg_node)
-                if not types.is_assignable_from(param.typ, arg_typ):
-                    self.error(
-                        error.type_not_assignable_from(arg_node.span, types.pretty(param.typ), types.pretty(arg_typ))
-                    )
-                    return types.TypeCheckError(self.id(), "type not assignable", node.span)
-            return result_typ
-
+        params: list[types.FieldOrParam]
+        result: types.Type
         match callee:
             case types.Fn():
-                typ = check_params(callee.params_without_self(), callee.result, callee.span)
+                params = callee.params_without_self()
+                result = callee.result
             case types.Struct():
-                typ = check_params(callee.fields, callee, callee.span)
-                assert callee_instance and isinstance(typ, types.Struct)
-                typ = types.Instance(typ, callee_instance.type_res_scope)
+                params = callee.fields
+                result = callee
             case types.TypeCheckError():
                 typ = types.TypeCheckError(self.id(), "cascaded error", node.span)
+                self.type_env.set_node_type(node, typ)
+                return
             case _ as t:
                 self.error(error.unexpected_type("a callable type", str(t), node.callee.span))
                 typ = types.TypeCheckError(self.id(), "unexpected type", node.span)
-        self.type_env.set_node_type(node, typ)
+                self.type_env.set_node_type(node, typ)
+                return
+
+        if len(node.args) != len(params):
+            self.error(error.wrong_number_of_args(node.callee.span, len(params), len(node.args), callee.span))
+            self.type_env.set_node_type(node, types.TypeCheckError(self.id(), "wrong number of args", node.span))
+            return
+        for param, arg_node in zip(params, node.args):
+            arg_typ = self.type_env.get_node_type(arg_node)
+            if not types.is_assignable_from(param.typ, arg_typ):
+                self.error(
+                    error.type_not_assignable_from(arg_node.span, types.pretty(param.typ), types.pretty(arg_typ))
+                )
+                self.type_env.set_node_type(node, types.TypeCheckError(self.id(), "type not assignable", node.span))
+                return
+        if isinstance(callee, types.Struct):
+            assert callee_instance and isinstance(result, types.Struct)
+            result = types.Instance(result, callee_instance.type_res_scope)
+        self.type_env.set_node_type(node, result)
 
     def instance(
         self,

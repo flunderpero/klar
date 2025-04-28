@@ -192,7 +192,7 @@ class TypeResScope:
             case TypeParam():
                 while isinstance(typ, TypeParam):
                     typ2 = self.find(typ)
-                    if not typ2:
+                    if not typ2 or typ == typ2:
                         break
                     typ = typ2
             case Fn():
@@ -276,6 +276,24 @@ class Instance:
 
     def type_args(self) -> TypeArgs:
         return [self.type_res_scope.resolve(p) for p in self.type_params()]
+
+    def infer_type_args_from_call_args(self, call_args: list[Type]) -> None:
+        params: list[Type]
+        match self.typ:
+            case Fn():
+                params = [x.typ for x in self.typ.params_without_self()]
+            case Struct():
+                params = [x.typ for x in self.typ.fields]
+            case _:
+                raise AssertionError(f"unhandled type: {self.typ}")
+        assert len(params) == len(call_args), f"expected {len(params)} call args, got {len(call_args)}"
+        for i, param in enumerate(params):
+            if isinstance(param, TypeParam):
+                resolved = self.type_res_scope.resolve(param)
+                if not isinstance(resolved, TypeParam):
+                    # We already got this.
+                    continue
+                self.type_res_scope.declare(resolved, call_args[i])
 
 
 def full_id(typ: Type) -> str:

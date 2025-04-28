@@ -647,6 +647,35 @@ fn main() {
 Hello
 ```
 
+Type arguments can be inferred in most cases:
+
+```klar
+fn return_it<T>(value T) T => value
+
+fn main() {
+    print(return_it("Hello"))
+}
+
+```
+
+```
+Hello
+```
+
+```klar
+struct Value<A> {
+    value A
+}
+
+fn main() {
+    print(Value("Hello").value)
+}
+```
+
+```
+Hello
+```
+
 <details>
 <summary>More Examples</summary>
 

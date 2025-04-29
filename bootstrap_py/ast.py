@@ -70,7 +70,7 @@ class Member:
 
 
 @dataclass
-class Type:
+class NamedType:
     id: NodeId
     name: str
     type_args: TypeArgs
@@ -78,6 +78,20 @@ class Type:
 
     def __str__(self) -> str:
         return nid(self.id) + f"{self.name}{generics_to_str(self.type_args)}"
+
+
+@dataclass
+class FnType:
+    id: NodeId
+    type_params: TypeParams
+    params: list[Type]
+    result: Type
+    span: Span
+
+    def __str__(self) -> str:
+        type_args = generics_to_str(self.type_params)
+        params = ", ".join(str(x) for x in self.params)
+        return nid(self.id) + f"fn{type_args}({params}) -> {self.result}"
 
 
 @dataclass
@@ -212,10 +226,6 @@ class TypeParam:
         return self.name
 
 
-TypeParams = list[TypeParam]
-TypeArgs = list[Type]
-
-
 def generics_to_str(type_params: TypeParams | TypeArgs) -> str:
     if not type_params:
         return ""
@@ -278,8 +288,12 @@ class Module:
         return nid(self.id) + f"mod {self.fqn}\n" + "\n".join(str(x) for x in self.nodes)
 
 
+Type = NamedType | FnType
 Expr = Block | IntLit | StrLit | BoolLit | Ident | Member | Call | BinaryExpr | If
 Node = Expr | FnDecl | FnDef | Module | Type | Let | Assign | Loop | Break | Continue | Struct
+
+TypeParams = list[TypeParam]
+TypeArgs = list[Type]
 
 
 ASTVisitor = Callable[[Node, Node | None], None]

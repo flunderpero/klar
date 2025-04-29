@@ -31,6 +31,18 @@ class Struct:
 
 
 @dataclass
+class Fn:
+    fqn: str
+    params: list[Type]
+    result: Type
+    is_named: bool
+
+    def __str__(self) -> str:
+        name = f" {self.fqn}" if self.is_named else ""
+        return f"fn{name}({', '.join(str(p) for p in self.params)}) -> {self.result}"
+
+
+@dataclass
 class Ptr:
     typ: Type
 
@@ -44,7 +56,7 @@ class NoneTyp:
         return "none"
 
 
-Type = Int | Struct | Ptr | NoneTyp
+Type = Int | Struct | Fn | Ptr | NoneTyp
 
 
 I1 = Int(bits=1, signed=True)
@@ -93,6 +105,15 @@ class GetPtr:
 
 
 @dataclass
+class GetFnPtr:
+    reg: Reg
+    src: Fn
+
+    def __str__(self) -> str:
+        return f"{self.reg} = getfnptr {self.src.fqn}, {self.reg.typ}"
+
+
+@dataclass
 class Load:
     reg: Reg
     src: Reg
@@ -104,7 +125,7 @@ class Load:
 @dataclass
 class Call:
     reg: Reg
-    callee: str
+    callee: str | Reg
     args: list[Reg]
 
     def __str__(self) -> str:
@@ -179,7 +200,7 @@ class Phi:
         return f"{self.reg} = phi {', '.join(str(reg) for reg in self.incoming)}"
 
 
-Inst = IntConst | GetPtr | Load | Call | Alloc | IAddO | ISubO | ICmp | Phi
+Inst = IntConst | GetPtr | GetFnPtr | Load | Call | Alloc | IAddO | ISubO | ICmp | Phi
 
 BlockId = str
 
@@ -338,17 +359,12 @@ class FnGen:
         self.fn_ir = FnIR(fn_def, name, params, result, [])
         self.block = self.new_block()
 
-    def fn_name(self, typ: types.Instance) -> str:
+    def fn_name(self, typ: types.Type) -> str:
         fn = self.type_env.resolve(typ)
         assert isinstance(fn, types.Fn)
         name = str(fn.fqn)
-        # We need to first resolve the type parameter with the Instance's TypeResScope to
-        # resolve it to the type it had at type-checking time.
-        # If it resolved to another type parameter, it will be resolved to the final type.
-        instance = types.Instance(fn, types.TypeResScope(typ.type_res_scope, self.type_env.type_res_scope))
-        type_args = instance.type_args()
-        if type_args:
-            name += "$" + "$".join(types.full_id(x) for x in type_args)
+        if fn.type_args:
+            name += "$" + "$".join(types.full_id(x) for x in fn.type_args)
         return name
 
     def new_block(self) -> Block:
@@ -395,6 +411,13 @@ class FnGen:
                 return NoneTyp()
             case types.Struct():
                 return Struct(typ.fqn, [self.typ(x.typ) for x in typ.fields])
+            case types.Fn():
+                return Fn(
+                    self.fn_name(typ),
+                    [self.typ(x.typ) for x in typ.params],
+                    self.typ(typ.result),
+                    is_named=typ.is_named,
+                )
             case _:
                 raise AssertionError(f"Unsupported type: {typ} ({typ.__class__})")
 
@@ -408,7 +431,7 @@ class FnGen:
             assert node.id not in self.node_regs, f"Node {node.id} already has a register"
             self.node_regs[node.id] = inst.reg
 
-    def generate(self, node: ast.Node, _parent: ast.Node | None) -> None:
+    def generate(self, node: ast.Node, parent: ast.Node | None) -> None:
         match node:
             case ast.FnDef():
                 ast.walk(node, self.generate)
@@ -540,6 +563,20 @@ class FnGen:
                 reg = self.scope.find(node.name)
                 if reg:
                     self.node_regs[node.id] = reg
+                    return
+                # If this node is the callee of a call node then we don't want
+                # to emit a GetFnPtr for named functions.
+                if isinstance(parent, ast.Call) and parent.callee == node:
+                    return
+                ir_typ = self.type_env.get_node_type(node)
+                if not isinstance(ir_typ, types.Fn) or not ir_typ.is_named:
+                    return
+                # Emit a GetFnPtr if the identifier refers to a named function.
+                getptr_reg = self.reg(Ptr(self.typ(ir_typ)))
+                fn_typ = self.typ(ir_typ)
+                assert isinstance(fn_typ, Fn), f"Expected Fn, got {fn_typ}"
+                self.emit(GetFnPtr(getptr_reg, fn_typ), None)
+                self.node_regs[node.id] = getptr_reg
             case ast.Member():
                 ast.walk(node, self.generate)
                 src = self.node_regs[node.target.id]
@@ -563,7 +600,13 @@ class FnGen:
                         reg = NoneReg
                         if not isinstance(result_typ, types.NoneTyp):
                             reg = self.reg(self.typ(result_typ))
-                        self.emit(Call(reg, self.fn_name(callee), args), node)
+                        if callee.typ.is_named:
+                            # Direct call by name.
+                            self.emit(Call(reg, self.fn_name(callee), args), node)
+                        else:
+                            # Indirect call by register.
+                            src = self.node_regs[node.callee.id]
+                            self.emit(Call(reg, src, args), node)
                     case types.Struct():
                         typ = self.typ(callee)
                         reg = self.reg(typ)

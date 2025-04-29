@@ -12,7 +12,7 @@ fn main() {
 Hello, world!
 ```
 
-## Built-in Types And Literals
+## Types
 
 ### Str
 
@@ -28,7 +28,7 @@ fn main() {
 This is a Str literal.
 ```
 
-### Integer Types
+### Integer
 
 The default integer type in Klar is `Int` which is a 64-bit signed integer and an alias for `I64`.
 
@@ -43,6 +43,20 @@ fn main() {
 123
 -123
 ```
+
+There are all the available integer types:
+
+I8, I16, I32, I64, U8, U16, U32, U64.
+
+todo: implement and document
+
+### Floating Point
+
+The default floating point type is `Float` which is a 64-bit double precision floating point number and an alias for `F64`.
+
+There is also `F32`, a 32-bit floating point type.
+
+todo: implement and document
 
 ### Bool
 
@@ -99,7 +113,7 @@ false
 
 </details>
 
-## Product Types (Struct)
+### Product Types (Struct)
 
 ```klar
 struct Planet {
@@ -151,7 +165,7 @@ fn main() {
 Hello
 ```
 
-### Struct Implementations
+#### Struct Implementations
 
 ```klar
 struct Planet {
@@ -173,6 +187,211 @@ fn main() {
 ```
 12742
 ```
+
+### Sum Types (Tagged Unions)
+
+Klar has strong support for tagged unions, also called discriminated unions or enum types in other
+languages.
+
+todo: implement and document
+
+### Function Types
+
+In Klar, functions are first class citizens. They can be passed around like any other value.
+
+```klar
+fn add(a Int, b Int) Int {
+    a + b
+}
+
+fn adder(a Int, b Int, f fn(Int, Int) Int) Int {
+    f(a, b)
+}
+
+fn main() {
+    print(int_to_str(adder(40, 2, add)))
+    let a = adder
+    print(int_to_str(a(130, 7, add)))
+}
+```
+
+```
+42
+137
+```
+
+Function types can also be used as struct fields:
+
+```klar
+struct Adder {
+    f fn(Int, Int) Int
+}
+
+fn Adder::add(self, a Int, b Int) Int {
+    self.f(a, b)
+}
+
+fn add(a Int, b Int) Int {
+    a + b
+}
+
+fn add_with_adder(adder Adder, a Int, b Int) Int {
+    let adder_fn = adder.f
+    print(int_to_str(adder_fn(130, 7)))
+}
+
+fn main() {
+    let adder = Adder(add)
+    print(int_to_str(adder.add(40, 2)))
+    add_with_adder(adder, 130, 7)
+}
+```
+
+```
+42
+137
+```
+
+Function types are structurally equal to their function signature:
+
+```klar
+fn add(a Int, b Int) Int => a + b
+
+fn sub(a Int, b Int) Int => a - b
+
+fn main() {
+    let f = if false => sub else => add
+    print(int_to_str(f(40, 2)))
+    mut f2 = add
+    if true => f2 = sub
+    print(int_to_str(f2(140, 3)))
+}
+```
+
+```
+42
+137
+```
+
+<details>
+    <summary>More Examples</summary>
+
+Function types work with generic types:
+
+```klar
+fn choose_first<T>(a T, b T) T => a
+
+fn choose_second<T>(a T, b T) T => b
+
+fn choose<T>(f fn(T, T) T, a T, b T) T => f(a, b)
+
+fn main() {
+    print(choose<Str>(choose_first<Str>, "PASS", "FAIL"))
+}
+```
+
+```
+PASS
+```
+
+```klar
+struct FuncBox<T> {
+    f fn(T) T
+}
+
+fn apply<T>(fb FuncBox<T>, x T) T => fb.f(x)
+
+fn id<T>(x T) T => x
+
+fn main() {
+    let fb = FuncBox<Str>(id<Str>)
+    print(apply(fb, "PASS"))
+}
+```
+
+```
+PASS
+```
+
+Functions can be returned from functions:
+
+```klar
+fn add(a Int, b Int) Int => a + b
+
+fn provide_add() fn(Int, Int) Int {
+    add
+}
+
+fn main() {
+    let add = provide_add()
+    print(int_to_str(add(40, 2)))
+}
+```
+
+```
+42
+```
+
+```todo return local functions.
+
+fn provide_add() fn(Int, Int) Int {
+    fn add(a Int, b Int) Int => a + b
+}
+
+fn main() {
+    let add = provide_add()
+    print(int_to_str(add(40, 2)))
+}
+```
+
+```
+42
+```
+
+Functions can be returned from instance methods:
+
+```klar
+struct FuncBox {
+    f fn() Str
+}
+
+fn FuncBox::get(self) fn() Str {
+    self.f
+}
+
+fn hello() Str => "Hello"
+
+fn main() {
+    let s = FuncBox(hello)
+    let v = s.get()
+    print(v())
+}
+
+```
+
+```
+Hello
+```
+
+Nested calls:
+
+```klar
+fn call_twice(f fn(Int) Int, x Int) Int {
+    f(f(x))
+}
+
+fn incr(x Int) Int => x + 1
+
+fn main() {
+    print(int_to_str(call_twice(incr, 40)))
+}
+```
+
+```
+42
+```
+
+</details>
 
 ## Block Expression
 

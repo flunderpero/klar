@@ -77,11 +77,13 @@ class Fn:
     params: list[FieldOrParam]
     result: Type
     span: Span
+    is_named: bool
 
     def __str__(self) -> str:
         type_params = type_args_to_str(self.type_params, self.type_args)
         params = ", ".join(f"{p.name}: {p.typ}" for p in self.params)
-        return tid(self.id) + f"fn {self.fqn}{type_params}({params})->{self.result}"
+        name = f"fn {self.fqn}" if self.is_named else ""
+        return tid(self.id) + f"{name}{type_params}({params})->{self.result}"
 
     def is_instance_method(self) -> bool:
         return len(self.params) > 0 and self.params[0].name == "self"
@@ -90,6 +92,15 @@ class Fn:
         if self.is_instance_method():
             return self.params[1:]
         return self.params
+
+    def is_same(self, other: Fn) -> bool:
+        """Functions are equal if they structurally match, i.e. their parameter and result types match."""
+        if len(self.params) != len(other.params):
+            return False
+        for sp, op in zip(self.params, other.params):
+            if not is_same(sp.typ, op.typ):
+                return False
+        return is_same(self.result, other.result)
 
 
 @dataclass
@@ -201,6 +212,7 @@ class TypeResScope:
                     list(typ.params),
                     typ.result,
                     typ.span,
+                    typ.is_named,
                 )
                 if seen is None:
                     seen = {}
@@ -320,9 +332,13 @@ class Builtins:
         int_typ = Int(next_id(), bits=64, signed=True, span=span)
         bool_typ = Bool(next_id(), span)
         none_typ = NoneTyp(next_id(), span)
-        print_typ = Fn(next_id(), FQN(["print"]), [], [], [FieldOrParam("s", str_typ)], none_typ, span)
-        int_to_str = Fn(next_id(), FQN(["int_to_str"]), [], [], [FieldOrParam("i", int_typ)], str_typ, span)
-        bool_to_str = Fn(next_id(), FQN(["bool_to_str"]), [], [], [FieldOrParam("b", bool_typ)], str_typ, span)
+        print_typ = Fn(next_id(), FQN(["print"]), [], [], [FieldOrParam("s", str_typ)], none_typ, span, is_named=True)
+        int_to_str = Fn(
+            next_id(), FQN(["int_to_str"]), [], [], [FieldOrParam("i", int_typ)], str_typ, span, is_named=True
+        )
+        bool_to_str = Fn(
+            next_id(), FQN(["bool_to_str"]), [], [], [FieldOrParam("b", bool_typ)], str_typ, span, is_named=True
+        )
         return Builtins(str_typ, int_typ, bool_typ, none_typ, print_typ, int_to_str, bool_to_str)
 
     Str: Str
@@ -355,6 +371,10 @@ def pretty(typ: Type) -> str:
 
 
 def is_assignable_from(target: Type, from_: Type) -> bool:
+    if isinstance(target, Instance):
+        target = target.resolve()
+    if isinstance(from_, Instance):
+        from_ = from_.resolve()
     match target:
         case Str():
             return isinstance(from_, Str)
@@ -368,22 +388,72 @@ def is_assignable_from(target: Type, from_: Type) -> bool:
             return target.id == from_.id
         case Struct():
             return target.id == from_.id
-        case Instance():
-            # todo: This does not include type arguments
-            if target.id != from_.id:
+        case Fn():
+            if not isinstance(from_, Fn):
                 return False
-            target_args = target.type_args()
-            if not isinstance(from_, Instance):
-                if len(target_args) == 0:
-                    return target.id == from_.id
+            # Two functions are equal if their parameter and result types match.
+            if len(target.params) != len(from_.params):
                 return False
-            from_args = from_.type_args()
-            return all(
-                isinstance(x, TypeParam) or is_assignable_from(x, from_args[i]) for i, x in enumerate(target_args)
-            )
+            for sp, op in zip(target.params, from_.params):
+                if not is_assignable_from(sp.typ, op.typ):
+                    return False
+            return is_assignable_from(target.result, from_.result)
         case _:
             raise AssertionError(f"unhandled target type: {target}")
 
 
 def is_same(target: Type, from_: Type) -> bool:
+    if isinstance(target, Instance) and isinstance(target.typ, Fn):
+        target = target.typ
+    if isinstance(from_, Instance) and isinstance(from_.typ, Fn):
+        from_ = from_.typ
+    if isinstance(target, Fn) and isinstance(from_, Fn):
+        return target.is_same(from_)
     return target.id == from_.id
+
+
+def normalize_type(next_id: Callable[[], int], typ: Type) -> Type:
+    """Return a normalized version of the type.
+
+    The returned type is used for merging values of different origins
+    (e.g., different branches of an if-expression).
+
+    - For most types, the type is returned unchanged.
+    - For function types (Fn):
+      - If the function is named, a new anonymous copy is created
+        with the same parameter and result types.
+      - If the function is already anonymous, it is returned as-is.
+    - For type check errors, the error is returned unchanged.
+
+    """
+    match typ:
+        case Instance():
+            if not isinstance(typ.typ, Fn):
+                return typ
+            if not typ.typ.is_named:
+                return typ
+            fn = Fn(
+                next_id(),
+                FQN([]),
+                typ.typ.type_params,
+                typ.typ.type_args,
+                list(typ.typ.params),
+                typ.typ.result,
+                typ.typ.span,
+                is_named=False,
+            )
+            return Instance(fn, typ.type_res_scope)
+        case Fn():
+            if not typ.is_named:
+                return typ
+            return Fn(
+                next_id(),
+                FQN([]),
+                typ.type_params,
+                typ.type_args,
+                list(typ.params),
+                typ.result,
+                typ.span,
+                is_named=False,
+            )
+    return typ

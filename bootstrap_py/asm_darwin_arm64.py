@@ -30,7 +30,7 @@ class DataLayout:
                 return 0
             case ir.Int():
                 return max(typ.bits // 8, 1)
-            case ir.Ptr():
+            case ir.Ptr() | ir.Fn():
                 return 8
             case ir.Struct():
                 size = DataLayout.field_offset(typ, len(typ.fields) - 1) + DataLayout.sizeof(typ.fields[-1])
@@ -303,6 +303,12 @@ class FnGen:
                     case _:
                         raise AssertionError(f"Unknown type: {inst.reg.typ}")
                 self.ir_regs[inst.reg.id] = alloc
+            case ir.GetFnPtr():
+                alloc = self.reg_allocator.allocate(inst.reg)
+                fn_name = self.fn_name(str(inst.src.fqn))
+                self.asm.emit(f"adrp {alloc.reg}, {fn_name}@PAGE")
+                self.asm.emit(f"add {alloc.reg}, {alloc.reg}, {fn_name}@PAGEOFF")
+                self.ir_regs[inst.reg.id] = alloc
             case ir.Load():
                 alloc = self.reg_allocator.allocate(inst.reg)
                 src = self.ir_regs[inst.src.id]
@@ -318,7 +324,7 @@ class FnGen:
                             self.asm.emit(f"ldr {to_32bit(alloc.reg)}, [{src.reg}]")
                         else:
                             self.asm.emit(f"ldr {alloc.reg}, [{src.reg}]")
-                    case ir.Struct() | ir.Ptr():
+                    case ir.Struct() | ir.Ptr() | ir.Fn():
                         self.asm.emit(f"ldr {alloc.reg}, [{src.reg}]")
                     case _:
                         raise AssertionError(f"Unexpected type: {typ}")
@@ -328,7 +334,14 @@ class FnGen:
                     alloc = self.ir_regs[arg.id]
                     self.reg_allocator.move(call_regs[i], alloc, self.asm)
                 with self.reg_allocator.with_spilled_caller_saved_regs(self.asm):
-                    self.asm.emit(f"bl {self.fn_name(inst.callee)}")
+                    match inst.callee:
+                        case str():
+                            self.asm.emit(f"bl {self.fn_name(inst.callee)}")
+                        case ir.Reg():
+                            callee = self.ir_regs[inst.callee.id]
+                            self.asm.emit(f"blr {callee.reg}")
+                        case _:
+                            raise AssertionError(f"Unknown callee type: {inst.callee}")
                 if inst.reg != ir.NoneReg:
                     alloc = self.reg_allocator.allocate(inst.reg)
                     self.asm.emit(f"mov {alloc.reg}, x0")

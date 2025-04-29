@@ -77,13 +77,37 @@ class Parser:
 
     def parse_type(self) -> ast.Type | None:
         t = self.input.next()
-        if t.kind != token.Kind.type_ident:
-            self.error(error.unexpected_token(t.span, t.kind.value, token.Kind.type_ident.value))
-            return None
-        type_args = self.parse_type_args()
-        if type_args is None:
-            return None
-        return ast.Type(self.id(), t.value_str(), type_args, t.span)
+        match t.kind:
+            case token.Kind.type_ident:
+                type_params = self.parse_type_args()
+                if type_params is None:
+                    return None
+                return ast.NamedType(self.id(), t.value_str(), type_params, self.input.span_merge(t.span))
+            case token.Kind.fn:
+                type_params = self.parse_type_params()
+                if type_params is None:
+                    return None
+                if self.expect(token.Kind.paren_left) is None:
+                    return None
+                params: list[ast.Type] = []
+                while self.input.peek().kind != token.Kind.paren_right:
+                    param = self.parse_type()
+                    if param is None:
+                        return None
+                    params.append(param)
+                    if self.input.peek().kind == token.Kind.comma:
+                        self.input.next()
+                if self.expect(token.Kind.paren_right) is None:
+                    return None
+                result = self.parse_type()
+                if result is None:
+                    return None
+                return ast.FnType(self.id(), type_params, params, result, self.input.span_merge(t.span))
+            case _:
+                self.error(
+                    error.unexpected_token(t.span, t.kind.value, token.Kind.type_ident.value, token.Kind.fn.value)
+                )
+                return None
 
     def parse_type_params(self) -> ast.TypeParams | None:
         if self.input.peek().kind != token.Kind.lt:
@@ -170,48 +194,36 @@ class Parser:
         if not self.expect(token.Kind.paren_left):
             return None
         params = []
-        while True:
-            t = self.input.peek()
-            match t.kind:
-                case token.Kind.ident:
+        while self.input.peek().kind != token.Kind.paren_right:
+            t = self.expect(token.Kind.ident)
+            if t is None:
+                return None
+            param_name = t.value_str()
+            existing = next((x for x in params if x.name == param_name), None)
+            if existing:
+                self.error(error.duplicate_param_name(param_name, t.span, existing.span))
+                return None
+            param_type = ast.NamedType(self.id(), "Self", [], t.span) if param_name == "self" else self.parse_type()
+            if not param_type:
+                return None
+            params.append(ast.FieldOrParam(param_name, param_type, t.span.merge(param_type.span)))
+            match self.input.peek().kind:
+                case token.Kind.comma:
                     self.input.next()
-                    param_name = t.value_str()
-                    existing = next((x for x in params if x.name == param_name), None)
-                    if existing:
-                        self.error(error.duplicate_param_name(param_name, t.span, existing.span))
-                        return None
-                    param_type = ast.Type(self.id(), "Self", [], t.span) if param_name == "self" else self.parse_type()
-                    if not param_type:
-                        return None
-                    params.append(ast.FieldOrParam(param_name, param_type, t.span.merge(param_type.span)))
-                    match self.input.peek().kind:
-                        case token.Kind.comma:
-                            self.input.next()
-                        case token.Kind.paren_right:
-                            break
-                        case _:
-                            self.error(
-                                error.unexpected_token(
-                                    t.span, t.kind.value, token.Kind.comma.value, token.Kind.paren_right.value
-                                )
-                            )
-                            return None
                 case token.Kind.paren_right:
                     break
                 case _:
                     self.error(
                         error.unexpected_token(
-                            t.span, t.kind.value, token.Kind.ident.value, token.Kind.paren_right.value
+                            t.span, t.kind.value, token.Kind.comma.value, token.Kind.paren_right.value
                         )
                     )
                     return None
-
         if not self.expect(token.Kind.paren_right):
             return None
         result: ast.Type | None = None
-        if self.input.peek().kind == token.Kind.type_ident:
+        if self.input.peek().kind in (token.Kind.type_ident, token.Kind.fn):
             result = self.parse_type()
-
         return ast.FnDecl(self.id(), name, receiver, params, result, type_params, self.input.span_merge(span))
 
     def parse_fn_def(self) -> ast.FnDef | None:

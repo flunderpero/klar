@@ -43,6 +43,9 @@ class Monomorphize:
 
     def enqueue_if_needed(self, instance: types.Instance) -> None:
         """Add to the queue if is not already in `self.queue` or `self.fn_specs`."""
+        assert isinstance(instance.typ, types.Fn)
+        if not instance.typ.is_named:
+            return
         fn_def = self.fn_defs[instance.id]
         type_res_scope = types.TypeResScope(
             instance.type_res_scope, self.current.type_env.type_res_scope if self.current else None

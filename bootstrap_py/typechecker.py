@@ -146,13 +146,13 @@ class TypeChecker:
                 case ast.FnDecl() | ast.FnDef():
                     decl = node if isinstance(node, ast.FnDecl) else node.decl
                     fqn = self.scope.fqn().concat(decl.fullname())
-                    typ = types.Fn(self.id(), fqn, [], [], self.type_env.builtins.NoneTyp, decl.span)
+                    typ = types.Fn(self.id(), fqn, [], [], [], self.type_env.builtins.NoneTyp, decl.span)
                     existing = self.scope.forward_declare(decl.fullname(), typ)
                     if existing:
                         self.error(error.duplicate_fn(decl.fullname(), decl.span, existing.typ.span))
                 case ast.Struct():
                     fqn = self.scope.fqn().concat(node.name)
-                    typ = types.Struct(self.id(), fqn, [], [], [], node.span)
+                    typ = types.Struct(self.id(), fqn, [], [], [], [], node.span)
                     existing = self.scope.forward_declare(node.name, typ)
                     if existing:
                         self.error(error.duplicate_struct(node.name, node.span, existing.typ.span))
@@ -165,7 +165,9 @@ class TypeChecker:
                     typ = self.scope.get_forward_declared(name).typ
                     assert isinstance(typ, (types.Fn, types.Struct))
                     for type_param in decl.type_params:
-                        typ.type_params.append(types.TypeParam(self.id(), type_param.name, type_param.span))
+                        t = types.TypeParam(self.id(), type_param.name, type_param.span)
+                        typ.type_params.append(t)
+                        typ.type_args.append(t)
         # Stage 3: Fully parse all previously forward declared types.
         for node in nodes:
             match node:

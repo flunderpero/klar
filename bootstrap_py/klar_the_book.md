@@ -97,6 +97,8 @@ true
 false
 ```
 
+</details>
+
 ## Product Types (Struct)
 
 ```klar
@@ -761,6 +763,29 @@ Hello
 42
 ```
 
+```klar
+struct ValueA<T> {
+    a T
+}
+
+fn ValueA::get(self) T => self.a
+
+struct ValueB<B> {
+    b B
+}
+
+fn ValueB::get(self) B => self.b
+
+fn main() {
+    let v = ValueA(ValueB("Hello"))
+    print(v.a.get())
+}
+```
+
+```
+Hello
+```
+
 Parameterized instance methods:
 
 ```klar
@@ -843,6 +868,59 @@ struct Named {
 ```
 PASS
 ```
+
+This also allows recursive data structures:
+
+```klar
+struct Value<A> {
+    value A
+}
+
+fn main() {
+    let v = Value<Value<Str>>(Value<Str>("Hello"))
+    print(v.value.value)
+}
+```
+
+```
+Hello
+```
+
+Or recursive function calls:
+
+```klar
+-- You should not write code this dense. :-)
+fn fib(n Int) Int => if n == 0 => 0 else => if n == 1 => 1 else => fib(n - 1) + fib(n - 2)
+
+fn main() {
+    print(int_to_str(fib(10)))
+}
+```
+
+```
+55
+```
+
+Or recursive parameterized function calls:
+
+```klar
+-- This is a silly function but at the time of writing, the language did
+-- not have enough features to write a better example.
+fn return_it<T>(value T, n Int) T {
+    if n == 0 => value
+    else => return_it<T>(value, n - 1)
+}
+
+fn main() {
+    print(return_it("Hello", 2))
+}
+```
+
+```
+Hello
+```
+
+### Further Tests
 
 <details>
     <summary>Type-Check Errors</summary>

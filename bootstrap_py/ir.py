@@ -321,22 +321,20 @@ class FnGen:
     next_const = 0
     next_block = 0
 
-    def __init__(self, fn_def: ast.FnDef, type_env: lower.TypeEnv, ir: IR) -> None:
+    def __init__(self, fn_typ: types.Fn, fn_def: ast.FnDef, type_env: lower.TypeEnv, ir: IR) -> None:
         self.type_env = type_env
         self.ir = ir
         self.node_regs = {}
         self.loop_scopes = []
         self.scope = Scope(None, {})
-        types_fn = type_env.get_node_type(fn_def.decl)
-        assert isinstance(types_fn, types.Fn)
         params: list[Param] = []
-        for p in types_fn.params:
+        for p in fn_typ.params:
             typ = self.typ(p.typ)
             reg = self.reg(typ)
             self.scope.declare(p.name, reg)
             params.append(Param(reg, typ))
-        result = self.typ(types_fn.result)
-        name = self.fn_name(types.Instance(types_fn, type_env.type_res_scope)) if fn_def.decl.name != "main" else "main"
+        result = self.typ(fn_typ.result)
+        name = self.fn_name(types.Instance(fn_typ, type_env.type_res_scope)) if fn_def.decl.name != "main" else "main"
         self.fn_ir = FnIR(fn_def, name, params, result, [])
         self.block = self.new_block()
 
@@ -612,7 +610,7 @@ class FnGen:
 def generate_ir(specs: list[lower.FnSpec]) -> IR:
     ir = IR(fn_irs=[], constant_pool={})
     for spec in specs:
-        gen = FnGen(spec.fn_def, spec.type_env, ir)
+        gen = FnGen(spec.typ, spec.fn_def, spec.type_env, ir)
         gen.generate(spec.fn_def, None)
         ir.fn_irs.append(gen.fn_ir)
 

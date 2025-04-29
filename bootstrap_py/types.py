@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import re
 from dataclasses import dataclass
 from typing import Callable
@@ -72,12 +73,13 @@ class Fn:
     id: TypeId
     fqn: FQN
     type_params: TypeParams
+    type_args: TypeArgs
     params: list[FieldOrParam]
     result: Type
     span: Span
 
     def __str__(self) -> str:
-        type_params = type_params_to_str(self.type_params)
+        type_params = type_args_to_str(self.type_params, self.type_args)
         params = ", ".join(f"{p.name}: {p.typ}" for p in self.params)
         return tid(self.id) + f"fn {self.fqn}{type_params}({params})->{self.result}"
 
@@ -95,12 +97,13 @@ class Struct:
     id: TypeId
     fqn: FQN
     type_params: TypeParams
+    type_args: TypeArgs
     fields: list[FieldOrParam]
     methods: list[FieldOrParam]
     span: Span
 
     def __str__(self) -> str:
-        type_params = type_params_to_str(self.type_params)
+        type_params = type_args_to_str(self.type_params, self.type_args)
         fields = ", ".join(f"{f.name}: {f.typ}" for f in self.fields)
         return tid(self.id) + f"struct {self.fqn}{type_params}{{{fields}}}"
 
@@ -143,7 +146,7 @@ def type_params_to_str(params: TypeParams) -> str:
 def type_args_to_str(type_params: TypeParams, type_args: TypeArgs) -> str:
     if not type_args:
         return ""
-    return f"<{', '.join(f'{p}={a}' for p, a in zip(type_params, type_args))}>"
+    return f"<{', '.join(f'{p}={a or p}' for p, a in itertools.zip_longest(type_params, type_args))}>"
 
 
 class TypeResScope:
@@ -173,17 +176,11 @@ class TypeResScope:
             return self.parent.find(type_param)
         return None
 
-    def resolve(self, typ: Type, seen: dict[TypeId, Type] | None = None) -> Type:
+    def resolve(self, typ: Type, seen: dict[str, Type] | None = None) -> Type:
         if seen is not None:
-            seen_typ = seen.get(typ.id)
+            seen_typ = seen.get(full_id(typ))
             if seen_typ is not None:
                 return seen_typ
-
-        def resolve_field_or_param(typ: Type) -> Type:
-            typ = self.resolve(typ, seen)
-            if isinstance(typ, (Fn, Struct)):
-                typ = Instance(typ, self)
-            return typ
 
         match typ:
             case Instance():
@@ -200,27 +197,29 @@ class TypeResScope:
                     typ.id,
                     typ.fqn,
                     typ.type_params,
+                    [self.resolve(x, seen) for x in typ.type_args],
                     list(typ.params),
                     typ.result,
                     typ.span,
                 )
                 if seen is None:
                     seen = {}
-                seen[typ.id] = typ
-                typ.params = [FieldOrParam(x.name, resolve_field_or_param(x.typ)) for x in typ.params]
-                typ.result = resolve_field_or_param(typ.result)
+                seen[full_id(typ)] = typ
+                typ.params = [FieldOrParam(x.name, self.resolve(x.typ, seen)) for x in typ.params]
+                typ.result = self.resolve(typ.result, seen)
             case Struct():
                 typ = Struct(
                     typ.id,
                     typ.fqn,
                     typ.type_params,
+                    [self.resolve(x, seen) for x in typ.type_args],
                     list(typ.fields),
                     list(typ.methods),
                     typ.span,
                 )
                 if seen is None:
                     seen = {}
-                seen[typ.id] = typ
+                seen[full_id(typ)] = typ
                 typ.fields = [FieldOrParam(x.name, self.resolve(x.typ, seen)) for x in typ.fields]
                 typ.methods = [FieldOrParam(x.name, self.resolve(x.typ, seen)) for x in typ.methods]
         return typ
@@ -293,7 +292,12 @@ class Instance:
                 if not isinstance(resolved, TypeParam):
                     # We already got this.
                     continue
-                self.type_res_scope.declare(resolved, call_args[i])
+                # Only declare the type variable if it is not already declared.
+                if resolved.id not in self.type_res_scope.types:
+                    self.type_res_scope.declare(resolved, call_args[i])
+
+    def typed_id(self) -> str:
+        return f"{self.id}<{type_args_to_str(self.type_params(), self.type_args())}>"
 
 
 def full_id(typ: Type) -> str:
@@ -302,6 +306,8 @@ def full_id(typ: Type) -> str:
     match typ:
         case Instance():
             res += [full_id(x) for x in typ.type_args()]
+        case Fn() | Struct():
+            res += [full_id(x) for x in typ.type_args]
     return ":".join(res)
 
 
@@ -314,9 +320,9 @@ class Builtins:
         int_typ = Int(next_id(), bits=64, signed=True, span=span)
         bool_typ = Bool(next_id(), span)
         none_typ = NoneTyp(next_id(), span)
-        print_typ = Fn(next_id(), FQN(["print"]), [], [FieldOrParam("s", str_typ)], none_typ, span)
-        int_to_str = Fn(next_id(), FQN(["int_to_str"]), [], [FieldOrParam("i", int_typ)], str_typ, span)
-        bool_to_str = Fn(next_id(), FQN(["bool_to_str"]), [], [FieldOrParam("b", bool_typ)], str_typ, span)
+        print_typ = Fn(next_id(), FQN(["print"]), [], [], [FieldOrParam("s", str_typ)], none_typ, span)
+        int_to_str = Fn(next_id(), FQN(["int_to_str"]), [], [], [FieldOrParam("i", int_typ)], str_typ, span)
+        bool_to_str = Fn(next_id(), FQN(["bool_to_str"]), [], [], [FieldOrParam("b", bool_typ)], str_typ, span)
         return Builtins(str_typ, int_typ, bool_typ, none_typ, print_typ, int_to_str, bool_to_str)
 
     Str: Str

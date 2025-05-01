@@ -22,9 +22,11 @@ class TypeEnv:
     def set_node_type(self, node: ast.Node, type: types.Type) -> None:
         self.node_types[node.id] = type
 
-    # todo: return None if the node is a typecheck error
     def get_node_type(self, node: ast.Node) -> types.Type:
         return self.node_types[node.id]
+
+    def get_node_type_if_exists(self, node: ast.Node) -> types.Type | None:
+        return self.node_types.get(node.id)
 
 
 @dataclass
@@ -214,6 +216,8 @@ class TypeChecker:
                     if isinstance(decl, ast.FnDecl) and decl.receiver is not None:
                         # This is a method, add `Self` to the list of type parameters.
                         if not self.scope.is_declared_in_this_scope(decl.receiver):
+                            if not self.scope.find(decl.receiver):
+                                continue
                             self.error(error.not_declared_in_current_scope(decl.receiver, decl.span))
                             err = types.TypeCheckError(self.id(), f"`{decl.receiver}` not found", decl.span)
                             self.type_env.set_node_type(decl, err)
@@ -466,6 +470,10 @@ class TypeChecker:
         return types.instance(typ, type_res_scope)
 
     def typecheck(self, node: ast.Node, _parent: ast.Node | None) -> None:
+        if isinstance(self.type_env.get_node_type_if_exists(node), types.TypeCheckError):
+            # This node has already been marked as an error, so there is little point
+            # in checking it further.
+            return
         match node:
             case ast.Module():
                 self.declare_all(node)
@@ -510,8 +518,6 @@ class TypeChecker:
                 self.typecheck_call(node)
             case ast.FnDef():
                 fn = self.type_env.get_node_type(node.decl)
-                if isinstance(fn, types.TypeCheckError):
-                    return
                 assert isinstance(fn, types.Fn), f"Expected a function type, got {fn}"
                 with self.child_scope(node):
                     for i, param in enumerate(fn.params):

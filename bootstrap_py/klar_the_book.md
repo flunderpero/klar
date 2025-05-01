@@ -205,9 +205,9 @@ fn main() {
 
 Of course, the target type has to exist.
 
-```todo
+```klar
 
-fn Value::hello(self) {} -- ERROR: Undeclared name `Value`
+fn Value::hello(self) {} -- ERROR: Undefined name `Value`
 
 fn main() {}
 ```

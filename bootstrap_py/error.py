@@ -146,10 +146,19 @@ def self_not_allowed_here(span: Span) -> Error:
     return SimpleError(span, "`self` is not allowed here", _stack())
 
 
-def missing_trait_method_impl(trait_name: str, method_name: str, trait_span: Span, span: Span) -> Error:
+def trait_method_impl_missing(trait_name: str, method_name: str, trait_span: Span, span: Span) -> Error:
     return WithDefinitionError(
         span,
         f"Missing implementation of trait method `{method_name}` in trait `{trait_name}`",
+        trait_span,
+        _stack(),
+    )
+
+
+def trait_method_impl_mismatch(trait_method_signature: str, impl_signature: str, trait_span: Span, span: Span) -> Error:
+    return WithDefinitionError(
+        span,
+        f"Method signature `{impl_signature}` does not match trait method signature `{trait_method_signature}`",
         trait_span,
         _stack(),
     )

@@ -308,6 +308,7 @@ Type = NamedType | FnType
 Expr = Block | IntLit | StrLit | BoolLit | Ident | Member | Call | BinaryExpr | If
 Node = Expr | FnDecl | FnDef | Module | Type | Let | Assign | Loop | Break | Continue | Struct | Trait
 ParameterizedNode = FnDecl | Struct | Trait
+ImplementableNode = Struct | Trait
 
 TypeParams = list[TypeParam]
 TypeArgs = list[Type]

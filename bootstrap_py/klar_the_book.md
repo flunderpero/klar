@@ -237,6 +237,19 @@ fn (HelloWorld) Foo::hello(self) Str => "Hello" -- ERROR: Missing implementation
 fn main() {}
 ```
 
+The method signature must match the trait method signature:
+
+```klar
+trait HelloWorld {
+    fn hello(self) Str
+}
+
+struct Foo {}
+
+fn (HelloWorld) Foo::hello(self) Int => 42 -- ERROR: Method signature `test::Foo::hello(self: test::Foo) I64` does not match trait method signature `test::HelloWorld::hello<test::Foo>(self: test::Foo) Str`
+fn main() {}
+```
+
 </details>
 
 ### Function Types

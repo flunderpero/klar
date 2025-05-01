@@ -129,9 +129,10 @@ class Struct:
     fqn: FQN
     type_params: TypeParams
     type_args: TypeArgs
+    self_typ: TypeParam
     type_res_scope: TypeResScope | None
     fields: list[FieldOrParam]
-    methods: list[FieldOrParam]
+    methods: list[FieldOrParam[Fn]]
     traits: list[Trait]
     span: Span
 
@@ -150,7 +151,7 @@ class Struct:
                 return x
         for x in self.methods:
             if x.name == name:
-                return x
+                return x  # pyright:ignore[reportReturnType]
         return None
 
     def field_index(self, name: str) -> int | None:
@@ -172,8 +173,9 @@ class Trait:
     fqn: FQN
     type_params: TypeParams
     type_args: TypeArgs
+    self_typ: TypeParam
     type_res_scope: TypeResScope | None
-    methods: list[FieldOrParam]
+    methods: list[FieldOrParam[Fn]]
     span: Span
 
     def __str__(self) -> str:
@@ -188,7 +190,7 @@ class Trait:
     def member(self, name: str) -> FieldOrParam | None:
         for x in self.methods:
             if x.name == name:
-                return x
+                return x  # pyright:ignore[reportReturnType]
         return None
 
 
@@ -294,6 +296,7 @@ class TypeResScope:
                     typ.fqn,
                     typ.type_params,
                     [self.resolve(x, seen) for x in typ.type_args],
+                    typ.self_typ,
                     None,
                     list(typ.fields),
                     list(typ.methods),
@@ -304,7 +307,7 @@ class TypeResScope:
                     seen = {}
                 seen[full_id(typ)] = typ
                 typ.fields = [FieldOrParam(x.name, self.resolve(x.typ, seen)) for x in typ.fields]
-                typ.methods = [FieldOrParam(x.name, self.resolve(x.typ, seen)) for x in typ.methods]
+                typ.methods = [FieldOrParam[Fn](x.name, cast(Fn, self.resolve(x.typ, seen))) for x in typ.methods]
         return typ
 
     def keys(self) -> set[TypeId]:
@@ -375,6 +378,9 @@ def infer_type_args_from_call_args(typ: CallableType, call_args: list[Type]) -> 
             # Only declare the type variable if it is not already declared.
             if resolved.id not in typ.type_res_scope.types:
                 typ.type_res_scope.declare(resolved, call_args[i])
+
+
+built_in_span = Span("<built-in>", "", 0, 0)
 
 
 @dataclass

@@ -174,13 +174,13 @@ struct Planet {
     name Str
 }
 
-fn Planet::diameter(self) Int {
+fn Planet::diameter(self, s Str) Int {
     self.radius + self.radius
 }
 
 fn main() {
     let p = Planet(6371, true, "Earth")
-    print(int_to_str(p.diameter()))
+    print(int_to_str(p.diameter("test")))
 }
 ```
 

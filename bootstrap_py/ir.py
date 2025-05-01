@@ -355,7 +355,7 @@ class FnGen:
             self.scope.declare(p.name, reg)
             params.append(Param(reg, typ))
         result = self.typ(fn_typ.result)
-        name = self.fn_name(types.Instance(fn_typ, type_env.type_res_scope)) if fn_def.decl.name != "main" else "main"
+        name = self.fn_name(types.instance(fn_typ, type_env.type_res_scope)) if fn_def.decl.name != "main" else "main"
         self.fn_ir = FnIR(fn_def, name, params, result, [])
         self.block = self.new_block()
 
@@ -591,16 +591,16 @@ class FnGen:
                 self.emit(Load(reg, getptr_reg), node)
             case ast.Call():
                 callee = self.type_env.get_unresolved_node_type(node.callee)
-                assert isinstance(callee, types.Instance), f"Expected instance type, got {callee}"
+                assert isinstance(callee, types.CallableType), f"Expected CallableType, got {callee}"
                 result_typ = self.type_env.get_node_type(node)
                 ast.walk(node, self.generate)
                 args = [self.node_regs[x.id] for x in node.args]
-                match callee.typ:
+                match callee:
                     case types.Fn():
                         reg = NoneReg
                         if not isinstance(result_typ, types.NoneTyp):
                             reg = self.reg(self.typ(result_typ))
-                        if callee.typ.is_named:
+                        if callee.is_named:
                             # Direct call by name.
                             self.emit(Call(reg, self.fn_name(callee), args), node)
                         else:

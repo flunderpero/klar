@@ -27,8 +27,8 @@ def lower_instance_methods(module: ast.Module, type_env: typechecker.TypeEnv) ->
         match node:
             case ast.Call():
                 typ = type_env.get_node_type(node.callee)
-                if isinstance(typ, types.Instance) and isinstance(typ.typ, types.Fn) and typ.typ.is_instance_method():
-                    adapt_call(node, typ.typ)
+                if isinstance(typ, types.Fn) and typ.is_instance_method():
+                    adapt_call(node, typ)
         ast.walk(node, visit)
 
     visit(module, None)

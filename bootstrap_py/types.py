@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, cast
 
 from .span import FQN, Span
@@ -88,6 +88,7 @@ class Fn:
     fqn: FQN
     type_params: TypeParams
     type_args: TypeArgs
+    type_res_scope: TypeResScope | None
     params: list[FieldOrParam]
     result: Type
     span: Span
@@ -128,9 +129,10 @@ class Struct:
     fqn: FQN
     type_params: TypeParams
     type_args: TypeArgs
+    type_res_scope: TypeResScope | None
     fields: list[FieldOrParam]
     methods: list[FieldOrParam]
-    traits: list[Instance[Trait] | Trait]
+    traits: list[Trait]
     span: Span
 
     def __str__(self) -> str:
@@ -157,11 +159,9 @@ class Struct:
                 return i
         return None
 
-    def trait(self, fqn: FQN) -> Instance[Trait] | Trait | None:
+    def trait(self, fqn: FQN) -> Trait | None:
         for x in self.traits:
-            if isinstance(x, Trait) and x.fqn == fqn:
-                return x
-            if isinstance(x, Instance) and x.typ.fqn == fqn:
+            if x.fqn == fqn:
                 return x
         return None
 
@@ -172,6 +172,7 @@ class Trait:
     fqn: FQN
     type_params: TypeParams
     type_args: TypeArgs
+    type_res_scope: TypeResScope | None
     methods: list[FieldOrParam]
     span: Span
 
@@ -260,9 +261,6 @@ class TypeResScope:
                 return seen_typ
 
         match typ:
-            case Instance():
-                typ = typ.resolve()
-                typ = self.resolve(typ)
             case TypeParam():
                 while isinstance(typ, TypeParam):
                     typ2 = self.find(typ)
@@ -270,11 +268,14 @@ class TypeResScope:
                         break
                     typ = typ2
             case Fn():
+                if typ.type_res_scope != self:
+                    typ = resolve(typ)
                 typ = Fn(
                     typ.id,
                     typ.fqn,
                     typ.type_params,
                     [self.resolve(x, seen) for x in typ.type_args],
+                    None,
                     list(typ.params),
                     typ.result,
                     typ.span,
@@ -286,11 +287,14 @@ class TypeResScope:
                 typ.params = [FieldOrParam(x.name, self.resolve(x.typ, seen)) for x in typ.params]
                 typ.result = self.resolve(typ.result, seen)
             case Struct():
+                if typ.type_res_scope != self:
+                    typ = resolve(typ)
                 typ = Struct(
                     typ.id,
                     typ.fqn,
                     typ.type_params,
                     [self.resolve(x, seen) for x in typ.type_args],
+                    None,
                     list(typ.fields),
                     list(typ.methods),
                     [cast("Trait", self.resolve(x, seen)) for x in typ.traits],
@@ -324,79 +328,53 @@ class TypeResScope:
         return f"TypeResScope({self.flatten()})"
 
 
-@dataclass
-class Instance[T: ParameterizedType | TypeParam]:
-    typ: T
-    type_res_scope: TypeResScope
-
-    def __str__(self) -> str:
-        return f"Instance{type_args_to_str(self.type_params(), self.type_args())}({self.typ})"
-
-    def signature(self) -> str:
-        return f"Instance({self.typ.signature})"
-
-    @property
-    def id(self) -> TypeId:
-        return self.typ.id
-
-    @property
-    def span(self) -> Span:
-        return self.typ.span
-
-    def resolve(self) -> Type:
-        return self.type_res_scope.resolve(self.typ)
-
-    def type_params(self) -> TypeParams:
-        match self.typ:
-            case TypeParam():
-                return [self.typ]
-            case Fn() | Struct() | Trait():
-                return self.typ.type_params
-            case _:
-                raise AssertionError(f"unhandled type: {self.typ}")
-
-    def type_args(self) -> TypeArgs:
-        return [self.type_res_scope.resolve(p) for p in self.type_params()]
-
-    def infer_type_args_from_call_args(self, call_args: list[Type]) -> None:
-        params: list[Type]
-        match self.typ:
-            case Fn():
-                params = [x.typ for x in self.typ.params_without_self()]
-            case Struct():
-                params = [x.typ for x in self.typ.fields]
-            case _:
-                raise AssertionError(f"unhandled type: {self.typ}")
-        assert len(params) == len(call_args), f"expected {len(params)} call args, got {len(call_args)}"
-        for i, param in enumerate(params):
-            if isinstance(param, TypeParam):
-                resolved = self.type_res_scope.resolve(param)
-                if not isinstance(resolved, TypeParam):
-                    # We already got this.
-                    continue
-                # Only declare the type variable if it is not already declared.
-                if resolved.id not in self.type_res_scope.types:
-                    self.type_res_scope.declare(resolved, call_args[i])
-
-    def typed_id(self) -> str:
-        return f"{self.id}<{type_args_to_str(self.type_params(), self.type_args())}>"
-
-
-def resolve(typ: Instance | Type) -> Type:
-    if isinstance(typ, Instance):
-        return typ.resolve()
+def resolve[T: Type](typ: T) -> T:
+    if isinstance(typ, ParameterizedType) and typ.type_res_scope is not None:
+        return cast("T", typ.type_res_scope.resolve(typ))
     return typ
 
 
 def full_id(typ: Type) -> str:
     """Return an Id that takes type parameters and type arguments into account."""
     res = [str(typ.id)]
-    match typ:
-        case Instance():
-            res += [full_id(x) for x in typ.type_args()]
-        case Fn() | Struct():
-            res += [full_id(x) for x in typ.type_args]
+    if isinstance(typ, ParameterizedType):
+        res += [full_id(x) for x in typ.type_args]
     return ":".join(res)
+
+
+def instance[T: ParameterizedType](typ: T, type_res_scope: TypeResScope | None) -> T:
+    clone = replace(typ)
+    if typ.type_res_scope is not None:
+        type_res_scope = TypeResScope(typ.type_res_scope, type_res_scope)
+    clone.type_res_scope = type_res_scope
+    return clone
+
+
+def infer_type_args_from_call_args(typ: CallableType, call_args: list[Type]) -> None:
+    """Declare all type parameters with their type if we find a match in `call_args`.
+
+    `typ.type_res_scope` is modified.
+    """
+    params: list[Type]
+    match typ:
+        case Fn():
+            params = [x.typ for x in typ.params_without_self()]
+        case Struct():
+            params = [x.typ for x in typ.fields]
+        case _:
+            raise AssertionError(f"unhandled type: {typ}")
+    assert len(params) == len(call_args), f"expected {len(params)} call args, got {len(call_args)}"
+    if typ.type_res_scope is None:
+        typ.type_res_scope = TypeResScope(None, None)
+    for i, param in enumerate(params):
+        if isinstance(param, TypeParam):
+            resolved = typ.type_res_scope.resolve(param)
+            if not isinstance(resolved, TypeParam):
+                # We already got this.
+                continue
+            # Only declare the type variable if it is not already declared.
+            if resolved.id not in typ.type_res_scope.types:
+                typ.type_res_scope.declare(resolved, call_args[i])
 
 
 @dataclass
@@ -408,12 +386,14 @@ class Builtins:
         int_typ = Int(next_id(), bits=64, signed=True, span=span)
         bool_typ = Bool(next_id(), span)
         none_typ = NoneTyp(next_id(), span)
-        print_typ = Fn(next_id(), FQN(["print"]), [], [], [FieldOrParam("s", str_typ)], none_typ, span, is_named=True)
+        print_typ = Fn(
+            next_id(), FQN(["print"]), [], [], None, [FieldOrParam("s", str_typ)], none_typ, span, is_named=True
+        )
         int_to_str = Fn(
-            next_id(), FQN(["int_to_str"]), [], [], [FieldOrParam("i", int_typ)], str_typ, span, is_named=True
+            next_id(), FQN(["int_to_str"]), [], [], None, [FieldOrParam("i", int_typ)], str_typ, span, is_named=True
         )
         bool_to_str = Fn(
-            next_id(), FQN(["bool_to_str"]), [], [], [FieldOrParam("b", bool_typ)], str_typ, span, is_named=True
+            next_id(), FQN(["bool_to_str"]), [], [], None, [FieldOrParam("b", bool_typ)], str_typ, span, is_named=True
         )
         return Builtins(str_typ, int_typ, bool_typ, none_typ, print_typ, int_to_str, bool_to_str)
 
@@ -437,16 +417,13 @@ class Builtins:
         }
 
 
-Type = Int | Str | Bool | Fn | Struct | Trait | NoneTyp | TypeParam | Instance | TypeCheckError
+Type = Int | Str | Bool | Fn | Struct | Trait | NoneTyp | TypeParam | TypeCheckError
 ParameterizedType = Fn | Struct | Trait
 ImplementableType = Struct | Trait
+CallableType = Fn | Struct
 
 
 def is_assignable_from(target: Type, from_: Type) -> bool:
-    if isinstance(target, Instance):
-        target = target.resolve()
-    if isinstance(from_, Instance):
-        from_ = from_.resolve()
     match target:
         case Str():
             return isinstance(from_, Str)
@@ -483,10 +460,6 @@ def is_assignable_from(target: Type, from_: Type) -> bool:
 
 
 def is_same(target: Type, from_: Type) -> bool:
-    if isinstance(target, Instance) and isinstance(target.typ, Fn):
-        target = target.resolve()
-    if isinstance(from_, Instance) and isinstance(from_.typ, Fn):
-        from_ = from_.resolve()
     if isinstance(target, Fn) and isinstance(from_, Fn):
         return target.is_same(from_)
     return target.id == from_.id
@@ -507,22 +480,6 @@ def normalize_type(next_id: Callable[[], int], typ: Type) -> Type:
 
     """
     match typ:
-        case Instance():
-            if not isinstance(typ.typ, Fn):
-                return typ
-            if not typ.typ.is_named:
-                return typ
-            fn = Fn(
-                next_id(),
-                FQN([]),
-                typ.typ.type_params,
-                typ.typ.type_args,
-                list(typ.typ.params),
-                typ.typ.result,
-                typ.typ.span,
-                is_named=False,
-            )
-            return Instance(fn, typ.type_res_scope)
         case Fn():
             if not typ.is_named:
                 return typ
@@ -531,6 +488,7 @@ def normalize_type(next_id: Callable[[], int], typ: Type) -> Type:
                 FQN([]),
                 typ.type_params,
                 typ.type_args,
+                typ.type_res_scope,
                 list(typ.params),
                 typ.result,
                 typ.span,

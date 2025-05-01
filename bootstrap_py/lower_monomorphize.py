@@ -31,32 +31,27 @@ class Monomorphize:
         match node:
             case ast.Ident():
                 typ = self.type_env.get_node_type(node)
-                if not isinstance(typ, types.Instance):
+                if not isinstance(typ, types.Fn):
                     return
-                if not isinstance(typ.typ, types.Fn):
+                if self.type_env.builtins.is_builtin(typ):
                     return
-                fn = typ.typ
-                if self.type_env.builtins.is_builtin(fn):
-                    return
-                assert isinstance(fn, types.Fn)
                 self.enqueue_if_needed(typ)
 
-    def enqueue_if_needed(self, instance: types.Instance) -> None:
+    def enqueue_if_needed(self, instance: types.Fn) -> None:
         """Add to the queue if is not already in `self.queue` or `self.fn_specs`."""
-        assert isinstance(instance.typ, types.Fn)
-        if not instance.typ.is_named:
+        if not instance.is_named:
             return
         fn_def = self.fn_defs[instance.id]
         type_res_scope = types.TypeResScope(
             instance.type_res_scope, self.current.type_env.type_res_scope if self.current else None
         )
-        instance = types.Instance(instance.typ, type_res_scope)
+        instance = types.instance(instance, type_res_scope)
         fn = type_res_scope.resolve(instance)
         assert isinstance(fn, types.Fn)
-        assert all(not isinstance(x, types.TypeParam) for x in instance.type_args()), (
+        assert all(not isinstance(x, types.TypeParam) for x in fn.type_args), (
             f"at least one type param unresolved: {instance}"
         )
-        key = types.full_id(instance)
+        key = types.full_id(fn)
         if key in self.seen:
             return
         self.seen.add(key)
@@ -82,6 +77,6 @@ def monomorphize(module: ast.Module, type_env: typechecker.TypeEnv) -> list[lowe
 
     visit(module, None)
     assert isinstance(main, types.Fn)
-    runner.enqueue_if_needed(types.Instance(main, types.TypeResScope(None, None)))
+    runner.enqueue_if_needed(types.instance(main, None))
     runner.run()
     return runner.fn_specs

@@ -261,7 +261,7 @@ class FnDecl:
     id: NodeId
     name: str
     receiver: str | None
-    trait: NamedType | None
+    trait_qualifier: NamedType | None
     params: list[FieldOrParam]
     result: Type | None
     type_params: TypeParams
@@ -275,7 +275,7 @@ class FnDecl:
     def __str__(self) -> str:
         type_params = generics_to_str(self.type_params)
         receiver = (self.receiver + "::") if self.receiver is not None else ""
-        trait = (f"({self.trait}) ") if self.trait is not None else ""
+        trait = (f"({self.trait_qualifier}) ") if self.trait_qualifier is not None else ""
         return (
             nid(self.id)
             + f"fn {trait}{receiver}{self.name}{type_params}({', '.join(str(x) for x in self.params)}) -> {self.result}"

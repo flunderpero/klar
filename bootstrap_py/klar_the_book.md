@@ -188,6 +188,32 @@ fn main() {
 12742
 ```
 
+<details>
+    <summary>More Examples</summary>
+
+Implementations must be in the same scope:
+
+```todo
+struct Value {
+    value Str
+}
+
+fn main() {
+    fn Value::hello(self) {} -- ERROR: `Value` is not declared in the current scope
+}
+```
+
+Of course, the target type has to exist.
+
+```todo
+
+fn Value::hello(self) {} -- ERROR: Undeclared name `Value`
+
+fn main() {}
+```
+
+</details>
+
 ### Sum Types (Tagged Unions)
 
 Klar has strong support for tagged unions, also called discriminated unions or enum types in other
@@ -927,7 +953,7 @@ Hello
 
 Parameterized traits and trait implementation:
 
-```todo
+```klar
 struct Value {
     value Str
 }
@@ -936,7 +962,7 @@ trait ReturnIt<T> {
     fn return_it(self, t T) T
 }
 
-fn (ReturnIt<Int>) Value::return_it(self, t Str) Str => t
+fn (ReturnIt<Str>) Value::return_it(self, t Str) Str => t
 
 fn main() {
     let v = Value("Hello")
@@ -945,7 +971,7 @@ fn main() {
 }
 ```
 
-```todo
+```
 PASS
 ```
 
@@ -1108,6 +1134,48 @@ fn main() {
 ```
 42
 Hello
+```
+
+Parameterized traits must be implemented with the same trait qualifier:
+
+```klar
+struct Value {
+    value Str
+}
+
+trait ReturnIt<T> {
+    fn return_it(self, t T) T
+    fn return_it_again(self, t T) T
+}
+
+fn (ReturnIt<Str>) Value::return_it(self, t Str) Str => t
+
+fn (ReturnIt<Int>) Value::return_it_again(self, t Int) Int => t -- ERROR: Trait has already been implemented for `test::Value` with signature `test::ReturnIt<Str>`
+
+fn main() {}
+```
+
+Parameterized traits can be implemented on paramerized types:
+
+```klar
+struct Value<T> {
+    value T
+}
+
+trait ReturnIt<T> {
+    fn return_it(self, t T) T
+}
+
+fn (ReturnIt<T>) Value::return_it(self, t T) T => self.value
+
+fn main() {
+    let v = Value("PASS")
+    print(v.return_it("FAIL"))
+}
+```
+
+```
+PASS
 ```
 
 </details>

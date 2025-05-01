@@ -81,6 +81,9 @@ class FieldOrParam[T: Type = Type]:
     name: str
     typ: T
 
+    def __str__(self) -> str:
+        return f"{self.name}: {self.typ}"
+
 
 @dataclass
 class Fn:
@@ -120,6 +123,8 @@ class Fn:
         for sp, op in zip(self.params, other.params):
             if not is_same(sp.typ, op.typ):
                 return False
+        if not type_params_and_args_are_same(self, other):
+            return False
         return is_same(self.result, other.result)
 
 
@@ -138,7 +143,7 @@ class Struct:
 
     def __str__(self) -> str:
         type_params = type_args_to_str(self.type_params, self.type_args)
-        fields = ", ".join(f"{f.name}: {f.typ}" for f in self.fields)
+        fields = ", ".join(f"{x}" for x in self.fields)
         return tid(self.id) + f"struct {self.fqn}{type_params}{{{fields}}}"
 
     def signature(self) -> str:
@@ -270,13 +275,14 @@ class TypeResScope:
                         break
                     typ = typ2
             case Fn():
+                scope = self
                 if typ.type_res_scope != self:
-                    typ = resolve(typ)
+                    scope = TypeResScope(typ.type_res_scope, self)
                 typ = Fn(
                     typ.id,
                     typ.fqn,
                     typ.type_params,
-                    [self.resolve(x, seen) for x in typ.type_args],
+                    [scope.resolve(x, seen) for x in typ.type_args],
                     None,
                     list(typ.params),
                     typ.result,
@@ -286,28 +292,54 @@ class TypeResScope:
                 if seen is None:
                     seen = {}
                 seen[full_id(typ)] = typ
-                typ.params = [FieldOrParam(x.name, self.resolve(x.typ, seen)) for x in typ.params]
-                typ.result = self.resolve(typ.result, seen)
+                typ.params = [FieldOrParam(x.name, scope.resolve(x.typ, seen)) for x in typ.params]
+                typ.result = scope.resolve(typ.result, seen)
             case Struct():
+                scope = self
                 if typ.type_res_scope != self:
-                    typ = resolve(typ)
+                    # todo: We reversed the order of scopes here compared to Fn or Trait.
+                    #       This is needed so recursive types work.
+                    #       But it feels weird and surely hides a bug.
+                    scope = TypeResScope(self, typ.type_res_scope)
                 typ = Struct(
                     typ.id,
                     typ.fqn,
                     typ.type_params,
-                    [self.resolve(x, seen) for x in typ.type_args],
+                    [scope.resolve(x, seen) for x in typ.type_args],
                     typ.self_typ,
                     None,
                     list(typ.fields),
                     list(typ.methods),
-                    [cast("Trait", self.resolve(x, seen)) for x in typ.traits],
+                    list(typ.traits),
                     typ.span,
                 )
                 if seen is None:
                     seen = {}
                 seen[full_id(typ)] = typ
-                typ.fields = [FieldOrParam(x.name, self.resolve(x.typ, seen)) for x in typ.fields]
-                typ.methods = [FieldOrParam[Fn](x.name, cast(Fn, self.resolve(x.typ, seen))) for x in typ.methods]
+                typ.fields = [FieldOrParam(x.name, scope.resolve(x.typ, seen)) for x in typ.fields]
+                typ.methods = [FieldOrParam[Fn](x.name, cast(Fn, scope.resolve(x.typ, seen))) for x in typ.methods]
+                for i, trait in enumerate(typ.traits):
+                    scope = TypeResScope(scope, None)
+                    scope.declare(trait.self_typ, typ)
+                    typ.traits[i] = cast(Trait, scope.resolve(trait, seen))
+            case Trait():
+                scope = self
+                if typ.type_res_scope != self:
+                    scope = TypeResScope(typ.type_res_scope, self)
+                typ = Trait(
+                    typ.id,
+                    typ.fqn,
+                    typ.type_params,
+                    [scope.resolve(x, seen) for x in typ.type_args],
+                    typ.self_typ,
+                    None,
+                    list(typ.methods),
+                    typ.span,
+                )
+                if seen is None:
+                    seen = {}
+                seen[full_id(typ)] = typ
+                typ.methods = [FieldOrParam[Fn](x.name, cast(Fn, scope.resolve(x.typ, seen))) for x in typ.methods]
         return typ
 
     def keys(self) -> set[TypeId]:
@@ -465,10 +497,22 @@ def is_assignable_from(target: Type, from_: Type) -> bool:
             raise AssertionError(f"unhandled target type: {target}")
 
 
+def type_params_and_args_are_same(target: ParameterizedType, from_: ParameterizedType) -> bool:
+    if len(target.type_params) != len(from_.type_params):
+        return False
+    if not all(is_same(t, f) for t, f in zip(target.type_params, from_.type_params)):
+        return False
+    return all(is_same(t, f) for t, f in zip(target.type_args, from_.type_args))
+
+
 def is_same(target: Type, from_: Type) -> bool:
     if isinstance(target, Fn) and isinstance(from_, Fn):
         return target.is_same(from_)
-    return target.id == from_.id
+    if target.id != from_.id:
+        return False
+    if isinstance(target, ParameterizedType) and isinstance(from_, ParameterizedType):
+        return type_params_and_args_are_same(target, from_)
+    return True
 
 
 def normalize_type(next_id: Callable[[], int], typ: Type) -> Type:

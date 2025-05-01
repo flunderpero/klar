@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
 from . import ast, error, types
@@ -62,6 +62,9 @@ class Scope:
 
     def get_forward_declared(self, name: str) -> ScopeDeclared:
         return self.forwards[name]
+
+    def is_declared_in_this_scope(self, name: str) -> bool:
+        return name in self.names
 
     def finish_forward_declared(self, name: str) -> None:
         del self.forwards[name]
@@ -157,12 +160,16 @@ class TypeChecker:
                     self.error(error.undefined_name(node.name, node.span))
                     return types.TypeCheckError(self.id(), f"`{node.name}` not found", node.span)
                 if node.type_args:
+                    if not isinstance(declared.typ, types.ParameterizedType):
+                        self.error(error.not_generic(node.span, declared.typ.span))
+                        return types.TypeCheckError(self.id(), "not generic", node.span)
                     return self.instance(declared.typ, node.type_args, node.span)
                 return declared.typ
             case _:
                 raise AssertionError(f"Type checking not implemented for: {node.__class__}")
 
     def declare_all(self, scope_node: ast.Node) -> None:
+        """Forward declare all types."""
         match scope_node:
             case ast.Module():
                 nodes = scope_node.nodes
@@ -200,15 +207,20 @@ class TypeChecker:
                     name = decl.name if isinstance(decl, (ast.Struct, ast.Trait)) else decl.fullname()
                     typ = self.scope.get_forward_declared(name).typ
                     assert isinstance(typ, types.ParameterizedType)
-                        for type_param in decl.type_params:
-                            t = types.TypeParam(self.id(), type_param.name, type_param.span)
-                            typ.type_params.append(t)
-                            typ.type_args.append(t)
-                        if isinstance(decl, ast.FnDecl) and decl.receiver is not None:
-                            # This is a method, add `Self` to the list of type parameters.
-                            receiver = self.scope.get_forward_declared(decl.receiver)
-                            assert receiver is not None and isinstance(receiver.typ, types.ImplementableType)
-                            typ.type_params.append(receiver.typ.self_typ)
+                    for type_param in decl.type_params:
+                        t = types.TypeParam(self.id(), type_param.name, type_param.span)
+                        typ.type_params.append(t)
+                        typ.type_args.append(t)
+                    if isinstance(decl, ast.FnDecl) and decl.receiver is not None:
+                        # This is a method, add `Self` to the list of type parameters.
+                        if not self.scope.is_declared_in_this_scope(decl.receiver):
+                            self.error(error.not_declared_in_current_scope(decl.receiver, decl.span))
+                            err = types.TypeCheckError(self.id(), f"`{decl.receiver}` not found", decl.span)
+                            self.type_env.set_node_type(decl, err)
+                            continue
+                        receiver = self.scope.get_forward_declared(decl.receiver)
+                        assert receiver is not None and isinstance(receiver.typ, types.ImplementableType)
+                        typ.type_params.append(receiver.typ.self_typ)
 
         # Stage 3: Fully parse all previously forward declared types.
         def stage3_fndecl(node: ast.Node, decl: ast.FnDecl, typ: types.Fn) -> None:
@@ -236,15 +248,46 @@ class TypeChecker:
                     for type_param in impl_typ.type_params:
                         self.scope.declare(type_param.name, type_param)
                     # Mark a trait as implemented if this is a trait impl.
-                    if decl.trait is not None:
+                    # Also type check the trait qualifier.
+                    if decl.trait_qualifier is not None:
                         assert isinstance(impl_typ, types.Struct)
-                        trait_typ = self.type_node_type(decl.trait)
+                        trait_typ = self.type_node_type(decl.trait_qualifier)
                         if not isinstance(trait_typ, types.Trait):
-                            self.error(error.unexpected_type(types.Trait.__name__, str(trait_typ), decl.trait.span))
-                            err = types.TypeCheckError(self.id(), "not a trait", decl.trait.span)
+                            self.error(
+                                error.unexpected_type(types.Trait.__name__, str(trait_typ), decl.trait_qualifier.span)
+                            )
+                            err = types.TypeCheckError(self.id(), "not a trait", decl.trait_qualifier.span)
                             self.type_env.set_node_type(decl, err)
                             return
-                        if not impl_typ.trait(trait_typ.fqn):
+                        if len(decl.trait_qualifier.type_args) != len(trait_typ.type_params):
+                            self.error(
+                                error.wrong_number_of_type_args(
+                                    len(trait_typ.type_params),
+                                    len(decl.trait_qualifier.type_args),
+                                    decl.trait_qualifier.span,
+                                    trait_typ.span,
+                                )
+                            )
+                            err = types.TypeCheckError(
+                                self.id(), "wrong number of type args", decl.trait_qualifier.span
+                            )
+                            self.type_env.set_node_type(decl, err)
+                            return
+                        trait_typ = self.instance(trait_typ, decl.trait_qualifier.type_args, decl.trait_qualifier.span)
+                        if isinstance(trait_typ, types.TypeCheckError):
+                            return
+                        existing = impl_typ.trait(trait_typ.fqn)
+                        if existing:
+                            existing = types.resolve(existing)
+                            if not types.is_same(existing, types.resolve(trait_typ)):
+                                self.error(
+                                    error.trait_qualifier_mismatch(
+                                        existing.signature(), str(impl_typ.fqn), trait_typ.span, decl.span
+                                    )
+                                )
+                                err = types.TypeCheckError(self.id(), "trait qualifier mismatch", decl.span)
+                                self.type_env.set_node_type(decl, err)
+                        else:
                             impl_typ.traits.append(trait_typ)
                 elif any(x.name == "self" for x in decl.params):
                     self.error(error.self_not_allowed_here(decl.span))
@@ -334,8 +377,14 @@ class TypeChecker:
             if isinstance(impl_typ, types.Trait):
                 continue
 
+            # If there are errors up until now, we don't check any further.
+            if self.errors:
+                continue
+
+            # Resolving the `impl_typ` will also resolve all `impl_typ.traits` so the
+            # method signatures should match.
+            impl_typ = types.resolve(impl_typ)
             for trait in impl_typ.traits:
-                assert isinstance(trait, types.Trait)
                 trait_method_names = [method.name for method in trait.methods]
                 for t_typ in trait.methods:
                     m_typ = next((x for x in impl_typ.methods if x.name == t_typ.name), None)
@@ -347,20 +396,10 @@ class TypeChecker:
                         trait_span = next(x.typ.span for x in trait.methods if x.name == t_typ.name)
                         self.error(error.trait_method_impl_missing(str(trait.fqn), t_typ.name, trait_span, impl_span))
                         continue
-                    # Check that the impl method signature matches the trait method signature.
-                    # First, replace `Self` in the trait method implementation with `Self` of the
-                    # actual implementation for easier comparison.
-                    t_typ = replace(t_typ.typ)
-                    m_typ = m_typ.typ
-                    type_res_scope = types.TypeResScope(t_typ.type_res_scope, m_typ.type_res_scope)
-                    type_res_scope.declare(trait.self_typ, impl_typ)
-                    t_typ.type_res_scope = type_res_scope
-                    res_t_typ = type_res_scope.resolve(t_typ)
-                    res_m_typ = type_res_scope.resolve(m_typ)
-                    if not types.is_assignable_from(res_m_typ, res_t_typ):
+                    if not types.is_assignable_from(m_typ.typ, t_typ.typ):
                         self.error(
                             error.trait_method_impl_mismatch(
-                                res_t_typ.signature(), res_m_typ.signature(), t_typ.span, m_typ.span
+                                t_typ.typ.signature(), m_typ.typ.signature(), t_typ.typ.span, m_typ.typ.span
                             )
                         )
                         continue
@@ -409,16 +448,13 @@ class TypeChecker:
             result = types.instance(result, callee_type_res_scope)
         self.type_env.set_node_type(node, result)
 
-    def instance(
+    def instance[T: types.ParameterizedType](
         self,
-        typ: types.Type,
+        typ: T,
         type_args: ast.TypeArgs,
         span: Span,
         parent_type_res_scope: types.TypeResScope | None = None,
-    ) -> types.ParameterizedType | types.TypeCheckError:
-        if not isinstance(typ, types.ParameterizedType):
-            self.error(error.not_generic(span, typ.span))
-            return types.TypeCheckError(typ.id, "not generic", span)
+    ) -> T | types.TypeCheckError:
         type_params = [x for x in typ.type_params if x.name != "Self"]
         if type_args and len(type_args) != len(type_params):
             self.error(error.wrong_number_of_type_args(len(type_params), len(type_args), span, typ.span))
@@ -449,12 +485,15 @@ class TypeChecker:
                     )
                 else:
                     typ = declared.typ
-                    if isinstance(declared.typ, types.ParameterizedType):
+                    if isinstance(typ, types.ParameterizedType):
                         typ = self.instance(typ, node.type_args, node.span)
                     self.type_env.set_node_type(node, typ)
             case ast.Member():
                 ast.walk(node, self.typecheck)
                 target_instance = self.type_env.get_node_type(node.target)
+                if isinstance(target_instance, types.TypeCheckError):
+                    self.type_env.set_node_type(node, target_instance)
+                    return
                 assert isinstance(target_instance, types.Struct), f"Expected a struct, got {target_instance}"
                 target_typ = types.resolve(target_instance)
                 assert isinstance(target_typ, types.Struct)

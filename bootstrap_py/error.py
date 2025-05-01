@@ -146,6 +146,10 @@ def self_not_allowed_here(span: Span) -> Error:
     return SimpleError(span, "`self` is not allowed here", _stack())
 
 
+def not_declared_in_current_scope(name: str, span: Span) -> Error:
+    return SimpleError(span, f"`{name}` is not declared in the current scope", _stack())
+
+
 def trait_method_impl_missing(trait_name: str, method_name: str, trait_span: Span, span: Span) -> Error:
     return WithDefinitionError(
         span,
@@ -159,6 +163,15 @@ def trait_method_impl_mismatch(trait_method_signature: str, impl_signature: str,
     return WithDefinitionError(
         span,
         f"Method signature `{impl_signature}` does not match trait method signature `{trait_method_signature}`",
+        trait_span,
+        _stack(),
+    )
+
+
+def trait_qualifier_mismatch(trait_signature: str, target_fqn: str, trait_span: Span, span: Span) -> Error:
+    return WithDefinitionError(
+        span,
+        f"Trait has already been implemented for `{target_fqn}` with signature `{trait_signature}`",
         trait_span,
         _stack(),
     )

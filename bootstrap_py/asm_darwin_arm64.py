@@ -33,6 +33,8 @@ class DataLayout:
             case ir.Ptr() | ir.Fn():
                 return 8
             case ir.Struct():
+                if not typ.fields:
+                    return 0
                 size = DataLayout.field_offset(typ, len(typ.fields) - 1) + DataLayout.sizeof(typ.fields[-1])
                 return (size + 7) & ~7
             case _:

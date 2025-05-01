@@ -109,6 +109,20 @@ class Struct:
 
 
 @dataclass
+class Trait:
+    id: NodeId
+    name: str
+    methods: list[FnDecl]
+    type_params: TypeParams
+    span: Span
+
+    def __str__(self) -> str:
+        methods = "\n".join("    " + str(x) for x in self.methods)
+        type_params = generics_to_str(self.type_params)
+        return nid(self.id) + f"trait {self.name}{type_params}{{\n{methods}\n}}"
+
+
+@dataclass
 class Let:
     id: NodeId
     name: str
@@ -247,6 +261,7 @@ class FnDecl:
     id: NodeId
     name: str
     receiver: str | None
+    trait: NamedType | None
     params: list[FieldOrParam]
     result: Type | None
     type_params: TypeParams
@@ -260,9 +275,10 @@ class FnDecl:
     def __str__(self) -> str:
         type_params = generics_to_str(self.type_params)
         receiver = (self.receiver + "::") if self.receiver is not None else ""
+        trait = (f"({self.trait}) ") if self.trait is not None else ""
         return (
             nid(self.id)
-            + f"{receiver}{self.name}{type_params}({', '.join(str(x) for x in self.params)}) -> {self.result}"
+            + f"fn {trait}{receiver}{self.name}{type_params}({', '.join(str(x) for x in self.params)}) -> {self.result}"
         )
 
 
@@ -290,7 +306,8 @@ class Module:
 
 Type = NamedType | FnType
 Expr = Block | IntLit | StrLit | BoolLit | Ident | Member | Call | BinaryExpr | If
-Node = Expr | FnDecl | FnDef | Module | Type | Let | Assign | Loop | Break | Continue | Struct
+Node = Expr | FnDecl | FnDef | Module | Type | Let | Assign | Loop | Break | Continue | Struct | Trait
+ParameterizedNode = FnDecl | Struct | Trait
 
 TypeParams = list[TypeParam]
 TypeArgs = list[Type]
@@ -335,6 +352,9 @@ def walk(node: Node, visit: ASTVisitor) -> bool:
             visit(node.value, node)
         case Member():
             visit(node.target, node)
+        case Trait():
+            for m in node.methods:
+                visit(m, node)
         case Ident() | IntLit() | StrLit() | BoolLit() | FnDecl() | Break() | Continue() | Struct():
             return False
         case _:

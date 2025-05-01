@@ -94,19 +94,7 @@ def expected_ident(expr: str, span: Span) -> Error:
     return SimpleError(span, f"Expected an identifier, got `{expr}`", _stack())
 
 
-def duplicate_fn(name: str, span: Span, defined_here: Span) -> Error:
-    return DuplicateError(name, span, defined_here, _stack())
-
-
-def duplicate_struct(name: str, span: Span, defined_here: Span) -> Error:
-    return DuplicateError(name, span, defined_here, _stack())
-
-
-def duplicate_field(name: str, span: Span, defined_here: Span) -> Error:
-    return DuplicateError(name, span, defined_here, _stack())
-
-
-def duplicate_param_name(name: str, span: Span, defined_here: Span) -> Error:
+def duplicate_declaration(name: str, span: Span, defined_here: Span) -> Error:
     return DuplicateError(name, span, defined_here, _stack())
 
 
@@ -156,3 +144,12 @@ def not_generic(span: Span, defined_here: Span) -> Error:
 
 def self_not_allowed_here(span: Span) -> Error:
     return SimpleError(span, "`self` is not allowed here", _stack())
+
+
+def missing_trait_method_impl(trait_name: str, method_name: str, trait_span: Span, span: Span) -> Error:
+    return WithDefinitionError(
+        span,
+        f"Missing implementation of trait method `{method_name}` in trait `{trait_name}`",
+        trait_span,
+        _stack(),
+    )

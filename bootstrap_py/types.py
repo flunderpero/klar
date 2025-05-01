@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import itertools
-import re
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, cast
 
 from .span import FQN, Span
 
@@ -23,6 +22,9 @@ class TypeCheckError:
     def __str__(self) -> str:
         return tid(self.id) + f"TypeCheckError({self.message})"
 
+    def signature(self) -> str:
+        return f"TypeCheckError({self.message})"
+
 
 @dataclass
 class Str:
@@ -30,7 +32,10 @@ class Str:
     span: Span
 
     def __str__(self) -> str:
-        return tid(self.id) + "Str"
+        return tid(self.id) + self.signature()
+
+    def signature(self) -> str:
+        return "Str"
 
 
 @dataclass
@@ -41,7 +46,10 @@ class Int:
     span: Span
 
     def __str__(self) -> str:
-        return tid(self.id) + f"I{self.bits}" if self.signed else f"U{self.bits}"
+        return tid(self.id) + self.signature()
+
+    def signature(self) -> str:
+        return f"{'I' if self.signed else 'U'}{self.bits}"
 
 
 @dataclass
@@ -50,7 +58,10 @@ class Bool:
     span: Span
 
     def __str__(self) -> str:
-        return tid(self.id) + "Bool"
+        return tid(self.id) + self.signature()
+
+    def signature(self) -> str:
+        return "Bool"
 
 
 @dataclass
@@ -59,13 +70,16 @@ class NoneTyp:
     span: Span
 
     def __str__(self) -> str:
-        return tid(self.id) + "None"
+        return tid(self.id) + self.signature()
+
+    def signature(self) -> str:
+        return "None"
 
 
 @dataclass
-class FieldOrParam:
+class FieldOrParam[T: Type = Type]:
     name: str
-    typ: Type
+    typ: T
 
 
 @dataclass
@@ -84,6 +98,11 @@ class Fn:
         params = ", ".join(f"{p.name}: {p.typ}" for p in self.params)
         name = f"fn {self.fqn}" if self.is_named else ""
         return tid(self.id) + f"{name}{type_params}({params})->{self.result}"
+
+    def signature(self) -> str:
+        type_args = type_args_signature(self.type_args)
+        params = ", ".join(f"{p.name}: {p.typ.signature()}" for p in self.params)
+        return f"{self.fqn}{type_args}({params}) {self.result.signature()}"
 
     def is_instance_method(self) -> bool:
         return len(self.params) > 0 and self.params[0].name == "self"
@@ -111,6 +130,7 @@ class Struct:
     type_args: TypeArgs
     fields: list[FieldOrParam]
     methods: list[FieldOrParam]
+    traits: list[Instance[Trait] | Trait]
     span: Span
 
     def __str__(self) -> str:
@@ -118,7 +138,11 @@ class Struct:
         fields = ", ".join(f"{f.name}: {f.typ}" for f in self.fields)
         return tid(self.id) + f"struct {self.fqn}{type_params}{{{fields}}}"
 
-    def field_or_method(self, name: str) -> FieldOrParam | None:
+    def signature(self) -> str:
+        type_args = type_args_signature(self.type_args)
+        return f"{self.fqn}{type_args}"
+
+    def member(self, name: str) -> FieldOrParam | None:
         for x in self.fields:
             if x.name == name:
                 return x
@@ -133,6 +157,39 @@ class Struct:
                 return i
         return None
 
+    def trait(self, fqn: FQN) -> Instance[Trait] | Trait | None:
+        for x in self.traits:
+            if isinstance(x, Trait) and x.fqn == fqn:
+                return x
+            if isinstance(x, Instance) and x.typ.fqn == fqn:
+                return x
+        return None
+
+
+@dataclass
+class Trait:
+    id: TypeId
+    fqn: FQN
+    type_params: TypeParams
+    type_args: TypeArgs
+    methods: list[FieldOrParam]
+    span: Span
+
+    def __str__(self) -> str:
+        methods = "\n".join("    " + str(x) for x in self.methods)
+        type_params = type_args_to_str(self.type_params, self.type_args)
+        return tid(self.id) + f"trait {self.fqn}{type_params}{{\n{methods}\n}}"
+
+    def signature(self) -> str:
+        type_args = type_args_signature(self.type_args)
+        return f"{self.fqn}{type_args}"
+
+    def member(self, name: str) -> FieldOrParam | None:
+        for x in self.methods:
+            if x.name == name:
+                return x
+        return None
+
 
 @dataclass
 class TypeParam:
@@ -141,7 +198,10 @@ class TypeParam:
     span: Span
 
     def __str__(self) -> str:
-        return tid(self.id) + self.name
+        return tid(self.id) + self.signature()
+
+    def signature(self) -> str:
+        return self.name
 
 
 TypeParams = list[TypeParam]
@@ -158,6 +218,12 @@ def type_args_to_str(type_params: TypeParams, type_args: TypeArgs) -> str:
     if not type_args:
         return ""
     return f"<{', '.join(f'{p}={a or p}' for p, a in itertools.zip_longest(type_params, type_args))}>"
+
+
+def type_args_signature(type_args: TypeArgs) -> str:
+    if not type_args:
+        return ""
+    return f"<{', '.join(x.signature() for x in type_args)}>"
 
 
 class TypeResScope:
@@ -227,6 +293,7 @@ class TypeResScope:
                     [self.resolve(x, seen) for x in typ.type_args],
                     list(typ.fields),
                     list(typ.methods),
+                    [cast("Trait", self.resolve(x, seen)) for x in typ.traits],
                     typ.span,
                 )
                 if seen is None:
@@ -258,12 +325,15 @@ class TypeResScope:
 
 
 @dataclass
-class Instance:
-    typ: TypeParam | Fn | Struct
+class Instance[T: ParameterizedType | TypeParam]:
+    typ: T
     type_res_scope: TypeResScope
 
     def __str__(self) -> str:
         return f"Instance{type_args_to_str(self.type_params(), self.type_args())}({self.typ})"
+
+    def signature(self) -> str:
+        return f"Instance({self.typ.signature})"
 
     @property
     def id(self) -> TypeId:
@@ -280,7 +350,7 @@ class Instance:
         match self.typ:
             case TypeParam():
                 return [self.typ]
-            case Fn() | Struct():
+            case Fn() | Struct() | Trait():
                 return self.typ.type_params
             case _:
                 raise AssertionError(f"unhandled type: {self.typ}")
@@ -310,6 +380,12 @@ class Instance:
 
     def typed_id(self) -> str:
         return f"{self.id}<{type_args_to_str(self.type_params(), self.type_args())}>"
+
+
+def resolve(typ: Instance | Type) -> Type:
+    if isinstance(typ, Instance):
+        return typ.resolve()
+    return typ
 
 
 def full_id(typ: Type) -> str:
@@ -361,13 +437,9 @@ class Builtins:
         }
 
 
-Type = Int | Str | Bool | Fn | Struct | NoneTyp | TypeParam | Instance | TypeCheckError
-
-
-def pretty(typ: Type) -> str:
-    """Return the type string without any debug information like type-ids."""
-    pattern = re.compile(r"\{\d+\}")
-    return pattern.sub("", str(typ))
+Type = Int | Str | Bool | Fn | Struct | Trait | NoneTyp | TypeParam | Instance | TypeCheckError
+ParameterizedType = Fn | Struct | Trait
+ImplementableType = Struct | Trait
 
 
 def is_assignable_from(target: Type, from_: Type) -> bool:
@@ -382,12 +454,20 @@ def is_assignable_from(target: Type, from_: Type) -> bool:
             return isinstance(from_, Int)
         case Bool():
             return isinstance(from_, Bool)
+        case NoneTyp():
+            return isinstance(from_, NoneTyp)
         case TypeCheckError():
             return False
         case TypeParam():
             return target.id == from_.id
         case Struct():
             return target.id == from_.id
+        case Trait():
+            if isinstance(from_, Trait):
+                return target.id == from_.id
+            if isinstance(from_, Struct):
+                return any(x.id == target.id for x in from_.traits)
+            return False
         case Fn():
             if not isinstance(from_, Fn):
                 return False
@@ -404,9 +484,9 @@ def is_assignable_from(target: Type, from_: Type) -> bool:
 
 def is_same(target: Type, from_: Type) -> bool:
     if isinstance(target, Instance) and isinstance(target.typ, Fn):
-        target = target.typ
+        target = target.resolve()
     if isinstance(from_, Instance) and isinstance(from_.typ, Fn):
-        from_ = from_.typ
+        from_ = from_.resolve()
     if isinstance(target, Fn) and isinstance(from_, Fn):
         return target.is_same(from_)
     return target.id == from_.id

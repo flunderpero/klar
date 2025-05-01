@@ -38,6 +38,7 @@ class Kind(Enum):
     plus = "+"
     str_lit = "str literal"
     struct = "struct"
+    trait = "trait"
     true = "true"
     type_ident = "type identifier"
 
@@ -77,6 +78,7 @@ keywords = {
         Kind.loop,
         Kind.mut,
         Kind.struct,
+        Kind.trait,
         Kind.true,
     )
 }

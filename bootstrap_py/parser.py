@@ -75,15 +75,22 @@ class Parser:
     def id(self) -> ast.NodeId:
         return self.input.next_id()
 
+    def parse_named_type(self) -> ast.NamedType | None:
+        t = self.expect(token.Kind.type_ident)
+        if t is None:
+            return t
+        type_params = self.parse_type_args()
+        if type_params is None:
+            return None
+        return ast.NamedType(self.id(), t.value_str(), type_params, self.input.span_merge(t.span))
+
     def parse_type(self) -> ast.Type | None:
-        t = self.input.next()
+        t = self.input.peek()
         match t.kind:
             case token.Kind.type_ident:
-                type_params = self.parse_type_args()
-                if type_params is None:
-                    return None
-                return ast.NamedType(self.id(), t.value_str(), type_params, self.input.span_merge(t.span))
+                return self.parse_named_type()
             case token.Kind.fn:
+                self.input.next()
                 type_params = self.parse_type_params()
                 if type_params is None:
                     return None
@@ -104,6 +111,7 @@ class Parser:
                     return None
                 return ast.FnType(self.id(), type_params, params, result, self.input.span_merge(t.span))
             case _:
+                self.input.next()
                 self.error(
                     error.unexpected_token(t.span, t.kind.value, token.Kind.type_ident.value, token.Kind.fn.value)
                 )
@@ -171,7 +179,13 @@ class Parser:
             return None
         receiver: str | None = None
         name: str | None = None
+        trait: ast.Type | None = None
         t = self.input.next()
+        if t.kind == token.Kind.paren_left:
+            trait = self.parse_named_type()
+            if not self.expect(token.Kind.paren_right):
+                return None
+            t = self.input.next()
         match t.kind:
             case token.Kind.type_ident:
                 receiver = t.value_str()
@@ -201,7 +215,7 @@ class Parser:
             param_name = t.value_str()
             existing = next((x for x in params if x.name == param_name), None)
             if existing:
-                self.error(error.duplicate_param_name(param_name, t.span, existing.span))
+                self.error(error.duplicate_declaration(param_name, t.span, existing.span))
                 return None
             param_type = ast.NamedType(self.id(), "Self", [], t.span) if param_name == "self" else self.parse_type()
             if not param_type:
@@ -221,10 +235,11 @@ class Parser:
                     return None
         if not self.expect(token.Kind.paren_right):
             return None
+        # todo: make return types mandatory
         result: ast.Type | None = None
         if self.input.peek().kind in (token.Kind.type_ident, token.Kind.fn):
             result = self.parse_type()
-        return ast.FnDecl(self.id(), name, receiver, params, result, type_params, self.input.span_merge(span))
+        return ast.FnDecl(self.id(), name, receiver, trait, params, result, type_params, self.input.span_merge(span))
 
     def parse_fn_def(self) -> ast.FnDef | None:
         span = self.input.span()
@@ -419,6 +434,29 @@ class Parser:
             return None
         return ast.Struct(self.id(), name, fields, type_params, self.input.span_merge(span))
 
+    def parse_trait(self) -> ast.Trait | None:
+        span = self.input.span()
+        if not self.expect(token.Kind.trait):
+            return None
+        name = self.expect_type_ident()
+        if not name:
+            return None
+        type_params = self.parse_type_params()
+        if type_params is None:
+            return None
+        if not self.expect(token.Kind.curly_left):
+            return None
+        methods: list[ast.FnDecl] = []
+        while self.input.peek().kind != token.Kind.curly_right:
+            method = self.parse_fn_decl()
+            if not method:
+                return None
+            methods.append(method)
+            method.receiver = name
+        if not self.expect(token.Kind.curly_right):
+            return None
+        return ast.Trait(self.id(), name, methods, type_params, self.input.span_merge(span))
+
     def parse_block(self) -> ast.Block | None:
         span = self.input.span()
         entry_token = self.expect(token.Kind.curly_left, token.Kind.fat_arrow)
@@ -457,6 +495,8 @@ class Parser:
                 return ast.Continue(self.id(), span)
             case token.Kind.struct:
                 return self.parse_struct()
+            case token.Kind.trait:
+                return self.parse_trait()
             case _:
                 expr = self.parse_expr()
                 if not expr:

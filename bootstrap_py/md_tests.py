@@ -183,7 +183,7 @@ def main() -> int:
             for err in errors:
                 print()
                 print(err)
-                if print_error_stack:
+                if print_error_stack and not isinstance(err, str):
                     print("at", err.stacktrace)
         elif not print_code:
             print(" \033[0;32mPASS\033[0m")

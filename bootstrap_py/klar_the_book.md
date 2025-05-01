@@ -195,6 +195,50 @@ languages.
 
 todo: implement and document
 
+### Traits
+
+Klar has a simple trait system that allows you to define interfaces for structs and tagged unions.
+
+```klar
+trait Greeter {
+    fn greet(self) Str
+}
+
+struct Foo {}
+
+fn (Greeter) Foo::greet(self) Str => "Hello"
+
+-- todo: test that Foo can be treated as Greeter.
+
+fn main() {
+    let foo = Foo()
+    print(foo.greet())
+}
+```
+
+```
+Hello
+```
+
+<details>
+    <summary>More Examples</summary>
+
+All methods of a trait must be implemented:
+
+```klar
+trait HelloWorld {
+    fn hello(self) Str
+    fn world(self) Str
+}
+
+struct Foo {}
+
+fn (HelloWorld) Foo::hello(self) Str => "Hello" -- ERROR: Missing implementation of trait method `world` in trait `test::HelloWorld`
+fn main() {}
+```
+
+</details>
+
 ### Function Types
 
 In Klar, functions are first class citizens. They can be passed around like any other value.
@@ -866,6 +910,30 @@ fn main() {
 
 ```
 Hello
+```
+
+Parameterized traits and trait implementation:
+
+```todo
+struct Value {
+    value Str
+}
+
+trait ReturnIt<T> {
+    fn return_it(self, t T) T
+}
+
+fn (ReturnIt<Int>) Value::return_it(self, t Str) Str => t
+
+fn main() {
+    let v = Value("Hello")
+    print(v.return_it("PASS"))
+
+}
+```
+
+```todo
+PASS
 ```
 
 Type arguments can be inferred in most cases:

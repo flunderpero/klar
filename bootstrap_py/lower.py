@@ -25,5 +25,16 @@ class FnSpec:
     type_env: TypeEnv
     fn_def: ast.FnDef
 
+    def debug(self) -> str:
+        return f"    {self.fn_def.decl}\n => {self.type_env.resolve(self.typ).debug().replace('\n', '\n    ')}"
+
+    def __repr__(self) -> str:
+        return self.debug()
+
     def __str__(self) -> str:
-        return f"{self.fn_def.decl} :: {self.type_env.resolve(self.typ)}"
+        return self.signature()
+
+    def signature(self) -> str:
+        node = ast.to_str_withoud_nid(self.fn_def.decl)
+        typ = self.type_env.resolve(self.typ).signature()
+        return f"    {node.replace('\n', '\n    ')}\n => {typ.replace('\n', '\n    ')}"

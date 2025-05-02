@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass, replace
-from typing import Callable, cast
+from functools import wraps
+from typing import Any, Callable, cast
 
 from .span import FQN, Span
 
@@ -13,16 +14,40 @@ def tid(id: TypeId) -> str:
     return f"{{{id}}}"
 
 
+def nocycle(func: Any) -> Any:  # noqa: ANN401
+    @wraps(func)
+    def wrapper(self: Any, seen: dict[int, str] | None = None, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        if seen is None:
+            seen = {}
+        if id(self) in seen:
+            return seen[id(self)]
+        if hasattr(self, "id"):
+            seen[id(self)] = tid(self.id)
+        else:
+            seen[id(self)] = type(self).__name__
+        s = func(self, seen, *args, **kwargs)
+        seen[id(self)] = s
+        return s
+
+    return wrapper
+
+
 @dataclass
 class TypeCheckError:
     id: TypeId
     message: str
     span: Span
 
-    def __str__(self) -> str:
+    def debug(self, _seen: dict[int, str] | None = None) -> str:
         return tid(self.id) + f"TypeCheckError({self.message})"
 
-    def signature(self) -> str:
+    def __repr__(self) -> str:
+        return self.debug()
+
+    def __str__(self) -> str:
+        return self.signature()
+
+    def signature(self, _seen: dict[int, str] | None = None) -> str:
         return f"TypeCheckError({self.message})"
 
 
@@ -31,10 +56,16 @@ class Str:
     id: TypeId
     span: Span
 
-    def __str__(self) -> str:
-        return tid(self.id) + self.signature()
+    def debug(self, seen: dict[int, str] | None = None) -> str:
+        return tid(self.id) + self.signature(seen)
 
-    def signature(self) -> str:
+    def __repr__(self) -> str:
+        return self.debug()
+
+    def __str__(self) -> str:
+        return self.signature()
+
+    def signature(self, _seen: dict[int, str] | None = None) -> str:
         return "Str"
 
 
@@ -45,10 +76,16 @@ class Int:
     signed: bool
     span: Span
 
-    def __str__(self) -> str:
-        return tid(self.id) + self.signature()
+    def debug(self, seen: dict[int, str] | None = None) -> str:
+        return tid(self.id) + self.signature(seen)
 
-    def signature(self) -> str:
+    def __repr__(self) -> str:
+        return self.debug()
+
+    def __str__(self) -> str:
+        return self.signature()
+
+    def signature(self, _seen: dict[int, str] | None = None) -> str:
         return f"{'I' if self.signed else 'U'}{self.bits}"
 
 
@@ -57,10 +94,16 @@ class Bool:
     id: TypeId
     span: Span
 
-    def __str__(self) -> str:
-        return tid(self.id) + self.signature()
+    def debug(self, seen: dict[int, str] | None = None) -> str:
+        return tid(self.id) + self.signature(seen)
 
-    def signature(self) -> str:
+    def __repr__(self) -> str:
+        return self.debug()
+
+    def __str__(self) -> str:
+        return self.signature()
+
+    def signature(self, _seen: dict[int, str] | None = None) -> str:
         return "Bool"
 
 
@@ -69,10 +112,16 @@ class NoneTyp:
     id: TypeId
     span: Span
 
-    def __str__(self) -> str:
-        return tid(self.id) + self.signature()
+    def debug(self, seen: dict[int, str] | None = None) -> str:
+        return tid(self.id) + self.signature(seen)
 
-    def signature(self) -> str:
+    def __repr__(self) -> str:
+        return self.debug()
+
+    def __str__(self) -> str:
+        return self.signature()
+
+    def signature(self, _seen: dict[int, str] | None = None) -> str:
         return "None"
 
 
@@ -81,8 +130,19 @@ class FieldOrParam[T: Type = Type]:
     name: str
     typ: T
 
+    @nocycle
+    def debug(self, seen: dict[int, str] | None = None) -> str:
+        return f"{self.name}: {self.typ.debug(seen)}"
+
+    def __repr__(self) -> str:
+        return self.debug()
+
     def __str__(self) -> str:
-        return f"{self.name}: {self.typ}"
+        return self.signature()
+
+    @nocycle
+    def signature(self, seen: dict[int, str] | None = None) -> str:
+        return f"{self.name} {self.typ.signature(seen)}"
 
 
 @dataclass
@@ -97,16 +157,24 @@ class Fn:
     span: Span
     is_named: bool
 
-    def __str__(self) -> str:
-        type_params = type_args_to_str(self.type_params, self.type_args)
-        params = ", ".join(f"{p.name}: {p.typ}" for p in self.params)
+    @nocycle
+    def debug(self, seen: dict[int, str] | None = None) -> str:
+        type_params = type_args_debug(self.type_params, self.type_args, seen)
+        params = ", ".join(x.typ.debug(seen) for x in self.params)
         name = f"fn {self.fqn}" if self.is_named else ""
-        return tid(self.id) + f"{name}{type_params}({params})->{self.result}"
+        return tid(self.id) + f"{name}{type_params}({params})->{self.result.debug(seen)}"
 
-    def signature(self) -> str:
-        type_args = type_args_signature(self.type_args)
-        params = ", ".join(f"{p.name}: {p.typ.signature()}" for p in self.params)
-        return f"{self.fqn}{type_args}({params}) {self.result.signature()}"
+    def __repr__(self) -> str:
+        return self.debug()
+
+    def __str__(self) -> str:
+        return self.signature()
+
+    @nocycle
+    def signature(self, seen: dict[int, str] | None = None) -> str:
+        type_args = type_args_signature(self.type_args, seen)
+        params = ", ".join(x.signature(seen) for x in self.params)
+        return f"{self.fqn}{type_args}({params}) {self.result.signature(seen)}"
 
     def is_instance_method(self) -> bool:
         return len(self.params) > 0 and self.params[0].name == "self"
@@ -141,13 +209,21 @@ class Struct:
     traits: list[Trait]
     span: Span
 
-    def __str__(self) -> str:
-        type_params = type_args_to_str(self.type_params, self.type_args)
-        fields = ", ".join(f"{x}" for x in self.fields)
+    @nocycle
+    def debug(self, seen: dict[int, str] | None = None) -> str:
+        type_params = type_args_debug(self.type_params, self.type_args, seen)
+        fields = ", ".join(f"{x.debug(seen)}" for x in self.fields)
         return tid(self.id) + f"struct {self.fqn}{type_params}{{{fields}}}"
 
-    def signature(self) -> str:
-        type_args = type_args_signature(self.type_args)
+    def __repr__(self) -> str:
+        return self.debug()
+
+    def __str__(self) -> str:
+        return self.signature()
+
+    @nocycle
+    def signature(self, seen: dict[int, str] | None = None) -> str:
+        type_args = type_args_signature(self.type_args, seen)
         return f"{self.fqn}{type_args}"
 
     def member(self, name: str) -> FieldOrParam | None:
@@ -183,13 +259,21 @@ class Trait:
     methods: list[FieldOrParam[Fn]]
     span: Span
 
-    def __str__(self) -> str:
-        methods = "\n".join("    " + str(x) for x in self.methods)
-        type_params = type_args_to_str(self.type_params, self.type_args)
+    @nocycle
+    def debug(self, seen: dict[int, str] | None = None) -> str:
+        methods = "\n".join("    " + x.debug(seen) for x in self.methods)
+        type_params = type_args_debug(self.type_params, self.type_args, seen)
         return tid(self.id) + f"trait {self.fqn}{type_params}{{\n{methods}\n}}"
 
-    def signature(self) -> str:
-        type_args = type_args_signature(self.type_args)
+    def __repr__(self) -> str:
+        return self.debug()
+
+    def __str__(self) -> str:
+        return self.signature()
+
+    @nocycle
+    def signature(self, seen: dict[int, str] | None = None) -> str:
+        type_args = type_args_signature(self.type_args, seen)
         return f"{self.fqn}{type_args}"
 
     def member(self, name: str) -> FieldOrParam | None:
@@ -205,10 +289,17 @@ class TypeParam:
     name: str
     span: Span
 
-    def __str__(self) -> str:
-        return tid(self.id) + self.signature()
+    @nocycle
+    def debug(self, seen: dict[int, str] | None = None) -> str:
+        return tid(self.id) + self.signature(seen)
 
-    def signature(self) -> str:
+    def __repr__(self) -> str:
+        return self.debug()
+
+    def __str__(self) -> str:
+        return self.signature()
+
+    def signature(self, _seen: dict[int, str] | None = None) -> str:
         return self.name
 
 
@@ -216,22 +307,18 @@ TypeParams = list[TypeParam]
 TypeArgs = list["Type"]
 
 
-def type_params_to_str(params: TypeParams) -> str:
-    if not params:
-        return ""
-    return f"<{', '.join(str(x) for x in params)}>"
-
-
-def type_args_to_str(type_params: TypeParams, type_args: TypeArgs) -> str:
+def type_args_debug(type_params: TypeParams, type_args: TypeArgs, seen: dict[int, str] | None) -> str:
     if not type_args:
         return ""
-    return f"<{', '.join(f'{p}={a or p}' for p, a in itertools.zip_longest(type_params, type_args))}>"
+    s = ", ".join(f"{p.debug(seen)}={(a or p).debug(seen)}" for p, a in itertools.zip_longest(type_params, type_args))
+    return f"<{s}>"
 
 
-def type_args_signature(type_args: TypeArgs) -> str:
+def type_args_signature(type_args: TypeArgs, seen: dict[int, str] | None) -> str:
     if not type_args:
         return ""
-    return f"<{', '.join(x.signature() for x in type_args)}>"
+    s = ", ".join(x.signature(seen) for x in type_args)
+    return f"<{s}>"
 
 
 class TypeResScope:
@@ -317,11 +404,11 @@ class TypeResScope:
                     seen = {}
                 seen[full_id(typ)] = typ
                 typ.fields = [FieldOrParam(x.name, scope.resolve(x.typ, seen)) for x in typ.fields]
-                typ.methods = [FieldOrParam[Fn](x.name, cast(Fn, scope.resolve(x.typ, seen))) for x in typ.methods]
+                typ.methods = [FieldOrParam[Fn](x.name, cast("Fn", scope.resolve(x.typ, seen))) for x in typ.methods]
                 for i, trait in enumerate(typ.traits):
                     scope = TypeResScope(scope, None)
                     scope.declare(trait.self_typ, typ)
-                    typ.traits[i] = cast(Trait, scope.resolve(trait, seen))
+                    typ.traits[i] = cast("Trait", scope.resolve(trait, seen))
             case Trait():
                 scope = self
                 if typ.type_res_scope != self:
@@ -339,7 +426,7 @@ class TypeResScope:
                 if seen is None:
                     seen = {}
                 seen[full_id(typ)] = typ
-                typ.methods = [FieldOrParam[Fn](x.name, cast(Fn, scope.resolve(x.typ, seen))) for x in typ.methods]
+                typ.methods = [FieldOrParam[Fn](x.name, cast("Fn", scope.resolve(x.typ, seen))) for x in typ.methods]
         return typ
 
     def keys(self) -> set[TypeId]:
@@ -359,8 +446,21 @@ class TypeResScope:
         res.update(self.types)
         return res
 
+    @nocycle
+    def debug(self, seen: dict[int, str] | None = None) -> str:
+        s = []
+        for k, v in self.flatten().items():
+            s.append(f"{k}={v.debug(seen)}")
+        return f"TypeResScope({'\n'.join(s)})"
+
+    def __repr__(self) -> str:
+        return self.debug()
+
     def __str__(self) -> str:
-        return f"TypeResScope({self.flatten()})"
+        return self.signature()
+
+    def signature(self, _seen: dict[int, str] | None = None) -> str:
+        return f"TypeResScope({len(self.flatten())})"
 
 
 def resolve[T: Type](typ: T) -> T:

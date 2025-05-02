@@ -9,8 +9,22 @@ if TYPE_CHECKING:
 
 NodeId = int
 
+nid_enabled = True
+
+
+def to_str_withoud_nid(node: Node) -> str:
+    global nid_enabled  # noqa: PLW0603
+    ne = nid_enabled
+    try:
+        nid_enabled = False
+        return str(node)
+    finally:
+        nid_enabled = ne
+
 
 def nid(id: NodeId) -> str:
+    if not nid_enabled:
+        return ""
     return f"{{{id}}}"
 
 

@@ -36,14 +36,30 @@ class TypecheckStep:
     errors: list[error.Error]
 
     def __str__(self) -> str:
+        return self.debug()
+
+    def __repr__(self) -> str:
+        return self.signature()
+
+    def debug(self) -> str:
+        return self.debug_or_signature(debug=True)
+
+    def signature(self) -> str:
+        return self.debug_or_signature(debug=False)
+
+    def debug_or_signature(self, *, debug: bool) -> str:
         lines = []
 
         def visit(node: ast.Node, _parent: ast.Node | None) -> None:
             typ = self.type_env.node_types.get(node.id)
-            typ_str = str(typ) if typ else "NOT_FOUND"
-            lines.append(str(node.span) + "    " + node.span.lines(0)[1][0].strip())
-            lines.append(str(node))
-            lines.append(f"=> {typ_str}\n")
+            typ_str = (typ.debug() if debug else typ.signature()) if typ else "NOT_FOUND"
+            node_str = str(node) if debug else ast.to_str_withoud_nid(node)
+            code_str = node.span.lines(0)[1][0].strip()
+            typ_str = typ_str.replace("\n", "\n    ")
+            node_str = node_str.replace("\n", "\n    ")
+            lines.append(str(node.span) + "    " + code_str)
+            lines.append(f"    {node_str}")
+            lines.append(f" => {typ_str}\n")
             ast.walk(node, visit)
 
         ast.walk(self.module, visit)
@@ -64,7 +80,20 @@ class LowerStep:
     module: ast.Module
 
     def __str__(self) -> str:
-        return str(self.module) + "\n\nSpecs:\n" + "\n".join(str(x) for x in self.fn_specs)
+        return str(self.module)
+
+    def __repr__(self) -> str:
+        return self.signature()
+
+    def debug(self) -> str:
+        return self.debug_or_signature(debug=True)
+
+    def signature(self) -> str:
+        return self.debug_or_signature(debug=False)
+
+    def debug_or_signature(self, *, debug: bool) -> str:
+        module = str(self.module) if debug else ast.to_str_withoud_nid(self.module)
+        return module + "\n\nSpecs:\n" + "\n".join(x.debug() if debug else x.signature() for x in self.fn_specs)
 
 
 @dataclass

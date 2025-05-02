@@ -272,7 +272,7 @@ trait HelloWorld {
 
 struct Foo {}
 
-fn (HelloWorld) Foo::hello(self) Int => 42 -- ERROR: Method signature `test::Foo::hello(self: test::Foo) I64` does not match trait method signature `test::HelloWorld::hello<test::Foo>(self: test::Foo) Str`
+fn (HelloWorld) Foo::hello(self) Int => 42 -- ERROR: Method signature `test::Foo::hello(self test::Foo) I64` does not match trait method signature `test::HelloWorld::hello<test::Foo>(self test::Foo) Str`
 fn main() {}
 ```
 

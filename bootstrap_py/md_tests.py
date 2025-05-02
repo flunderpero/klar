@@ -23,7 +23,7 @@ class Test:
         return " > ".join(self.headings) + f" ({self.test_num})"
 
 
-def run_test(test: Test, print_code: str) -> list:
+def run_test(test: Test, print_code: str, *, print_signatures: bool) -> list:
     def handle_errors(errors: list[error.Error]) -> list[error.Error]:
         if errors:
             for err in list(errors):
@@ -62,7 +62,7 @@ def run_test(test: Test, print_code: str) -> list:
                 case compiler.TypecheckStep():
                     if print_code == "types":
                         print()
-                        print(step)
+                        print(step.debug_or_signature(debug=not print_signatures))
                         return handle_errors(step.errors)
                     if step.errors:
                         return handle_errors(step.errors)
@@ -73,7 +73,7 @@ def run_test(test: Test, print_code: str) -> list:
                         return ["Expected compile error did not occur"]
                     if print_code == "lower":
                         print()
-                        print(step)
+                        print(step.debug_or_signature(debug=not print_signatures))
                         return []
                 case compiler.IRStep():
                     if print_code == "ir":
@@ -155,6 +155,7 @@ def main() -> int:
     args = sys.argv
     print_code = ""
     stages = ("tokens", "ast", "types", "lower", "ir", "asm")
+    signatures = "--signatures" in args
     for stage in stages:
         if f"--{stage}" in args:
             print_code = stage
@@ -165,6 +166,7 @@ def main() -> int:
         print("Usage: md_tests.py <file> [chapter] [#test] [options]")
         print("  Options:")
         print("    --err-stack     Print error stack")
+        print("    --signatures    Print signatures instead of debug info")
         for stage in stages:
             print(f"    --{stage}        Print {stage} output")
         return 1
@@ -177,7 +179,7 @@ def main() -> int:
     failed = 0
     for test in tests:
         print(test.name(), f"at {file}:{test.line}", end="")
-        if errors := run_test(test, print_code):
+        if errors := run_test(test, print_code, print_signatures=signatures):
             failed += 1
             print(" \033[0;31mFAIL\033[0m")
             for err in errors:

@@ -590,7 +590,7 @@ class FnGen:
                 reg = self.reg(src.typ.fields[field_index])
                 self.emit(Load(reg, getptr_reg), node)
             case ast.Call():
-                callee = self.type_env.get_unresolved_node_type(node.callee)
+                callee = self.type_env.get_node_type(node.callee)
                 assert isinstance(callee, types.CallableType), f"Expected CallableType, got {callee}"
                 result_typ = self.type_env.get_node_type(node)
                 ast.walk(node, self.generate)

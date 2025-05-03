@@ -129,7 +129,12 @@ class Parser:
             t = self.input.peek()
             if t.kind == token.Kind.type_ident:
                 self.input.next()
-                res.append(ast.TypeParam(t.value_str(), t.span))
+                trait_bound: ast.NamedType | None = None
+                if self.input.peek().kind == token.Kind.type_ident:
+                    trait_bound = self.parse_named_type()
+                    if trait_bound is None:
+                        return None
+                res.append(ast.TypeParam(t.value_str(), trait_bound, t.span))
                 match self.input.peek().kind:
                     case token.Kind.comma:
                         self.input.next()

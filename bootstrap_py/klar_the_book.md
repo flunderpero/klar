@@ -1180,6 +1180,61 @@ PASS
 
 </details>
 
+### Trait Bounds
+
+```klar
+trait Stringify {
+    fn stringify(self) Str
+}
+
+struct IntValue {
+    value Int
+}
+
+fn (Stringify) IntValue::stringify(self) Str => int_to_str(self.value)
+
+fn print_any<T Stringify>(s T) {
+    print(s.stringify())
+}
+
+fn main() {
+    let iv = IntValue(42)
+    print_any<IntValue>(iv)
+}
+
+```
+
+```
+42
+```
+
+Trait bounds in structs:
+
+```klar
+trait Stringify {
+    fn stringify(self) Str
+}
+
+struct Value<T Stringify> {
+    value T
+}
+
+fn (Stringify) Value::stringify(self) Str => self.value.stringify()
+
+struct Pass {}
+
+fn (Stringify) Pass::stringify(self) Str => "PASS"
+
+fn main() {
+    let v = Value(Pass())
+    print(v.stringify())
+}
+```
+
+```
+PASS
+```
+
 ## Appendix - The Tokenizer
 
 <details>

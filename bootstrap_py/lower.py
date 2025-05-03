@@ -12,9 +12,6 @@ class TypeEnv:
         typ = self.type_env.get_node_type(node)
         return self.resolve(typ)
 
-    def get_unresolved_node_type(self, node: ast.Node) -> types.Type:
-        return self.type_env.get_node_type(node)
-
     def resolve(self, typ: types.Type) -> types.Type:
         return self.type_res_scope.resolve(typ)
 

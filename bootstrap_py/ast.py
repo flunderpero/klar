@@ -248,10 +248,12 @@ class Block:
 @dataclass
 class TypeParam:
     name: str
+    trait_bound: NamedType | None
     span: Span
 
     def __str__(self) -> str:
-        return self.name
+        trait_bound = f" {self.trait_bound}" if self.trait_bound else ""
+        return self.name + trait_bound
 
 
 def generics_to_str(type_params: TypeParams | TypeArgs) -> str:
@@ -292,7 +294,7 @@ class FnDecl:
         trait = (f"({self.trait_qualifier}) ") if self.trait_qualifier is not None else ""
         return (
             nid(self.id)
-            + f"fn {trait}{receiver}{self.name}{type_params}({', '.join(str(x) for x in self.params)}) -> {self.result}"
+            + f"fn {trait}{receiver}{self.name}{type_params}({', '.join(str(x) for x in self.params)}) {self.result}"
         )
 
 

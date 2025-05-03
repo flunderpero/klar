@@ -142,6 +142,10 @@ def not_generic(span: Span, defined_here: Span) -> Error:
     return WithDefinitionError(span, "Type is not generic", defined_here, _stack())
 
 
+def type_param_not_bound(name: str, span: Span) -> Error:
+    return SimpleError(span, f"Type parameter `{name}` is not bound to a trait", _stack())
+
+
 def self_not_allowed_here(span: Span) -> Error:
     return SimpleError(span, "`self` is not allowed here", _stack())
 

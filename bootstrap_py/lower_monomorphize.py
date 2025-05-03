@@ -31,26 +31,23 @@ class Monomorphize:
         match node:
             case ast.Ident():
                 typ = self.type_env.get_node_type(node)
-                if not isinstance(typ, types.Fn):
+                if not isinstance(typ, types.ParameterizedType):
                     return
                 if self.type_env.builtins.is_builtin(typ):
                     return
                 self.enqueue_if_needed(typ)
 
-    def enqueue_if_needed(self, instance: types.Fn) -> None:
-        """Add to the queue if is not already in `self.queue` or `self.fn_specs`."""
-        if not instance.is_named:
-            return
-        fn_def = self.fn_defs[instance.id]
+    def enqueue_if_needed(self, typ: types.ParameterizedType) -> None:
         type_res_scope = types.TypeResScope(
-            instance.type_res_scope, self.current.type_env.type_res_scope if self.current else None
+            typ.type_res_scope, self.current.type_env.type_res_scope if self.current else None
         )
-        instance = types.instance(instance, type_res_scope)
-        fn = type_res_scope.resolve(instance)
-        assert isinstance(fn, types.Fn)
-        assert all(not isinstance(x, types.TypeParam) for x in fn.type_args), (
-            f"at least one type param unresolved: {instance}"
+        fn = type_res_scope.resolve(typ)
+        if not isinstance(fn, types.Fn) or not fn.is_named:
+            return
+        assert all(not isinstance(x, (types.TypeParam, types.Trait)) for x in fn.type_args), (
+            f"at least one type param unresolved or resolved to a trait: {fn}"
         )
+        fn_def = self.fn_defs[fn.id]
         key = types.full_id(fn)
         if key in self.seen:
             return

@@ -156,13 +156,13 @@ fn print_nested(b B) {
 }
 
 fn main() {
-    let b = B(A("Hello"))
+    let b = B(A("PASS"))
     print_nested(b)
 }
 ```
 
 ```
-Hello
+PASS
 ```
 
 #### Struct Implementations
@@ -232,7 +232,7 @@ trait Greeter {
 
 struct Foo {}
 
-fn (Greeter) Foo::greet(self) Str => "Hello"
+fn (Greeter) Foo::greet(self) Str => "PASS"
 
 -- todo: test that Foo can be treated as Greeter.
 
@@ -243,7 +243,7 @@ fn main() {
 ```
 
 ```
-Hello
+PASS
 ```
 
 <details>
@@ -442,7 +442,7 @@ fn FuncBox::get(self) fn() Str {
     self.f
 }
 
-fn hello() Str => "Hello"
+fn hello() Str => "PASS"
 
 fn main() {
     let s = FuncBox(hello)
@@ -453,7 +453,7 @@ fn main() {
 ```
 
 ```
-Hello
+PASS
 ```
 
 Nested calls:
@@ -486,14 +486,14 @@ A regular block is enclosed by curly braces (`{ }`).
 fn main() {
     print(
         {
-            "Hello"
+            "PASS"
         }
     )
 }
 ```
 
 ```
-Hello
+PASS
 ```
 
 Klar also supports a shorthand notation for single-expression blocks:
@@ -501,26 +501,26 @@ Klar also supports a shorthand notation for single-expression blocks:
 ```klar
 fn main() {
     print(
-        => "Hello"
+        => "PASS"
     )
 }
 ```
 
 ```
-Hello
+PASS
 ```
 
 ## Variables
 
 ```klar
 fn main() {
-    let s = "Hello"
+    let s = "PASS"
     print(s)
 }
 ```
 
 ```
-Hello
+PASS
 ```
 
 Variables are scoped:
@@ -546,14 +546,14 @@ The value can be a block expression, too:
 ```klar
 fn main() {
     let s = {
-        if true => "Hello" else => "world"
+        if true => "PASS" else => "world"
     }
     print(s)
 }
 ```
 
 ```
-Hello
+PASS
 ```
 
 ### Mutability
@@ -819,12 +819,12 @@ fn foo(str Str) {
 }
 
 fn main() {
-    foo("Hello")
+    foo("PASS")
 }
 ```
 
 ```
-Hello
+PASS
 ```
 
 </details>
@@ -875,13 +875,13 @@ becoming too complex.
 fn return_it<T>(value T) T => value
 
 fn main() {
-    print(return_it<Str>("Hello"))
+    print(return_it<Str>("PASS"))
     print(int_to_str(return_it<Int>(42)))
 }
 ```
 
 ```
-Hello
+PASS
 42
 ```
 
@@ -893,12 +893,12 @@ fn return_it_again<U>(value U) U => value
 fn return_it<T>(value T) T => return_it_again<T>(value)
 
 fn main() {
-    print(return_it<Str>("Hello"))
+    print(return_it<Str>("PASS"))
 }
 ```
 
 ```
-Hello
+PASS
 ```
 
 Parameterized structs:
@@ -942,13 +942,13 @@ fn Value::get(self) T {
 }
 
 fn main() {
-    let v = Value<Str>("Hello")
+    let v = Value<Str>("PASS")
     print(v.get())
 }
 ```
 
 ```
-Hello
+PASS
 ```
 
 Parameterized traits and trait implementation:
@@ -965,7 +965,7 @@ trait ReturnIt<T> {
 fn (ReturnIt<Str>) Value::return_it(self, t Str) Str => t
 
 fn main() {
-    let v = Value("Hello")
+    let v = Value("FAIL")
     print(v.return_it("PASS"))
 
 }
@@ -981,13 +981,13 @@ Type arguments can be inferred in most cases:
 fn return_it<T>(value T) T => value
 
 fn main() {
-    print(return_it("Hello"))
+    print(return_it("PASS"))
 }
 
 ```
 
 ```
-Hello
+PASS
 ```
 
 ```klar
@@ -996,12 +996,12 @@ struct Value<A> {
 }
 
 fn main() {
-    print(Value("Hello").value)
+    print(Value("PASS").value)
 }
 ```
 
 ```
-Hello
+PASS
 ```
 
 <details>
@@ -1014,13 +1014,13 @@ Multiple type parameters:
 fn ignore_second<T, U>(first T, second U) T => first
 
 fn main() {
-    print(ignore_second<Str, Int>("Hello", 42))
+    print(ignore_second<Str, Int>("PASS", 42))
 }
 
 ```
 
 ```
-Hello
+PASS
 ```
 
 Only one specialized version of a function is created:
@@ -1078,14 +1078,14 @@ fn print_pair(p Pair<Str, Int>) {
 }
 
 fn main() {
-    let v = Value<Str>("Hello")
+    let v = Value<Str>("PASS")
     let p = Pair<Str, Int>(v, Value<Int>(42))
     print_pair(p)
 }
 ```
 
 ```
-Hello
+PASS
 42
 ```
 
@@ -1103,13 +1103,13 @@ struct ValueB<B> {
 fn ValueB::get(self) B => self.b
 
 fn main() {
-    let v = ValueA(ValueB("Hello"))
+    let v = ValueA(ValueB("PASS"))
     print(v.a.get())
 }
 ```
 
 ```
-Hello
+PASS
 ```
 
 Parameterized instance methods:
@@ -1127,13 +1127,13 @@ fn Value::pass_through<A>(self, x A) A {
 fn main() {
     let v = Value<Bool>(false)
     print(int_to_str(v.pass_through<Int>(42)))
-    print(v.pass_through<Str>("Hello"))
+    print(v.pass_through<Str>("PASS"))
 }
 ```
 
 ```
 42
-Hello
+PASS
 ```
 
 Parameterized traits must be implemented with the same trait qualifier:

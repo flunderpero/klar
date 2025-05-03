@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, cast
+from typing import TYPE_CHECKING, Callable
 
 from . import ast, error, types
 from .span import FQN, Span
@@ -123,8 +123,12 @@ class TypeChecker:
         finally:
             self.scope = prev
 
-    def error(self, err: error.Error) -> None:
+    def error(self, err: error.Error, node: ast.Node | None = None) -> None:
+        """Add an error to the internal error list. Set the node type to `types.TypeCheckError` if given."""
         self.errors.append(err)
+        if node is not None:
+            type_check_error = types.TypeCheckError(self.next_id(), err.short_message(), node.span)
+            self.type_env.set_node_type(node, type_check_error)
 
     def id(self) -> types.TypeId:
         return self.next_id()
@@ -228,9 +232,7 @@ class TypeChecker:
                         if not self.scope.is_declared_in_this_scope(decl.receiver):
                             if not self.scope.find(decl.receiver):
                                 continue
-                            self.error(error.not_declared_in_current_scope(decl.receiver, decl.span))
-                            err = types.TypeCheckError(self.id(), f"`{decl.receiver}` not found", decl.span)
-                            self.type_env.set_node_type(decl, err)
+                            self.error(error.not_declared_in_current_scope(decl.receiver, decl.span), decl)
                             continue
                         receiver = self.scope.get_forward_declared(decl.receiver)
                         assert receiver is not None and isinstance(receiver.typ, types.ImplementableType)
@@ -246,17 +248,13 @@ class TypeChecker:
                     # This is an instance method.
                     receiver = self.scope.find(decl.receiver)
                     if receiver is None:
-                        self.error(error.undefined_name(decl.receiver, decl.span))
-                        err = types.TypeCheckError(self.id(), f"`{decl.receiver}` not found", decl.span)
-                        self.type_env.set_node_type(decl, err)
+                        self.error(error.undefined_name(decl.receiver, decl.span), decl)
                         return
                     assert isinstance(receiver.typ, types.ImplementableType)
                     impl_typ = receiver.typ
                     existing = impl_typ.member(decl.name)
                     if existing is not None:
-                        self.error(error.duplicate_declaration(decl.name, decl.span, existing.typ.span))
-                        err = types.TypeCheckError(self.id(), "duplicate member", decl.span)
-                        self.type_env.set_node_type(decl, err)
+                        self.error(error.duplicate_declaration(decl.name, decl.span, existing.typ.span), decl)
                         return
                     # Declare all type parameters of the struct.
                     for type_param in impl_typ.type_params:
@@ -267,11 +265,7 @@ class TypeChecker:
                         assert isinstance(impl_typ, types.Struct)
                         trait_typ = self.type_node_type(decl.trait_qualifier)
                         if not isinstance(trait_typ, types.Trait):
-                            self.error(
-                                error.unexpected_type(types.Trait.__name__, str(trait_typ), decl.trait_qualifier.span)
-                            )
-                            err = types.TypeCheckError(self.id(), "not a trait", decl.trait_qualifier.span)
-                            self.type_env.set_node_type(decl, err)
+                            self.error(error.unexpected_type("trait", str(trait_typ), decl.trait_qualifier.span), decl)
                             return
                         if len(decl.trait_qualifier.type_args) != len(trait_typ.type_params):
                             self.error(
@@ -280,12 +274,9 @@ class TypeChecker:
                                     len(decl.trait_qualifier.type_args),
                                     decl.trait_qualifier.span,
                                     trait_typ.span,
-                                )
+                                ),
+                                decl,
                             )
-                            err = types.TypeCheckError(
-                                self.id(), "wrong number of type args", decl.trait_qualifier.span
-                            )
-                            self.type_env.set_node_type(decl, err)
                             return
                         trait_typ = self.instance(trait_typ, decl.trait_qualifier.type_args, decl.trait_qualifier.span)
                         if isinstance(trait_typ, types.TypeCheckError):
@@ -297,16 +288,13 @@ class TypeChecker:
                                 self.error(
                                     error.trait_qualifier_mismatch(
                                         existing.signature(), str(impl_typ.fqn), trait_typ.span, decl.span
-                                    )
+                                    ),
+                                    decl,
                                 )
-                                err = types.TypeCheckError(self.id(), "trait qualifier mismatch", decl.span)
-                                self.type_env.set_node_type(decl, err)
                         else:
                             impl_typ.traits.append(trait_typ)
                 elif any(x.name == "self" for x in decl.params):
-                    self.error(error.self_not_allowed_here(decl.span))
-                    err = types.TypeCheckError(self.id(), "self not allowed here", decl.span)
-                    self.type_env.set_node_type(decl, err)
+                    self.error(error.self_not_allowed_here(decl.span), decl)
                     return
                 params: list[types.FieldOrParam] = []
                 for param in decl.params:
@@ -381,6 +369,8 @@ class TypeChecker:
             if not isinstance(node, ast.ImplementableNode):
                 continue
             impl_typ = self.type_env.get_node_type(node)
+            if isinstance(impl_typ, types.Trait):
+                continue
             assert isinstance(impl_typ, types.ImplementableType)
             for m_typ in impl_typ.methods:
                 self_typ = next((x for x in m_typ.typ.type_params if x.name == "Self"), None)
@@ -389,9 +379,6 @@ class TypeChecker:
                 if m_typ.typ.type_res_scope is None:
                     m_typ.typ.type_res_scope = types.TypeResScope(None, impl_typ.type_res_scope)
                 m_typ.typ.type_res_scope.declare(self_typ, impl_typ)
-
-            if isinstance(impl_typ, types.Trait):
-                continue
 
             # If there are errors up until now, we don't check any further.
             if self.errors:
@@ -430,9 +417,7 @@ class TypeChecker:
         if isinstance(callee, types.Member):
             callee = callee.deep_member().typ
         if not isinstance(callee, types.CallableType):
-            self.error(error.unexpected_type("a callable type", callee.signature(), node.callee.span))
-            typ = types.TypeCheckError(self.id(), "unexpected type", node.span)
-            self.type_env.set_node_type(node, typ)
+            self.error(error.unexpected_type("a callable type", callee.signature(), node.callee.span), node)
             return
 
         callee_type_res_scope = callee.type_res_scope
@@ -452,14 +437,14 @@ class TypeChecker:
                 raise AssertionError(f"Type checking not implemented for: {t}")
 
         if len(node.args) != len(params):
-            self.error(error.wrong_number_of_args(node.callee.span, len(params), len(node.args), callee.span))
-            self.type_env.set_node_type(node, types.TypeCheckError(self.id(), "wrong number of args", node.span))
+            self.error(error.wrong_number_of_args(node.callee.span, len(params), len(node.args), callee.span), node)
             return
         for param, arg_node in zip(params, node.args):
             arg_typ = types.resolve(self.type_env.get_node_type(arg_node))
             if not types.is_assignable_from(param.typ, arg_typ):
-                self.error(error.type_not_assignable_from(arg_node.span, param.typ.signature(), arg_typ.signature()))
-                self.type_env.set_node_type(node, types.TypeCheckError(self.id(), "type not assignable", node.span))
+                self.error(
+                    error.type_not_assignable_from(arg_node.span, param.typ.signature(), arg_typ.signature()), node
+                )
                 return
         if isinstance(callee, types.Struct):
             assert isinstance(result, types.Struct)
@@ -502,10 +487,7 @@ class TypeChecker:
             case ast.Ident():
                 declared = self.scope.find(node.name)
                 if not declared:
-                    self.error(error.undefined_name(node.name, node.span))
-                    self.type_env.set_node_type(
-                        node, types.TypeCheckError(self.id(), f"`{node.name}` not found", node.span)
-                    )
+                    self.error(error.undefined_name(node.name, node.span), node)
                 else:
                     typ = declared.typ
                     if isinstance(typ, types.ParameterizedType):
@@ -530,10 +512,9 @@ class TypeChecker:
                                 str(target_instance.target.fqn),
                                 node.span,
                                 target_instance.span,
-                            )
+                            ),
+                            node,
                         )
-                        err = types.TypeCheckError(self.id(), "no member", node.span)
-                        self.type_env.set_node_type(node, err)
                         return
                     self.type_env.set_node_type(node, member_typ.typ)
                     return
@@ -543,24 +524,19 @@ class TypeChecker:
                         target_typ = target_instance
                     case types.TypeParam():
                         if target_instance.trait_bound is None:
-                            self.error(error.type_param_not_bound(target_instance.name, node.target.span))
-                            err = types.TypeCheckError(self.id(), "type param not bound", node.target.span)
-                            self.type_env.set_node_type(node, err)
+                            self.error(error.type_param_not_bound(target_instance.name, node.target.span), node)
                             return
                         target_typ = target_instance.trait_bound
                     case _:
                         self.error(
-                            error.unexpected_type("a struct or trait", target_instance.signature(), node.target.span)
+                            error.unexpected_type("a struct or trait", target_instance.signature(), node.target.span),
+                            node,
                         )
-                        err = types.TypeCheckError(self.id(), "unexpected type", node.target.span)
-                        self.type_env.set_node_type(node, err)
                         return
-                target_typ = cast(types.Struct | types.Trait, types.resolve(target_typ))
+                target_typ = types.resolve(target_typ)
                 field = target_typ.member(node.name)
                 if not field:
-                    self.error(error.no_member(node.name, str(target_typ.fqn), node.span, target_typ.span))
-                    err = types.TypeCheckError(self.id(), "no member", node.span)
-                    self.type_env.set_node_type(node, err)
+                    self.error(error.no_member(node.name, str(target_typ.fqn), node.span, target_typ.span), node)
                     return
                 typ = types.Member(
                     self.next_id(), types.TypeResScope(type_res_scope, None), target_instance, node.name, node.span
@@ -575,14 +551,10 @@ class TypeChecker:
                     for i, param in enumerate(fn.params):
                         if param.name == "self":
                             if node.decl.receiver is None:
-                                self.error(error.self_not_allowed_here(node.decl.params[i].span))
-                                err = types.TypeCheckError(self.id(), "self not allowed here", node.decl.params[i].span)
-                                self.type_env.set_node_type(node, err)
+                                self.error(error.self_not_allowed_here(node.decl.params[i].span), node)
                                 return
                             if i != 0:
-                                self.error(error.self_not_allowed_here(node.decl.params[i].span))
-                                err = types.TypeCheckError(self.id(), "self not allowed here", node.decl.params[i].span)
-                                self.type_env.set_node_type(node, err)
+                                self.error(error.self_not_allowed_here(node.decl.params[i].span), node)
                                 return
                             struct_type = self.scope.find(node.decl.receiver)
                             assert struct_type and isinstance(struct_type.typ, types.Struct)
@@ -636,8 +608,8 @@ class TypeChecker:
                 typ = types.normalize_type(self.next_id, typ)
                 declared = self.scope.declare(node.name, typ, mutable=node.mutable)
                 if declared:
-                    self.error(error.duplicate_declaration(node.name, node.span, declared.typ.span))
-                    typ = types.TypeCheckError(self.id(), "duplicate name", node.span)
+                    self.error(error.duplicate_declaration(node.name, node.span, declared.typ.span), node)
+                    return
                 self.type_env.set_node_type(node, typ)
             case ast.Assign():
                 ast.walk(node, self.typecheck)

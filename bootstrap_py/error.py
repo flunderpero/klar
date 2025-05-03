@@ -18,6 +18,9 @@ class SimpleError:
         code = "\n".join(self.span.formatted_lines())
         return f"{self.span}: {self.message}\n{code}"
 
+    def short_message(self) -> str:
+        return self.message
+
 
 @dataclass
 class DuplicateError:
@@ -30,6 +33,9 @@ class DuplicateError:
         code = "\n".join(self.span.formatted_lines())
         defined_here_code = "\n".join(self.defined_here.formatted_lines())
         return f"{self.span}: Duplicate `{self.name}` at:\n{code}\nis already defined here:\n{defined_here_code}"
+
+    def short_message(self) -> str:
+        return f"Duplicate `{self.name}`"
 
 
 @dataclass
@@ -47,6 +53,9 @@ class WithDefinitionError:
         defined_here_code = "\n".join(self.defined_here.formatted_lines())
         return s + f"\nDefined here:\n{defined_here_code}"
 
+    def short_message(self) -> str:
+        return self.message
+
 
 @dataclass
 class CascadedError:
@@ -59,6 +68,9 @@ class CascadedError:
         code = "\n".join(self.span.formatted_lines())
         origin_code = "\n".join(self.originated_here.formatted_lines())
         return f"{self.span}: {self.origin_message}\n{code}\nOriginated here:\n{origin_code}"
+
+    def short_message(self) -> str:
+        return self.origin_message
 
 
 Error = SimpleError | WithDefinitionError | DuplicateError | CascadedError

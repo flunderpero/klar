@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from . import ast, typechecker, types
@@ -13,7 +15,7 @@ class TypeEnv:
         return self.resolve(typ)
 
     def resolve(self, typ: types.Type) -> types.Type:
-        return self.type_res_scope.resolve(typ)
+        return self.type_res_scope.resolve(typ, resolve_member_target_self_typ=True)
 
 
 @dataclass
@@ -21,6 +23,7 @@ class FnSpec:
     typ: types.Fn
     type_env: TypeEnv
     fn_def: ast.FnDef
+    call_args: list[types.Type] | None
 
     def debug(self) -> str:
         return f"    {self.fn_def.decl}\n => {self.type_env.resolve(self.typ).debug().replace('\n', '\n    ')}"

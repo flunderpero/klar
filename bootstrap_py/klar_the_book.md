@@ -223,7 +223,8 @@ todo: implement and document
 
 ### Traits
 
-Klar has a simple trait system that allows you to define interfaces for structs and tagged unions.
+Klar has a simple trait system that allows you to define interfaces that can be implemented by
+other types.
 
 ```klar
 trait Greeter {
@@ -244,6 +245,43 @@ fn main() {
 
 ```
 PASS
+```
+
+Traits can offer default implementations that can be overridden:
+
+```klar
+trait HelloWorld {
+    fn hello(self) Str
+    fn world(self) Str
+    fn print(self) None
+}
+
+fn HelloWorld::hello(self) Str => "Hello"
+
+fn HelloWorld::print(self) {
+    print(self.hello())
+    print(self.world())
+}
+
+struct TheHelloWorld {}
+fn (HelloWorld) TheHelloWorld::world(self) Str => "world"
+
+struct TheHiYou {}
+fn (HelloWorld) TheHiYou::hello(self) Str => "Hi"
+fn (HelloWorld) TheHiYou::world(self) Str => "you"
+
+fn main() {
+    TheHelloWorld().print()
+    TheHiYou().print()
+}
+
+```
+
+```
+Hello
+world
+Hi
+you
 ```
 
 <details>
@@ -272,8 +310,19 @@ trait HelloWorld {
 
 struct Foo {}
 
-fn (HelloWorld) Foo::hello(self) Int => 42 -- ERROR: Method signature `test::Foo::hello(self test::Foo) I64` does not match trait method signature `test::HelloWorld::hello<test::Foo>(self test::Foo) Str`
+fn (HelloWorld) Foo::hello(self) Int => 42 -- ERROR: Method signature `test::Foo::hello(self test::Foo) I64` does not match trait method signature `test::HelloWorld::hello(self test::Foo) Str`
 fn main() {}
+```
+
+```todo
+trait HelloWorld {
+    fn hello(self) Str
+}
+
+struct Foo {}
+
+fn (HelloWorld) Foo::hello<Int>(self) Str => "Hello" -- ERROR: Method signature `test::Foo::hello<Int>(self test::Foo) I64` does not match trait method signature `test::HelloWorld::hello(self test::Foo) Str`
+
 ```
 
 </details>
@@ -1234,6 +1283,99 @@ fn main() {
 ```
 PASS
 ```
+
+Dependent type parameters:
+
+```klar
+struct Value<A> {
+    value A
+}
+
+trait Wrapped<B> {
+    fn unwrap(self) B
+}
+
+fn (Wrapped<A>) Value::unwrap(self) A => self.value
+
+fn unwrap<D, E Wrapped<D>>(value E) D => value.unwrap()
+
+fn main() {
+    print(unwrap<Str, Value<Str>>(Value("PASS")))
+}
+
+```
+
+```
+PASS
+```
+
+```klar
+struct Value<A> {
+    value A
+}
+
+trait Wrapped<B> {
+    fn unwrap(self) B
+}
+
+fn (Wrapped<A>) Value::unwrap(self) A => self.value
+
+fn unwrap_first<D, E Wrapped<D>, F, G Wrapped<F>>(first E, second G) D {
+    second.unwrap()
+    first.unwrap()
+}
+
+fn unwrap_second<D, E Wrapped<D>, F, G Wrapped<F>>(first E, second G) F {
+    first.unwrap()
+    second.unwrap()
+}
+
+fn main() {
+    let s = Value("PASS")
+    let i = Value(42)
+    print(unwrap_first<Str, Value<Str>, Int, Value<Int>>(s, i))
+    print(int_to_str(unwrap_second<Str, Value<Str>, Int, Value<Int>>(s, i)))
+}
+
+```
+
+```
+PASS
+42
+```
+
+<details>
+    <summary>More Examples</summary>
+
+Traits cannot implement other traits:
+
+```klar
+trait Stringify {
+    fn stringify(self) Str
+}
+
+trait Intify {
+    fn intify(self) Int
+}
+
+fn Stringify::stringify(self) Str => "Hello"
+
+fn (Intify) Stringify::intify(self) Int => 42 -- ERROR: Traits cannot implement other traits
+
+fn main() {}
+```
+
+The signature of a default method implementation must match the trait method declaration:
+
+```klar
+trait Stringify {
+    fn stringify(self) Str
+}
+
+fn Stringify::stringify(self) Int => 42 -- ERROR: Method signature `test::Stringify::stringify(self Self) I64` does not match trait method signature `test::Stringify::stringify(self Self) Str`
+```
+
+</details
 
 ## Appendix - The Tokenizer
 

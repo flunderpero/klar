@@ -8,7 +8,8 @@ class Monomorphize:
     fn_defs: dict[types.TypeId, ast.FnDef]
     fn_specs: list[lower.FnSpec]
     queue: list[lower.FnSpec]
-    current: lower.FnSpec | None
+    current: lower.FnSpec
+    type_res_scope: types.TypeResScope
     seen: set[str]
 
     def __init__(self, type_env: typechecker.TypeEnv, fn_defs: dict[types.TypeId, ast.FnDef]) -> None:
@@ -17,16 +18,16 @@ class Monomorphize:
         self.fn_specs = []
         self.queue = []
         self.seen = set()
-        self.type_res_scope = None
-        self.current = None
+        self.type_res_scope = types.TypeResScope(None, None)
 
     def run(self) -> None:
         while self.queue:
             self.current = self.queue.pop()
+            self.type_res_scope = self.current.type_env.type_res_scope
             self.scan_fn_def(self.current.fn_def, None)
             self.fn_specs.append(self.current)
 
-    def scan_fn_def(self, node: ast.Node, _parent: ast.Node | None) -> None:
+    def scan_fn_def(self, node: ast.Node, parent: ast.Node | None) -> None:
         ast.walk(node, self.scan_fn_def)
         match node:
             case ast.Ident():
@@ -35,24 +36,31 @@ class Monomorphize:
                     return
                 if self.type_env.builtins.is_builtin(typ):
                     return
-                self.enqueue_if_needed(typ)
+                call_args: list[types.Type] | None = None
+                if isinstance(parent, ast.Call) and node == parent.callee:
+                    call_args = [self.type_env.get_node_type(x) for x in parent.args]
+                self.enqueue_if_needed(typ, call_args)
 
-    def enqueue_if_needed(self, typ: types.ParameterizedType) -> None:
-        type_res_scope = types.TypeResScope(
-            typ.type_res_scope, self.current.type_env.type_res_scope if self.current else None
-        )
-        fn = type_res_scope.resolve(typ)
+    def enqueue_if_needed(self, typ: types.ParameterizedType, call_args: list[types.Type] | None) -> None:
+        type_res_scope = types.TypeResScope(typ.type_res_scope, self.type_res_scope)
+        fn = type_res_scope.resolve(typ, resolve_member_target_self_typ=True)
         if not isinstance(fn, types.Fn) or not fn.is_named:
             return
         assert all(not isinstance(x, (types.TypeParam, types.Trait)) for x in fn.type_args), (
-            f"at least one type param unresolved or resolved to a trait: {fn}"
+            f"at least one type param unresolved or resolved to a trait: {fn.debug()} at {fn.span}"
         )
         fn_def = self.fn_defs[fn.id]
         key = types.full_id(fn)
         if key in self.seen:
             return
         self.seen.add(key)
-        self.queue.append(lower.FnSpec(fn, lower.TypeEnv(self.type_env, type_res_scope), fn_def))
+        for p, a in zip(fn.type_params, fn.type_args):
+            type_res_scope.declare(p, type_res_scope.resolve(a))
+        if call_args:
+            assert all(not isinstance(type_res_scope.resolve(x), (types.TypeParam, types.Trait)) for x in call_args), (
+                f"at least one call arg is unresolved or resolved to a trait: {call_args} {fn.debug()} at {fn.span}"
+            )
+        self.queue.append(lower.FnSpec(fn, lower.TypeEnv(self.type_env, type_res_scope), fn_def, call_args))
 
 
 def monomorphize(module: ast.Module, type_env: typechecker.TypeEnv) -> list[lower.FnSpec]:
@@ -73,7 +81,7 @@ def monomorphize(module: ast.Module, type_env: typechecker.TypeEnv) -> list[lowe
         ast.walk(node, visit)
 
     visit(module, None)
-    assert isinstance(main, types.Fn)
-    runner.enqueue_if_needed(types.instance(main, None))
+    assert isinstance(main, types.Fn), f"main function not found: {main}"
+    runner.enqueue_if_needed(types.instance(main, None), None)
     runner.run()
     return runner.fn_specs

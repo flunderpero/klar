@@ -191,3 +191,7 @@ def trait_qualifier_mismatch(trait_signature: str, target_fqn: str, trait_span: 
         trait_span,
         _stack(),
     )
+
+
+def traits_cannot_implement_traits(span: Span) -> Error:
+    return SimpleError(span, "Traits cannot implement other traits", _stack())

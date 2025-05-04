@@ -225,7 +225,10 @@ class Fn:
 
     @nocycle
     def signature(self, seen: dict[int, str] | None = None) -> str:
-        type_args = type_args_signature(self.type_args, seen)
+        type_args = self.type_args
+        if self.type_params and self.type_params[0].name == "Self":
+            type_args = self.type_args[1:]
+        type_args = type_args_signature(type_args, seen)
         params = ", ".join(x.signature(seen) for x in self.params)
         return f"{self.fqn}{type_args}({params}) {self.result.signature(seen)}"
 
@@ -310,6 +313,7 @@ class Trait:
     self_typ: TypeParam
     type_res_scope: TypeResScope | None
     methods: list[FieldOrParam[Fn]]
+    default_impls: list[FieldOrParam[Fn]]
     span: Span
 
     @nocycle
@@ -335,6 +339,12 @@ class Trait:
                 return x  # pyright:ignore[reportReturnType]
         return None
 
+    def default_impl(self, name: str) -> FieldOrParam[Fn] | None:
+        for x in self.default_impls:
+            if x.name == name:
+                return x
+        return None
+
 
 @dataclass
 class TypeParam:
@@ -355,7 +365,7 @@ class TypeParam:
         return self.signature()
 
     def signature(self, seen: dict[int, str] | None = None) -> str:
-        tb = " " + self.trait_bound.signature(seen) if self.trait_bound else ""
+        tb = " " + self.trait_bound.signature(seen) if self.trait_bound and self.name != "Self" else ""
         return self.name + tb
 
     @property
@@ -408,107 +418,126 @@ class TypeResScope:
             return self.parent.find(type_param)
         return None
 
-    def resolve(self, typ: Type, seen: dict[str, Type] | None = None) -> Type:
+    def resolve(
+        self, typ: Type, seen: dict[str, Type] | None = None, *, resolve_member_target_self_typ: bool = False
+    ) -> Type:
+        """Resolve the type based on all the declared types.
+
+        :param resolve_member_target_self_typ: If True and `typ` is `Member`, try to first resolve
+            the `Self` type of the target to a concrete type. This parameter is _not_ passed down
+            to the recursive calls.
+
+        """
         if seen is not None:
             seen_typ = seen.get(full_id(typ))
             if seen_typ is not None:
                 return seen_typ
 
-        prev = typ
-        while True:
-            match typ:
-                case TypeParam():
-                    typ2 = self.find(typ)
-                    if typ2 and typ != typ2:
-                        typ = typ2
-                case Member():
-                    scope = self
-                    if typ.type_res_scope != self:
-                        scope = TypeResScope(typ.type_res_scope, self)
-                    target = scope.resolve(typ.target)
-                    assert isinstance(target, Trait | Struct | TypeParam), (
-                        f"expected Trait, Struct, or TypeParam, got {target}"
-                    )
-                    if isinstance(target, TypeParam):
-                        target = target.trait_bound
-                        assert target is not None
-                    field = target.member(typ.field)
-                    assert field, f"member `{typ.field}` not found in {target}"
-                    typ = scope.resolve(field.typ)
-                case Fn():
-                    scope = self
-                    if typ.type_res_scope != self:
-                        scope = TypeResScope(typ.type_res_scope, self)
-                    typ = Fn(
-                        typ.id,
-                        typ.fqn,
-                        typ.type_params,
-                        [scope.resolve(x, seen) for x in typ.type_args],
-                        None,
-                        typ.params,
-                        typ.result,
-                        typ.span,
-                        typ.is_named,
-                    )
-                    if seen is None:
-                        seen = {}
-                    seen[full_id(typ)] = typ
-                    typ.params = [FieldOrParam(x.name, scope.resolve(x.typ, seen)) for x in typ.params]
-                    typ.result = scope.resolve(typ.result, seen)
-                    return typ
-                case Struct():
-                    scope = self
-                    if typ.type_res_scope != self:
-                        # todo: We reversed the order of scopes here compared to Fn or Trait.
-                        #       This is needed so recursive types work.
-                        #       But it feels weird and surely hides a bug.
-                        scope = TypeResScope(self, typ.type_res_scope)
-                    typ = Struct(
-                        typ.id,
-                        typ.fqn,
-                        typ.type_params,
-                        [scope.resolve(x, seen) for x in typ.type_args],
-                        typ.self_typ,
-                        None,
-                        typ.fields,
-                        typ.methods,
-                        typ.traits,
-                        typ.span,
-                    )
-                    if seen is None:
-                        seen = {}
-                    seen[full_id(typ)] = typ
-                    typ.fields = [FieldOrParam(x.name, scope.resolve(x.typ, seen)) for x in typ.fields]
-                    typ.methods = [FieldOrParam[Fn](x.name, cast(Fn, scope.resolve(x.typ, seen))) for x in typ.methods]
-                    for i, trait in enumerate(typ.traits):
-                        scope = TypeResScope(scope, None)
-                        scope.declare(trait.self_typ, typ)
-                        typ.traits[i] = cast("Trait", scope.resolve(trait, seen))
-                    return typ
-                case Trait():
-                    scope = self
-                    if typ.type_res_scope != self:
-                        scope = TypeResScope(typ.type_res_scope, self)
-                    typ = Trait(
-                        typ.id,
-                        typ.fqn,
-                        typ.type_params,
-                        [scope.resolve(x, seen) for x in typ.type_args],
-                        typ.self_typ,
-                        None,
-                        list(typ.methods),
-                        typ.span,
-                    )
-                    if seen is None:
-                        seen = {}
-                    seen[full_id(typ)] = typ
-                    typ.methods = [FieldOrParam[Fn](x.name, cast(Fn, scope.resolve(x.typ, seen))) for x in typ.methods]
-                    return typ
-            if not isinstance(typ, (Member, TypeParam)) or prev == typ:
-                if seen is not None:
-                    seen[full_id(typ)] = typ
+        match typ:
+            case TypeParam():
+                res = typ
+                while isinstance(res, TypeParam):
+                    typ2 = self.find(res)
+                    if not typ2 or res == typ2:
+                        break
+                    res = typ2
+                typ = res
+            case Member():
+                scope = self
+                if typ.type_res_scope != self:
+                    scope = TypeResScope(typ.type_res_scope, self)
+                target = scope.resolve(typ.target)
+                assert isinstance(target, Trait | Struct | TypeParam), (
+                    f"expected Trait, Struct, or TypeParam, got {target}"
+                )
+                if isinstance(target, TypeParam):
+                    target = target.trait_bound
+                    assert target is not None
+                if resolve_member_target_self_typ and isinstance(target, Trait):
+                    self_typ = scope.find(target.self_typ)
+                    if self_typ:
+                        # We can resolve the Self type of a concrete type.
+                        target = scope.resolve(self_typ)
+                        assert isinstance(target, Trait | Struct)
+                field = target.member(typ.field)
+                assert field, f"member `{typ.field}` not found in {target}"
+                typ = scope.resolve(field.typ)
+            case Fn():
+                scope = self
+                if typ.type_res_scope != self:
+                    scope = TypeResScope(typ.type_res_scope, self)
+                typ = Fn(
+                    typ.id,
+                    typ.fqn,
+                    typ.type_params,
+                    [scope.resolve(x, seen) for x in typ.type_args],
+                    None,
+                    typ.params,
+                    typ.result,
+                    typ.span,
+                    typ.is_named,
+                )
+                if seen is None:
+                    seen = {}
+                seen[full_id(typ)] = typ
+                typ.params = [FieldOrParam(x.name, scope.resolve(x.typ, seen)) for x in typ.params]
+                typ.result = scope.resolve(typ.result, seen)
                 return typ
-            prev = typ
+            case Struct():
+                scope = self
+                if typ.type_res_scope != self:
+                    # todo: We reversed the order of scopes here compared to Fn or Trait.
+                    #       This is needed so recursive types work.
+                    #       But it feels weird and surely hides a bug.
+                    scope = TypeResScope(self, typ.type_res_scope)
+                typ = Struct(
+                    typ.id,
+                    typ.fqn,
+                    typ.type_params,
+                    [scope.resolve(x, seen) for x in typ.type_args],
+                    typ.self_typ,
+                    None,
+                    typ.fields,
+                    typ.methods,
+                    typ.traits,
+                    typ.span,
+                )
+                if seen is None:
+                    seen = {}
+                seen[full_id(typ)] = typ
+                typ.fields = [FieldOrParam(x.name, scope.resolve(x.typ, seen)) for x in typ.fields]
+                typ.methods = [FieldOrParam[Fn](x.name, cast(Fn, scope.resolve(x.typ, seen))) for x in typ.methods]
+                for i, trait in enumerate(typ.traits):
+                    scope = TypeResScope(scope, None)
+                    scope.declare(trait.self_typ, typ)
+                    typ.traits[i] = cast("Trait", scope.resolve(trait, seen))
+                return typ
+            case Trait():
+                scope = self
+                if typ.type_res_scope != self:
+                    scope = TypeResScope(typ.type_res_scope, self)
+                typ = Trait(
+                    typ.id,
+                    typ.fqn,
+                    typ.type_params,
+                    [scope.resolve(x, seen) for x in typ.type_args],
+                    typ.self_typ,
+                    None,
+                    typ.methods,
+                    typ.default_impls,
+                    typ.span,
+                )
+                if seen is None:
+                    seen = {}
+                seen[full_id(typ)] = typ
+                typ.methods = [FieldOrParam[Fn](x.name, cast(Fn, scope.resolve(x.typ, seen))) for x in typ.methods]
+                typ.default_impls = [
+                    FieldOrParam[Fn](x.name, cast(Fn, scope.resolve(x.typ, seen))) for x in typ.default_impls
+                ]
+                return typ
+        if seen is not None:
+            seen[full_id(typ)] = typ
+        return typ
 
     def keys(self) -> set[TypeId]:
         res = set(self.types.keys())
@@ -610,15 +639,10 @@ class Builtins:
         int_typ = Int(next_id(), bits=64, signed=True, span=span)
         bool_typ = Bool(next_id(), span)
         none_typ = NoneTyp(next_id(), span)
-        print_typ = Fn(
-            next_id(), FQN(["print"]), [], [], None, [FieldOrParam("s", str_typ)], none_typ, span, is_named=True
-        )
-        int_to_str = Fn(
-            next_id(), FQN(["int_to_str"]), [], [], None, [FieldOrParam("i", int_typ)], str_typ, span, is_named=True
-        )
-        bool_to_str = Fn(
-            next_id(), FQN(["bool_to_str"]), [], [], None, [FieldOrParam("b", bool_typ)], str_typ, span, is_named=True
-        )
+        args = {"span": span, "is_named": True}
+        print_typ = Fn(next_id(), FQN(["print"]), [], [], None, [FieldOrParam("s", str_typ)], none_typ, **args)
+        int_to_str = Fn(next_id(), FQN(["int_to_str"]), [], [], None, [FieldOrParam("i", int_typ)], str_typ, **args)
+        bool_to_str = Fn(next_id(), FQN(["bool_to_str"]), [], [], None, [FieldOrParam("b", bool_typ)], str_typ, **args)
         return Builtins(str_typ, int_typ, bool_typ, none_typ, print_typ, int_to_str, bool_to_str)
 
     Str: Str

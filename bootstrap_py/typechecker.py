@@ -210,7 +210,10 @@ class TypeChecker:
                         self.error(error.duplicate_declaration(node.name, node.span, existing.typ.span))
                 case ast.Trait():
                     fqn = self.scope.fqn().concat(node.name)
-                    typ = types.Trait(self.id(), fqn, [], [], self.self_typ_(), None, [], node.span)
+                    typ = types.Trait(self.id(), fqn, [], [], self.self_typ_(), None, [], [], node.span)
+                    # The self type of a trait must have a trait bound (the trait itself)
+                    # so late type resolution works correctly.
+                    typ.self_typ.trait_bound = typ
                     existing = self.scope.forward_declare(node.name, typ)
                     if existing:
                         self.error(error.duplicate_declaration(node.name, node.span, existing.typ.span))
@@ -222,11 +225,13 @@ class TypeChecker:
                     name = decl.name if isinstance(decl, (ast.Struct, ast.Trait)) else decl.fullname()
                     typ = self.scope.get_forward_declared(name).typ
                     assert isinstance(typ, types.ParameterizedType)
-                    for type_param in decl.type_params:
-                        type_param_typ = self.type_node_type(type_param)
-                        assert isinstance(type_param_typ, types.TypeParam)
-                        typ.type_params.append(type_param_typ)
-                        typ.type_args.append(type_param_typ)
+                    with self.child_scope(node):
+                        for type_param in decl.type_params:
+                            type_param_typ = self.type_node_type(type_param)
+                            assert isinstance(type_param_typ, types.TypeParam)
+                            typ.type_params.append(type_param_typ)
+                            typ.type_args.append(type_param_typ)
+                            self.scope.declare(type_param.name, type_param_typ)
                     if isinstance(decl, ast.FnDecl) and decl.receiver is not None:
                         # This is a method, add `Self` to the list of type parameters.
                         if not self.scope.is_declared_in_this_scope(decl.receiver):
@@ -237,31 +242,51 @@ class TypeChecker:
                         receiver = self.scope.get_forward_declared(decl.receiver)
                         assert receiver is not None and isinstance(receiver.typ, types.ImplementableType)
                         typ.type_params.append(receiver.typ.self_typ)
+                        # todo: We should add the self type to the type args too, but it breaks
+                        #       monomorphization of some generic examples.
+                        # typ.type_args.append(receiver.typ.self_typ)
 
         # Stage 3: Fully parse all previously forward declared types.
-        def stage3_fndecl(node: ast.Node, decl: ast.FnDecl, typ: types.Fn) -> None:
+        def stage3_fndecl(node: ast.Node, decl: ast.FnDecl, typ: types.Fn, *, is_def: bool) -> None:
             with self.child_scope(node):
                 for type_param in typ.type_params:
                     self.scope.declare(type_param.name, type_param)
-                impl_typ: types.ImplementableType | None = None
                 if decl.receiver is not None:
                     # This is an instance method.
                     receiver = self.scope.find(decl.receiver)
                     if receiver is None:
                         self.error(error.undefined_name(decl.receiver, decl.span), decl)
                         return
-                    assert isinstance(receiver.typ, types.ImplementableType)
                     impl_typ = receiver.typ
+                    assert isinstance(impl_typ, types.ImplementableType)
                     existing = impl_typ.member(decl.name)
                     if existing is not None:
-                        self.error(error.duplicate_declaration(decl.name, decl.span, existing.typ.span), decl)
-                        return
+                        if isinstance(impl_typ, types.Trait) and is_def:
+                            # This might be a default trait method implementation.
+                            def_impl = impl_typ.default_impl(decl.name)
+                            if def_impl:
+                                self.error(error.duplicate_declaration(decl.name, decl.span, def_impl.typ.span), decl)
+                                return
+                            method = impl_typ.member(decl.name)
+                            if not method:
+                                self.error(error.no_member(decl.name, str(impl_typ.fqn), decl.span, node.span), decl)
+                                return
+                            # Default implementations need to have the same type id as the trait
+                            # method declaration so they can be resolved to the same type.
+                            typ.id = method.typ.id
+                            impl_typ.default_impls.append(types.FieldOrParam(decl.name, typ))
+                        else:
+                            self.error(error.duplicate_declaration(decl.name, decl.span, existing.typ.span), decl)
+                            return
                     # Declare all type parameters of the struct.
                     for type_param in impl_typ.type_params:
                         self.scope.declare(type_param.name, type_param)
                     # Mark a trait as implemented if this is a trait impl.
                     # Also type check the trait qualifier.
                     if decl.trait_qualifier is not None:
+                        if isinstance(impl_typ, types.Trait):
+                            self.error(error.traits_cannot_implement_traits(decl.span), decl)
+                            return
                         assert isinstance(impl_typ, types.Struct)
                         trait_typ = self.type_node_type(decl.trait_qualifier)
                         if not isinstance(trait_typ, types.Trait):
@@ -293,6 +318,7 @@ class TypeChecker:
                                 )
                         else:
                             impl_typ.traits.append(trait_typ)
+                    impl_typ.methods.append(types.FieldOrParam(decl.name, typ))
                 elif any(x.name == "self" for x in decl.params):
                     self.error(error.self_not_allowed_here(decl.span), decl)
                     return
@@ -305,8 +331,6 @@ class TypeChecker:
                     result = self.type_node_type(decl.result)
                 typ.params = params
                 typ.result = result
-                if impl_typ is not None:
-                    impl_typ.methods.append(types.FieldOrParam(decl.name, typ))
 
         for node in nodes:
             match node:
@@ -314,7 +338,7 @@ class TypeChecker:
                     decl = node if isinstance(node, ast.FnDecl) else node.decl
                     typ = self.scope.get_forward_declared(decl.fullname()).typ
                     assert isinstance(typ, types.Fn)
-                    stage3_fndecl(node, decl, typ)
+                    stage3_fndecl(node, decl, typ, is_def=isinstance(node, ast.FnDef))
                     self.scope.finish_forward_declared(decl.fullname())
                     self.type_env.set_node_type(decl, typ)
                 case ast.Struct():
@@ -358,13 +382,15 @@ class TypeChecker:
                                 m_typ.type_args.append(type_param_typ)
                             m_typ.type_params.append(typ.self_typ)
                             m_typ.type_args.append(typ.self_typ)
-                            stage3_fndecl(node, m_node, m_typ)
+                            stage3_fndecl(node, m_node, m_typ, is_def=False)
                             self.type_env.set_node_type(m_node, self.type_env.builtins.NoneTyp)
                     self.scope.finish_forward_declared(node.name)
                     self.type_env.set_node_type(node, typ)
         # Finalize and type check trait implementations.
         # In Klar, all instance methods have to be defined in the same scope as the
         # type declaration. So we now can make sure that all traits are fully implemented.
+
+        # First, set the `Self` type for each method.
         for node in nodes:
             if not isinstance(node, ast.ImplementableNode):
                 continue
@@ -380,29 +406,71 @@ class TypeChecker:
                     m_typ.typ.type_res_scope = types.TypeResScope(None, impl_typ.type_res_scope)
                 m_typ.typ.type_res_scope.declare(self_typ, impl_typ)
 
-            # If there are errors up until now, we don't check any further.
-            if self.errors:
-                continue
+        # If there are errors up until now, we don't check any further.
+        if self.errors:
+            return
 
-            # Resolving the `impl_typ` will also resolve all `impl_typ.traits` so the
+        # Check signatures of trait default implementations and adapt their type.
+        for node in nodes:
+            if not isinstance(node, ast.Trait):
+                continue
+            trait = self.type_env.get_node_type(node)
+            assert isinstance(trait, types.Trait)
+            for default_impl in trait.default_impls:
+                trait_method = trait.member(default_impl.name)
+                if not trait_method:
+                    self.error(error.no_member(default_impl.name, str(trait.fqn), default_impl.typ.span, node.span))
+                    continue
+                if not types.is_assignable_from(default_impl.typ, trait_method.typ):
+                    self.error(
+                        error.trait_method_impl_mismatch(
+                            trait_method.typ.signature(),
+                            default_impl.typ.signature(),
+                            trait_method.typ.span,
+                            default_impl.typ.span,
+                        )
+                    )
+                # Replace the Fn of the default impl with the Fn of the trait method.
+                assert isinstance(trait_method.typ, types.Fn)
+                default_impl.typ = trait_method.typ
+
+        for node in nodes:
+            if not isinstance(node, ast.ImplementableNode):
+                continue
+            node_typ = self.type_env.get_node_type(node)
+            if isinstance(node_typ, types.Trait):
+                continue
+            assert isinstance(node_typ, types.ImplementableType)
+
+            # Resolving the `node_typ` will also resolve all `node_typ.traits` so the
             # method signatures should match.
-            impl_typ = types.resolve(impl_typ)
-            for trait in impl_typ.traits:
+            resolved_typ = types.resolve(node_typ)
+            for trait in resolved_typ.traits:
                 trait_method_names = [method.name for method in trait.methods]
                 for t_typ in trait.methods:
-                    m_typ = next((x for x in impl_typ.methods if x.name == t_typ.name), None)
-                    if m_typ is None:
+                    default_typ = next((x for x in resolved_typ.methods if x.name == t_typ.name), None)
+                    if default_typ is None:
+                        # Use the default impl if there is one.
+                        default_impl = trait.default_impl(t_typ.name)
+                        if default_impl:
+                            default_typ = types.instance(
+                                default_impl.typ, types.TypeResScope(node_typ.type_res_scope, None)
+                            )
+                            assert default_typ.type_res_scope
+                            default_typ.type_res_scope.declare(trait.self_typ, node_typ)
+                            node_typ.methods.append(types.FieldOrParam(t_typ.name, default_typ))
+                            continue
                         impl_span = (
-                            next((x.typ.span for x in impl_typ.methods if x.name in trait_method_names), None)
+                            next((x.typ.span for x in resolved_typ.methods if x.name in trait_method_names), None)
                             or node.span
                         )
                         trait_span = next(x.typ.span for x in trait.methods if x.name == t_typ.name)
                         self.error(error.trait_method_impl_missing(str(trait.fqn), t_typ.name, trait_span, impl_span))
                         continue
-                    if not types.is_assignable_from(m_typ.typ, t_typ.typ):
+                    if not types.is_assignable_from(default_typ.typ, t_typ.typ):
                         self.error(
                             error.trait_method_impl_mismatch(
-                                t_typ.typ.signature(), m_typ.typ.signature(), t_typ.typ.span, m_typ.typ.span
+                                t_typ.typ.signature(), default_typ.typ.signature(), t_typ.typ.span, default_typ.typ.span
                             )
                         )
                         continue
@@ -520,7 +588,7 @@ class TypeChecker:
                     return
                 target_typ: types.Struct | types.Trait
                 match target_instance:
-                    case types.Struct():
+                    case types.Struct() | types.Trait():
                         target_typ = target_instance
                     case types.TypeParam():
                         if target_instance.trait_bound is None:
@@ -534,8 +602,7 @@ class TypeChecker:
                         )
                         return
                 target_typ = types.resolve(target_typ)
-                field = target_typ.member(node.name)
-                if not field:
+                if not target_typ.member(node.name):
                     self.error(error.no_member(node.name, str(target_typ.fqn), node.span, target_typ.span), node)
                     return
                 typ = types.Member(
@@ -556,9 +623,14 @@ class TypeChecker:
                             if i != 0:
                                 self.error(error.self_not_allowed_here(node.decl.params[i].span), node)
                                 return
-                            struct_type = self.scope.find(node.decl.receiver)
-                            assert struct_type and isinstance(struct_type.typ, types.Struct)
-                            existing = self.scope.declare("self", struct_type.typ)
+                            impl_typ = self.scope.find(node.decl.receiver)
+                            assert impl_typ and isinstance(impl_typ.typ, types.ImplementableType)
+                            if isinstance(impl_typ.typ, types.Trait):
+                                # The self type of a trait has a trait bound (the trait itself)
+                                # so it will be late resolved correctly.
+                                existing = self.scope.declare("self", impl_typ.typ.self_typ)
+                            else:
+                                existing = self.scope.declare("self", impl_typ.typ)
                             assert existing is None, f"self is already declared: {existing}"
                             continue
                         self.scope.declare(param.name, param.typ)

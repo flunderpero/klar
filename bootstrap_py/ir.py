@@ -341,20 +341,31 @@ class FnGen:
     next_reg = 0
     next_block = 0
 
-    def __init__(self, fn_typ: types.Fn, fn_def: ast.FnDef, type_env: lower.TypeEnv, ir: IR) -> None:
-        self.type_env = type_env
+    def __init__(self, spec: lower.FnSpec, ir: IR) -> None:
+        self.type_env = spec.type_env
         self.ir = ir
         self.node_regs = {}
         self.loop_scopes = []
         self.scope = Scope(None, {})
+        fn_typ = spec.typ
+        fn_def = spec.fn_def
         params: list[Param] = []
-        for p in fn_typ.params:
-            typ = self.typ(p.typ)
-            reg = self.reg(typ)
-            self.scope.declare(p.name, reg)
-            params.append(Param(reg, typ))
+        if spec.call_args:
+            for arg, p in zip(spec.call_args, fn_typ.params, strict=True):
+                typ = self.typ(arg)
+                reg = self.reg(typ)
+                self.scope.declare(p.name, reg)
+                params.append(Param(reg, typ))
+        else:
+            for p in fn_typ.params:
+                typ = self.typ(p.typ)
+                reg = self.reg(typ)
+                self.scope.declare(p.name, reg)
+                params.append(Param(reg, typ))
         result = self.typ(fn_typ.result)
-        name = self.fn_name(types.instance(fn_typ, type_env.type_res_scope)) if fn_def.decl.name != "main" else "main"
+        name = (
+            self.fn_name(types.instance(fn_typ, self.type_env.type_res_scope)) if fn_def.decl.name != "main" else "main"
+        )
         self.fn_ir = FnIR(fn_def, name, params, result, [])
         self.block = self.new_block()
 
@@ -418,7 +429,7 @@ class FnGen:
                     is_named=typ.is_named,
                 )
             case _:
-                raise AssertionError(f"Unsupported type: {typ} ({typ.__class__})")
+                raise AssertionError(f"Unsupported type: {typ.debug()} ({typ.__class__})")
 
     def reg(self, typ: Type, prefix: str = "%") -> Reg:
         self.next_reg += 1
@@ -590,12 +601,12 @@ class FnGen:
             case ast.Call():
                 callee = self.type_env.get_node_type(node.callee)
                 assert isinstance(callee, types.CallableType), f"Expected CallableType, got {callee}"
-                result_typ = self.type_env.get_node_type(node)
                 ast.walk(node, self.generate)
                 args = [self.node_regs[x.id] for x in node.args]
                 match callee:
                     case types.Fn():
                         reg = NoneReg
+                        result_typ = callee.result
                         if not isinstance(result_typ, types.NoneTyp):
                             reg = self.reg(self.typ(result_typ))
                         if callee.is_named:
@@ -651,7 +662,7 @@ class FnGen:
 def generate_ir(specs: list[lower.FnSpec]) -> IR:
     ir = IR(fn_irs=[], constant_pool={})
     for spec in specs:
-        gen = FnGen(spec.typ, spec.fn_def, spec.type_env, ir)
+        gen = FnGen(spec, ir)
         gen.generate(spec.fn_def, None)
         ir.fn_irs.append(gen.fn_ir)
 

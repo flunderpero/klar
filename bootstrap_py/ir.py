@@ -339,7 +339,6 @@ class FnGen:
     ir: IR
     fn_ir: FnIR
     next_reg = 0
-    next_const = 0
     next_block = 0
 
     def __init__(self, fn_typ: types.Fn, fn_def: ast.FnDef, type_env: lower.TypeEnv, ir: IR) -> None:
@@ -364,7 +363,7 @@ class FnGen:
         assert isinstance(fn, types.Fn)
         name = str(fn.fqn)
         if fn.type_args:
-            name += "$" + "$".join(types.full_id(x) for x in fn.type_args)
+            name += "$" + "$".join(types.full_id(x).replace(":", "$") for x in fn.type_args)
         return name
 
     def new_block(self) -> Block:
@@ -548,8 +547,7 @@ class FnGen:
             case ast.StrLit():
                 const = self.ir.constant_pool.get(node.value)
                 if not const:
-                    self.next_const += 1
-                    reg = Reg(f"s{self.next_const}", Str)
+                    reg = Reg(f"s{len(self.ir.constant_pool)}", Str)
                     const = StrConst(reg, node.value)
                     self.ir.constant_pool[node.value] = const
                 self.emit(GetPtr(reg=self.reg(Str), src=const.reg), node)

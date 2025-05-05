@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from subprocess import run
+from time import time
 from typing import TYPE_CHECKING
 
 from . import asm_darwin_arm64, ast, error, ir, lower, lower_instance_methods, lower_monomorphize, parser, typechecker
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
 class TokenStep:
     tokens: list[token.Token]
     errors: list[error.Error]
+    duration: float
 
     def __str__(self) -> str:
         return "\n".join(str(x) for x in self.tokens)
@@ -24,6 +26,7 @@ class TokenStep:
 class ParseStep:
     module: ast.Module
     errors: list[error.Error]
+    duration: float
 
     def __str__(self) -> str:
         return str(self.module)
@@ -34,6 +37,7 @@ class TypecheckStep:
     module: ast.Module
     type_env: typechecker.TypeEnv
     errors: list[error.Error]
+    duration: float
 
     def __str__(self) -> str:
         return self.debug()
@@ -69,6 +73,7 @@ class TypecheckStep:
 @dataclass
 class AbortStep:
     errors: list[error.Error]
+    duration: float
 
     def __str__(self) -> str:
         return "\n".join(str(x) for x in self.errors)
@@ -78,6 +83,7 @@ class AbortStep:
 class LowerStep:
     fn_specs: list[lower.FnSpec]
     module: ast.Module
+    duration: float
 
     def __str__(self) -> str:
         return str(self.module)
@@ -99,6 +105,7 @@ class LowerStep:
 @dataclass
 class IRStep:
     ir: ir.IR
+    duration: float
 
     def __str__(self) -> str:
         return str(self.ir)
@@ -107,6 +114,7 @@ class IRStep:
 @dataclass
 class ASMStep:
     asm: str
+    duration: float
 
     def __str__(self) -> str:
         return str(self.asm)
@@ -117,6 +125,7 @@ class CompileStep:
     returncode: int
     stdout: str
     stderr: str
+    duration: float
 
     def __str__(self) -> str:
         return f"statuscode: {self.returncode}\nstdout: {self.stdout}\nstderr: {self.stderr}"
@@ -127,6 +136,7 @@ class RunStep:
     returncode: int
     stdout: str
     stderr: str
+    duration: float
 
     def __str__(self) -> str:
         return f"statuscode: {self.returncode}\nstdout: {self.stdout}\nstderr: {self.stderr}"
@@ -145,31 +155,39 @@ def compile(input: token.Input, outfile: str) -> Generator[CompilationStep]:  # 
         cur_id += 1
         return cur_id
 
+    start = time()
     tokens, tokenize_errors = token.tokenize(input)
-    yield TokenStep(tokens, tokenize_errors)
+    yield TokenStep(tokens, tokenize_errors, time() - start)
+    start = time()
     module, parse_errors = parser.parse(parser.Input(tokens, next_id))
-    yield ParseStep(module, parse_errors)
+    yield ParseStep(module, parse_errors, time() - start)
+    start = time()
     type_env, type_errors = typechecker.typecheck(module, next_id)
-    yield TypecheckStep(module, type_env, type_errors)
+    yield TypecheckStep(module, type_env, type_errors, time() - start)
+    start = time()
     if tokenize_errors or parse_errors or type_errors:
-        yield AbortStep(tokenize_errors + parse_errors + type_errors)
+        yield AbortStep(tokenize_errors + parse_errors + type_errors, time() - start)
         return
     lower_instance_methods.lower_instance_methods(module, type_env)
     specs = lower_monomorphize.monomorphize(module, type_env)
-    yield LowerStep(specs, module)
+    yield LowerStep(specs, module, time() - start)
+    start = time()
     ir_ = ir.generate_ir(specs)
-    yield IRStep(ir_)
+    yield IRStep(ir_, time() - start)
+    start = time()
     asm = asm_darwin_arm64.generate(ir_)
-    yield ASMStep(asm)
+    yield ASMStep(asm, time() - start)
+    start = time()
     p = run(
-        ["clang", "-o", outfile, "-g", "-x", "assembler", "-"],
+        ["clang", "-o", outfile, "-x", "assembler", "-"],
         input=str(asm),
         text=True,
         check=False,
         capture_output=True,
     )
-    yield CompileStep(p.returncode, p.stdout, p.stderr)
+    yield CompileStep(p.returncode, p.stdout, p.stderr, time() - start)
     if p.returncode != 0:
         return
+    start = time()
     p = run([outfile], check=False, capture_output=True, text=True)
-    yield RunStep(p.returncode, p.stdout, p.stderr)
+    yield RunStep(p.returncode, p.stdout, p.stderr, time() - start)

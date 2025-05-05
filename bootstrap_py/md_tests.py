@@ -7,6 +7,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from time import time
 
 from . import compiler, error, tokenizer
 
@@ -52,6 +53,8 @@ def run_test(test: Test, print_code: str, *, print_signatures: bool) -> list:
                         return handle_errors(step.errors)
                     if step.errors:
                         return handle_errors(step.errors)
+                    if step.duration > 0.1:
+                        print(f" [token:{step.duration * 1000:.0f}]", end="", flush=True)
                 case compiler.ParseStep():
                     if print_code == "ast":
                         print()
@@ -59,6 +62,8 @@ def run_test(test: Test, print_code: str, *, print_signatures: bool) -> list:
                         return handle_errors(step.errors)
                     if step.errors:
                         return handle_errors(step.errors)
+                    if step.duration > 0.1:
+                        print(f" [parse:{step.duration * 1000:.0f}]", end="", flush=True)
                 case compiler.TypecheckStep():
                     if print_code == "types":
                         print()
@@ -66,6 +71,8 @@ def run_test(test: Test, print_code: str, *, print_signatures: bool) -> list:
                         return handle_errors(step.errors)
                     if step.errors:
                         return handle_errors(step.errors)
+                    if step.duration > 0.1:
+                        print(f" [typecheck:{step.duration * 1000:.0f}]", end="", flush=True)
                 case compiler.AbortStep():
                     pass
                 case compiler.LowerStep():
@@ -75,25 +82,35 @@ def run_test(test: Test, print_code: str, *, print_signatures: bool) -> list:
                         print()
                         print(step.debug_or_signature(debug=not print_signatures))
                         return []
+                    if step.duration > 0.1:
+                        print(f" [lower:{step.duration * 1000:.0f}]", end="", flush=True)
                 case compiler.IRStep():
                     if print_code == "ir":
                         print()
                         print(step)
                         return []
+                    if step.duration > 0.1:
+                        print(f" [ir:{step.duration * 1000:.0f}]", end="", flush=True)
                 case compiler.ASMStep():
                     if print_code == "asm":
                         print()
                         print(step)
                         return []
+                    if step.duration > 0.1:
+                        print(f" [asm:{step.duration * 1000:.0f}]", end="", flush=True)
                 case compiler.CompileStep():
                     if step.returncode != 0:
                         return [f"Compilation (clang) failed with code {step.returncode}\n{step.stdout}\n{step.stderr}"]
+                    if step.duration > 0.1:
+                        print(f" [clang:{step.duration * 1000:.0f}]", end="", flush=True)
                 case compiler.RunStep():
                     if step.returncode != 0:
                         return [f"Test exited with code {step.returncode}\n{step.stdout}\n{step.stderr}"]
                     stdout = step.stdout.strip().replace("\0", "")
                     if stdout != test.expected_stdout:
                         return [f"Expected:\n\n`{test.expected_stdout}`\n\ngot:\n\n`{stdout}`"]
+                    if step.duration > 0.1:
+                        print(f" [run:{step.duration * 1000:.0f}]", end="", flush=True)
                 case _:
                     raise ValueError(f"Unknown step: {step}")
     finally:
@@ -177,6 +194,7 @@ def main() -> int:
         test_num = int(args[3]) - 1
         tests = tests[test_num : test_num + 1]
     failed = 0
+    start = time()
     for test in tests:
         print(test.name(), f"at {file}:{test.line}", end="")
         if errors := run_test(test, print_code, print_signatures=signatures):
@@ -189,11 +207,12 @@ def main() -> int:
                     print("at", err.stacktrace)
         elif not print_code:
             print(" \033[0;32mPASS\033[0m")
+    duration = time() - start
     if failed:
-        print(f"\n{failed}/{len(tests)} tests \033[0;31mFAILED\033[0m")
+        print(f"\n{failed}/{len(tests)} tests in {duration * 1000:.0f}ms \033[0;31mFAILED\033[0m")
         return 2
     if not print_code:
-        print(f"\nAll {len(tests)} tests \033[0;32mPASSED\033[0m")
+        print(f"\nAll {len(tests)} tests in {duration:.2f}s \033[0;32mPASSED\033[0m")
     return 0
 
 

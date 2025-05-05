@@ -15,7 +15,7 @@ class TypeEnv:
         return self.resolve(typ)
 
     def resolve(self, typ: types.Type) -> types.Type:
-        return self.type_res_scope.resolve(typ, resolve_member_target_self_typ=True)
+        return self.type_res_scope.resolve(typ)
 
 
 @dataclass

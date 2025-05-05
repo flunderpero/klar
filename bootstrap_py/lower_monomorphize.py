@@ -43,7 +43,7 @@ class Monomorphize:
 
     def enqueue_if_needed(self, typ: types.ParameterizedType, call_args: list[types.Type] | None) -> None:
         type_res_scope = types.TypeResScope(typ.type_res_scope, self.type_res_scope)
-        fn = type_res_scope.resolve(typ, resolve_member_target_self_typ=True)
+        fn = type_res_scope.resolve(typ)
         if not isinstance(fn, types.Fn) or not fn.is_named:
             return
         assert all(not isinstance(x, (types.TypeParam, types.Trait)) for x in fn.type_args), (

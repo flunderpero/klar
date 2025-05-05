@@ -418,16 +418,8 @@ class TypeResScope:
             return self.parent.find(type_param)
         return None
 
-    def resolve(
-        self, typ: Type, seen: dict[str, Type] | None = None, *, resolve_member_target_self_typ: bool = False
-    ) -> Type:
-        """Resolve the type based on all the declared types.
-
-        :param resolve_member_target_self_typ: If True and `typ` is `Member`, try to first resolve
-            the `Self` type of the target to a concrete type. This parameter is _not_ passed down
-            to the recursive calls.
-
-        """
+    def resolve(self, typ: Type, seen: dict[str, Type] | None = None) -> Type:
+        """Resolve the type based on all the declared types."""
         if seen is not None:
             seen_typ = seen.get(full_id(typ))
             if seen_typ is not None:
@@ -453,12 +445,6 @@ class TypeResScope:
                 if isinstance(target, TypeParam):
                     target = target.trait_bound
                     assert target is not None
-                if resolve_member_target_self_typ and isinstance(target, Trait):
-                    self_typ = scope.find(target.self_typ)
-                    if self_typ:
-                        # We can resolve the Self type of a concrete type.
-                        target = scope.resolve(self_typ)
-                        assert isinstance(target, Trait | Struct)
                 field = target.member(typ.field)
                 assert field, f"member `{typ.field}` not found in {target}"
                 typ = scope.resolve(field.typ)

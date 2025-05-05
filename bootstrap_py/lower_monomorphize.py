@@ -46,16 +46,19 @@ class Monomorphize:
         fn = type_res_scope.resolve(typ)
         if not isinstance(fn, types.Fn) or not fn.is_named:
             return
-        assert all(not isinstance(x, (types.TypeParam, types.Trait)) for x in fn.type_args), (
-            f"at least one type param unresolved or resolved to a trait: {fn.debug()} at {fn.span}"
-        )
+        for i, arg in enumerate(fn.type_args):
+            assert not isinstance(arg, (types.TypeParam, types.Trait)), (
+                f"{fn}: type parameter #{i + 1} is unresolved or resolved to a trait: {arg.debug()} at {fn.span}"
+            )
         fn_def = self.fn_defs[fn.id]
+        for p, a in zip(fn.type_params, fn.type_args):
+            type_res_scope.declare(p, type_res_scope.resolve(a))
+        fn = type_res_scope.resolve(fn)
+        assert isinstance(fn, types.Fn)
         key = types.full_id(fn)
         if key in self.seen:
             return
         self.seen.add(key)
-        for p, a in zip(fn.type_params, fn.type_args):
-            type_res_scope.declare(p, type_res_scope.resolve(a))
         if call_args:
             assert all(not isinstance(type_res_scope.resolve(x), (types.TypeParam, types.Trait)) for x in call_args), (
                 f"at least one call arg is unresolved or resolved to a trait: {call_args} {fn.debug()} at {fn.span}"

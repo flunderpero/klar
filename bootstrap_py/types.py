@@ -372,6 +372,34 @@ class TypeParam:
     def fqn(self) -> FQN:
         return FQN([self.name])
 
+    @property
+    def type_params(self) -> TypeParams:
+        if isinstance(self.trait_bound, ParameterizedType):
+            return self.trait_bound.type_params
+        return []
+
+    @property
+    def type_args(self) -> TypeArgs:
+        if isinstance(self.trait_bound, ParameterizedType):
+            return self.trait_bound.type_args
+        return []
+
+    @property
+    def type_res_scope(self) -> TypeResScope | None:
+        if isinstance(self.trait_bound, ParameterizedType):
+            return self.trait_bound.type_res_scope
+        return None
+
+    @type_res_scope.setter
+    def type_res_scope(self, value: TypeResScope | None) -> None:
+        if isinstance(self.trait_bound, ParameterizedType):
+            self.trait_bound.type_res_scope = value
+
+    def member(self, name: str) -> FieldOrParam | None:
+        if self.trait_bound:
+            return self.trait_bound.member(name)
+        return None
+
 
 TypeParams = list[TypeParam]
 TypeArgs = list["Type"]
@@ -430,10 +458,25 @@ class TypeResScope:
                 res = typ
                 while isinstance(res, TypeParam):
                     typ2 = self.find(res)
-                    if not typ2 or res == typ2:
+                    if not typ2 or res.id == typ2.id:
                         break
                     res = typ2
                 typ = res
+                if isinstance(typ, TypeParam) and typ.trait_bound:
+                    scope = self
+                    if typ.type_res_scope != self:
+                        scope = TypeResScope(typ.type_res_scope, self)
+                    if seen is None:
+                        seen = {}
+                    tb = typ.trait_bound
+                    typ = TypeParam(
+                        typ.id,
+                        typ.name,
+                        tb,
+                        typ.span,
+                    )
+                    seen[full_id(typ)] = typ
+                    typ.trait_bound = cast(Trait, scope.resolve(tb, seen))
             case Member():
                 scope = self
                 if typ.type_res_scope != self:
@@ -551,7 +594,7 @@ class TypeResScope:
         if self.overrides:
             s.append(f"    self.overrides: {id(self.overrides)}")
         for k, v in self.flatten().items():
-            s.append(f"    {k}={v.debug(seen)}")
+            s.append(f"   {k}={v.debug(seen).replace('\n', '\n    ')}")
         return f"TypeResScope(\n{'\n'.join(s)}\n)"
 
     def __repr__(self) -> str:
@@ -586,31 +629,52 @@ def instance[T: ParameterizedType](typ: T, type_res_scope: TypeResScope | None) 
     return clone
 
 
-def infer_type_args_from_call_args(typ: CallableType, call_args: list[Type]) -> None:
+def infer_type_args_from_call_args(callee: CallableType, call_args: list[Type]) -> None:
     """Declare all type parameters with their type if we find a match in `call_args`.
 
     `typ.type_res_scope` is modified.
     """
+
+    def infer(param_: TypeParam, arg: Type, type_res_scope: TypeResScope) -> TypeResScope:
+        param = type_res_scope.resolve(param_)
+        if not isinstance(param, TypeParam):
+            # Already resolved.
+            return type_res_scope
+        type_res_scope = TypeResScope(type_res_scope, None)
+        arg = type_res_scope.resolve(arg)
+        if param.id not in type_res_scope.types:
+            type_res_scope.declare(param, arg)
+        tb = param.trait_bound
+        if not tb:
+            return type_res_scope
+        assert isinstance(arg, ParameterizedType)
+        assert len(tb.type_params) == len(arg.type_args), f"type params and args mismatch: {tb} {arg}"
+        for tp, ta in zip(tb.type_params, tb.type_args):
+            if tp.id not in type_res_scope.types:
+                type_res_scope.declare(tp, ta)
+        for tp, ta in zip(tb.type_params, arg.type_args):
+            if isinstance(tp, TypeParam):
+                type_res_scope = TypeResScope(infer(tp, ta, type_res_scope), None)
+        return type_res_scope
+
     params: list[Type]
-    match typ:
+    match callee:
         case Fn():
-            params = [x.typ for x in typ.params_without_self()]
+            params = [x.typ for x in callee.params]
         case Struct():
-            params = [x.typ for x in typ.fields]
+            params = [x.typ for x in callee.fields]
         case _:
-            raise AssertionError(f"unhandled type: {typ}")
+            raise AssertionError(f"unhandled type: {callee}")
     assert len(params) == len(call_args), f"expected {len(params)} call args, got {len(call_args)}"
-    if typ.type_res_scope is None:
-        typ.type_res_scope = TypeResScope(None, None)
-    for i, param in enumerate(params):
+    if callee.type_res_scope is None:
+        callee.type_res_scope = TypeResScope(None, None)
+    for arg, param in zip(call_args, params):
         if isinstance(param, TypeParam):
-            resolved = typ.type_res_scope.resolve(param)
-            if not isinstance(resolved, TypeParam):
-                # We already got this.
-                continue
-            # Only declare the type variable if it is not already declared.
-            if resolved.id not in typ.type_res_scope.types:
-                typ.type_res_scope.declare(resolved, call_args[i])
+            type_res_scope = infer(param, arg, callee.type_res_scope)
+            for tp in callee.type_params:
+                ta = type_res_scope.find(tp)
+                if ta and tp.id not in callee.type_res_scope.types:
+                    callee.type_res_scope.declare(tp, ta)
 
 
 built_in_span = Span("<built-in>", "", 0, 0)
@@ -652,7 +716,7 @@ class Builtins:
 
 
 Type = Int | Str | Bool | Fn | Struct | Trait | Member | NoneTyp | TypeParam | TypeCheckError
-ParameterizedType = Fn | Struct | Trait | Member
+ParameterizedType = Fn | Struct | Trait | Member | TypeParam
 ImplementableType = Struct | Trait
 CallableType = Fn | Struct
 
@@ -674,7 +738,11 @@ def is_assignable_from(target: Type, from_: Type) -> bool:
         case TypeCheckError():
             return False
         case TypeParam():
-            return target.id == from_.id
+            if target.id == from_.id:
+                return True
+            if not target.trait_bound:
+                return False
+            return is_assignable_from(target.trait_bound, from_)
         case Struct():
             return target.id == from_.id
         case Trait():

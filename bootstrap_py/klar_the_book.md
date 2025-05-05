@@ -235,8 +235,6 @@ struct Foo {}
 
 fn (Greeter) Foo::greet(self) Str => "PASS"
 
--- todo: test that Foo can be treated as Greeter.
-
 fn main() {
     let foo = Foo()
     print(foo.greet())
@@ -314,15 +312,53 @@ fn (HelloWorld) Foo::hello(self) Int => 42 -- ERROR: Method signature `test::Foo
 fn main() {}
 ```
 
-```todo
+```klar
 trait HelloWorld {
     fn hello(self) Str
 }
 
 struct Foo {}
 
-fn (HelloWorld) Foo::hello<Int>(self) Str => "Hello" -- ERROR: Method signature `test::Foo::hello<Int>(self test::Foo) I64` does not match trait method signature `test::HelloWorld::hello(self test::Foo) Str`
+fn (HelloWorld) Foo::hello<Int>(self) Str => "Hello" -- ERROR: Method signature `test::Foo::hello<Int, test::Foo>(self test::Foo) Str` does not match trait method signature `test::HelloWorld::hello(self test::Foo) Str`
 
+```
+
+Trait types cannot be used as function parameters:
+todo: we should totally support that
+
+```todo
+trait Stringify {
+    fn stringify(self) Str
+}
+
+struct Foo {}
+
+fn (Stringify) Foo::stringify(self) Str => "Foo"
+
+fn print_str(s Stringify) => print(s.stringify())
+
+fn main() {
+    print_str(Foo())
+}
+```
+
+Trait types cannot be used as return type:
+todo: we should totally support that
+
+```todo
+trait Stringify {
+    fn stringify(self) Str
+}
+
+struct Foo {}
+
+fn (Stringify) Foo::stringify(self) Str => "Foo"
+
+fn some_stringifier() Stringify => Foo()
+
+fn main() {
+    print(some_stringifier().stringify())
+}
 ```
 
 </details>
@@ -1248,7 +1284,7 @@ fn print_any<T Stringify>(s T) {
 
 fn main() {
     let iv = IntValue(42)
-    print_any<IntValue>(iv)
+    print_any(iv)
 }
 
 ```
@@ -1300,13 +1336,16 @@ fn (Wrapped<A>) Value::unwrap(self) A => self.value
 fn unwrap<D, E Wrapped<D>>(value E) D => value.unwrap()
 
 fn main() {
-    print(unwrap<Str, Value<Str>>(Value("PASS")))
+    print(unwrap<Str, Value<Str>>(Value("PASS1")))
+    -- Type arguments can also be inferred.
+    print(unwrap(Value("PASS2")))
 }
 
 ```
 
 ```
-PASS
+PASS1
+PASS2
 ```
 
 ```klar
@@ -1334,7 +1373,8 @@ fn main() {
     let s = Value("PASS")
     let i = Value(42)
     print(unwrap_first<Str, Value<Str>, Int, Value<Int>>(s, i))
-    print(int_to_str(unwrap_second<Str, Value<Str>, Int, Value<Int>>(s, i)))
+    -- Type arguments can also be inferred.
+    print(int_to_str(unwrap_second(s, i)))
 }
 
 ```

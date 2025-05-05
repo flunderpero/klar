@@ -178,7 +178,23 @@ class TypeChecker:
                     if not isinstance(tb, types.Trait):
                         self.error(error.unexpected_type("trait", str(tb), node.trait_bound.span))
                         return types.TypeCheckError(self.id(), "not a trait", node.trait_bound.span)
+                    tb = types.instance(tb, types.TypeResScope(None, None))
+                    assert tb.type_res_scope
                     type_param.trait_bound = tb
+                    # todo: trait bound type parameters should be parsed after all types have been
+                    #       forward declared.
+                    if len(tb.type_params) != len(node.trait_bound.type_args):
+                        self.error(
+                            error.wrong_number_of_type_args(
+                                len(tb.type_params), len(node.trait_bound.type_args), node.span, tb.span
+                            )
+                        )
+                        return types.TypeCheckError(self.id(), "wrong number of type args", node.span)
+                    for i, type_arg_node in enumerate(node.trait_bound.type_args):
+                        type_arg = self.type_node_type(type_arg_node)
+                        if isinstance(type_arg, types.TypeCheckError):
+                            return type_arg
+                        tb.type_res_scope.declare(tb.type_params[i], type_arg)
                 return type_param
             case _:
                 raise AssertionError(f"Type checking not implemented for: {node.__class__}")
@@ -228,6 +244,8 @@ class TypeChecker:
                     with self.child_scope(node):
                         for type_param in decl.type_params:
                             type_param_typ = self.type_node_type(type_param)
+                            if isinstance(type_param_typ, types.TypeCheckError):
+                                continue
                             assert isinstance(type_param_typ, types.TypeParam)
                             typ.type_params.append(type_param_typ)
                             typ.type_args.append(type_param_typ)
@@ -242,9 +260,7 @@ class TypeChecker:
                         receiver = self.scope.get_forward_declared(decl.receiver)
                         assert receiver is not None and isinstance(receiver.typ, types.ImplementableType)
                         typ.type_params.append(receiver.typ.self_typ)
-                        # todo: We should add the self type to the type args too, but it breaks
-                        #       monomorphization of some generic examples.
-                        # typ.type_args.append(receiver.typ.self_typ)
+                        typ.type_args.append(receiver.typ.self_typ)
 
         # Stage 3: Fully parse all previously forward declared types.
         def stage3_fndecl(node: ast.Node, decl: ast.FnDecl, typ: types.Fn, *, is_def: bool) -> None:
@@ -351,8 +367,8 @@ class TypeChecker:
                             self.scope.declare(type_param.name, type_param)
                         fields: list[types.FieldOrParam] = []
                         for m_node in node.fields:
-                            m_typ = self.type_node_type(m_node.typ)
-                            fields.append(types.FieldOrParam(m_node.name, m_typ))
+                            impl_method = self.type_node_type(m_node.typ)
+                            fields.append(types.FieldOrParam(m_node.name, impl_method))
                         typ.fields = fields
                     self.scope.finish_forward_declared(node.name)
                     self.type_env.set_node_type(node, typ)
@@ -364,7 +380,7 @@ class TypeChecker:
                             self.scope.declare(type_param.name, type_param)
                         for m_node in node.methods:
                             fqn = typ.fqn.concat(m_node.name)
-                            m_typ = types.Fn(
+                            impl_method = types.Fn(
                                 self.id(),
                                 fqn,
                                 [],
@@ -378,11 +394,11 @@ class TypeChecker:
                             for type_param in m_node.type_params:
                                 type_param_typ = self.type_node_type(type_param)
                                 assert isinstance(type_param_typ, types.TypeParam)
-                                m_typ.type_params.append(type_param_typ)
-                                m_typ.type_args.append(type_param_typ)
-                            m_typ.type_params.append(typ.self_typ)
-                            m_typ.type_args.append(typ.self_typ)
-                            stage3_fndecl(node, m_node, m_typ, is_def=False)
+                                impl_method.type_params.append(type_param_typ)
+                                impl_method.type_args.append(type_param_typ)
+                            impl_method.type_params.append(typ.self_typ)
+                            impl_method.type_args.append(typ.self_typ)
+                            stage3_fndecl(node, m_node, impl_method, is_def=False)
                             self.type_env.set_node_type(m_node, self.type_env.builtins.NoneTyp)
                     self.scope.finish_forward_declared(node.name)
                     self.type_env.set_node_type(node, typ)
@@ -398,13 +414,13 @@ class TypeChecker:
             if isinstance(impl_typ, types.Trait):
                 continue
             assert isinstance(impl_typ, types.ImplementableType)
-            for m_typ in impl_typ.methods:
-                self_typ = next((x for x in m_typ.typ.type_params if x.name == "Self"), None)
-                assert self_typ is not None, f"Expected type parameter `Self` in {m_typ.typ.signature()}"
+            for impl_method in impl_typ.methods:
+                self_typ = next((x for x in impl_method.typ.type_params if x.name == "Self"), None)
+                assert self_typ is not None, f"Expected type parameter `Self` in {impl_method.typ.signature()}"
                 assert self_typ.name == "Self", f"Expected `Self` as the first type parameter, got {self_typ.name}"
-                if m_typ.typ.type_res_scope is None:
-                    m_typ.typ.type_res_scope = types.TypeResScope(None, impl_typ.type_res_scope)
-                m_typ.typ.type_res_scope.declare(self_typ, impl_typ)
+                if impl_method.typ.type_res_scope is None:
+                    impl_method.typ.type_res_scope = types.TypeResScope(None, impl_typ.type_res_scope)
+                impl_method.typ.type_res_scope.declare(self_typ, impl_typ)
 
         # If there are errors up until now, we don't check any further.
         if self.errors:
@@ -421,7 +437,10 @@ class TypeChecker:
                 if not trait_method:
                     self.error(error.no_member(default_impl.name, str(trait.fqn), default_impl.typ.span, node.span))
                     continue
-                if not types.is_assignable_from(default_impl.typ, trait_method.typ):
+                assert isinstance(trait_method.typ, types.Fn)
+                if not types.is_assignable_from(trait_method.typ, default_impl.typ) or len(
+                    trait_method.typ.type_params
+                ) != len(default_impl.typ.type_params):
                     self.error(
                         error.trait_method_impl_mismatch(
                             trait_method.typ.signature(),
@@ -437,40 +456,47 @@ class TypeChecker:
         for node in nodes:
             if not isinstance(node, ast.ImplementableNode):
                 continue
-            node_typ = self.type_env.get_node_type(node)
-            if isinstance(node_typ, types.Trait):
+            impl_typ = self.type_env.get_node_type(node)
+            if isinstance(impl_typ, types.Trait):
                 continue
-            assert isinstance(node_typ, types.ImplementableType)
+            assert isinstance(impl_typ, types.ImplementableType)
 
             # Resolving the `node_typ` will also resolve all `node_typ.traits` so the
             # method signatures should match.
-            resolved_typ = types.resolve(node_typ)
+            resolved_typ = types.resolve(impl_typ)
             for trait in resolved_typ.traits:
                 trait_method_names = [method.name for method in trait.methods]
-                for t_typ in trait.methods:
-                    default_typ = next((x for x in resolved_typ.methods if x.name == t_typ.name), None)
-                    if default_typ is None:
+                for trait_method in trait.methods:
+                    impl_method = next((x for x in resolved_typ.methods if x.name == trait_method.name), None)
+                    if impl_method is None:
                         # Use the default impl if there is one.
-                        default_impl = trait.default_impl(t_typ.name)
+                        default_impl = trait.default_impl(trait_method.name)
                         if default_impl:
                             default_typ = types.instance(
-                                default_impl.typ, types.TypeResScope(node_typ.type_res_scope, None)
+                                default_impl.typ, types.TypeResScope(impl_typ.type_res_scope, None)
                             )
                             assert default_typ.type_res_scope
-                            default_typ.type_res_scope.declare(trait.self_typ, node_typ)
-                            node_typ.methods.append(types.FieldOrParam(t_typ.name, default_typ))
+                            default_typ.type_res_scope.declare(trait.self_typ, impl_typ)
+                            impl_typ.methods.append(types.FieldOrParam(trait_method.name, default_typ))
                             continue
                         impl_span = (
                             next((x.typ.span for x in resolved_typ.methods if x.name in trait_method_names), None)
                             or node.span
                         )
-                        trait_span = next(x.typ.span for x in trait.methods if x.name == t_typ.name)
-                        self.error(error.trait_method_impl_missing(str(trait.fqn), t_typ.name, trait_span, impl_span))
+                        trait_span = next(x.typ.span for x in trait.methods if x.name == trait_method.name)
+                        self.error(
+                            error.trait_method_impl_missing(str(trait.fqn), trait_method.name, trait_span, impl_span)
+                        )
                         continue
-                    if not types.is_assignable_from(default_typ.typ, t_typ.typ):
+                    if not types.is_assignable_from(trait_method.typ, impl_method.typ) or len(
+                        trait_method.typ.type_params
+                    ) != len(impl_method.typ.type_params):
                         self.error(
                             error.trait_method_impl_mismatch(
-                                t_typ.typ.signature(), default_typ.typ.signature(), t_typ.typ.span, default_typ.typ.span
+                                trait_method.typ.signature(),
+                                impl_method.typ.signature(),
+                                trait_method.typ.span,
+                                impl_method.typ.span,
                             )
                         )
                         continue
@@ -489,7 +515,11 @@ class TypeChecker:
             return
 
         callee_type_res_scope = callee.type_res_scope
-        types.infer_type_args_from_call_args(callee, [self.type_env.get_node_type(x) for x in node.args])
+        infer_call_args = node.args
+        if isinstance(callee, types.Fn) and callee.is_instance_method():
+            assert isinstance(node.callee, ast.Member), f"Expected a member, got {node.callee}"
+            infer_call_args = [node.callee.target, *node.args]
+        types.infer_type_args_from_call_args(callee, [self.type_env.get_node_type(x) for x in infer_call_args])
         callee = types.resolve(callee)
 
         params: list[types.FieldOrParam]
@@ -586,15 +616,12 @@ class TypeChecker:
                         return
                     self.type_env.set_node_type(node, member_typ.typ)
                     return
-                target_typ: types.Struct | types.Trait
+                target_typ: types.Struct | types.Trait | types.TypeParam
                 match target_instance:
                     case types.Struct() | types.Trait():
                         target_typ = target_instance
                     case types.TypeParam():
-                        if target_instance.trait_bound is None:
-                            self.error(error.type_param_not_bound(target_instance.name, node.target.span), node)
-                            return
-                        target_typ = target_instance.trait_bound
+                        target_typ = target_instance
                     case _:
                         self.error(
                             error.unexpected_type("a struct or trait", target_instance.signature(), node.target.span),

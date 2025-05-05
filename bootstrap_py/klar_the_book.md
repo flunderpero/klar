@@ -174,7 +174,7 @@ struct Planet {
     name Str
 }
 
-fn Planet::diameter(self, s Str) Int {
+fn Planet.diameter(self, s Str) Int {
     self.radius + self.radius
 }
 
@@ -199,7 +199,7 @@ struct Value {
 }
 
 fn main() {
-    fn Value::hello(self) {} -- ERROR: `Value` is not declared in the current scope
+    fn Value.hello(self) {} -- ERROR: `Value` is not declared in the current scope
 }
 ```
 
@@ -207,7 +207,7 @@ Of course, the target type has to exist.
 
 ```klar
 
-fn Value::hello(self) {} -- ERROR: Undefined name `Value`
+fn Value.hello(self) {} -- ERROR: Undefined name `Value`
 
 fn main() {}
 ```
@@ -233,7 +233,7 @@ trait Greeter {
 
 struct Foo {}
 
-fn (Greeter) Foo::greet(self) Str => "PASS"
+fn (Greeter) Foo.greet(self) Str => "PASS"
 
 fn main() {
     let foo = Foo()
@@ -254,19 +254,19 @@ trait HelloWorld {
     fn print(self) None
 }
 
-fn HelloWorld::hello(self) Str => "Hello"
+fn HelloWorld.hello(self) Str => "Hello"
 
-fn HelloWorld::print(self) {
+fn HelloWorld.print(self) {
     print(self.hello())
     print(self.world())
 }
 
 struct TheHelloWorld {}
-fn (HelloWorld) TheHelloWorld::world(self) Str => "world"
+fn (HelloWorld) TheHelloWorld.world(self) Str => "world"
 
 struct TheHiYou {}
-fn (HelloWorld) TheHiYou::hello(self) Str => "Hi"
-fn (HelloWorld) TheHiYou::world(self) Str => "you"
+fn (HelloWorld) TheHiYou.hello(self) Str => "Hi"
+fn (HelloWorld) TheHiYou.world(self) Str => "you"
 
 fn main() {
     TheHelloWorld().print()
@@ -295,7 +295,7 @@ trait HelloWorld {
 
 struct Foo {}
 
-fn (HelloWorld) Foo::hello(self) Str => "Hello" -- ERROR: Missing implementation of trait method `world` in trait `test::HelloWorld`
+fn (HelloWorld) Foo.hello(self) Str => "Hello" -- ERROR: Missing implementation of trait method `world` in trait `test.HelloWorld`
 fn main() {}
 ```
 
@@ -308,7 +308,7 @@ trait HelloWorld {
 
 struct Foo {}
 
-fn (HelloWorld) Foo::hello(self) Int => 42 -- ERROR: Method signature `test::Foo::hello(self test::Foo) I64` does not match trait method signature `test::HelloWorld::hello(self test::Foo) Str`
+fn (HelloWorld) Foo.hello(self) Int => 42 -- ERROR: Method signature `test.Foo.hello(self test.Foo) I64` does not match trait method signature `test.HelloWorld.hello(self test.Foo) Str`
 fn main() {}
 ```
 
@@ -319,7 +319,7 @@ trait HelloWorld {
 
 struct Foo {}
 
-fn (HelloWorld) Foo::hello<Int>(self) Str => "Hello" -- ERROR: Method signature `test::Foo::hello<Int, test::Foo>(self test::Foo) Str` does not match trait method signature `test::HelloWorld::hello(self test::Foo) Str`
+fn (HelloWorld) Foo.hello<Int>(self) Str => "Hello" -- ERROR: Method signature `test.Foo.hello<Int, test.Foo>(self test.Foo) Str` does not match trait method signature `test.HelloWorld.hello(self test.Foo) Str`
 
 ```
 
@@ -333,7 +333,7 @@ trait Stringify {
 
 struct Foo {}
 
-fn (Stringify) Foo::stringify(self) Str => "Foo"
+fn (Stringify) Foo.stringify(self) Str => "Foo"
 
 fn print_str(s Stringify) => print(s.stringify())
 
@@ -352,7 +352,7 @@ trait Stringify {
 
 struct Foo {}
 
-fn (Stringify) Foo::stringify(self) Str => "Foo"
+fn (Stringify) Foo.stringify(self) Str => "Foo"
 
 fn some_stringifier() Stringify => Foo()
 
@@ -395,7 +395,7 @@ struct Adder {
     f fn(Int, Int) Int
 }
 
-fn Adder::add(self, a Int, b Int) Int {
+fn Adder.add(self, a Int, b Int) Int {
     self.f(a, b)
 }
 
@@ -523,7 +523,7 @@ struct FuncBox {
     f fn() Str
 }
 
-fn FuncBox::get(self) fn() Str {
+fn FuncBox.get(self) fn() Str {
     self.f
 }
 
@@ -1022,7 +1022,7 @@ struct Value<T> {
     value T
 }
 
-fn Value::get(self) T {
+fn Value.get(self) T {
     self.value
 }
 
@@ -1047,7 +1047,7 @@ trait ReturnIt<T> {
     fn return_it(self, t T) T
 }
 
-fn (ReturnIt<Str>) Value::return_it(self, t Str) Str => t
+fn (ReturnIt<Str>) Value.return_it(self, t Str) Str => t
 
 fn main() {
     let v = Value("FAIL")
@@ -1179,13 +1179,13 @@ struct ValueA<T> {
     a T
 }
 
-fn ValueA::get(self) T => self.a
+fn ValueA.get(self) T => self.a
 
 struct ValueB<B> {
     b B
 }
 
-fn ValueB::get(self) B => self.b
+fn ValueB.get(self) B => self.b
 
 fn main() {
     let v = ValueA(ValueB("PASS"))
@@ -1205,7 +1205,7 @@ struct Value<A> {
 }
 
 -- This shadows the type parameter `A` of `Value<A>`.
-fn Value::pass_through<A>(self, x A) A {
+fn Value.pass_through<A>(self, x A) A {
     x
 }
 
@@ -1233,9 +1233,9 @@ trait ReturnIt<T> {
     fn return_it_again(self, t T) T
 }
 
-fn (ReturnIt<Str>) Value::return_it(self, t Str) Str => t
+fn (ReturnIt<Str>) Value.return_it(self, t Str) Str => t
 
-fn (ReturnIt<Int>) Value::return_it_again(self, t Int) Int => t -- ERROR: Trait has already been implemented for `test::Value` with signature `test::ReturnIt<Str>`
+fn (ReturnIt<Int>) Value.return_it_again(self, t Int) Int => t -- ERROR: Trait has already been implemented for `test.Value` with signature `test.ReturnIt<Str>`
 
 fn main() {}
 ```
@@ -1251,7 +1251,7 @@ trait ReturnIt<T> {
     fn return_it(self, t T) T
 }
 
-fn (ReturnIt<T>) Value::return_it(self, t T) T => self.value
+fn (ReturnIt<T>) Value.return_it(self, t T) T => self.value
 
 fn main() {
     let v = Value("PASS")
@@ -1276,7 +1276,7 @@ struct IntValue {
     value Int
 }
 
-fn (Stringify) IntValue::stringify(self) Str => int_to_str(self.value)
+fn (Stringify) IntValue.stringify(self) Str => int_to_str(self.value)
 
 fn print_any<T Stringify>(s T) {
     print(s.stringify())
@@ -1304,11 +1304,11 @@ struct Value<T Stringify> {
     value T
 }
 
-fn (Stringify) Value::stringify(self) Str => self.value.stringify()
+fn (Stringify) Value.stringify(self) Str => self.value.stringify()
 
 struct Pass {}
 
-fn (Stringify) Pass::stringify(self) Str => "PASS"
+fn (Stringify) Pass.stringify(self) Str => "PASS"
 
 fn main() {
     let v = Value(Pass())
@@ -1331,7 +1331,7 @@ trait Wrapped<B> {
     fn unwrap(self) B
 }
 
-fn (Wrapped<A>) Value::unwrap(self) A => self.value
+fn (Wrapped<A>) Value.unwrap(self) A => self.value
 
 fn unwrap<D, E Wrapped<D>>(value E) D => value.unwrap()
 
@@ -1357,7 +1357,7 @@ trait Wrapped<B> {
     fn unwrap(self) B
 }
 
-fn (Wrapped<A>) Value::unwrap(self) A => self.value
+fn (Wrapped<A>) Value.unwrap(self) A => self.value
 
 fn unwrap_first<D, E Wrapped<D>, F, G Wrapped<F>>(first E, second G) D {
     second.unwrap()
@@ -1398,9 +1398,9 @@ trait Intify {
     fn intify(self) Int
 }
 
-fn Stringify::stringify(self) Str => "Hello"
+fn Stringify.stringify(self) Str => "Hello"
 
-fn (Intify) Stringify::intify(self) Int => 42 -- ERROR: Traits cannot implement other traits
+fn (Intify) Stringify.intify(self) Int => 42 -- ERROR: Traits cannot implement other traits
 
 fn main() {}
 ```
@@ -1412,7 +1412,7 @@ trait Stringify {
     fn stringify(self) Str
 }
 
-fn Stringify::stringify(self) Int => 42 -- ERROR: Method signature `test::Stringify::stringify(self Self) I64` does not match trait method signature `test::Stringify::stringify(self Self) Str`
+fn Stringify.stringify(self) Int => 42 -- ERROR: Method signature `test.Stringify.stringify(self Self) I64` does not match trait method signature `test.Stringify.stringify(self Self) Str`
 ```
 
 </details
@@ -1549,7 +1549,7 @@ struct Value {
     value Str
 }
 
-fn Value::print(i Int, self) {} -- ERROR: `self` is not allowed here
+fn Value.print(i Int, self) {} -- ERROR: `self` is not allowed here
 ```
 
 `self` parameter cannot be used in regular functions:

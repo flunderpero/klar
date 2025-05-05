@@ -286,11 +286,11 @@ class FnDecl:
     def fullname(self) -> str:
         if self.receiver is None:
             return self.name
-        return f"{self.receiver}::{self.name}"
+        return f"{self.receiver}.{self.name}"
 
     def __str__(self) -> str:
         type_params = generics_to_str(self.type_params)
-        receiver = (self.receiver + "::") if self.receiver is not None else ""
+        receiver = (self.receiver + ".") if self.receiver is not None else ""
         trait = (f"({self.trait_qualifier}) ") if self.trait_qualifier is not None else ""
         return (
             nid(self.id)

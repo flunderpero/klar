@@ -194,7 +194,7 @@ class Parser:
         match t.kind:
             case token.Kind.type_ident:
                 receiver = t.value_str()
-                if not self.expect(token.Kind.douple_colon):
+                if not self.expect(token.Kind.dot):
                     return None
                 name = self.expect_ident()
                 if name is None:

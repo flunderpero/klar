@@ -9,7 +9,7 @@ def lower_instance_methods(module: ast.Module, type_env: typechecker.TypeEnv) ->
     This turns calls like this:
         instance.method(x, y)
     to this:
-        Instance::method(instance, x, y)
+        Instance.method(instance, x, y)
     """
 
     def visit(node: ast.Node, _parent: ast.Node | None) -> None:

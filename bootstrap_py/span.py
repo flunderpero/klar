@@ -92,7 +92,7 @@ class FQN:
     path: list[str]
 
     def __str__(self) -> str:
-        return "::".join(self.path)
+        return ".".join(self.path)
 
     def concat(self, *parts: str) -> FQN:
         return FQN(self.path + list(parts))

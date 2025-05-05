@@ -185,13 +185,12 @@ class FnGen:
     def fn_name(self, name: str) -> str:
         if name == "main":
             return "_main"
-        return f".{name.replace('::', '$$')}"
+        return f".{name}"
 
     def block_label(self, suffix: str | int) -> str:
         if isinstance(suffix, int):
             suffix = str(suffix)
-        name = self.ir.fn_name.replace("::", "$$")
-        return f".{name}_{suffix}"
+        return f".{self.ir.fn_name}_{suffix}"
 
     def generate(self) -> ASM:
         # First generate all the code so that we know how large the stack frame will have to be

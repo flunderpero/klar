@@ -85,6 +85,6 @@ def monomorphize(module: ast.Module, type_env: typechecker.TypeEnv) -> list[lowe
 
     visit(module, None)
     assert isinstance(main, types.Fn), f"main function not found: {main}"
-    runner.enqueue_if_needed(types.instance(main, None), None)
+    runner.enqueue_if_needed(types.instance(main, types.TypeResScope.empty()), None)
     runner.run()
     return runner.fn_specs

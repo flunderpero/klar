@@ -154,7 +154,7 @@ class TypeChecker:
                     self.scope.fqn().concat("<anonymous>"),
                     type_params,
                     type_params,
-                    None,
+                    types.TypeResScope.empty(),
                     [types.FieldOrParam(f"p{i + 1}", self.type_node_type(x)) for i, x in enumerate(node.params)],
                     self.type_node_type(node.result),
                     node.span,
@@ -213,20 +213,32 @@ class TypeChecker:
                     decl = node if isinstance(node, ast.FnDecl) else node.decl
                     fqn = self.scope.fqn().concat(decl.fullname())
                     typ = types.Fn(
-                        self.id(), fqn, [], [], None, [], self.type_env.builtins.NoneTyp, decl.span, is_named=True
+                        self.id(),
+                        fqn,
+                        [],
+                        [],
+                        types.TypeResScope.empty(),
+                        [],
+                        self.type_env.builtins.NoneTyp,
+                        decl.span,
+                        is_named=True,
                     )
                     existing = self.scope.forward_declare(decl.fullname(), typ)
                     if existing:
                         self.error(error.duplicate_declaration(decl.fullname(), decl.span, existing.typ.span))
                 case ast.Struct():
                     fqn = self.scope.fqn().concat(node.name)
-                    typ = types.Struct(self.id(), fqn, [], [], self.self_typ_(), None, [], [], [], node.span)
+                    typ = types.Struct(
+                        self.id(), fqn, [], [], self.self_typ_(), types.TypeResScope.empty(), [], [], [], node.span
+                    )
                     existing = self.scope.forward_declare(node.name, typ)
                     if existing:
                         self.error(error.duplicate_declaration(node.name, node.span, existing.typ.span))
                 case ast.Trait():
                     fqn = self.scope.fqn().concat(node.name)
-                    typ = types.Trait(self.id(), fqn, [], [], self.self_typ_(), None, [], [], node.span)
+                    typ = types.Trait(
+                        self.id(), fqn, [], [], self.self_typ_(), types.TypeResScope.empty(), [], [], node.span
+                    )
                     # The self type of a trait must have a trait bound (the trait itself)
                     # so late type resolution works correctly.
                     typ.self_typ.trait_bound = typ
@@ -360,8 +372,6 @@ class TypeChecker:
                 case ast.Struct():
                     typ = self.scope.get_forward_declared(node.name).typ
                     assert isinstance(typ, types.Struct)
-                    if typ.type_res_scope is None:
-                        typ.type_res_scope = types.TypeResScope(None, None)
                     with self.child_scope(node):
                         for type_param in typ.type_params:
                             self.scope.declare(type_param.name, type_param)
@@ -385,7 +395,7 @@ class TypeChecker:
                                 fqn,
                                 [],
                                 [],
-                                None,
+                                types.TypeResScope.empty(),
                                 [],
                                 self.type_env.builtins.NoneTyp,
                                 m_node.span,
@@ -418,8 +428,6 @@ class TypeChecker:
                 self_typ = next((x for x in impl_method.typ.type_params if x.name == "Self"), None)
                 assert self_typ is not None, f"Expected type parameter `Self` in {impl_method.typ.signature()}"
                 assert self_typ.name == "Self", f"Expected `Self` as the first type parameter, got {self_typ.name}"
-                if impl_method.typ.type_res_scope is None:
-                    impl_method.typ.type_res_scope = types.TypeResScope(None, impl_typ.type_res_scope)
                 impl_method.typ.type_res_scope.declare(self_typ, impl_typ)
 
         # If there are errors up until now, we don't check any further.

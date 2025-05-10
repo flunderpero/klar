@@ -148,7 +148,7 @@ class FieldOrParam[T: Type = Type]:
 @dataclass
 class Member:
     id: TypeId
-    type_res_scope: TypeResScope | None
+    type_res_scope: TypeResScope
     target: Struct | Trait | TypeParam
     field: str
     span: Span
@@ -204,7 +204,7 @@ class Fn:
     fqn: FQN
     type_params: TypeParams
     type_args: TypeArgs
-    type_res_scope: TypeResScope | None
+    type_res_scope: TypeResScope
     params: list[FieldOrParam]
     result: Type
     span: Span
@@ -259,7 +259,7 @@ class Struct:
     type_params: TypeParams
     type_args: TypeArgs
     self_typ: TypeParam
-    type_res_scope: TypeResScope | None
+    type_res_scope: TypeResScope
     fields: list[FieldOrParam]
     methods: list[FieldOrParam[Fn]]
     traits: list[Trait]
@@ -311,7 +311,7 @@ class Trait:
     type_params: TypeParams
     type_args: TypeArgs
     self_typ: TypeParam
-    type_res_scope: TypeResScope | None
+    type_res_scope: TypeResScope
     methods: list[FieldOrParam[Fn]]
     default_impls: list[FieldOrParam[Fn]]
     span: Span
@@ -385,13 +385,13 @@ class TypeParam:
         return []
 
     @property
-    def type_res_scope(self) -> TypeResScope | None:
+    def type_res_scope(self) -> TypeResScope:
         if isinstance(self.trait_bound, ParameterizedType):
             return self.trait_bound.type_res_scope
-        return None
+        return TypeResScope(None, None)
 
     @type_res_scope.setter
-    def type_res_scope(self, value: TypeResScope | None) -> None:
+    def type_res_scope(self, value: TypeResScope) -> None:
         if isinstance(self.trait_bound, ParameterizedType):
             self.trait_bound.type_res_scope = value
 
@@ -420,6 +420,10 @@ def type_args_signature(type_args: TypeArgs, seen: dict[int, str] | None) -> str
 
 
 class TypeResScope:
+    @staticmethod
+    def empty() -> TypeResScope:
+        return TypeResScope(None, None)
+
     parent: TypeResScope | None
     overrides: TypeResScope | None
     types: dict[TypeId, Type]
@@ -500,7 +504,7 @@ class TypeResScope:
                     typ.fqn,
                     typ.type_params,
                     [scope.resolve(x, seen) for x in typ.type_args],
-                    None,
+                    TypeResScope.empty(),
                     typ.params,
                     typ.result,
                     typ.span,
@@ -525,7 +529,7 @@ class TypeResScope:
                     typ.type_params,
                     [scope.resolve(x, seen) for x in typ.type_args],
                     typ.self_typ,
-                    None,
+                    TypeResScope.empty(),
                     typ.fields,
                     typ.methods,
                     typ.traits,
@@ -551,7 +555,7 @@ class TypeResScope:
                     typ.type_params,
                     [scope.resolve(x, seen) for x in typ.type_args],
                     typ.self_typ,
-                    None,
+                    TypeResScope.empty(),
                     typ.methods,
                     typ.default_impls,
                     typ.span,
@@ -621,10 +625,9 @@ def full_id(typ: Type) -> str:
     return ":".join(res)
 
 
-def instance[T: ParameterizedType](typ: T, type_res_scope: TypeResScope | None) -> T:
+def instance[T: ParameterizedType](typ: T, type_res_scope: TypeResScope) -> T:
     clone = replace(typ)
-    if typ.type_res_scope is not None:
-        type_res_scope = TypeResScope(typ.type_res_scope, type_res_scope)
+    type_res_scope = TypeResScope(typ.type_res_scope, type_res_scope)
     clone.type_res_scope = type_res_scope
     return clone
 
@@ -666,8 +669,6 @@ def infer_type_args_from_call_args(callee: CallableType, call_args: list[Type]) 
         case _:
             raise AssertionError(f"unhandled type: {callee}")
     assert len(params) == len(call_args), f"expected {len(params)} call args, got {len(call_args)}"
-    if callee.type_res_scope is None:
-        callee.type_res_scope = TypeResScope(None, None)
     for arg, param in zip(call_args, params):
         if isinstance(param, TypeParam):
             type_res_scope = infer(param, arg, callee.type_res_scope)
@@ -690,9 +691,22 @@ class Builtins:
         bool_typ = Bool(next_id(), span)
         none_typ = NoneTyp(next_id(), span)
         args = {"span": span, "is_named": True}
-        print_typ = Fn(next_id(), FQN(["print"]), [], [], None, [FieldOrParam("s", str_typ)], none_typ, **args)
-        int_to_str = Fn(next_id(), FQN(["int_to_str"]), [], [], None, [FieldOrParam("i", int_typ)], str_typ, **args)
-        bool_to_str = Fn(next_id(), FQN(["bool_to_str"]), [], [], None, [FieldOrParam("b", bool_typ)], str_typ, **args)
+        print_typ = Fn(
+            next_id(), FQN(["print"]), [], [], TypeResScope.empty(), [FieldOrParam("s", str_typ)], none_typ, **args
+        )
+        int_to_str = Fn(
+            next_id(), FQN(["int_to_str"]), [], [], TypeResScope.empty(), [FieldOrParam("i", int_typ)], str_typ, **args
+        )
+        bool_to_str = Fn(
+            next_id(),
+            FQN(["bool_to_str"]),
+            [],
+            [],
+            TypeResScope.empty(),
+            [FieldOrParam("b", bool_typ)],
+            str_typ,
+            **args,
+        )
         return Builtins(str_typ, int_typ, bool_typ, none_typ, print_typ, int_to_str, bool_to_str)
 
     Str: Str

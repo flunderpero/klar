@@ -351,6 +351,7 @@ class TypeParam:
     id: TypeId
     name: str
     trait_bound: Trait | None
+    type_res_scope: TypeResScope
     span: Span
 
     @nocycle
@@ -383,17 +384,6 @@ class TypeParam:
         if isinstance(self.trait_bound, ParameterizedType):
             return self.trait_bound.type_args
         return []
-
-    @property
-    def type_res_scope(self) -> TypeResScope:
-        if isinstance(self.trait_bound, ParameterizedType):
-            return self.trait_bound.type_res_scope
-        return TypeResScope(None, None)
-
-    @type_res_scope.setter
-    def type_res_scope(self, value: TypeResScope) -> None:
-        if isinstance(self.trait_bound, ParameterizedType):
-            self.trait_bound.type_res_scope = value
 
     def member(self, name: str) -> FieldOrParam | None:
         if self.trait_bound:
@@ -459,17 +449,20 @@ class TypeResScope:
 
         match typ:
             case TypeParam():
+                scope = self
+                if typ.type_res_scope != self:
+                    scope = TypeResScope(typ.type_res_scope, self)
                 res = typ
                 while isinstance(res, TypeParam):
-                    typ2 = self.find(res)
-                    if not typ2 or res.id == typ2.id:
+                    next_res = scope.find(res)
+                    if not next_res or res.id == next_res.id:
                         break
-                    res = typ2
+                    if isinstance(next_res, TypeParam) and next_res.id == typ.id:
+                        # Break the cycle (A points to B points back to A)
+                        break
+                    res = next_res
                 typ = res
                 if isinstance(typ, TypeParam) and typ.trait_bound:
-                    scope = self
-                    if typ.type_res_scope != self:
-                        scope = TypeResScope(typ.type_res_scope, self)
                     if seen is None:
                         seen = {}
                     tb = typ.trait_bound
@@ -477,6 +470,7 @@ class TypeResScope:
                         typ.id,
                         typ.name,
                         tb,
+                        TypeResScope.empty(),
                         typ.span,
                     )
                     seen[full_id(typ)] = typ
@@ -503,7 +497,7 @@ class TypeResScope:
                     typ.id,
                     typ.fqn,
                     typ.type_params,
-                    [scope.resolve(x, seen) for x in typ.type_args],
+                    typ.type_args,
                     TypeResScope.empty(),
                     typ.params,
                     typ.result,
@@ -513,21 +507,19 @@ class TypeResScope:
                 if seen is None:
                     seen = {}
                 seen[full_id(typ)] = typ
+                typ.type_args = [scope.resolve(x, seen) for x in typ.type_args]
                 typ.params = [FieldOrParam(x.name, scope.resolve(x.typ, seen)) for x in typ.params]
                 typ.result = scope.resolve(typ.result, seen)
                 return typ
             case Struct():
                 scope = self
                 if typ.type_res_scope != self:
-                    # todo: We reversed the order of scopes here compared to Fn or Trait.
-                    #       This is needed so recursive types work.
-                    #       But it feels weird and surely hides a bug.
-                    scope = TypeResScope(self, typ.type_res_scope)
+                    scope = TypeResScope(typ.type_res_scope, self)
                 typ = Struct(
                     typ.id,
                     typ.fqn,
                     typ.type_params,
-                    [scope.resolve(x, seen) for x in typ.type_args],
+                    typ.type_args,
                     typ.self_typ,
                     TypeResScope.empty(),
                     typ.fields,
@@ -538,6 +530,7 @@ class TypeResScope:
                 if seen is None:
                     seen = {}
                 seen[full_id(typ)] = typ
+                typ.type_args = [scope.resolve(x, seen) for x in typ.type_args]
                 typ.fields = [FieldOrParam(x.name, scope.resolve(x.typ, seen)) for x in typ.fields]
                 typ.methods = [FieldOrParam[Fn](x.name, cast(Fn, scope.resolve(x.typ, seen))) for x in typ.methods]
                 for i, trait in enumerate(typ.traits):
@@ -553,7 +546,7 @@ class TypeResScope:
                     typ.id,
                     typ.fqn,
                     typ.type_params,
-                    [scope.resolve(x, seen) for x in typ.type_args],
+                    typ.type_args,
                     typ.self_typ,
                     TypeResScope.empty(),
                     typ.methods,
@@ -563,13 +556,12 @@ class TypeResScope:
                 if seen is None:
                     seen = {}
                 seen[full_id(typ)] = typ
+                typ.type_args = [scope.resolve(x, seen) for x in typ.type_args]
                 typ.methods = [FieldOrParam[Fn](x.name, cast(Fn, scope.resolve(x.typ, seen))) for x in typ.methods]
                 typ.default_impls = [
                     FieldOrParam[Fn](x.name, cast(Fn, scope.resolve(x.typ, seen))) for x in typ.default_impls
                 ]
                 return typ
-        if seen is not None:
-            seen[full_id(typ)] = typ
         return typ
 
     def keys(self) -> set[TypeId]:

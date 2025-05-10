@@ -561,6 +561,109 @@ fn main() {
 
 </details>
 
+### Recursive Data Structures
+
+Transient recursive data structures:
+
+```klar
+struct Value {
+    value Str
+}
+
+struct ValueWrapper {
+    wrapped Value
+}
+
+fn ValueWrapper.unwrap(self) Value => self.wrapped
+
+fn Value.wrap(self) ValueWrapper => ValueWrapper(self)
+
+fn main() {
+    let value = Value("PASS")
+    print(value.wrap().unwrap().value)
+}
+```
+
+```
+PASS
+```
+
+Transient recursive data structures with generics:
+
+```klar
+struct Value<A> {
+    value A
+}
+
+struct ValueWrapper<B> {
+    wrapped Value<B>
+}
+
+fn ValueWrapper.unwrap(self) Value<B> => self.wrapped
+
+fn Value.wrap(self) ValueWrapper<A> => ValueWrapper<A>(self)
+
+fn main() {
+    let value = Value("PASS")
+    print(value.wrap().unwrap().value)
+}
+```
+
+```
+PASS
+```
+
+Type recursion through type arguments:
+
+```klar
+struct Value<A> {
+    value A
+}
+
+fn main() {
+    let v = Value<Value<Str>>(Value<Str>("Hello"))
+    print(v.value.value)
+}
+```
+
+```
+Hello
+```
+
+Recursive function calls:
+
+```klar
+-- You should not write code this dense. :-)
+fn fib(n Int) Int => if n == 0 => 0 else => if n == 1 => 1 else => fib(n - 1) + fib(n - 2)
+
+fn main() {
+    print(int_to_str(fib(10)))
+}
+```
+
+```
+55
+```
+
+Recursive parameterized function calls:
+
+```klar
+-- This is a silly function but at the time of writing, the language did
+-- not have enough features to write a better example.
+fn return_it<T>(value T, n Int) T {
+    if n == 0 => value
+    else => return_it<T>(value, n - 1)
+}
+
+fn main() {
+    print(return_it("Hello", 2))
+}
+```
+
+```
+Hello
+```
+
 ## Block Expression
 
 In Klar, blocks are expressions, i.e. they represent a value.
@@ -1148,8 +1251,8 @@ fn main() {
 Nested type arguments:
 
 ```klar
-struct Value<A> {
-    value A
+struct Value<T> {
+    value T
 }
 
 struct Pair<A, B> {
@@ -1472,57 +1575,6 @@ struct Named {
 
 ```
 PASS
-```
-
-This also allows recursive data structures:
-
-```klar
-struct Value<A> {
-    value A
-}
-
-fn main() {
-    let v = Value<Value<Str>>(Value<Str>("Hello"))
-    print(v.value.value)
-}
-```
-
-```
-Hello
-```
-
-Or recursive function calls:
-
-```klar
--- You should not write code this dense. :-)
-fn fib(n Int) Int => if n == 0 => 0 else => if n == 1 => 1 else => fib(n - 1) + fib(n - 2)
-
-fn main() {
-    print(int_to_str(fib(10)))
-}
-```
-
-```
-55
-```
-
-Or recursive parameterized function calls:
-
-```klar
--- This is a silly function but at the time of writing, the language did
--- not have enough features to write a better example.
-fn return_it<T>(value T, n Int) T {
-    if n == 0 => value
-    else => return_it<T>(value, n - 1)
-}
-
-fn main() {
-    print(return_it("Hello", 2))
-}
-```
-
-```
-Hello
 ```
 
 ### Further Tests

@@ -94,6 +94,18 @@ class Scope:
             scope = scope.parent
         return FQN(path)
 
+    def debug(self) -> str:
+        lines = []
+        scope = self
+        indent = "    "
+        while scope:
+            lines.append(indent + "Node: " + ast.to_str_withoud_nid(scope.node).replace("\n", "\n" + indent))
+            for name, decl in scope.names.items():
+                lines.append(indent + f"    {name}: {decl.typ.debug()}")
+            indent += "        "
+            scope = scope.parent
+        return "Scope(\n" + "\n".join(lines) + "\n)"
+
 
 class TypeChecker:
     type_env: TypeEnv
@@ -134,7 +146,7 @@ class TypeChecker:
         return self.next_id()
 
     def self_typ_(self) -> types.TypeParam:
-        return types.TypeParam(self.id(), "Self", None, types.built_in_span)
+        return types.TypeParam(self.id(), "Self", None, types.TypeResScope.empty(), types.built_in_span)
 
     def type_node_type(self, node: ast.Type | ast.TypeParam) -> types.Type:
         match node:
@@ -172,7 +184,7 @@ class TypeChecker:
                     return self.instance(declared.typ, node.type_args, node.span)
                 return declared.typ
             case ast.TypeParam():
-                type_param = types.TypeParam(self.id(), node.name, None, node.span)
+                type_param = types.TypeParam(self.id(), node.name, None, types.TypeResScope.empty(), node.span)
                 if node.trait_bound:
                     tb = self.type_node_type(node.trait_bound)
                     if not isinstance(tb, types.Trait):
@@ -377,8 +389,11 @@ class TypeChecker:
                             self.scope.declare(type_param.name, type_param)
                         fields: list[types.FieldOrParam] = []
                         for m_node in node.fields:
-                            impl_method = self.type_node_type(m_node.typ)
-                            fields.append(types.FieldOrParam(m_node.name, impl_method))
+                            field = self.type_node_type(m_node.typ)
+                            # todo: Is it correct to resolve here? I don't think so. This may hide
+                            # a bigger implementation flaw.
+                            field = types.resolve(field)
+                            fields.append(types.FieldOrParam(m_node.name, field))
                         typ.fields = fields
                     self.scope.finish_forward_declared(node.name)
                     self.type_env.set_node_type(node, typ)
@@ -570,7 +585,9 @@ class TypeChecker:
             return types.TypeCheckError(typ.id, "wrong number of type args", span)
         type_res_scope = types.TypeResScope(parent_type_res_scope, None)
         for arg, type_param in zip(type_args, type_params):
-            type_arg = self.type_node_type(arg)
+            # todo: Is it correct to resolve here? I don't think so. This may hide
+            # a bigger implementation flaw.
+            type_arg = types.resolve(self.type_node_type(arg))
             type_res_scope.declare(type_param, type_arg)
         return types.instance(typ, type_res_scope)
 
@@ -667,10 +684,14 @@ class TypeChecker:
                             else:
                                 existing = self.scope.declare("self", impl_typ.typ)
                             assert existing is None, f"self is already declared: {existing}"
+                            for type_param in impl_typ.typ.type_params:
+                                self.scope.declare(type_param.name, type_param)
                             continue
+                        # print("declare fn", fn, types.resolve(param.typ))
                         self.scope.declare(param.name, param.typ)
                     for type_param in fn.type_params:
                         self.scope.declare(type_param.name, type_param)
+                    # print(self.scope.debug())
                     self.typecheck(node.body, node)
                     self.type_env.set_node_type(node, self.type_env.builtins.NoneTyp)
             case ast.Block():

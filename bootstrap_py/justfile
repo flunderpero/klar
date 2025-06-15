@@ -13,7 +13,12 @@ lint *args:
     pyright
     ruff check {{args}}
 
-test *args:
+test: test-pytest test-md
+
+test-pytest *args:
+    pytest . {{args}}
+
+test-md *args:
     @echo "Testing \"The Book\" ..."
     @# Why first `cd ..`? Because I am tired of Python's weird local import rules.
     @cd .. && python3 -m bootstrap_py.md_tests bootstrap_py/klar_the_book.md {{args}}

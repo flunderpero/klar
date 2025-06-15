@@ -1,0 +1,33 @@
+trait Iter<A> {
+    fn next(self) A
+
+    -- fn map<U>(self) Iter<U>
+}
+
+struct Values<T> {
+    v1 T
+    v2 T
+    v3 T
+    v4 T
+    v5 T
+}
+
+struct ValuesIter<T> {
+    values Values<T>
+    index Int
+}
+
+fn ValuesIter.next(self) T {
+    if self.index == 0 => self.values.v1
+    else => self.values.v2
+}
+
+fn Values.iter(self) ValuesIter<T> => ValuesIter<T>(self, 0)
+
+fn main() {
+    let values = Values("1", "2", "3", "4", "5")
+    let i = values.iter()
+    print(i.next())
+}
+
+

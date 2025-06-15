@@ -8,14 +8,23 @@ from . import ast, typechecker, types
 @dataclass
 class TypeEnv:
     type_env: typechecker.TypeEnv
-    type_res_scope: types.TypeResScope
+    type_map: types.TypeMap
+    overrides: dict[ast.NodeId, types.Type]
 
     def get_node_type(self, node: ast.Node) -> types.Type:
-        typ = self.type_env.get_node_type(node)
-        return self.resolve(typ)
+        typ = self.overrides.get(node.id, self.type_env.get_node_type(node)[0])
+        assert typ is not None, f"Type for {node} not found"
+        return self.resolve(typ, node)
 
-    def resolve(self, typ: types.Type) -> types.Type:
-        return self.type_res_scope.resolve(typ)
+    def set_node_type(self, node: ast.Node, typ: types.Type) -> None:
+        self.overrides[node.id] = typ
+
+    def resolve(self, typ: types.Type, node: ast.Node | None = None) -> types.Type:
+        typ = self.type_map.resolve(typ)
+        if isinstance(typ, types.TypeParam):
+            assert typ.bound is not None, f"Type parameter {typ} has no bound at {(node or typ).span}"
+            typ = self.resolve(typ.bound)
+        return typ
 
 
 @dataclass

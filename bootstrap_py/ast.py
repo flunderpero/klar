@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Callable, cast
 
 if TYPE_CHECKING:
     from .span import FQN, Span
@@ -330,48 +330,54 @@ TypeParams = list[TypeParam]
 TypeArgs = list[Type]
 
 
-ASTVisitor = Callable[[Node, Node | None], None]
+ASTVisitor = Callable[[Node, Node | None], Node]
 
 
-def walk(node: Node, visit: ASTVisitor) -> bool:
+def walk(node: Node, visit_: ASTVisitor) -> bool:
     """Visit all children of the given node.
 
     @return True if the node contained children
     """
+
+    def visit(node: Node, parent: Node | None) -> Node:
+        res = visit_(node, parent)
+        assert res is not None, f"`visit` must return a node, got {res}"
+        return res
+
     match node:
         case Module():
-            for n in node.nodes:
-                visit(n, node)
+            for i, n in enumerate(node.nodes):
+                node.nodes[i] = visit(n, node)
         case Block():
-            for n in node.nodes:
-                visit(n, node)
+            for i, n in enumerate(node.nodes):
+                node.nodes[i] = visit(n, node)
         case FnDef():
-            visit(node.decl, node)
-            visit(node.body, node)
+            node.decl = cast(FnDecl, visit(node.decl, node))
+            node.body = cast(Block, visit(node.body, node))
         case Call():
-            visit(node.callee, node)
-            for arg in node.args:
-                visit(arg, node)
+            node.callee = cast(Expr, visit(node.callee, node))
+            for i, arg in enumerate(node.args):
+                node.args[i] = cast(Expr, visit(arg, node))
         case BinaryExpr():
-            visit(node.lhs, node)
-            visit(node.rhs, node)
+            node.lhs = cast(Expr, visit(node.lhs, node))
+            node.rhs = cast(Expr, visit(node.rhs, node))
         case If():
-            visit(node.cond, node)
-            visit(node.then_block, node)
+            node.cond = cast(Expr, visit(node.cond, node))
+            node.then_block = cast(Block, visit(node.then_block, node))
             if node.else_block:
-                visit(node.else_block, node)
+                node.else_block = cast(Block, visit(node.else_block, node))
         case Loop():
-            visit(node.block, node)
+            node.block = cast(Block, visit(node.block, node))
         case Let():
-            visit(node.value, node)
+            node.value = cast(Expr, visit(node.value, node))
         case Assign():
-            visit(node.target, node)
-            visit(node.value, node)
+            node.target = cast(Expr, visit(node.target, node))
+            node.value = cast(Expr, visit(node.value, node))
         case Member():
-            visit(node.target, node)
+            node.target = cast(Expr, visit(node.target, node))
         case Trait():
-            for m in node.methods:
-                visit(m, node)
+            for i, m in enumerate(node.methods):
+                node.methods[i] = cast(FnDecl, visit(m, node))
         case Ident() | IntLit() | StrLit() | BoolLit() | FnDecl() | Break() | Continue() | Struct():
             return False
         case _:

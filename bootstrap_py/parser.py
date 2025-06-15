@@ -31,6 +31,8 @@ class Input:
         return self.peek().span
 
     def span_merge(self, span: Span) -> Span:
+        if self.index > 0:
+            return span.merge(self.tokens[self.index - 1].span)
         return span.merge(self.span())
 
 

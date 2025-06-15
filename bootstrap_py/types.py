@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import itertools
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields
 from functools import wraps
 from typing import Any, Callable, cast
 
@@ -16,17 +15,17 @@ def tid(id: TypeId) -> str:
 
 def nocycle(func: Any) -> Any:  # noqa: ANN401
     @wraps(func)
-    def wrapper(self: Any, seen: dict[int, str] | None = None, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+    def wrapper(self: Any, seen: dict[str, str] | None = None, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
         if seen is None:
             seen = {}
-        if id(self) in seen:
-            return seen[id(self)]
-        if hasattr(self, "id"):
-            seen[id(self)] = tid(self.id)
-        else:
-            seen[id(self)] = type(self).__name__
+        i = type(self).__name__
+        if isinstance(self, Type):
+            i = full_id(self)
+        if not isinstance(self, Field) and i in seen:
+            return seen[i]
+        seen[i] = tid(self.id) if isinstance(self, Type) else i
         s = func(self, seen, *args, **kwargs)
-        seen[id(self)] = s
+        seen[i] = s
         return s
 
     return wrapper
@@ -126,13 +125,78 @@ class NoneTyp:
 
 
 @dataclass
-class FieldOrParam[T: Type = Type]:
+class TypeParam:
+    id: TypeId
+    name: str
+    bound: Trait | Struct | None
+    span: Span
+
+    @nocycle
+    def debug(self, seen: dict[int, str] | None = None) -> str:
+        tb = " " + self.bound.debug(seen) if self.bound else ""
+        return tid(self.id) + self.name + tb
+
+    def __repr__(self) -> str:
+        return self.debug()
+
+    def __str__(self) -> str:
+        return self.signature()
+
+    @nocycle
+    def signature(self, seen: dict[int, str] | None = None) -> str:
+        tb = " " + self.bound.signature(seen) if self.bound and self.name != "Self" else ""
+        return self.name + tb
+
+    @property
+    def fqn(self) -> FQN:
+        return FQN([self.name])
+
+    @property
+    def type_params(self) -> TypeParams:
+        if self.bound is not None:
+            return self.bound.type_params
+        return []
+
+    @property
+    def type_args(self) -> TypeArgs:
+        if self.bound is not None:
+            return self.bound.type_args
+        return []
+
+    @property
+    def type_map(self) -> TypeMap:
+        return self.bound.type_map if self.bound else TypeMap({}, None)
+
+
+def type_params_debug(type_params: TypeParams, type_args: TypeArgs, seen: dict[int, str] | None) -> str:
+    if not type_params:
+        return ""
+    params = []
+    for p, a in zip(type_params, type_args):
+        ps = p.debug(seen)
+        if a != p:
+            ps = f"{ps} {a.debug(seen)}"
+        params.append(ps)
+    s = ", ".join(params)
+    return f"<{s}>"
+
+
+def type_args_signature(type_args: TypeArgs, seen: dict[int, str] | None) -> str:
+    if not type_args:
+        return ""
+    params = [x.signature(seen) for x in type_args]
+    s = ", ".join(params)
+    return f"<{s}>"
+
+
+@dataclass
+class Field[T: Type]:
     name: str
     typ: T
 
     @nocycle
     def debug(self, seen: dict[int, str] | None = None) -> str:
-        return f"{self.name}: {self.typ.debug(seen)}"
+        return f"{self.name}={self.typ.debug(seen)}"
 
     def __repr__(self) -> str:
         return self.debug()
@@ -146,74 +210,21 @@ class FieldOrParam[T: Type = Type]:
 
 
 @dataclass
-class Member:
-    id: TypeId
-    type_res_scope: TypeResScope
-    target: Struct | Trait | TypeParam
-    field: str
-    span: Span
-
-    @nocycle
-    def debug(self, seen: dict[int, str] | None = None) -> str:
-        return tid(self.id) + f"{self.target.debug(seen)}.{self.field}"
-
-    def __repr__(self) -> str:
-        return self.debug()
-
-    def __str__(self) -> str:
-        return self.signature()
-
-    @nocycle
-    def signature(self, seen: dict[int, str] | None = None) -> str:
-        return f"{self.target.signature(seen)}.{self.field}"
-
-    @property
-    def type_params(self) -> TypeParams:
-        if isinstance(self.target, ParameterizedType):
-            return self.target.type_params
-        return []
-
-    @property
-    def type_args(self) -> TypeArgs:
-        if isinstance(self.target, ParameterizedType):
-            return self.target.type_args
-        return []
-
-    def direct_member(self) -> FieldOrParam:
-        if isinstance(self.target, TypeParam):
-            assert isinstance(self.target.trait_bound, Trait)
-            res = self.target.trait_bound.member(self.field)
-        else:
-            res = self.target.member(self.field)
-        assert res, f"member `{self.field}` not found in {self.target}"
-        return res
-
-    def deep_member(self) -> FieldOrParam:
-        typ = self
-        while True:
-            member = typ.direct_member()
-            if isinstance(member.typ, Member):
-                typ = member.typ
-                continue
-            return member
-
-
-@dataclass
 class Fn:
     id: TypeId
     fqn: FQN
     type_params: TypeParams
     type_args: TypeArgs
-    type_res_scope: TypeResScope
-    params: list[FieldOrParam]
+    type_map: TypeMap
+    params: list[Field]
     result: Type
     span: Span
     is_named: bool
 
     @nocycle
     def debug(self, seen: dict[int, str] | None = None) -> str:
-        type_params = type_args_debug(self.type_params, self.type_args, seen)
-        params = ", ".join(x.typ.debug(seen) for x in self.params)
+        type_params = type_params_debug(self.type_params, self.type_args, seen)
+        params = ", ".join(x.debug(seen) for x in self.params)
         name = f"fn {self.fqn}" if self.is_named else ""
         return tid(self.id) + f"{name}{type_params}({params}) {self.result.debug(seen)}"
 
@@ -225,31 +236,17 @@ class Fn:
 
     @nocycle
     def signature(self, seen: dict[int, str] | None = None) -> str:
-        type_args = self.type_args
-        if self.type_params and self.type_params[0].name == "Self":
-            type_args = self.type_args[1:]
-        type_args = type_args_signature(type_args, seen)
+        type_args = type_args_signature(self.type_args, seen)
         params = ", ".join(x.signature(seen) for x in self.params)
-        return f"{self.fqn}{type_args}({params}) {self.result.signature(seen)}"
+        return f"fn {self.fqn}{type_args}({params}) {self.result.signature(seen)}"
 
     def is_instance_method(self) -> bool:
         return len(self.params) > 0 and self.params[0].name == "self"
 
-    def params_without_self(self) -> list[FieldOrParam]:
+    def params_without_self(self) -> list[Field]:
         if self.is_instance_method():
             return self.params[1:]
         return self.params
-
-    def is_same(self, other: Fn) -> bool:
-        """Functions are equal if they structurally match, i.e. their parameter and result types match."""
-        if len(self.params) != len(other.params):
-            return False
-        for sp, op in zip(self.params, other.params):
-            if not is_same(sp.typ, op.typ):
-                return False
-        if not type_params_and_args_are_same(self, other):
-            return False
-        return is_same(self.result, other.result)
 
 
 @dataclass
@@ -258,16 +255,16 @@ class Struct:
     fqn: FQN
     type_params: TypeParams
     type_args: TypeArgs
+    type_map: TypeMap
     self_typ: TypeParam
-    type_res_scope: TypeResScope
-    fields: list[FieldOrParam]
-    methods: list[FieldOrParam[Fn]]
+    fields: list[Field]
+    methods: list[Field[Fn]]
     traits: list[Trait]
     span: Span
 
     @nocycle
     def debug(self, seen: dict[int, str] | None = None) -> str:
-        type_params = type_args_debug(self.type_params, self.type_args, seen)
+        type_params = type_params_debug(self.type_params, self.type_args, seen)
         fields = ", ".join(f"{x.debug(seen)}" for x in self.fields)
         return tid(self.id) + f"struct {self.fqn}{type_params}{{{fields}}}"
 
@@ -282,25 +279,16 @@ class Struct:
         type_args = type_args_signature(self.type_args, seen)
         return f"{self.fqn}{type_args}"
 
-    def member(self, name: str) -> FieldOrParam | None:
-        for x in self.fields:
-            if x.name == name:
-                return x
-        for x in self.methods:
-            if x.name == name:
-                return x  # pyright:ignore[reportReturnType]
-        return None
-
     def field_index(self, name: str) -> int | None:
         for i, x in enumerate(self.fields):
             if x.name == name:
                 return i
         return None
 
-    def trait(self, fqn: FQN) -> Trait | None:
-        for x in self.traits:
-            if x.fqn == fqn:
-                return x
+    def method(self, name: str) -> Fn | None:
+        for method in self.methods:
+            if method.name == name:
+                return method.typ
         return None
 
 
@@ -310,16 +298,16 @@ class Trait:
     fqn: FQN
     type_params: TypeParams
     type_args: TypeArgs
+    type_map: TypeMap
     self_typ: TypeParam
-    type_res_scope: TypeResScope
-    methods: list[FieldOrParam[Fn]]
-    default_impls: list[FieldOrParam[Fn]]
+    methods: list[Field[Fn]]
+    default_impls: list[Field[Fn]]
     span: Span
 
     @nocycle
     def debug(self, seen: dict[int, str] | None = None) -> str:
         methods = "\n".join("    " + x.debug(seen) for x in self.methods)
-        type_params = type_args_debug(self.type_params, self.type_args, seen)
+        type_params = type_params_debug(self.type_params, self.type_args, seen)
         return tid(self.id) + f"trait {self.fqn}{type_params}{{\n{methods}\n}}"
 
     def __repr__(self) -> str:
@@ -333,344 +321,24 @@ class Trait:
         type_args = type_args_signature(self.type_args, seen)
         return f"{self.fqn}{type_args}"
 
-    def member(self, name: str) -> FieldOrParam | None:
-        for x in self.methods:
-            if x.name == name:
-                return x  # pyright:ignore[reportReturnType]
-        return None
-
-    def default_impl(self, name: str) -> FieldOrParam[Fn] | None:
-        for x in self.default_impls:
-            if x.name == name:
-                return x
+    def method(self, name: str) -> Fn | None:
+        for method in self.methods:
+            if method.name == name:
+                return method.typ
         return None
 
 
-@dataclass
-class TypeParam:
-    id: TypeId
-    name: str
-    trait_bound: Trait | None
-    type_res_scope: TypeResScope
-    span: Span
-
-    @nocycle
-    def debug(self, seen: dict[int, str] | None = None) -> str:
-        tb = " " + self.trait_bound.debug(seen) if self.trait_bound else ""
-        return tid(self.id) + self.name + tb
-
-    def __repr__(self) -> str:
-        return self.debug()
-
-    def __str__(self) -> str:
-        return self.signature()
-
-    def signature(self, seen: dict[int, str] | None = None) -> str:
-        tb = " " + self.trait_bound.signature(seen) if self.trait_bound and self.name != "Self" else ""
-        return self.name + tb
-
-    @property
-    def fqn(self) -> FQN:
-        return FQN([self.name])
-
-    @property
-    def type_params(self) -> TypeParams:
-        if isinstance(self.trait_bound, ParameterizedType):
-            return self.trait_bound.type_params
-        return []
-
-    @property
-    def type_args(self) -> TypeArgs:
-        if isinstance(self.trait_bound, ParameterizedType):
-            return self.trait_bound.type_args
-        return []
-
-    def member(self, name: str) -> FieldOrParam | None:
-        if self.trait_bound:
-            return self.trait_bound.member(name)
-        return None
-
-
+Type = Str | Int | Bool | NoneTyp | Fn | Struct | Trait | TypeParam | TypeCheckError
+ParameterizedType = Fn | Struct | Trait | TypeParam
+CallableType = Fn | Struct
 TypeParams = list[TypeParam]
-TypeArgs = list["Type"]
-
-
-def type_args_debug(type_params: TypeParams, type_args: TypeArgs, seen: dict[int, str] | None) -> str:
-    if not type_args:
-        return ""
-    s = ", ".join(f"{p.debug(seen)}={(a or p).debug(seen)}" for p, a in itertools.zip_longest(type_params, type_args))
-    return f"<{s}>"
-
-
-def type_args_signature(type_args: TypeArgs, seen: dict[int, str] | None) -> str:
-    if not type_args:
-        return ""
-    s = ", ".join(x.signature(seen) for x in type_args)
-    return f"<{s}>"
-
-
-class TypeResScope:
-    @staticmethod
-    def empty() -> TypeResScope:
-        return TypeResScope(None, None)
-
-    parent: TypeResScope | None
-    overrides: TypeResScope | None
-    types: dict[TypeId, Type]
-
-    def __init__(self, parent: TypeResScope | None, overrides: TypeResScope | None) -> None:
-        self.parent = parent
-        self.overrides = overrides
-        self.types = {}
-
-    def declare(self, type_param: TypeParam, typ: Type) -> None:
-        if type_param.id in self.types:
-            raise ValueError(f"Type `{type_param}` already declared in the current type resolution scope")
-        self.types[type_param.id] = typ
-
-    def find(self, type_param: TypeParam) -> Type | None:
-        res = self.types.get(type_param.id)
-        if res:
-            return res
-        if self.overrides:
-            res = self.overrides.find(type_param)
-            if res:
-                return res
-        if self.parent:
-            return self.parent.find(type_param)
-        return None
-
-    def resolve(self, typ: Type, seen: dict[str, Type] | None = None) -> Type:
-        """Resolve the type based on all the declared types."""
-        if seen is not None:
-            seen_typ = seen.get(full_id(typ))
-            if seen_typ is not None:
-                return seen_typ
-
-        match typ:
-            case TypeParam():
-                scope = self
-                if typ.type_res_scope != self:
-                    scope = TypeResScope(typ.type_res_scope, self)
-                res = typ
-                while isinstance(res, TypeParam):
-                    next_res = scope.find(res)
-                    if not next_res or res.id == next_res.id:
-                        break
-                    if isinstance(next_res, TypeParam) and next_res.id == typ.id:
-                        # Break the cycle (A points to B points back to A)
-                        break
-                    res = next_res
-                typ = res
-                if isinstance(typ, TypeParam) and typ.trait_bound:
-                    if seen is None:
-                        seen = {}
-                    tb = typ.trait_bound
-                    typ = TypeParam(
-                        typ.id,
-                        typ.name,
-                        tb,
-                        TypeResScope.empty(),
-                        typ.span,
-                    )
-                    seen[full_id(typ)] = typ
-                    typ.trait_bound = cast(Trait, scope.resolve(tb, seen))
-            case Member():
-                scope = self
-                if typ.type_res_scope != self:
-                    scope = TypeResScope(typ.type_res_scope, self)
-                target = scope.resolve(typ.target)
-                assert isinstance(target, Trait | Struct | TypeParam), (
-                    f"expected Trait, Struct, or TypeParam, got {target}"
-                )
-                if isinstance(target, TypeParam):
-                    target = target.trait_bound
-                    assert target is not None
-                field = target.member(typ.field)
-                assert field, f"member `{typ.field}` not found in {target}"
-                typ = scope.resolve(field.typ)
-            case Fn():
-                scope = self
-                if typ.type_res_scope != self:
-                    scope = TypeResScope(typ.type_res_scope, self)
-                typ = Fn(
-                    typ.id,
-                    typ.fqn,
-                    typ.type_params,
-                    typ.type_args,
-                    TypeResScope.empty(),
-                    typ.params,
-                    typ.result,
-                    typ.span,
-                    typ.is_named,
-                )
-                if seen is None:
-                    seen = {}
-                seen[full_id(typ)] = typ
-                typ.type_args = [scope.resolve(x, seen) for x in typ.type_args]
-                typ.params = [FieldOrParam(x.name, scope.resolve(x.typ, seen)) for x in typ.params]
-                typ.result = scope.resolve(typ.result, seen)
-                return typ
-            case Struct():
-                scope = self
-                if typ.type_res_scope != self:
-                    scope = TypeResScope(typ.type_res_scope, self)
-                typ = Struct(
-                    typ.id,
-                    typ.fqn,
-                    typ.type_params,
-                    typ.type_args,
-                    typ.self_typ,
-                    TypeResScope.empty(),
-                    typ.fields,
-                    typ.methods,
-                    typ.traits,
-                    typ.span,
-                )
-                if seen is None:
-                    seen = {}
-                seen[full_id(typ)] = typ
-                typ.type_args = [scope.resolve(x, seen) for x in typ.type_args]
-                typ.fields = [FieldOrParam(x.name, scope.resolve(x.typ, seen)) for x in typ.fields]
-                typ.methods = [FieldOrParam[Fn](x.name, cast(Fn, scope.resolve(x.typ, seen))) for x in typ.methods]
-                for i, trait in enumerate(typ.traits):
-                    scope = TypeResScope(scope, None)
-                    scope.declare(trait.self_typ, typ)
-                    typ.traits[i] = cast("Trait", scope.resolve(trait, seen))
-                return typ
-            case Trait():
-                scope = self
-                if typ.type_res_scope != self:
-                    scope = TypeResScope(typ.type_res_scope, self)
-                typ = Trait(
-                    typ.id,
-                    typ.fqn,
-                    typ.type_params,
-                    typ.type_args,
-                    typ.self_typ,
-                    TypeResScope.empty(),
-                    typ.methods,
-                    typ.default_impls,
-                    typ.span,
-                )
-                if seen is None:
-                    seen = {}
-                seen[full_id(typ)] = typ
-                typ.type_args = [scope.resolve(x, seen) for x in typ.type_args]
-                typ.methods = [FieldOrParam[Fn](x.name, cast(Fn, scope.resolve(x.typ, seen))) for x in typ.methods]
-                typ.default_impls = [
-                    FieldOrParam[Fn](x.name, cast(Fn, scope.resolve(x.typ, seen))) for x in typ.default_impls
-                ]
-                return typ
-        return typ
-
-    def keys(self) -> set[TypeId]:
-        res = set(self.types.keys())
-        if self.parent:
-            res.update(self.parent.keys())
-        if self.overrides:
-            res.update(self.overrides.keys())
-        return res
-
-    def flatten(self) -> dict[TypeId, Type]:
-        res = {}
-        if self.parent:
-            res.update(self.parent.flatten())
-        if self.overrides:
-            res.update(self.overrides.flatten())
-        res.update(self.types)
-        return res
-
-    @nocycle
-    def debug(self, seen: dict[int, str] | None = None) -> str:
-        s = []
-        s.append(f"    self: {id(self)}")
-        if self.parent:
-            s.append(f"    self.parent: {id(self.parent)}")
-        if self.overrides:
-            s.append(f"    self.overrides: {id(self.overrides)}")
-        for k, v in self.flatten().items():
-            s.append(f"   {k}={v.debug(seen).replace('\n', '\n    ')}")
-        return f"TypeResScope(\n{'\n'.join(s)}\n)"
-
-    def __repr__(self) -> str:
-        return self.debug()
-
-    def __str__(self) -> str:
-        return self.signature()
-
-    def signature(self, _seen: dict[int, str] | None = None) -> str:
-        return f"TypeResScope({len(self.flatten())})"
+TypeArgs = list[Type]
 
 
 def resolve[T: Type](typ: T) -> T:
-    if isinstance(typ, ParameterizedType) and typ.type_res_scope is not None:
-        return cast("T", typ.type_res_scope.resolve(typ))
-    return typ
-
-
-def full_id(typ: Type) -> str:
-    """Return an Id that takes type parameters and type arguments into account."""
-    res = [str(typ.id)]
     if isinstance(typ, ParameterizedType):
-        res += [full_id(x) for x in typ.type_args]
-    return ":".join(res)
-
-
-def instance[T: ParameterizedType](typ: T, type_res_scope: TypeResScope) -> T:
-    clone = replace(typ)
-    type_res_scope = TypeResScope(typ.type_res_scope, type_res_scope)
-    clone.type_res_scope = type_res_scope
-    return clone
-
-
-def infer_type_args_from_call_args(callee: CallableType, call_args: list[Type]) -> None:
-    """Declare all type parameters with their type if we find a match in `call_args`.
-
-    `typ.type_res_scope` is modified.
-    """
-
-    def infer(param_: TypeParam, arg: Type, type_res_scope: TypeResScope) -> TypeResScope:
-        param = type_res_scope.resolve(param_)
-        if not isinstance(param, TypeParam):
-            # Already resolved.
-            return type_res_scope
-        type_res_scope = TypeResScope(type_res_scope, None)
-        arg = type_res_scope.resolve(arg)
-        if param.id not in type_res_scope.types:
-            type_res_scope.declare(param, arg)
-        tb = param.trait_bound
-        if not tb:
-            return type_res_scope
-        assert isinstance(arg, ParameterizedType)
-        assert len(tb.type_params) == len(arg.type_args), f"type params and args mismatch: {tb} {arg}"
-        for tp, ta in zip(tb.type_params, tb.type_args):
-            if tp.id not in type_res_scope.types:
-                type_res_scope.declare(tp, ta)
-        for tp, ta in zip(tb.type_params, arg.type_args):
-            if isinstance(tp, TypeParam):
-                type_res_scope = TypeResScope(infer(tp, ta, type_res_scope), None)
-        return type_res_scope
-
-    params: list[Type]
-    match callee:
-        case Fn():
-            params = [x.typ for x in callee.params]
-        case Struct():
-            params = [x.typ for x in callee.fields]
-        case _:
-            raise AssertionError(f"unhandled type: {callee}")
-    assert len(params) == len(call_args), f"expected {len(params)} call args, got {len(call_args)}"
-    for arg, param in zip(call_args, params):
-        if isinstance(param, TypeParam):
-            type_res_scope = infer(param, arg, callee.type_res_scope)
-            for tp in callee.type_params:
-                ta = type_res_scope.find(tp)
-                if ta and tp.id not in callee.type_res_scope.types:
-                    callee.type_res_scope.declare(tp, ta)
-
-
-built_in_span = Span("<built-in>", "", 0, 0)
+        return cast(T, typ.type_map.resolve(typ))
+    return typ
 
 
 @dataclass
@@ -678,28 +346,24 @@ class Builtins:
     @staticmethod
     def new(next_id: Callable[[], int]) -> Builtins:
         span = Span("<built-in>", "", 0, 0)
+        type_map = TypeMap({}, None)
         str_typ = Str(next_id(), span)
         int_typ = Int(next_id(), bits=64, signed=True, span=span)
         bool_typ = Bool(next_id(), span)
         none_typ = NoneTyp(next_id(), span)
         args = {"span": span, "is_named": True}
-        print_typ = Fn(
-            next_id(), FQN(["print"]), [], [], TypeResScope.empty(), [FieldOrParam("s", str_typ)], none_typ, **args
+        print_typ = Fn(next_id(), FQN(["print"]), [], [], type_map, [Field("s", str_typ)], none_typ, **args)
+        int_to_str = Fn(next_id(), FQN(["int_to_str"]), [], [], type_map, [Field("i", int_typ)], str_typ, **args)
+        bool_to_str = Fn(next_id(), FQN(["bool_to_str"]), [], [], type_map, [Field("b", bool_typ)], str_typ, **args)
+        return Builtins(
+            Str=str_typ,
+            Int=int_typ,
+            Bool=bool_typ,
+            NoneTyp=none_typ,
+            print=print_typ,
+            int_to_str=int_to_str,
+            bool_to_str=bool_to_str,
         )
-        int_to_str = Fn(
-            next_id(), FQN(["int_to_str"]), [], [], TypeResScope.empty(), [FieldOrParam("i", int_typ)], str_typ, **args
-        )
-        bool_to_str = Fn(
-            next_id(),
-            FQN(["bool_to_str"]),
-            [],
-            [],
-            TypeResScope.empty(),
-            [FieldOrParam("b", bool_typ)],
-            str_typ,
-            **args,
-        )
-        return Builtins(str_typ, int_typ, bool_typ, none_typ, print_typ, int_to_str, bool_to_str)
 
     Str: Str
     Int: Int
@@ -720,18 +384,152 @@ class Builtins:
             self.bool_to_str.id,
         }
 
+    def builtins(self) -> dict[str, Type]:
+        res = {}
+        for x in fields(self):
+            if x.name == "NoneTyp":
+                res["None"] = getattr(self, x.name)
+                continue
+            res[x.name] = getattr(self, x.name)
+        return res
 
-Type = Int | Str | Bool | Fn | Struct | Trait | Member | NoneTyp | TypeParam | TypeCheckError
-ParameterizedType = Fn | Struct | Trait | Member | TypeParam
-ImplementableType = Struct | Trait
-CallableType = Fn | Struct
+
+@dataclass
+class TypeMap:
+    types: dict[TypeId, Type]
+    parent: TypeMap | None
+
+    def resolve(self, typ: Type, seen: dict[str, Type] | None = None) -> Type:
+        """Recursively resolve a type (either a TypeParam or a Type that contains TypeParams) to its concrete type."""
+        if seen is None:
+            seen = {}
+        typ_id = full_id(typ)
+        if typ_id in seen:
+            return seen[typ_id]
+        match typ:
+            case TypeParam():
+                # Resolve the type parameter until it is resolved to a concrete type or to itself
+                # or if resolution is cyclic.
+                stack = [typ.id]
+                while True:
+                    resolved = self.find(typ)
+                    if resolved is None:
+                        # Type parameter not found.
+                        break
+                    if resolved == typ:
+                        # Type parameter is resolved to itself.
+                        break
+                    if not isinstance(resolved, TypeParam):
+                        # Type parameter is resolved to a concrete type.
+                        typ = resolved
+                        break
+                    if resolved.id in stack:
+                        # Cyclic type parameter resolution: break the cycle and return the previous type.
+                        break
+                    typ = resolved
+                    stack.append(typ.id)
+                seen[full_id(typ)] = typ
+                return typ
+            case Fn():
+                type_map = self
+                if id(self) != id(typ.type_map):
+                    type_map = self.flatten(typ.type_map)
+                fn = Fn(
+                    typ.id,
+                    typ.fqn,
+                    typ.type_params,
+                    typ.type_args,
+                    type_map,
+                    typ.params,
+                    typ.result,
+                    typ.span,
+                    typ.is_named,
+                )
+                fn.type_args = [type_map.resolve(x, seen) for x in fn.type_args]
+                seen[full_id(fn)] = fn
+                fn.params = [Field(x.name, type_map.resolve(x.typ, seen)) for x in fn.params]
+                fn.result = type_map.resolve(fn.result, seen)
+                return fn
+            case Struct():
+                type_map = self
+                if id(self) != id(typ.type_map):
+                    type_map = self.flatten(typ.type_map)
+                struct = Struct(
+                    typ.id,
+                    typ.fqn,
+                    typ.type_params,
+                    typ.type_args,
+                    type_map,
+                    typ.self_typ,
+                    typ.fields,
+                    typ.methods,
+                    typ.traits,
+                    typ.span,
+                )
+                struct.type_args = [type_map.resolve(x, seen) for x in struct.type_args]
+                seen[full_id(struct)] = struct
+                struct.fields = [Field(x.name, type_map.resolve(x.typ, seen)) for x in struct.fields]
+                struct.methods = [Field(x.name, cast(Fn, type_map.resolve(x.typ, seen))) for x in struct.methods]
+                # todo: Do we ever need to resolve traits?
+                # struct.traits = [cast(Trait, type_map.resolve(x, seen)) for x in struct.traits]
+                return struct
+        return typ
+
+    def find(self, type_param: TypeParam) -> Type | None:
+        """Look up the type parameter in the TypeMap hierarchy."""
+        type_map = self
+        while True:
+            typ = type_map.types.get(type_param.id)
+            if typ is not None:
+                return typ
+            if type_map.parent is None:
+                return None
+            type_map = type_map.parent
+
+    def bind(self, type_param: TypeParam, type_arg: Type) -> None:
+        assert isinstance(type_param, TypeParam)
+        assert type_param.id not in self.types, f"{type_param} already bound to {self.types[type_param.id]}"
+        self.types[type_param.id] = type_arg
+
+    def is_empty(self) -> bool:
+        return not self.types and not self.parent
+
+    def debug(self) -> str:
+        lines = []
+        if self.types:
+            lines.append("")
+        for id_, typ in self.types.items():
+            lines.append(f"  {tid(id_)}: {typ.debug()}")
+        if self.types:
+            lines.append("")
+        if self.parent and not self.parent.is_empty():
+            lines.append(f"    {self.parent.debug().replace('\n', '\n    ')}")
+        entries = "\n".join(lines)
+        return f"TypeMap({entries})"
+
+    def flatten(self, new_parent: TypeMap | None = None) -> TypeMap:
+        """Collapse the TypeMap hierarchy into a new TypeMap with the given new parent."""
+        res = TypeMap({}, new_parent)
+        parents = []
+        p = self
+        while p.parent:
+            parents.append(p.parent)
+            p = p.parent
+        for parent in reversed(parents):
+            res.types.update(parent.types)
+        res.types.update(self.types)
+        return res
+
+
+def full_id(typ: Type) -> str:
+    """Return an id that takes all resolved type arguments into account."""
+    res = [str(typ.id)]
+    if isinstance(typ, ParameterizedType):
+        res.extend(full_id(x) for x in typ.type_args)
+    return "$".join(res)
 
 
 def is_assignable_from(target: Type, from_: Type) -> bool:
-    if isinstance(target, Member):
-        target = target.deep_member().typ
-    if isinstance(from_, Member):
-        from_ = from_.deep_member().typ
     match target:
         case Str():
             return isinstance(from_, Str)
@@ -746,9 +544,9 @@ def is_assignable_from(target: Type, from_: Type) -> bool:
         case TypeParam():
             if target.id == from_.id:
                 return True
-            if not target.trait_bound:
+            if not target.bound:
                 return False
-            return is_assignable_from(target.trait_bound, from_)
+            return is_assignable_from(target.bound, from_)
         case Struct():
             return target.id == from_.id
         case Trait():
@@ -771,28 +569,6 @@ def is_assignable_from(target: Type, from_: Type) -> bool:
             raise AssertionError(f"unhandled target type: {target}")
 
 
-def type_params_and_args_are_same(target: ParameterizedType, from_: ParameterizedType) -> bool:
-    if len(target.type_params) != len(from_.type_params):
-        return False
-    if not all(is_same(t, f) for t, f in zip(target.type_params, from_.type_params)):
-        return False
-    return all(is_same(t, f) for t, f in zip(target.type_args, from_.type_args))
-
-
-def is_same(target: Type, from_: Type) -> bool:
-    if isinstance(target, Member):
-        target = target.deep_member().typ
-    if isinstance(from_, Member):
-        from_ = from_.deep_member().typ
-    if isinstance(target, Fn) and isinstance(from_, Fn):
-        return target.is_same(from_)
-    if target.id != from_.id:
-        return False
-    if isinstance(target, ParameterizedType) and isinstance(from_, ParameterizedType):
-        return type_params_and_args_are_same(target, from_)
-    return True
-
-
 def normalize_type(next_id: Callable[[], int], typ: Type) -> Type:
     """Return a normalized version of the type.
 
@@ -804,14 +580,10 @@ def normalize_type(next_id: Callable[[], int], typ: Type) -> Type:
       - If the function is named, a new anonymous copy is created
         with the same parameter and result types.
       - If the function is already anonymous, it is returned as-is.
-    - For member types (MemberType):
-      - The deep member is returned.
     - For type check errors, the error is returned unchanged.
 
     """
     match typ:
-        case Member():
-            return typ.deep_member().typ
         case Fn():
             if not typ.is_named:
                 return typ
@@ -820,8 +592,8 @@ def normalize_type(next_id: Callable[[], int], typ: Type) -> Type:
                 FQN([]),
                 typ.type_params,
                 typ.type_args,
-                typ.type_res_scope,
-                list(typ.params),
+                typ.type_map,
+                typ.params,
                 typ.result,
                 typ.span,
                 is_named=False,

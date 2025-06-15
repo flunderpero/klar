@@ -77,7 +77,7 @@ Error = SimpleError | WithDefinitionError | DuplicateError | CascadedError
 
 
 def _stack() -> str:
-    return "".join(format_stack()[:-2])
+    return "".join(x for x in format_stack()[:-2] if "bootstrap_py" in x)
 
 
 def unknown_token(span: Span, token: str) -> Error:
@@ -158,8 +158,16 @@ def type_param_not_bound(name: str, span: Span) -> Error:
     return SimpleError(span, f"Type parameter `{name}` is not bound to a trait", _stack())
 
 
+def invalid_type_param_bound(name: str, span: Span) -> Error:
+    return SimpleError(span, f"Invalid type parameter bound for type parameter `{name}`", _stack())
+
+
 def self_not_allowed_here(span: Span) -> Error:
     return SimpleError(span, "`self` is not allowed here", _stack())
+
+
+def not_callable(span: Span, defined_here: Span) -> Error:
+    return WithDefinitionError(span, "Only functions and structs can be called", defined_here, _stack())
 
 
 def not_declared_in_current_scope(name: str, span: Span) -> Error:

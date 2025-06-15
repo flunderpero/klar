@@ -113,6 +113,8 @@ def run_test(test: Test, print_code: str, *, print_signatures: bool) -> list:
                         print(f" [run:{step.duration * 1000:.0f}]", end="", flush=True)
                 case _:
                     raise ValueError(f"Unknown step: {step}")
+    except (AssertionError, AttributeError) as e:
+        return [f"Test failed with exception: {e}"]
     finally:
         with contextlib.suppress(FileNotFoundError):
             tmp_file.unlink()

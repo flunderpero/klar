@@ -54,7 +54,7 @@ class TypecheckStep:
     def debug_or_signature(self, *, debug: bool) -> str:
         lines = []
 
-        def visit(node: ast.Node, _parent: ast.Node | None) -> None:
+        def visit(node: ast.Node, _parent: ast.Node | None) -> ast.Node:
             typ = self.type_env.node_types.get(node.id)
             typ_str = (typ.debug() if debug else typ.signature()) if typ else "NOT_FOUND"
             node_str = str(node) if debug else ast.to_str_withoud_nid(node)
@@ -65,6 +65,7 @@ class TypecheckStep:
             lines.append(f"    {node_str}")
             lines.append(f" => {typ_str}\n")
             ast.walk(node, visit)
+            return node
 
         ast.walk(self.module, visit)
         return "\n".join(lines)

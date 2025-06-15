@@ -604,7 +604,7 @@ fn ValueWrapper.unwrap(self) Value<B> => self.wrapped
 fn Value.wrap(self) ValueWrapper<A> => ValueWrapper<A>(self)
 
 fn main() {
-    let value = Value("PASS")
+    let value = Value<Str>("PASS")
     print(value.wrap().unwrap().value)
 }
 ```
@@ -621,13 +621,13 @@ struct Value<A> {
 }
 
 fn main() {
-    let v = Value<Value<Str>>(Value<Str>("Hello"))
+    let v = Value<Value<Str>>(Value<Str>("PASS"))
     print(v.value.value)
 }
 ```
 
 ```
-Hello
+PASS
 ```
 
 Recursive function calls:
@@ -663,6 +663,52 @@ fn main() {
 ```
 Hello
 ```
+
+<details>
+    <summary>More Examples</summary>
+
+A very primitive self-made iterator:
+
+```klar
+trait SimpleIter<A> {
+    fn next(self) A
+}
+
+struct Values<B> {
+    v1 B
+    v2 B
+    v3 B
+}
+
+struct ValuesIter<C> {
+    values Values<C>
+    index Int
+}
+
+fn (SimpleIter<C>) ValuesIter.next(self) C {
+    -- self.index = self.index + 1
+    -- if self.index == 1 => self.values.v1
+    -- else => if self.index == 2 => self.values.v2
+    -- else => self.values.v3
+    self.values.v1
+}
+
+fn Values.iter(self) ValuesIter<B> => ValuesIter<B>(self, 0)
+
+fn main() {
+    let values = Values<Str>("1", "2", "3")
+    let i = values.iter()
+    print(i.next())
+}
+```
+
+```
+1
+2
+3
+```
+
+</details>
 
 ## Block Expression
 
@@ -1387,7 +1433,7 @@ fn print_any<T Stringify>(s T) {
 
 fn main() {
     let iv = IntValue(42)
-    print_any(iv)
+    print_any<IntValue>(iv)
 }
 
 ```
@@ -1414,7 +1460,7 @@ struct Pass {}
 fn (Stringify) Pass.stringify(self) Str => "PASS"
 
 fn main() {
-    let v = Value(Pass())
+    let v = Value<Pass>(Pass())
     print(v.stringify())
 }
 ```
@@ -1439,7 +1485,7 @@ fn (Wrapped<A>) Value.unwrap(self) A => self.value
 fn unwrap<D, E Wrapped<D>>(value E) D => value.unwrap()
 
 fn main() {
-    print(unwrap<Str, Value<Str>>(Value("PASS1")))
+    print(unwrap<Str, Value<Str>>(Value<Str>("PASS1")))
     -- Type arguments can also be inferred.
     print(unwrap(Value("PASS2")))
 }

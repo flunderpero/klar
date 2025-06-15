@@ -34,12 +34,14 @@ ignore = [
     "PLR1722", 
     "PLW2901", 
     "PT018",
+    "PTH107", 
     "PTH123", 
     "PYI024", 
     "S101",
     "S603",
     "S607",
     "SIM115", 
+    "T201",
     "TC006",
     "TD002",
     "TD003",
@@ -53,3 +55,5 @@ select = [ "ALL" ]
 docstring-code-format = true
 preview = true
 
+[tool.inline-snapshot]
+format-command="ruff format --stdin-filename {filename}"

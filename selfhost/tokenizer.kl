@@ -12,24 +12,19 @@ struct Span {
     end Int
 }
 
-impl Span {
-    fn to(self, to Span) Span => Span(self.file, self.src, self.start, to.end)
+fn Span.to(self, to Span) Span => Span(self.file, self.src, self.start, to.end)
 
-    fn pos(self) (Int, Int) {
-        mut row = 1
-        mut col = 1
-        mut i = 0
-        -- Or: for i in range(0, self.start) {
-        loop {
-            if i >= self.start => break
-            if self.src[i] == '\n' {
-                row += 1
-                col = 1
-            } else => col += 1
-            i += 1
-        }
-        return (row, col)
+fn Span.pos(self) (Int, Int) {
+    mut row = 1
+    mut col = 1
+    mut i = 0
+    for i in range(0, self.start) {
+        if self.src[i] == '\n' {
+            row += 1
+            col = 1
+        } else => col += 1
     }
+    (row, col)
 }
 
 union TokenKind = 
@@ -47,6 +42,7 @@ union TokenKind =
     | .Else
     | .Equal
     | .EqualEqual
+    | .Error
     | .EOF
     | .False
     | .Fn 
@@ -76,119 +72,122 @@ struct Token {
     span Span
 }
 
-impl Tokenizer {
-    fn peek_char(self) Char | None 
-      => if self.index < self.text.len() => self.text[self.index] else => None
+fn Tokenizer.peek_char(self) Char | None 
+  => if self.index < self.text.len() => self.text[self.index] else => None
 
-    fn consume_char(mut self) Char | None {
-        let res = self.peek_char()
-        self.index += 1
-        res
-    } 
+fn Tokenizer.consume_char(mut self) Char | None {
+    let res = self.peek_char()
+    self.index += 1
+    res
+} 
 
-    fn span(self) Span {
-        Span(self.file, self.src, self.index, self.index)
-    }
+fn Tokenizer.span(self) Span {
+    Span(self.file, self.src, self.index, self.index)
 }
 
-impl Iterator<Token> for Tokenizer {
-    fn next(mut self) Token {
-        let from = self.span()
-        let c = self.consume_char()
-        let kind = match c {
-            case None => TokenKind.EOF
-            case ' ' or '\t' or '\n' or '\r' => None
-            case '<' => TokenKind.AngleLeft
-            case '>' => TokenKind.AngleRight
-            case '[' => TokenKind.BracketLeft
-            case ']' => TokenKind.BracketRight
-            case ',' => TokenKind.Comma
-            case '{' => TokenKind.CurlyLeft
-            case '}' => TokenKind.CurlyRight
-            case '.' => TokenKind.Dot
-            case '(' => TokenKind.ParenLeft
-            case ')' => TokenKind.ParenRight
-            case '+' => TokenKind.Plus
-            case '|' => TokenKind.Pipe
-            case '-' {
-                if self.peek_char('-') {
-                    mut value = "--"
-                    loop {
-                        match self.peek_char() {
-                            case '\n' => break
-                            case _ => value += self.consume_char()
-                        }
-                    }
-                    TokenKind.Comment(value)
-                } else => TokenKind.Minus
-            }
-            case '=' {
-                match self.peek_char() {
-                    case '=' {
-                        self.consume_char()
-                        TokenKind.EqualEqual
-                    }
-                    case _ => TokenKind.Equal
-                }
-            }
-            case '0'..'9' {
-                mut value = c.to_str()
+fn (Iterator<Token>) Tokenizer.next(mut self) Token {
+    let from = self.span()
+    let c = self.consume_char()
+    let kind = match c {
+        case None => TokenKind.EOF
+        case ' ' or '\t' or '\n' or '\r' => None
+        case '<' => TokenKind.AngleLeft
+        case '>' => TokenKind.AngleRight
+        case '[' => TokenKind.BracketLeft
+        case ']' => TokenKind.BracketRight
+        case ',' => TokenKind.Comma
+        case '{' => TokenKind.CurlyLeft
+        case '}' => TokenKind.CurlyRight
+        case '.' => TokenKind.Dot
+        case '(' => TokenKind.ParenLeft
+        case ')' => TokenKind.ParenRight
+        case '+' => TokenKind.Plus
+        case '|' => TokenKind.Pipe
+        case '-' {
+            if self.peek_char('-') {
+                mut value = "--"
                 loop {
                     match self.peek_char() {
-                        case '0'..'9' {
-                            value += self.consume_char()
-                        }
-                        case _ => break
+                        case '\n' => break
+                        case _ => value += self.consume_char()
                     }
                 }
-                TokenKind.Int(value)
-            }
-            case '"' {
-                mut value = ""
-                loop {
-                    match self.consume_char() {
-                        case None or '"'=> break
-                        case _ => value += c
-                    }
-                }
-                TokenKind.StrLiteral(value)
-            }
-            case 'a'..'z' or 'A'..'Z' {
-                let is_type_identifier = match c {
-                    case 'a'..'z' => true
-                    case _ => false
-                }
-                mut value = c.to_str()
-                loop {
-                    match self.peek_char() {
-                        case 'a'..'z' or 'A'..'Z' or '_' => value += c
-                        case _ => break
-                    }
+                TokenKind.Comment(value)
+            } else => TokenKind.Minus
+        }
+        case '=' {
+            match self.peek_char() {
+                case '=' {
                     self.consume_char()
+                    TokenKind.EqualEqual
                 }
-                if is_type_identifier => TokenKind.TypeIdentifier(value) 
-                else => match value {
-                    case "break" => TokenKind.Break
-                    case "continue" => TokenKind.Continue
-                    case "else" => TokenKind.Else
-                    case "false" => TokenKind.False
-                    case "fn" => TokenKind.Fn
-                    case "for" => TokenKind.For
-                    case "if" => TokenKind.If
-                    case "impl" => TokenKind.Impl
-                    case "let" => TokenKind.Let
-                    case "loop" => TokenKind.Loop
-                    case "mut" => TokenKind.Mut
-                    case "self" => TokenKind.Self
-                    case "struct" => TokenKind.Struct
-                    case "trait" => TokenKind.Trait
-                    case "true" => TokenKind.True
-                    case "union" => TokenKind.Union
-                    case _ => TokenKind.Identifier(value)
-                }
+                case _ => TokenKind.Equal
             }
         }
-        let span = from.to(self.span())
-        Token(kind, span)
-    } 
+        case '0'..'9' {
+            mut value = c.to_str()
+            loop {
+                match self.peek_char() {
+                    case '0'..'9' => value += self.consume_char()
+                    case _ => break
+                }
+            }
+            TokenKind.Int(value)
+        }
+        case '"' {
+            mut value = ""
+            mut kind TokenKind | None = None
+            loop {
+                match self.consume_char() {
+                    case '\n' {
+                        kind = TokenKind.Error("unterminated string literal")
+                        break
+                    } 
+                    case '"' => break
+                    case None => kind = TokenKind.Error("unterminated string literal")
+                    case _ => value += c
+                }
+            }
+            match kind {
+                case None => TokenKind.StrLiteral(value)
+                case _ => kind
+            }
+        }
+        case 'a'..'z' or 'A'..'Z' {
+            let is_type_identifier = match c {
+                case 'A'..'Z' => true
+                case _ => false
+            }
+            mut value = c.to_str()
+            loop {
+                match self.peek_char() {
+                    case 'a'..'z' or 'A'..'Z' or '_' => value += c
+                    case _ => break
+                }
+                self.consume_char()
+            }
+            if is_type_identifier => TokenKind.TypeIdentifier(value) 
+            else => match value {
+                case "break" => TokenKind.Break
+                case "continue" => TokenKind.Continue
+                case "else" => TokenKind.Else
+                case "false" => TokenKind.False
+                case "fn" => TokenKind.Fn
+                case "for" => TokenKind.For
+                case "if" => TokenKind.If
+                case "impl" => TokenKind.Impl
+                case "let" => TokenKind.Let
+                case "loop" => TokenKind.Loop
+                case "mut" => TokenKind.Mut
+                case "self" => TokenKind.Self
+                case "struct" => TokenKind.Struct
+                case "trait" => TokenKind.Trait
+                case "true" => TokenKind.True
+                case "union" => TokenKind.Union
+                case _ => TokenKind.Identifier(value)
+            }
+        }
+    }
+    let span = from.to(self.span())
+    Token(kind, span)
 }

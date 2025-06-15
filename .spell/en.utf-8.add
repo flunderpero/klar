@@ -139,3 +139,4 @@ monomorphize
 monomorphize
 regs
 pyright
+conftest

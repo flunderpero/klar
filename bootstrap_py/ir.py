@@ -363,18 +363,14 @@ class FnGen:
                 self.scope.declare(p.name, reg)
                 params.append(Param(reg, typ))
         result = self.typ(fn_typ.result)
-        name = (
-            self.fn_name(types.instance(fn_typ, self.type_env.type_res_scope)) if fn_def.decl.name != "main" else "main"
-        )
+        name = self.fn_name(fn_typ) if fn_def.decl.name != "main" else "main"
         self.fn_ir = FnIR(fn_def, name, params, result, [])
         self.block = self.new_block()
 
-    def fn_name(self, typ: types.Type) -> str:
-        fn = self.type_env.resolve(typ)
-        assert isinstance(fn, types.Fn)
+    def fn_name(self, fn: types.Fn) -> str:
         name = str(fn.fqn)
         if fn.type_args:
-            name += "$" + "$".join(types.full_id(x).replace(":", "$") for x in fn.type_args)
+            name += "$" + "$".join(types.full_id(x) for x in fn.type_args)
         return name
 
     def new_block(self) -> Block:
@@ -441,7 +437,7 @@ class FnGen:
             assert node.id not in self.node_regs, f"Node {node.id} already has a register"
             self.node_regs[node.id] = inst.reg
 
-    def generate(self, node: ast.Node, parent: ast.Node | None) -> None:
+    def generate(self, node: ast.Node, parent: ast.Node | None) -> ast.Node:
         match node:
             case ast.FnDef():
                 ast.walk(node, self.generate)
@@ -572,14 +568,14 @@ class FnGen:
                 reg = self.scope.find(node.name)
                 if reg:
                     self.node_regs[node.id] = reg
-                    return
+                    return node
                 # If this node is the callee of a call node then we don't want
                 # to emit a GetFnPtr for named functions.
                 if isinstance(parent, ast.Call) and parent.callee == node:
-                    return
+                    return node
                 ir_typ = self.type_env.get_node_type(node)
                 if not isinstance(ir_typ, types.Fn) or not ir_typ.is_named:
-                    return
+                    return node
                 # Emit a GetFnPtr if the identifier refers to a named function.
                 getptr_reg = self.reg(Ptr(self.typ(ir_typ)))
                 fn_typ = self.typ(ir_typ)
@@ -591,7 +587,8 @@ class FnGen:
                 src = self.node_regs[node.target.id]
                 types_src = self.type_env.get_node_type(node.target)
                 assert isinstance(src.typ, Struct)
-                assert isinstance(types_src, types.Struct)
+                assert isinstance(types_src, types.Struct), f"Expected Struct, got {types_src}"
+                # Because all method members have already been lowered this can only be a field.
                 field_index = types_src.field_index(node.name)
                 assert field_index is not None
                 getptr_reg = self.reg(Ptr(src.typ.fields[field_index]))
@@ -657,6 +654,7 @@ class FnGen:
                 pass
             case _:
                 raise AssertionError(f"Unsupported node: {node.__class__}")
+        return node
 
 
 def generate_ir(specs: list[lower.FnSpec]) -> IR:

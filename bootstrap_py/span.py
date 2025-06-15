@@ -38,8 +38,8 @@ class Span:
         end = self.end
         while end < len(self.src) and self.src[end] != "\n":
             end += 1
-        before_start = start - 2
-        after_end = end + 2
+        before_start = start - 1
+        after_end = end + 1
         for _ in range(pad):
             while before_start > 0 and self.src[before_start] != "\n":
                 before_start -= 1
@@ -52,7 +52,7 @@ class Span:
             [x for x in self.src[end:after_end].split("\n") if x],
         )
 
-    def formatted_lines(self, pad: int = 2) -> list[str]:
+    def formatted_lines(self, pad: int = 2, *, enclosing_empty_lines: bool = True) -> list[str]:
         before, lines, after = self.lines(pad)
         start = self.start_line_col()
         end = self.end_line_col()
@@ -67,7 +67,8 @@ class Span:
 
         empty_line_prefix = " " + " " * line_num_width + " |"
         result = []
-        result.append(empty_line_prefix)
+        if enclosing_empty_lines:
+            result.append(empty_line_prefix)
         result.extend(code_line(x) for x in before)
         for i, line in enumerate(lines):
             result.append(code_line(line))
@@ -76,7 +77,8 @@ class Span:
         if len(lines) == 1:
             result.append(empty_line_prefix + " " * start[1] + "^" * (end[1] - start[1]))
         result.extend(code_line(x) for x in after)
-        result.append(empty_line_prefix)
+        if enclosing_empty_lines:
+            result.append(empty_line_prefix)
         return result
 
     def merge(self, other: Span) -> Span:

@@ -492,6 +492,7 @@ def generate_builtins(asm: ASM) -> None:
     strb w3, [x5]
     sub x5, x5, #1
 .int_to_str_store:
+    add x5, x5, #1
     sub x1, x7, x5
     mov x2, 1
     add x1, x1, x2

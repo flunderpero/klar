@@ -224,8 +224,12 @@ class Fn:
     @nocycle
     def debug(self, seen: dict[int, str] | None = None) -> str:
         type_params = type_params_debug(self.type_params, self.type_args, seen)
-        params = ", ".join(x.debug(seen) for x in self.params)
-        name = f"fn {self.fqn}" if self.is_named else ""
+        if self.is_named:
+            params = ", ".join(x.debug(seen) for x in self.params)
+            name = f"fn {self.fqn}"
+        else:
+            params = ", ".join(f"{x.typ.debug(seen)}" for x in self.params)
+            name = "fn"
         return tid(self.id) + f"{name}{type_params}({params}) {self.result.debug(seen)}"
 
     def __repr__(self) -> str:
@@ -237,8 +241,13 @@ class Fn:
     @nocycle
     def signature(self, seen: dict[int, str] | None = None) -> str:
         type_args = type_args_signature(self.type_args, seen)
-        params = ", ".join(x.signature(seen) for x in self.params)
-        return f"fn {self.fqn}{type_args}({params}) {self.result.signature(seen)}"
+        if self.is_named:
+            params = ", ".join(x.signature(seen) for x in self.params)
+            name = f"fn {self.fqn}"
+        else:
+            params = ", ".join(f"{x.typ.signature(seen)}" for x in self.params)
+            name = "fn"
+        return f"{name}{type_args}({params}) {self.result.signature(seen)}"
 
     def is_instance_method(self) -> bool:
         return len(self.params) > 0 and self.params[0].name == "self"
@@ -578,7 +587,7 @@ def normalize_type(next_id: Callable[[], int], typ: Type) -> Type:
     - For most types, the type is returned unchanged.
     - For function types (Fn):
       - If the function is named, a new anonymous copy is created
-        with the same parameter and result types.
+        with the same parameter and result types but without type parameters/arguments.
       - If the function is already anonymous, it is returned as-is.
     - For type check errors, the error is returned unchanged.
 
@@ -590,9 +599,9 @@ def normalize_type(next_id: Callable[[], int], typ: Type) -> Type:
             return Fn(
                 next_id(),
                 FQN([]),
-                typ.type_params,
-                typ.type_args,
-                typ.type_map,
+                [],
+                [],
+                TypeMap({}, None),
                 typ.params,
                 typ.result,
                 typ.span,

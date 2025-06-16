@@ -166,6 +166,12 @@ class TypeChecker:
                     typ.type_map = type_map
                     return typ
                 return declared.typ
+            case ast.FnType():
+                params = [types.Field(f"_p{i + 1}", self.parse_type_node(x)) for i, x in enumerate(node.params)]
+                result = self.parse_type_node(node.result)
+                return types.Fn(
+                    self.next_id(), FQN([]), [], [], types.TypeMap({}, None), params, result, node.span, is_named=False
+                )
             case _:
                 raise AssertionError(f"Not implemented for {node} ({type(node)})")
 
@@ -339,6 +345,18 @@ class TypeChecker:
                         method_typ = types.resolve(method_typ)
                         typ.methods.append(types.Field(method.name, method_typ))
 
+    def tc_assign(self, node: ast.Assign) -> types.Type:
+        debug(9, node, "ast.Assign")
+        ast.walk(node, self.tc)
+        _target, err = self.type_env.get_node_type(node.target)
+        if err:
+            return err
+        _value, err = self.type_env.get_node_type(node.value)
+        if err:
+            return err
+        # todo: type check and mutability check
+        return self.type_env.builtins.NoneTyp
+
     def tc_binary_expr(self, node: ast.BinaryExpr) -> types.Type:
         debug(9, node, "ast.BinaryExpr")
         ast.walk(node, self.tc)
@@ -476,6 +494,7 @@ class TypeChecker:
         typ, err = self.type_env.get_node_type(node.value)
         if err:
             return err
+        typ = types.normalize_type(self.next_id, typ)
         self.scope.declare(node.name, typ)
         return self.builtins.NoneTyp
 
@@ -528,6 +547,8 @@ class TypeChecker:
     def tc(self, node: ast.Node, _parent: ast.Node | None) -> ast.Node:
         typ: types.Type
         match node:
+            case ast.Assign():
+                typ = self.tc_assign(node)
             case ast.BinaryExpr():
                 typ = self.tc_binary_expr(node)
             case ast.Block():

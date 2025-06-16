@@ -473,7 +473,7 @@ fn id<T>(x T) T => x
 
 fn main() {
     let fb = FuncBox<Str>(id<Str>)
-    print(apply(fb, "PASS"))
+    print(apply<Str>(fb, "PASS"))
 }
 ```
 

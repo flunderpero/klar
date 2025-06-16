@@ -10,6 +10,30 @@ def test_happy_path() -> None:
     assert stdout == "PASS\n"
 
 
+def test_function_types_are_structurally_equal() -> None:
+    stdout = compile_and_run_success(
+        """
+        fn add(a Int, b Int) Int => a + b
+
+        fn sub(a Int, b Int) Int => a - b
+
+        fn main() {
+            let f = if false => sub else => add
+            print(int_to_str(f(40, 2)))
+            mut f2 = add
+            if true => f2 = sub
+            print(int_to_str(f2(140, 3)))
+        }
+        """
+    )
+    assert stdout == strip(
+        """
+        42
+        137
+        """
+    )
+
+
 def test_function_generics() -> None:
     stdout = compile_and_run_success(
         """
@@ -31,7 +55,7 @@ def test_function_generics() -> None:
     )
 
 
-def test_generic_with_multiple_type_parameters() -> None:
+def test_function_generics_with_multiple_type_parameters() -> None:
     stdout = compile_and_run_success(
         """
         fn return_first<A, B>(a A, b B) A => a
@@ -159,6 +183,30 @@ def test_struct_generic_field() -> None:
     )
 
 
+def test_struct_generic_function_field() -> None:
+    stdout = compile_and_run_success(
+        """
+        struct FuncBox<A> {
+            f fn(A) A
+        }
+
+        fn apply<B>(fb FuncBox<B>, x B) B => fb.f(x)
+
+        fn id<C>(x C) C => x
+
+        fn main() {
+            let fb = FuncBox<Str>(id<Str>)
+            print(apply<Str>(fb, "PASS"))
+        }
+        """
+    )
+    assert stdout == strip(
+        """
+        PASS
+        """
+    )
+
+
 def test_trait_basics() -> None:
     stdout = compile_and_run_success(
         """
@@ -282,7 +330,8 @@ def test_trait_method_assigned_to_variable() -> None:
         fn (Printable) Value.print(self) => print(self.value)
 
         fn main() {
-            let p = Value("PASS").print
+            let v = Value("PASS")
+            let p = v.print
             p()
         }
         """

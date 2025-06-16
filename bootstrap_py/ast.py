@@ -97,15 +97,13 @@ class NamedType:
 @dataclass
 class FnType:
     id: NodeId
-    type_params: TypeParams
     params: list[Type]
     result: Type
     span: Span
 
     def __str__(self) -> str:
-        type_args = generics_to_str(self.type_params)
         params = ", ".join(str(x) for x in self.params)
-        return nid(self.id) + f"fn{type_args}({params}) -> {self.result}"
+        return nid(self.id) + f"fn({params}) -> {self.result}"
 
 
 @dataclass

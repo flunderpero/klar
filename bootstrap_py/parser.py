@@ -93,9 +93,6 @@ class Parser:
                 return self.parse_named_type()
             case token.Kind.fn:
                 self.input.next()
-                type_params = self.parse_type_params()
-                if type_params is None:
-                    return None
                 if self.expect(token.Kind.paren_left) is None:
                     return None
                 params: list[ast.Type] = []
@@ -111,7 +108,7 @@ class Parser:
                 result = self.parse_type()
                 if result is None:
                     return None
-                return ast.FnType(self.id(), type_params, params, result, self.input.span_merge(t.span))
+                return ast.FnType(self.id(), params, result, self.input.span_merge(t.span))
             case _:
                 self.input.next()
                 self.error(

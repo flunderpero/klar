@@ -22,9 +22,12 @@ class TypeEnv:
     def resolve(self, typ: types.Type, node: ast.Node | None = None) -> types.Type:
         typ = self.type_map.resolve(typ)
         if isinstance(typ, types.TypeParam):
-            assert typ.bound is not None, f"Type parameter {typ} has no bound at {(node or typ).span}"
+            assert typ.bound is not None, f"Type parameter {typ.debug()} has no bound at {(node or typ).span}"
             typ = self.resolve(typ.bound)
         return typ
+
+    def debug(self) -> str:
+        return f"TypeEnv(type_env={self.type_env}, type_map={self.type_map.debug()}, overrides={self.overrides})"
 
 
 @dataclass

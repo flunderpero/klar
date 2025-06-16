@@ -428,6 +428,8 @@ class FnGen:
                 raise AssertionError(f"Unsupported type: {typ.debug()} ({typ.__class__})")
 
     def reg(self, typ: Type, prefix: str = "%") -> Reg:
+        if isinstance(typ, NoneTyp):
+            return NoneReg
         self.next_reg += 1
         return Reg(id=f"{prefix}{self.next_reg}", typ=typ)
 
@@ -602,16 +604,21 @@ class FnGen:
                 args = [self.node_regs[x.id] for x in node.args]
                 match callee:
                     case types.Fn():
-                        reg = NoneReg
-                        result_typ = callee.result
-                        if not isinstance(result_typ, types.NoneTyp):
-                            reg = self.reg(self.typ(result_typ))
                         if callee.is_named:
                             # Direct call by name.
+                            reg = self.reg(self.typ(callee.result))
                             self.emit(Call(reg, self.fn_name(callee), args), node)
                         else:
-                            # Indirect call by register.
+                            # Indirect call by register (either a `Fn` or a `Ptr<Fn>`).
                             src = self.node_regs[node.callee.id]
+                            # Determine the result type of the call.
+                            if isinstance(src.typ, Ptr):
+                                fn = src.typ.typ
+                                assert isinstance(fn, Fn), f"Expected Fn, got {fn}"
+                            else:
+                                assert isinstance(src.typ, Fn), f"Expected Fn, got {src.typ}"
+                                fn = src.typ
+                            reg = self.reg(fn.result)
                             self.emit(Call(reg, src, args), node)
                     case types.Struct():
                         typ = self.typ(callee)

@@ -20,6 +20,10 @@ def lower_instance_methods(module: ast.Module, type_env: typechecker.TypeEnv) ->
                 value = type_env.get_node_type(node.value)[0]
                 type_env.set_node_type(node.value, value)
             case ast.Call():
+                # todo: This *really* needs to be done in `ast.Member` so we are able
+                #       to pass a reference to a function member to `ast.Call`:
+                #           let f = Value("PASS").print
+                #           call_my_func(f)
                 callee = type_env.get_node_type(node.callee)[0]
                 receiver = receivers.get(id(callee))
                 if receiver is not None:

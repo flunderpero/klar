@@ -1,5 +1,5 @@
 from . import ast
-from .conftest import typecheck
+from .conftest import typecheck, types
 
 
 def test_generic_basics() -> None:
@@ -62,6 +62,39 @@ def test_generic_nested_function_calls() -> None:
     assert tc.type_at(2, 1, ast.FnDecl).signature() == "fn test.return_it_again<B>(value B) B"
     assert tc.type_at(3, 1, ast.Ident).signature() == "fn test.return_it<B>(value B) B"
     assert tc.type_at(6, 1, ast.Ident).signature() == "fn test.return_it_again<Str>(value Str) Str"
+
+
+def test_generic_dependent_type_parameters() -> None:
+    tc = typecheck("""
+
+        struct Value<A> {
+            value A
+        }
+        trait Wrapped<B> {
+            fn unwrap(self) B
+        }
+        fn (Wrapped<A>) Value.unwrap(self) A => self.value
+        fn unwrap<D, E Wrapped<D>>(value E) D => value.unwrap()
+        fn main() {
+            unwrap<Str, Value<Str>>(Value<Str>("PASS"))
+            unwrap<Int, Value<Int>>(Value<Int>(42))
+        }
+
+    """)
+    assert tc.type_at(1, 1, ast.Struct).signature() == "test.Value<A>"
+    assert tc.type_at(7, 1, ast.FnDecl).signature() == "fn test.Value.unwrap(self Self) A"
+    assert (
+        types.resolve(tc.type_at(8, 1, ast.FnDecl)).signature()
+        == "fn test.unwrap<D, E test.Wrapped<D>>(value E test.Wrapped<D>) D"
+    )
+    assert (
+        types.resolve(tc.type_at(10, 1, ast.Ident)).signature()
+        == "fn test.unwrap<Str, test.Value<Str>>(value test.Value<Str>) Str"
+    )
+    assert (
+        types.resolve(tc.type_at(11, 1, ast.Ident)).signature()
+        == "fn test.unwrap<I64, test.Value<I64>>(value test.Value<I64>) I64"
+    )
 
 
 def test_function_type() -> None:

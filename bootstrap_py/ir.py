@@ -592,7 +592,7 @@ class FnGen:
                 assert isinstance(types_src, types.Struct), f"Expected Struct, got {types_src}"
                 # Because all method members have already been lowered this can only be a field.
                 field_index = types_src.field_index(node.name)
-                assert field_index is not None
+                assert field_index is not None, f"No field {node.name} in {src.typ}"
                 getptr_reg = self.reg(Ptr(src.typ.fields[field_index]))
                 self.emit(GetPtr(getptr_reg, src, field_index), None)
                 reg = self.reg(src.typ.fields[field_index])

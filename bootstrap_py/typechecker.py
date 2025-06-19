@@ -27,9 +27,9 @@ class TypeEnv:
         self, node: ast.Node, typ: type[T] | None = None
     ) -> tuple[T, types.TypeCheckError | None]:
         res = self.node_types[node.id]
+        if isinstance(res, types.TypeCheckError):
+            return cast(T, res), res
         if typ is not None:
-            if isinstance(res, types.TypeCheckError):
-                return cast(T, res), res
             assert isinstance(res, typ), f"Expected {typ}, got {type(res)}"
         return cast(T, res), None
 
@@ -242,7 +242,7 @@ class TypeChecker:
                     typ.methods.append(types.Field(method_node.name, method_typ))
 
         # Stage 2: Make all type parameters known.
-        for node in fn_defs + structs + traits:
+        for node in traits + structs + fn_defs:
             name = node.decl.fullname() if isinstance(node, ast.FnDef) else node.name
             type_params = node.decl.type_params if isinstance(node, ast.FnDef) else node.type_params
             declared = self.scope.get_forward_declared(name, None)
@@ -407,6 +407,16 @@ class TypeChecker:
         callee, err = self.type_env.get_node_type(node.callee)
         if err:
             return err
+        call_args = []
+        for arg in node.args:
+            arg, err = self.type_env.get_node_type(arg)
+            if err:
+                return err
+            call_args.append(arg)
+        type_map = types.infer_type_arguments_from_call_args(callee, call_args)
+        callee = replace(callee, type_map=type_map)
+        callee = types.resolve(callee)
+        self.type_env.set_node_type(node.callee, callee)
         match callee:
             case types.Fn():
                 return callee.result
@@ -485,7 +495,6 @@ class TypeChecker:
                     error.unexpected_type(then_block.signature(), else_block.signature(), node.else_block.span)
                 )
             typ = types.normalize_type(self.next_id, then_block)
-        self.type_env.set_node_type(node, typ)
         return typ
 
     def tc_let(self, node: ast.Let) -> types.Type:
@@ -521,7 +530,6 @@ class TypeChecker:
                 for method in target.methods:
                     if method.name == node.name:
                         return method.typ
-                print("no member", id(target), target, node.name)
                 return self.error(error.no_member(node.name, str(target.fqn), node.span, target.span))
             case types.Trait():
                 for method in target.methods:

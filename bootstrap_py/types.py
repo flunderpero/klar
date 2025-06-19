@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from functools import wraps
 from typing import Any, Callable, cast
 
@@ -437,6 +437,11 @@ class TypeMap:
                         break
                     typ = resolved
                     stack.append(typ.id)
+                # if not isinstance(typ, TypeParam):
+                #     typ = self.resolve(typ, seen)
+                if isinstance(typ, TypeParam) and typ.bound is not None:
+                    typ = replace(typ, bound=self.resolve(typ.bound, seen))
+
                 seen[full_id(typ)] = typ
                 return typ
             case Fn():
@@ -479,9 +484,30 @@ class TypeMap:
                 seen[full_id(struct)] = struct
                 struct.fields = [Field(x.name, type_map.resolve(x.typ, seen)) for x in struct.fields]
                 struct.methods = [Field(x.name, cast(Fn, type_map.resolve(x.typ, seen))) for x in struct.methods]
-                # todo: Do we ever need to resolve traits?
-                # struct.traits = [cast(Trait, type_map.resolve(x, seen)) for x in struct.traits]
+                struct.traits = [cast(Trait, type_map.resolve(x, seen)) for x in struct.traits]
                 return struct
+            case Trait():
+                type_map = self
+                if id(self) != id(typ.type_map):
+                    type_map = self.flatten(typ.type_map)
+                trait = Trait(
+                    typ.id,
+                    typ.fqn,
+                    typ.type_params,
+                    typ.type_args,
+                    type_map,
+                    typ.self_typ,
+                    typ.methods,
+                    typ.default_impls,
+                    typ.span,
+                )
+                trait.type_args = [type_map.resolve(x, seen) for x in trait.type_args]
+                seen[full_id(trait)] = trait
+                trait.methods = [Field(x.name, cast(Fn, type_map.resolve(x.typ, seen))) for x in trait.methods]
+                trait.default_impls = [
+                    Field(x.name, cast(Fn, type_map.resolve(x.typ, seen))) for x in trait.default_impls
+                ]
+                return trait
         return typ
 
     def find(self, type_param: TypeParam) -> Type | None:
@@ -576,6 +602,37 @@ def is_assignable_from(target: Type, from_: Type) -> bool:
             return is_assignable_from(target.result, from_.result)
         case _:
             raise AssertionError(f"unhandled target type: {target}")
+
+
+def infer_type_arguments_from_call_args(callee: CallableType, call_args: list[Type]) -> TypeMap:
+    """Infer type arguments for a function call based on the types of the arguments."""
+    type_map = TypeMap({}, callee.type_map)
+    type_params = {x.id for x in callee.type_params}
+
+    def infer(param: Type, arg: Type) -> None:
+        param = resolve(param)
+        if isinstance(param, TypeParam):
+            if param.id in type_params and param.id not in type_map.types:
+                type_map.bind(param, arg)
+            if param.bound is not None:
+                param = param.bound
+        if isinstance(param, ParameterizedType) and isinstance(arg, ParameterizedType):
+            for p, a in zip(param.type_args, arg.type_args):
+                infer(p, a)
+        if isinstance(param, Fn) and isinstance(arg, Fn):
+            infer(param.result, arg.result)
+
+    callee = resolve(callee)
+    match callee:
+        case Fn():
+            params = callee.params_without_self()
+        case Struct():
+            params = callee.fields
+        case _:
+            raise AssertionError(f"Unsupported callee type: {callee}")
+    for param, arg in zip(params, call_args):
+        infer(param.typ, arg)
+    return type_map
 
 
 def normalize_type(next_id: Callable[[], int], typ: Type) -> Type:

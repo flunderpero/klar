@@ -61,6 +61,5 @@ def test_trait_bounds_undefined_method() -> None:
         fn print_stringer<T Stringer>(s T) => print(s.not_defined())
 
     """)
-    assert len(errors) == 2
+    assert len(errors) == 1
     assert errors[0].short_message() == "No member `not_defined` in type `test.Stringer`"
-    assert errors[1].short_message() == "Only functions and structs can be called"

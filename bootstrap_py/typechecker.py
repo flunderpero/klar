@@ -189,7 +189,7 @@ class TypeChecker:
         fn_defs = [x for x in parent_node.nodes if isinstance(x, ast.FnDef)]
         structs = [x for x in parent_node.nodes if isinstance(x, ast.Struct)]
         traits = [x for x in parent_node.nodes if isinstance(x, ast.Trait)]
-        trait_default_impls: dict[types.TypeId, ast.FnDef] = {}
+        trait_default_impls: dict[FQN, ast.FnDef] = {}
 
         # Stage 1: Make all type names known.
         for node in fn_defs:
@@ -270,10 +270,15 @@ class TypeChecker:
                     assert receiver is not None, f"receiver should be found: {decl.receiver}"
                     self.scope.declare("Self", receiver.typ.self_typ)
                     self.scope.declare_type_params(receiver.typ.type_params)
-                    receiver.typ.methods.append(types.Field(decl.name, declared.typ))
+                    if not isinstance(receiver.typ, types.Trait):
+                        receiver.typ.methods.append(types.Field(decl.name, declared.typ))
                     if decl.trait_qualifier is not None:
                         # todo: check trait method implementation
                         trait = self.parse_type_node(decl.trait_qualifier)
+                        if not isinstance(trait, types.Trait):
+                            self.error(error.unexpected_type("trait", trait.signature(), node.span))
+                            continue
+                        assert isinstance(receiver.typ, types.Struct)
                         receiver.typ.traits.append(trait)
                 elif any(x.name == "self" for x in decl.params):
                     err = self.error(error.self_not_allowed_here(node.span))
@@ -293,7 +298,7 @@ class TypeChecker:
                 # Add the self type as a type parameter.
                 typ.type_params.append(typ.params[0].typ)
                 typ.type_args.append(typ.params[0].typ)
-                trait_default_impls[declared.typ.id] = node
+                trait_default_impls[typ.fqn] = node
             self.scope.finish_forward_declared(decl.fullname())
             self.type_env.set_node_type(node, typ)
             self.type_env.set_node_type(decl, typ)
@@ -335,15 +340,53 @@ class TypeChecker:
                 continue
             for trait in typ.traits:
                 for method in trait.methods:
-                    fn_def = trait_default_impls.get(method.typ.id)
+                    fn_def = trait_default_impls.get(method.typ.fqn)
                     if not fn_def:
+                        continue
+                    method_typ, err = self.type_env.get_node_type(fn_def)
+                    if err:
                         continue
                     if typ.method(method.name) is None:
                         # Make a copy of the method and bind the trait's self type to the struct.
-                        method_typ = replace(method.typ, type_map=method.typ.type_map.flatten())
+                        method_typ = replace(method_typ, type_map=method_typ.type_map.flatten())
                         method_typ.type_map.bind(trait.self_typ, typ)
                         method_typ = types.resolve(method_typ)
                         typ.methods.append(types.Field(method.name, method_typ))
+            self.tc_declared_struct(typ)
+
+    def tc_declared_struct(self, struct: types.Struct) -> None:
+        # Make sure all trait methods are implemented for each trait and the signatures match.
+        for trait in struct.traits:
+            # Find first implemented trait method.
+            first_method = next(
+                (struct.method(x.name) for x in trait.methods if struct.method(x.name) is not None), None
+            )
+            assert first_method is not None
+
+            for trait_method in trait.methods:
+                struct_method = struct.method(trait_method.name)
+                if struct_method is None:
+                    self.error(
+                        error.trait_method_impl_missing(
+                            str(trait.fqn), trait_method.name, trait.span, first_method.span
+                        )
+                    )
+                    continue
+                trait_type_params = trait_method.typ.type_args
+                struct_type_params = struct_method.type_args
+                if len(struct_type_params) > 0 and (struct_type_params[0].id == struct.id):
+                    # This is a default implementation of a trait method.
+                    # We have to ignore the Self type parameter we added to it earlier.
+                    struct_type_params = struct_type_params[1:]
+                if not types.is_assignable_from(trait_method.typ, struct_method) or len(trait_type_params) != len(
+                    struct_type_params
+                ):
+                    self.error(
+                        error.trait_method_impl_mismatch(
+                            trait_method.typ.signature(), struct_method.signature(), trait.span, struct_method.span
+                        )
+                    )
+                    continue
 
     def tc_assign(self, node: ast.Assign) -> types.Type:
         debug(9, node, "ast.Assign")
@@ -494,7 +537,7 @@ class TypeChecker:
                 return self.error(
                     error.unexpected_type(then_block.signature(), else_block.signature(), node.else_block.span)
                 )
-            typ = types.normalize_type(self.next_id, then_block)
+            typ = types.normalize_type(then_block)
         return typ
 
     def tc_let(self, node: ast.Let) -> types.Type:
@@ -503,7 +546,7 @@ class TypeChecker:
         typ, err = self.type_env.get_node_type(node.value)
         if err:
             return err
-        typ = types.normalize_type(self.next_id, typ)
+        typ = types.normalize_type(typ)
         self.scope.declare(node.name, typ)
         return self.builtins.NoneTyp
 

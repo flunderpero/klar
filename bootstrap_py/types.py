@@ -566,25 +566,24 @@ def full_id(typ: Type) -> str:
 
 def is_assignable_from(target: Type, from_: Type) -> bool:
     match target:
-        case Str():
-            return isinstance(from_, Str)
-        case Int():
-            return isinstance(from_, Int)
-        case Bool():
-            return isinstance(from_, Bool)
-        case NoneTyp():
-            return isinstance(from_, NoneTyp)
+        case Str() | Int() | Bool() | NoneTyp():
+            return isinstance(from_, type(target))
         case TypeCheckError():
             return False
         case TypeParam():
-            if target.id == from_.id:
-                return True
             if not target.bound:
-                return False
+                # A type parameter without a bound is assignable to any type.
+                return True
             return is_assignable_from(target.bound, from_)
         case Struct():
-            return target.id == from_.id
+            if not isinstance(from_, Struct):
+                return False
+            return target.id == from_.id and all(
+                is_assignable_from(x, y) for x, y in zip(target.type_args, from_.type_args)
+            )
         case Trait():
+            if isinstance(from_, TypeParam) and from_.bound is not None:
+                return is_assignable_from(target, from_.bound)
             if isinstance(from_, Trait):
                 return target.id == from_.id
             if isinstance(from_, Struct):
@@ -593,15 +592,55 @@ def is_assignable_from(target: Type, from_: Type) -> bool:
         case Fn():
             if not isinstance(from_, Fn):
                 return False
-            # Two functions are equal if their parameter and result types match.
-            if len(target.params) != len(from_.params):
-                return False
-            for sp, op in zip(target.params, from_.params):
-                if not is_assignable_from(sp.typ, op.typ):
+            # Two functions are equal if their parameters, and result types match.
+            for target_param, from_param in zip(target.params, from_.params):
+                if not is_assignable_from(target_param.typ, from_param.typ):
                     return False
             return is_assignable_from(target.result, from_.result)
         case _:
             raise AssertionError(f"unhandled target type: {target}")
+
+
+def type_args_are_same(a: list[Type], b: list[Type]) -> bool:
+    if len(a) != len(b):
+        return False
+    return all(is_same(x, y) for x, y in zip(a, b))
+
+
+def is_same(a: Type, b: Type) -> bool:
+    match a:
+        case Str() | Int() | Bool() | NoneTyp():
+            return isinstance(a, type(b))
+        case TypeCheckError():
+            return False
+        case TypeParam():
+            if a.id == b.id:
+                return True
+            if not isinstance(b, TypeParam):
+                return False
+            if a.bound is not None:
+                if b.bound is None:
+                    return False
+                return is_same(a.bound, b.bound)
+            return b.bound is None
+        case Struct() | Trait():
+            if a.id != b.id:
+                return False
+            assert isinstance(b, (Struct, Trait))
+            return all(is_same(x, y) for x, y in zip(a.type_args, b.type_args))
+        case Fn():
+            print("is_same fn", a, b)
+            if not isinstance(b, Fn):
+                return False
+            if len(a.type_args) != len(b.type_args):
+                return False
+            if not all(is_same(x, y) for x, y in zip(a.type_args, b.type_args)):
+                return False
+            an = normalize_type(a)
+            bn = normalize_type(b)
+            return all(is_same(x.typ, y.typ) for x, y in zip(an.params, bn.params)) and is_same(an.result, bn.result)
+        case _:
+            raise AssertionError(f"unhandled type: {a}")
 
 
 def infer_type_arguments_from_call_args(callee: CallableType, call_args: list[Type]) -> TypeMap:
@@ -635,7 +674,7 @@ def infer_type_arguments_from_call_args(callee: CallableType, call_args: list[Ty
     return type_map
 
 
-def normalize_type(next_id: Callable[[], int], typ: Type) -> Type:
+def normalize_type[T: Type](typ: T) -> T:
     """Return a normalized version of the type.
 
     The returned type is used for merging values of different origins
@@ -644,7 +683,8 @@ def normalize_type(next_id: Callable[[], int], typ: Type) -> Type:
     - For most types, the type is returned unchanged.
     - For function types (Fn):
       - If the function is named, a new anonymous copy is created
-        with the same parameter and result types but without type parameters/arguments.
+        with the same id, parameters, and result types but without
+        type parameters/arguments.
       - If the function is already anonymous, it is returned as-is.
     - For type check errors, the error is returned unchanged.
 
@@ -653,15 +693,18 @@ def normalize_type(next_id: Callable[[], int], typ: Type) -> Type:
         case Fn():
             if not typ.is_named:
                 return typ
-            return Fn(
-                next_id(),
-                FQN([]),
-                [],
-                [],
-                TypeMap({}, None),
-                typ.params,
-                typ.result,
-                typ.span,
-                is_named=False,
+            return cast(
+                T,
+                Fn(
+                    typ.id,
+                    FQN([]),
+                    [],
+                    [],
+                    TypeMap({}, None),
+                    typ.params,
+                    typ.result,
+                    typ.span,
+                    is_named=False,
+                ),
             )
     return typ

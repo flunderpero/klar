@@ -180,6 +180,7 @@ def main() -> int:
             print_code = stage
             break
     print_error_stack = "--err-stack" in args
+    bail = "--bail" in args
     args = [x for x in args if not x.startswith("--")]
     if len(args) == 1:
         print("Usage: md_tests.py <file> [chapter] [#test] [options]")
@@ -207,6 +208,8 @@ def main() -> int:
                 print(err)
                 if print_error_stack and not isinstance(err, str):
                     print("at", err.stacktrace)
+            if bail:
+                break
         elif not print_code:
             print(" \033[0;32mPASS\033[0m")
     duration = time() - start

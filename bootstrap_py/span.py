@@ -96,5 +96,8 @@ class FQN:
     def __str__(self) -> str:
         return ".".join(self.path)
 
+    def __hash__(self) -> int:
+        return hash(str(self))
+
     def concat(self, *parts: str) -> FQN:
         return FQN(self.path + list(parts))

@@ -207,7 +207,7 @@ Of course, the target type has to exist.
 
 ```klar
 
-fn Value.hello(self) {} -- ERROR: Undefined name `Value`
+fn Value.hello(self) {} -- ERROR: `Value` is not declared in the current scope
 
 fn main() {}
 ```
@@ -308,7 +308,8 @@ trait HelloWorld {
 
 struct Foo {}
 
-fn (HelloWorld) Foo.hello(self) Int => 42 -- ERROR: Method signature `test.Foo.hello(self test.Foo) I64` does not match trait method signature `test.HelloWorld.hello(self test.Foo) Str`
+fn (HelloWorld) Foo.hello(self) Int => 42 -- ERROR: Method signature `fn test.Foo.hello(self Self) I64` does not match trait method signature `fn test.HelloWorld.hello(self Self) Str`
+
 fn main() {}
 ```
 
@@ -319,7 +320,9 @@ trait HelloWorld {
 
 struct Foo {}
 
-fn (HelloWorld) Foo.hello<Int>(self) Str => "Hello" -- ERROR: Method signature `test.Foo.hello<Int, test.Foo>(self test.Foo) Str` does not match trait method signature `test.HelloWorld.hello(self test.Foo) Str`
+fn (HelloWorld) Foo.hello<Int>(self) Str => "Hello" -- ERROR: Method signature `fn test.Foo.hello<Int>(self Self) Str` does not match trait method signature `fn test.HelloWorld.hello(self Self) Str`
+
+fn main() {}
 
 ```
 
@@ -686,6 +689,7 @@ struct ValuesIter<C> {
 }
 
 fn (SimpleIter<C>) ValuesIter.next(self) C {
+    -- todo: Add support for assignment to struct fields.
     -- self.index = self.index + 1
     -- if self.index == 1 => self.values.v1
     -- else => if self.index == 2 => self.values.v2
@@ -698,14 +702,13 @@ fn Values.iter(self) ValuesIter<B> => ValuesIter<B>(self, 0)
 fn main() {
     let values = Values<Str>("1", "2", "3")
     let i = values.iter()
+    -- todo: Print all values.
     print(i.next())
 }
 ```
 
 ```
 1
-2
-3
 ```
 
 </details>

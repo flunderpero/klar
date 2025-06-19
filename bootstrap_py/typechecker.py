@@ -397,7 +397,12 @@ class TypeChecker:
         _value, err = self.type_env.get_node_type(node.value)
         if err:
             return err
-        # todo: type check and mutability check
+        if isinstance(node.target, ast.Ident):
+            declared = self.scope.find(node.target.name)
+            if declared is None:
+                return self.error(error.undefined_name(node.target.name, node.target.span))
+            if not declared.mutable:
+                return self.error(error.not_mutable(node.target.name, node.target.span))
         return self.type_env.builtins.NoneTyp
 
     def tc_binary_expr(self, node: ast.BinaryExpr) -> types.Type:
@@ -547,7 +552,7 @@ class TypeChecker:
         if err:
             return err
         typ = types.normalize_type(typ)
-        self.scope.declare(node.name, typ)
+        self.scope.declare(node.name, typ, mutable=node.mutable)
         return self.builtins.NoneTyp
 
     def tc_member(self, node: ast.Member) -> types.Type:

@@ -1,5 +1,5 @@
 from . import ast
-from .conftest import typecheck, types
+from .conftest import typecheck
 
 
 def test_generic_basics() -> None:
@@ -83,18 +83,9 @@ def test_generic_dependent_type_parameters() -> None:
     """)
     assert tc.type_at(1, 1, ast.Struct).signature() == "test.Value<A>"
     assert tc.type_at(7, 1, ast.FnDecl).signature() == "fn test.Value.unwrap(self Self) A"
-    assert (
-        types.resolve(tc.type_at(8, 1, ast.FnDecl)).signature()
-        == "fn test.unwrap<D, E test.Wrapped<D>>(value E test.Wrapped<D>) D"
-    )
-    assert (
-        types.resolve(tc.type_at(10, 1, ast.Ident)).signature()
-        == "fn test.unwrap<Str, test.Value<Str>>(value test.Value<Str>) Str"
-    )
-    assert (
-        types.resolve(tc.type_at(11, 1, ast.Ident)).signature()
-        == "fn test.unwrap<I64, test.Value<I64>>(value test.Value<I64>) I64"
-    )
+    assert tc.type_at(8, 1, ast.FnDecl).signature() == "fn test.unwrap<D, E test.Wrapped<D>>(value E test.Wrapped<D>) D"
+    assert tc.type_at(10, 1, ast.Ident).signature() == "fn test.unwrap<Str, test.Value<Str>>(value test.Value<Str>) Str"
+    assert tc.type_at(11, 1, ast.Ident).signature() == "fn test.unwrap<I64, test.Value<I64>>(value test.Value<I64>) I64"
 
 
 def test_function_type() -> None:

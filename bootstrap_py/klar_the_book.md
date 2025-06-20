@@ -1564,7 +1564,9 @@ trait Stringify {
     fn stringify(self) Str
 }
 
-fn Stringify.stringify(self) Int => 42 -- ERROR: Method signature `test.Stringify.stringify(self Self) I64` does not match trait method signature `test.Stringify.stringify(self Self) Str`
+fn Stringify.stringify(self) Int => 42 -- ERROR: Method signature `fn test.Stringify.stringify(self Self) I64` does not match trait method signature `fn test.Stringify.stringify(self Self) Str`
+
+fn main() {}
 ```
 
 </details

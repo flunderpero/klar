@@ -425,7 +425,7 @@ class TypeMap:
                     if resolved is None:
                         # Type parameter not found.
                         break
-                    if resolved == typ:
+                    if id(resolved) == id(typ):
                         # Type parameter is resolved to itself.
                         break
                     if not isinstance(resolved, TypeParam):
@@ -592,6 +592,8 @@ def is_assignable_from(target: Type, from_: Type) -> bool:
         case Fn():
             if not isinstance(from_, Fn):
                 return False
+            if len(target.params) != len(from_.params):
+                return False
             # Two functions are equal if their parameters, and result types match.
             for target_param, from_param in zip(target.params, from_.params):
                 if not is_assignable_from(target_param.typ, from_param.typ):
@@ -629,7 +631,6 @@ def is_same(a: Type, b: Type) -> bool:
             assert isinstance(b, (Struct, Trait))
             return all(is_same(x, y) for x, y in zip(a.type_args, b.type_args))
         case Fn():
-            print("is_same fn", a, b)
             if not isinstance(b, Fn):
                 return False
             if len(a.type_args) != len(b.type_args):

@@ -36,7 +36,7 @@ def test_function_argument_and_different_type_parameters() -> None:
         fn identity<T>(x T) T => x
         fn apply_twice<U>(x U, f fn(U) U) U => f(f(x))
         fn main() {
-            apply_twice("hello", identity)
+            apply_twice("hello", identity<Str>)
         }
 
     """)

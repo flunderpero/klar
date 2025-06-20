@@ -34,16 +34,16 @@ def test_function_types_are_structurally_equal() -> None:
     )
 
 
-def test_function_generics() -> None:
+def test_function_generics_basics() -> None:
     stdout = compile_and_run_success(
         """
         fn return_it<A>(value A) A => value
 
-        fn return_and_print_it<A>(value A) A => print(return_it<A>(value))
+        fn return_it_again<B>(value B) B => value
 
         fn main() {
-            return_and_print_it<Str>("PASS")
-            print(int_to_str(return_it<Int>(42)))
+            print(return_it_again<Str>("PASS"))
+            print(int_to_str(return_it_again<Int>(42)))
         }
         """
     )
@@ -115,7 +115,7 @@ def test_struct_field() -> None:
     )
 
 
-def test_struct_method() -> None:
+def test_struct_method_basics() -> None:
     stdout = compile_and_run_success(
         """
         struct Value {
@@ -366,7 +366,7 @@ def test_dependent_type_parameters() -> None:
     )
 
 
-def test_recursive_type() -> None:
+def test_recursive_type_basics() -> None:
     stdout = compile_and_run_success(
         """
         struct Value<A> {

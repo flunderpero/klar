@@ -449,6 +449,12 @@ class TypeChecker:
                     return err
         return typ
 
+    def tc_break(self, node: ast.Break) -> types.Type:
+        debug(9, node, "ast.Break")
+        if not self.scope.is_within(ast.Loop):
+            return self.error(error.break_outside_loop(node.span))
+        return self.builtins.NoneTyp
+
     def tc_call(self, node: ast.Call) -> types.Type:
         debug(9, node, "ast.Call")
         ast.walk(node, self.tc)
@@ -472,6 +478,12 @@ class TypeChecker:
                 return callee
             case _:
                 return self.error(error.not_callable(node.callee.span, callee.span))
+
+    def tc_continue(self, node: ast.Continue) -> types.Type:
+        debug(9, node, "ast.Continue")
+        if not self.scope.is_within(ast.Loop):
+            return self.error(error.continue_outside_loop(node.span))
+        return self.builtins.NoneTyp
 
     def tc_fn_def(self, node: ast.FnDef) -> types.Type:
         debug(9, node, f"ast.FnDef {node.decl.fullname()}")
@@ -555,6 +567,12 @@ class TypeChecker:
         self.scope.declare(node.name, typ, mutable=node.mutable)
         return self.builtins.NoneTyp
 
+    def tc_loop(self, node: ast.Loop) -> types.Type:
+        debug(9, node, "ast.Loop")
+        with self.child_scope(node):
+            ast.walk(node, self.tc)
+        return self.builtins.NoneTyp
+
     def tc_member(self, node: ast.Member) -> types.Type:
         debug(9, node, "ast.Member")
         ast.walk(node, self.tc)
@@ -611,8 +629,12 @@ class TypeChecker:
                 typ = self.tc_block(node)
             case ast.BoolLit():
                 typ = self.type_env.builtins.Bool
+            case ast.Break():
+                typ = self.tc_break(node)
             case ast.Call():
                 typ = self.tc_call(node)
+            case ast.Continue():
+                typ = self.tc_continue(node)
             case ast.Ident():
                 typ = self.tc_ident(node)
             case ast.FnDef():
@@ -623,6 +645,8 @@ class TypeChecker:
                 typ = self.type_env.builtins.Int
             case ast.Let():
                 typ = self.tc_let(node)
+            case ast.Loop():
+                typ = self.tc_loop(node)
             case ast.Member():
                 typ = self.tc_member(node)
             case ast.Module():

@@ -448,3 +448,27 @@ def test_recursive_type_through_type_parameter() -> None:
         PASS
         """
     )
+
+
+def test_loop() -> None:
+    stdout = compile_and_run_success(
+        """
+        fn main() {
+            mut i = 0
+            loop {
+                i = i + 1
+                if i == 2 => continue
+                print(int_to_str(i))
+                if i == 5 => break
+            }
+        }
+        """
+    )
+    assert stdout == strip(
+        """
+        1
+        3
+        4
+        5
+        """
+    )

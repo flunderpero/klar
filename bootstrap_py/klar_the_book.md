@@ -193,7 +193,7 @@ fn main() {
 
 Implementations must be in the same scope:
 
-```todo
+```klar
 struct Value {
     value Str
 }
@@ -760,25 +760,7 @@ fn main() {
 PASS
 ```
 
-Variables are scoped:
-
-```klar
-fn main() {
-    let s = "world"
-    if true {
-        let s = "Hello"
-        print(s)
-    }
-    print(s)
-}
-```
-
-```
-Hello
-world
-```
-
-The value can be a block expression, too:
+The value can be a block expression:
 
 ```klar
 fn main() {
@@ -1584,6 +1566,122 @@ fn main() {}
 ```
 
 </details
+
+## Scopes
+
+In Klar, all declarations are scoped.
+
+Scoped variables:
+
+```klar
+fn main() {
+    let s = "PASS1"
+    if true {
+        let s = "PASS2"
+        print(s)
+    }
+    print(s)
+}
+```
+
+```
+PASS2
+PASS1
+```
+
+Scoped functions:
+
+```klar
+fn return_it<A>(value A) A => value
+
+fn main() {
+    fn return_it_again<B>(value B) B => return_it<B>(value)
+    print(return_it_again<Str>("PASS"))
+}
+```
+
+```
+PASS
+```
+
+Scoped structs and shadowing:
+
+```klar
+struct Value {
+    value Int
+}
+
+fn print_module_scoped_value() {
+    let v = Value(42)
+    print(int_to_str(v.value))
+}
+
+fn main() {
+    struct Value {
+        value Str
+    }
+    let v = Value("PASS")
+    print(v.value)
+    print_module_scoped_value()
+}
+```
+
+```
+PASS
+42
+```
+
+Scoped struct implementations:
+
+```klar
+struct StrValue {
+    value Str
+}
+
+fn StrValue.print(self) => print(self.value)
+
+fn main() {
+    StrValue("PASS").print()
+
+    struct IntValue {
+        value Int
+    }
+    fn IntValue.print(self) => print(int_to_str(self.value))
+    IntValue(42).print()
+}
+```
+
+```
+PASS
+42
+```
+
+Scoped traits:
+
+```klar
+trait Stringer {
+    fn stringer(self) Str
+}
+
+fn main() {
+    trait Duplicator {
+        fn duplicate(self) Int
+    }
+    struct Value {
+        value Int
+    }
+    fn (Duplicator) Value.duplicate(self) Int => self.value + self.value
+    fn (Stringer) Value.stringer(self) Str => int_to_str(self.value)
+    let v = Value(42)
+    print(v.stringer())
+    print(int_to_str(v.duplicate()))
+}
+```
+
+```
+42
+84
+```
 
 ## Appendix - The Tokenizer
 

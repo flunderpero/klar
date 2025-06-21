@@ -192,7 +192,7 @@ class TypeChecker:
         return types.TypeParam(self.next_id(), node.name, bound, node.span)
 
     def declare_all(self, parent_node: ast.Node) -> None:
-        assert isinstance(parent_node, ast.Module), f"Expected Module, got {parent_node}"
+        assert isinstance(parent_node, (ast.Module, ast.Block)), f"Expected Module or Block, got {parent_node}"
         fn_defs = [x for x in parent_node.nodes if isinstance(x, ast.FnDef)]
         structs = [x for x in parent_node.nodes if isinstance(x, ast.Struct)]
         traits = [x for x in parent_node.nodes if isinstance(x, ast.Trait)]
@@ -537,10 +537,13 @@ class TypeChecker:
         typ = self.type_env.builtins.NoneTyp
         if node.nodes:
             with self.child_scope(node):
-                ast.walk(node, self.tc)
-                typ, err = self.type_env.get_node_type(node.nodes[-1])
-                if err:
-                    return err
+                num_errors_before = len(self.errors)
+                self.declare_all(node)
+                if len(self.errors) == num_errors_before:
+                    ast.walk(node, self.tc)
+                    typ, err = self.type_env.get_node_type(node.nodes[-1])
+                    if err:
+                        return err
         return typ
 
     def tc_break(self, node: ast.Break) -> types.Type:

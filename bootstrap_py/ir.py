@@ -657,7 +657,7 @@ class FnGen:
                                 raise AssertionError(f"Unsupported type for equality comparison: {lhs_reg.typ}")
                     case _:
                         raise AssertionError(f"Unsupported binary op: {node.op}")
-            case ast.FnDecl():
+            case ast.FnDecl() | ast.Struct() | ast.Trait():
                 pass
             case _:
                 raise AssertionError(f"Unsupported node: {node.__class__}")

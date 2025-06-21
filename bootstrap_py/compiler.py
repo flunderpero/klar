@@ -5,7 +5,18 @@ from subprocess import run
 from time import time
 from typing import TYPE_CHECKING
 
-from . import asm_darwin_arm64, ast, error, ir, lower, lower_instance_methods, lower_monomorphize, parser, typechecker
+from . import (
+    asm_darwin_arm64,
+    ast,
+    error,
+    ir,
+    lower,
+    lower_hoist_functions,
+    lower_instance_methods,
+    lower_monomorphize,
+    parser,
+    typechecker,
+)
 from . import tokenizer as token
 
 if TYPE_CHECKING:
@@ -169,6 +180,7 @@ def compile(input: token.Input, outfile: str) -> Generator[CompilationStep]:  # 
     if tokenize_errors or parse_errors or type_errors:
         yield AbortStep(tokenize_errors + parse_errors + type_errors, time() - start)
         return
+    lower_hoist_functions.lower_hoist_functions(module)
     lower_instance_methods.lower_instance_methods(module, type_env)
     specs = lower_monomorphize.monomorphize(module, type_env)
     yield LowerStep(specs, module, time() - start)

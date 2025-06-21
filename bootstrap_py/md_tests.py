@@ -5,6 +5,7 @@ import contextlib
 import re
 import sys
 import tempfile
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from time import time
@@ -113,8 +114,8 @@ def run_test(test: Test, print_code: str, *, print_signatures: bool) -> list:
                         print(f" [run:{step.duration * 1000:.0f}]", end="", flush=True)
                 case _:
                     raise ValueError(f"Unknown step: {step}")
-    except (AssertionError, AttributeError) as e:
-        return [f"Test failed with exception: {e}"]
+    except (AssertionError, AttributeError):
+        return ["Test failed with exception:", traceback.format_exc()]
     finally:
         with contextlib.suppress(FileNotFoundError):
             tmp_file.unlink()

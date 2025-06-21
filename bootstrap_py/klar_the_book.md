@@ -1356,21 +1356,35 @@ struct Value<A> {
     value A
 }
 
--- This shadows the type parameter `A` of `Value<A>`.
-fn Value.pass_through<A>(self, x A) A {
-    x
-}
+fn Value.pass_through<B>(self, x B, y Value<A>) B => x
 
 fn main() {
     let v = Value<Bool>(false)
-    print(int_to_str(v.pass_through<Int>(42)))
-    print(v.pass_through<Str>("PASS"))
+    print(int_to_str(v.pass_through<Int>(42, v)))
+    print(v.pass_through<Str>("PASS", v))
 }
 ```
 
 ```
 42
 PASS
+```
+
+Type parameters cannot be shadowed in instance method declarations:
+
+```klar
+struct Value<A> {
+    value A
+}
+
+fn Value.pass_through<A>(self, x A) A { -- ERROR: Duplicate `A`
+    x
+}
+
+fn main() {
+    let v = Value<Bool>(false)
+    print(v.pass_through<Str>("PASS"))  -- ERROR: No member `pass_through` in type `test.Value`
+}
 ```
 
 Parameterized traits must be implemented with the same trait qualifier:
@@ -1387,7 +1401,7 @@ trait ReturnIt<T> {
 
 fn (ReturnIt<Str>) Value.return_it(self, t Str) Str => t
 
-fn (ReturnIt<Int>) Value.return_it_again(self, t Int) Int => t -- ERROR: Trait has already been implemented for `test.Value` with signature `test.ReturnIt<Str>`
+fn (ReturnIt<Int>) Value.return_it_again(self, t Int) Int => t -- ERROR: Trait test.ReturnIt<T> has already been implemented for `test.Value` with signature `test.ReturnIt<Str>`
 
 fn main() {}
 ```
@@ -1652,7 +1666,7 @@ struct Value {
     value Str
 }
 
-fn Value.print(i Int, self) {} -- ERROR: `self` is not allowed here
+fn Value.print(i Int, self) {} -- ERROR: `self` must be the first parameter
 ```
 
 `self` parameter cannot be used in regular functions:

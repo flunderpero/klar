@@ -166,6 +166,10 @@ def self_not_allowed_here(span: Span) -> Error:
     return SimpleError(span, "`self` is not allowed here", _stack())
 
 
+def self_must_be_first_parameter(span: Span) -> Error:
+    return SimpleError(span, "`self` must be the first parameter", _stack())
+
+
 def not_callable(span: Span, defined_here: Span) -> Error:
     return WithDefinitionError(span, "Only functions and structs can be called", defined_here, _stack())
 
@@ -192,10 +196,13 @@ def trait_method_impl_mismatch(trait_method_signature: str, impl_signature: str,
     )
 
 
-def trait_qualifier_mismatch(trait_signature: str, target_fqn: str, trait_span: Span, span: Span) -> Error:
+def trait_qualifier_mismatch(
+    trait_signature: str, existing_trait_signature: str, target_fqn: str, trait_span: Span, span: Span
+) -> Error:
     return WithDefinitionError(
         span,
-        f"Trait has already been implemented for `{target_fqn}` with signature `{trait_signature}`",
+        f"Trait {trait_signature} has already been implemented for "
+        f"`{target_fqn}` with signature `{existing_trait_signature}`",
         trait_span,
         _stack(),
     )

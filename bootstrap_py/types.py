@@ -629,13 +629,11 @@ def is_same(a: Type, b: Type) -> bool:
             if a.id != b.id:
                 return False
             assert isinstance(b, (Struct, Trait))
-            return all(is_same(x, y) for x, y in zip(a.type_args, b.type_args))
+            return type_args_are_same(a.type_args, b.type_args)
         case Fn():
             if not isinstance(b, Fn):
                 return False
-            if len(a.type_args) != len(b.type_args):
-                return False
-            if not all(is_same(x, y) for x, y in zip(a.type_args, b.type_args)):
+            if not type_args_are_same(a.type_args, b.type_args):
                 return False
             an = normalize_type(a)
             bn = normalize_type(b)

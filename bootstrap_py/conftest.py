@@ -5,8 +5,11 @@ import os
 import tempfile
 import textwrap
 from dataclasses import dataclass
+from typing import cast
 
-from . import ast, compiler, error, parser, tokenizer, types
+import pytest
+
+from . import ast, compiler, error, ir, parser, tokenizer, types
 from . import typechecker as tc
 
 id_ = 0
@@ -100,6 +103,35 @@ def compile_and_run_success(code: str, *, debug: str = "") -> str:
     assert run.stderr == ""
     assert run.returncode == 0
     return run.stdout
+
+
+@dataclass
+class IRTester:
+    reg_id: int
+    block_id: int
+
+    def reg(self, typ: ir.Type) -> ir.Reg:
+        if typ == ir.NoneTyp:
+            return ir.NoneReg
+        self.reg_id += 1
+        return ir.Reg(id=ir.RegId(self.reg_id), typ=typ)
+
+    def block(self, insts: list[ir.Inst], terminator: ir.Terminator | None) -> ir.Block:
+        self.block_id += 1
+        return ir.Block(id=ir.BlockId(self.block_id), insts=insts, terminator=terminator)
+
+    def fn_ir(self, blocks: list[ir.Block]) -> ir.FnIR:
+        return ir.FnIR(
+            fn_def=cast(ast.FnDef, None), fn_name="main", params=[], result=cast(ir.Type, None), blocks=blocks
+        )
+
+    def int(self) -> ir.Int:
+        return ir.Int(bits=64, signed=True)
+
+
+@pytest.fixture
+def ir_tester() -> IRTester:
+    return IRTester(reg_id=0, block_id=0)
 
 
 @dataclass

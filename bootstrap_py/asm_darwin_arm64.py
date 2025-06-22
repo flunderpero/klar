@@ -331,7 +331,7 @@ class FnGen:
                         raise AssertionError(f"Unexpected type: {typ}")
                 self.ir_regs[inst.reg.id] = alloc
             case ir.Store():
-                target = self.ir_regs[inst.reg.id]
+                target = self.ir_regs[inst.target.id]
                 src = self.ir_regs[inst.src.id]
                 self.asm.emit(f"str {src.reg}, [{target.reg}]")
             case ir.Call():

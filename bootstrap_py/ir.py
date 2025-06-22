@@ -6,6 +6,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from . import ast, lower, types
+from .ir_remove_duplicate_getptr import ir_remove_duplicate_getptr
 from .span import FQN
 
 if TYPE_CHECKING:
@@ -81,6 +82,12 @@ class Reg:
     def __str__(self) -> str:
         return self.id
 
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Reg) and self.id == other.id
+
 
 NoneReg = Reg("%none", NoneTyp())
 
@@ -124,11 +131,16 @@ class Load:
 
 @dataclass
 class Store:
-    reg: Reg
+    target: Reg
     src: Reg
 
     def __str__(self) -> str:
-        return f"store {self.src.typ} {self.src} {self.reg}"
+        return f"store {self.src.typ} {self.src} {self.target}"
+
+    @property
+    def reg(self) -> Reg:
+        """A store instruction does not create a new register."""
+        return NoneReg
 
 
 @dataclass
@@ -683,11 +695,17 @@ class FnGen:
         return node
 
 
+def optimize_ir(ir: FnIR) -> FnIR:
+    ir_remove_duplicate_getptr(ir)
+    return ir
+
+
 def generate_ir(specs: list[lower.FnSpec]) -> IR:
     ir = IR(fn_irs=[], constant_pool={})
     for spec in specs:
         gen = FnGen(spec, ir)
         gen.generate(spec.fn_def, None)
-        ir.fn_irs.append(gen.fn_ir)
+        optimized_ir = optimize_ir(gen.fn_ir)
+        ir.fn_irs.append(optimized_ir)
 
     return ir

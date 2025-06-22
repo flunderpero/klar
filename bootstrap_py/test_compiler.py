@@ -10,6 +10,23 @@ def test_happy_path() -> None:
     assert stdout == "PASS\n"
 
 
+def test_assign_to_variable() -> None:
+    stdout = compile_and_run_success(
+        """
+        fn main() {
+            mut x = 41
+            x = x + 1
+            print(int_to_str(x))
+        }
+        """
+    )
+    assert stdout == strip(
+        """
+        42
+        """
+    )
+
+
 def test_function_types_are_structurally_equal() -> None:
     stdout = compile_and_run_success(
         """
@@ -92,7 +109,7 @@ def test_function_generics_assigned_to_variable() -> None:
     )
 
 
-def test_struct_field() -> None:
+def test_struct_field_read_and_assign() -> None:
     stdout = compile_and_run_success(
         """
         struct StrInt {
@@ -101,7 +118,8 @@ def test_struct_field() -> None:
         }
 
         fn main() {
-            let x = StrInt("PASS", 42)
+            let x = StrInt("PASS", 41)
+            x.i = x.i + 1
             print(x.s)
             print(int_to_str(x.i))
         }

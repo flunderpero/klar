@@ -485,18 +485,38 @@ class TypeChecker:
     def tc_assign(self, node: ast.Assign) -> types.Type:
         debug(9, node, "ast.Assign")
         ast.walk(node, self.tc)
-        _target, err = self.type_env.get_node_type(node.target)
+        target, err = self.type_env.get_node_type(node.target)
         if err:
             return err
-        _value, err = self.type_env.get_node_type(node.value)
+        value, err = self.type_env.get_node_type(node.value)
         if err:
             return err
-        if isinstance(node.target, ast.Ident):
-            declared = self.scope.find(node.target.name)
-            if declared is None:
-                return self.error(error.undefined_name(node.target.name, node.target.span))
-            if not declared.mutable:
-                return self.error(error.not_mutable(node.target.name, node.target.span))
+        match node.target:
+            case ast.Ident():
+                declared = self.scope.find(node.target.name)
+                if declared is None:
+                    return self.error(error.undefined_name(node.target.name, node.target.span))
+                if not declared.mutable:
+                    return self.error(error.not_mutable(node.target.name, node.target.span))
+                target = declared.typ
+            case ast.Member():
+                member_target, err = self.type_env.get_node_type(node.target.target)
+                if err:
+                    return err
+                member_target = self.scope.resolve(member_target)
+                if not isinstance(member_target, types.Struct):
+                    return self.error(error.unexpected_type("struct", member_target.signature(), node.target.span))
+                field_index = member_target.field_index(node.target.name)
+                if field_index is None:
+                    return self.error(
+                        error.no_member(node.target.name, str(member_target.fqn), node.target.span, target.span)
+                    )
+            case _:
+                raise AssertionError(f"Unsupported target type: {node.target}")
+        if not types.is_assignable_from(target, value):
+            return self.error(
+                error.type_not_assignable_from(node.target.span, value.typ.signature(), target.signature())
+            )
         return self.type_env.builtins.NoneTyp
 
     def tc_binary_expr(self, node: ast.BinaryExpr) -> types.Type:

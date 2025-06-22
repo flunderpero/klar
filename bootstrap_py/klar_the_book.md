@@ -131,6 +131,9 @@ fn print_planet(p Planet) {
 fn main() {
     let p = Planet(6371, true, "Earth")
     print_planet(p)
+    -- Update a field of the struct.
+    p.name = "Mother Earth"
+    print(p.name)
 }
 ```
 
@@ -138,6 +141,7 @@ fn main() {
 Earth
 6371
 true
+Mother Earth
 ```
 
 Nested structs:
@@ -689,8 +693,8 @@ struct ValuesIter<C> {
 }
 
 fn (SimpleIter<C>) ValuesIter.next(self) C {
-    -- todo: Add support for assignment to struct fields.
-    -- self.index = self.index + 1
+    self.index = self.index + 1
+    -- todo: We run out of registers here and need to improve the register allocator.
     -- if self.index == 1 => self.values.v1
     -- else => if self.index == 2 => self.values.v2
     -- else => self.values.v3

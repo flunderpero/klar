@@ -507,7 +507,7 @@ class Parser:
                     return None
                 if self.input.peek().kind == token.Kind.eq:
                     self.input.next()
-                    if not isinstance(expr, ast.Ident):
+                    if not isinstance(expr, (ast.Ident, ast.Member)):
                         self.error(error.expected_ident(str(expr), t.span))
                         return None
                     value = self.parse_expr()

@@ -123,6 +123,15 @@ class Load:
 
 
 @dataclass
+class Store:
+    reg: Reg
+    src: Reg
+
+    def __str__(self) -> str:
+        return f"store {self.src.typ} {self.src} {self.reg}"
+
+
+@dataclass
 class Call:
     reg: Reg
     callee: str | Reg
@@ -200,7 +209,7 @@ class Phi:
         return f"{self.reg} = phi {', '.join(str(reg) for reg in self.incoming)}"
 
 
-Inst = IntConst | GetPtr | GetFnPtr | Load | Call | Alloc | IAddO | ISubO | ICmp | Phi
+Inst = IntConst | GetPtr | GetFnPtr | Load | Store | Call | Alloc | IAddO | ISubO | ICmp | Phi
 
 BlockId = str
 
@@ -594,9 +603,12 @@ class FnGen:
                 field_index = types_src.field_index(node.name)
                 assert field_index is not None, f"No field {node.name} in {src.typ}"
                 getptr_reg = self.reg(Ptr(src.typ.fields[field_index]))
-                self.emit(GetPtr(getptr_reg, src, field_index), None)
-                reg = self.reg(src.typ.fields[field_index])
-                self.emit(Load(reg, getptr_reg), node)
+                if isinstance(parent, ast.Assign) and parent.target == node:
+                    self.emit(GetPtr(getptr_reg, src, field_index), node)
+                else:
+                    self.emit(GetPtr(getptr_reg, src, field_index), None)
+                    reg = self.reg(src.typ.fields[field_index])
+                    self.emit(Load(reg, getptr_reg), node)
             case ast.Call():
                 callee = self.type_env.get_node_type(node.callee)
                 assert isinstance(callee, types.CallableType), f"Expected CallableType, got {callee}"
@@ -633,8 +645,15 @@ class FnGen:
             case ast.Assign():
                 ast.walk(node, self.generate)
                 src = node.target
-                assert isinstance(src, ast.Ident)
-                self.scope.update(src.name, self.node_regs[node.value.id])
+                match src:
+                    case ast.Ident():
+                        self.scope.update(src.name, self.node_regs[node.value.id])
+                    case ast.Member():
+                        reg = self.node_regs[src.id]
+                        value_reg = self.node_regs[node.value.id]
+                        self.emit(Store(reg, value_reg), None)
+                    case _:
+                        raise AssertionError(f"Unsupported target type: {src}")
                 self.node_regs[node.id] = NoneReg
             case ast.BinaryExpr():
                 ast.walk(node, self.generate)

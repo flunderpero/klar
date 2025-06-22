@@ -694,11 +694,9 @@ struct ValuesIter<C> {
 
 fn (SimpleIter<C>) ValuesIter.next(self) C {
     self.index = self.index + 1
-    -- todo: We run out of registers here and need to improve the register allocator.
-    -- if self.index == 1 => self.values.v1
-    -- else => if self.index == 2 => self.values.v2
-    -- else => self.values.v3
-    self.values.v1
+    if self.index == 1 => self.values.v1
+    else => if self.index == 2 => self.values.v2
+    else => self.values.v3
 }
 
 fn Values.iter(self) ValuesIter<B> => ValuesIter<B>(self, 0)
@@ -706,13 +704,16 @@ fn Values.iter(self) ValuesIter<B> => ValuesIter<B>(self, 0)
 fn main() {
     let values = Values<Str>("1", "2", "3")
     let i = values.iter()
-    -- todo: Print all values.
+    print(i.next())
+    print(i.next())
     print(i.next())
 }
 ```
 
 ```
 1
+2
+3
 ```
 
 </details>

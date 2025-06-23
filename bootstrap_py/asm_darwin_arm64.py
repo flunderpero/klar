@@ -156,8 +156,25 @@ class RegAllocator:
         self.used[alloc.reg] = None
         alloc.reg = None
 
+    def forget(self, alloc: RegAlloc) -> None:
+        if len(alloc.ir_regs) > 1:
+            raise AssertionError(f"RegAlloc {alloc} has more than one IR register")
+        del self.regs[alloc.ir_regs[0].id]
+        if not alloc.is_in_reg():
+            return
+        assert alloc.reg is not None
+        self.used[alloc.reg] = None
+        alloc.reg = None
+
     @contextmanager
-    def use(self, *allocs: RegAlloc) -> Generator[list[Reg]]:
+    def use_read(self, *allocs: RegAlloc) -> Generator[list[Reg]]:
+        for alloc in allocs:
+            if not alloc.is_in_reg():
+                self._restore_alloc(alloc)
+        yield [cast(Reg, alloc.reg) for alloc in allocs]
+
+    @contextmanager
+    def use_write(self, *allocs: RegAlloc) -> Generator[list[Reg]]:
         for alloc in allocs:
             if not alloc.is_in_reg():
                 self._restore_alloc(alloc)
@@ -241,7 +258,7 @@ class FnGen:
         self.asm.inc_indent()
         for i, param in enumerate(self.ir.params):
             alloc = self.reg_allocator.allocate(param.reg)
-            with self.reg_allocator.use(alloc) as [reg]:
+            with self.reg_allocator.use_write(alloc) as [reg]:
                 self.asm.emit(f"mov {reg}, x{i}")
             self.allocs[param.reg.id] = alloc
         self.asm.dec_indent()
@@ -255,14 +272,16 @@ class FnGen:
                 case ir.Jump():
                     self.asm.emit(f"b {self.block_label(term.target.id)}")
                 case ir.Branch():
-                    with self.reg_allocator.use(self.allocs[term.reg.id]) as [cond]:
-                        self.asm.emit(f"cbnz {cond}, {self.block_label(term.then_block.id)}")
+                    cond = self.allocs[term.reg.id]
+                    with self.reg_allocator.use_read(cond) as [reg]:
+                        self.asm.emit(f"cbnz {reg}, {self.block_label(term.then_block.id)}")
                         self.asm.emit(f"b {self.block_label(term.else_block.id)}")
+                    self.reg_allocator.forget(cond)
                 case ir.Return():
                     if term.reg == ir.NoneReg:
                         self.asm.emit("mov x0, xzr")
                     else:
-                        with self.reg_allocator.use(self.allocs[term.reg.id]) as [reg]:
+                        with self.reg_allocator.use_read(self.allocs[term.reg.id]) as [reg]:
                             self.asm.emit(f"mov x0, {reg}")
                     self.asm.emit(f"b {self.block_label('ret')}")
                 case _:
@@ -306,13 +325,13 @@ class FnGen:
                 if inst.reg.typ == ir.I1:
                     assert inst.value in (0, 1), f"Invalid I1 value: {inst.value}"
                     alloc = self.reg_allocator.allocate(inst.reg)
-                    with self.reg_allocator.use(alloc) as [reg]:
+                    with self.reg_allocator.use_write(alloc) as [reg]:
                         self.asm.emit(f"movz {reg}, #{inst.value}")
                     self.allocs[inst.reg.id] = alloc
                     return
                 assert inst.reg.typ == ir.I64, "For now, only I64 is supported"
                 alloc = self.reg_allocator.allocate(inst.reg)
-                with self.reg_allocator.use(alloc) as [reg]:
+                with self.reg_allocator.use_write(alloc) as [reg]:
                     # It is not straight forward to load int values > 16bit. There are a lot of ways to optimize
                     # this, but that's an exercise for another day.
                     value = inst.value
@@ -341,13 +360,13 @@ class FnGen:
                     case ir.Struct() as typ:
                         if typ == ir.Str:
                             src = inst.src
-                            with self.reg_allocator.use(alloc) as [reg]:
+                            with self.reg_allocator.use_write(alloc) as [reg]:
                                 self.asm.emit(f"adrp {reg}, .{src}@PAGE")
                                 self.asm.emit(f"add {reg}, {reg}, .{src}@PAGEOFF")
                         else:
                             src = self.allocs[inst.src.id]
                             offset = DataLayout().field_offset(typ, inst.field)
-                            with self.reg_allocator.use(alloc, src) as [reg, src_reg]:
+                            with self.reg_allocator.use_write(alloc, src) as [reg, src_reg]:
                                 self.asm.emit(f"add {reg}, {src_reg}, #{offset}")
                     case _:
                         raise AssertionError(f"Unknown type: {inst.reg.typ}")
@@ -355,7 +374,7 @@ class FnGen:
             case ir.GetFnPtr():
                 fn_name = self.fn_name(str(inst.src.fqn))
                 alloc = self.reg_allocator.allocate(inst.reg)
-                with self.reg_allocator.use(alloc) as [reg]:
+                with self.reg_allocator.use_write(alloc) as [reg]:
                     self.asm.emit(f"adrp {reg}, {fn_name}@PAGE")
                     self.asm.emit(f"add {reg}, {reg}, {fn_name}@PAGEOFF")
                 self.allocs[inst.reg.id] = alloc
@@ -364,7 +383,7 @@ class FnGen:
                 src = self.allocs[inst.src.id]
                 assert isinstance(inst.src.typ, ir.Ptr)
                 typ = inst.src.typ.typ
-                with self.reg_allocator.use(alloc, src) as [reg, src_reg]:
+                with self.reg_allocator.use_write(alloc) as [reg], self.reg_allocator.use_read(src) as [src_reg]:
                     match typ:
                         case ir.Int():
                             if typ.bits <= 8:
@@ -383,7 +402,10 @@ class FnGen:
             case ir.Store():
                 target = self.allocs[inst.target.id]
                 src = self.allocs[inst.src.id]
-                with self.reg_allocator.use(target, src) as [target_reg, src_reg]:
+                with (
+                    self.reg_allocator.use_write(src) as [src_reg],
+                    self.reg_allocator.use_read(target) as [target_reg],
+                ):
                     self.asm.emit(f"str {src_reg}, [{target_reg}]")
             case ir.Call():
                 with (
@@ -401,7 +423,7 @@ class FnGen:
                             raise AssertionError(f"Unknown callee type: {inst.callee}")
                 if inst.reg != ir.NoneReg:
                     alloc = self.reg_allocator.allocate(inst.reg)
-                    with self.reg_allocator.use(alloc) as [reg]:
+                    with self.reg_allocator.use_write(alloc) as [reg]:
                         self.asm.emit(f"mov {reg}, x0")
                     self.allocs[inst.reg.id] = alloc
             case ir.Alloc():
@@ -410,7 +432,7 @@ class FnGen:
                 size = DataLayout.sizeof(typ)
                 with self.reg_allocator.with_spilled_caller_saved_regs():
                     alloc = self.reg_allocator.allocate(inst.reg)
-                    with self.reg_allocator.use(alloc) as [reg]:
+                    with self.reg_allocator.use_write(alloc) as [reg]:
                         self.asm.emit(f"mov x0, #{size}")
                         self.asm.emit("bl _malloc")
                         self.asm.emit(f"mov {reg}, x0")
@@ -418,7 +440,10 @@ class FnGen:
                 for i, field in enumerate(inst.args):
                     offset = DataLayout.field_offset(typ, i)
                     field_alloc = self.allocs[field.id]
-                    with self.reg_allocator.use(alloc, field_alloc) as [reg, field_reg]:
+                    with (
+                        self.reg_allocator.use_write(field_alloc) as [field_reg],
+                        self.reg_allocator.use_read(alloc) as [reg],
+                    ):
                         match DataLayout.sizeof(field.typ):
                             case 1:
                                 self.asm.emit(f"strb {to_32bit(field_reg)}, [{reg}, #{offset}]")
@@ -440,14 +465,22 @@ class FnGen:
                 lhs = self.allocs[inst.lhs.id]
                 rhs = self.allocs[inst.rhs.id]
                 alloc = self.reg_allocator.allocate(inst.reg)
-                with self.reg_allocator.use(alloc, lhs, rhs) as [reg, lhs_reg, rhs_reg]:
+                with (
+                    self.reg_allocator.use_write(alloc) as [reg],
+                    self.reg_allocator.use_read(lhs) as [lhs_reg],
+                    self.reg_allocator.use_read(rhs) as [rhs_reg],
+                ):
                     self.asm.emit(f"{asm_inst} {reg}, {lhs_reg}, {rhs_reg}")
                 self.allocs[inst.reg.id] = alloc
             case ir.ICmp():
                 lhs = self.allocs[inst.lhs.id]
                 rhs = self.allocs[inst.rhs.id]
                 alloc = self.reg_allocator.allocate(inst.reg)
-                with self.reg_allocator.use(alloc, lhs, rhs) as [reg, lhs_reg, rhs_reg]:
+                with (
+                    self.reg_allocator.use_write(alloc) as [reg],
+                    self.reg_allocator.use_read(lhs) as [lhs_reg],
+                    self.reg_allocator.use_read(rhs) as [rhs_reg],
+                ):
                     self.asm.emit(f"cmp {lhs_reg}, {rhs_reg}")
                     self.asm.emit(f"cset {reg}, {inst.op.value}")
                 self.allocs[inst.reg.id] = alloc

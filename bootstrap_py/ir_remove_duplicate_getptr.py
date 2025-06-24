@@ -62,6 +62,14 @@ def ir_remove_duplicate_getptr(fn_ir: ir.FnIR) -> None:
                     info.block.insts.remove(info.inst)
             replace_reg(inst, replace_regs)
             i += 1
+    # Pass 2.1: Hoist GetPtr instructions if the source is a parameter.
+    for param in fn_ir.params:
+        if param.reg in seen:
+            for info in seen[param.reg]:
+                if info.block.id == fn_ir.blocks[0].id:
+                    continue
+                fn_ir.blocks[0].insts.insert(0, info.inst)
+                info.block.insts.remove(info.inst)
 
 
 def replace_reg(inst: ir.Inst, replace_regs: dict[ir.Reg, ir.Reg]) -> None:

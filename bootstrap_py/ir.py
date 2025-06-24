@@ -6,7 +6,6 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from . import ast, lower, types
-from .ir_remove_duplicate_getptr import ir_remove_duplicate_getptr
 from .span import FQN
 
 if TYPE_CHECKING:
@@ -100,6 +99,9 @@ class IntConst:
     def __str__(self) -> str:
         return f"{self.reg.id} = {self.value}"
 
+    def regs(self) -> list[Reg]:
+        return [self.reg]
+
 
 @dataclass
 class GetPtr:
@@ -110,6 +112,9 @@ class GetPtr:
     def __str__(self) -> str:
         return f"{self.reg} = getptr {self.src.typ} {self.src}, {self.reg.typ}, {self.field}"
 
+    def regs(self) -> list[Reg]:
+        return [self.reg, self.src]
+
 
 @dataclass
 class GetFnPtr:
@@ -119,6 +124,9 @@ class GetFnPtr:
     def __str__(self) -> str:
         return f"{self.reg} = getfnptr {self.src.fqn}, {self.reg.typ}"
 
+    def regs(self) -> list[Reg]:
+        return [self.reg]
+
 
 @dataclass
 class Load:
@@ -127,6 +135,9 @@ class Load:
 
     def __str__(self) -> str:
         return f"{self.reg} = load {self.src.typ} {self.src}"
+
+    def regs(self) -> list[Reg]:
+        return [self.reg, self.src]
 
 
 @dataclass
@@ -142,6 +153,9 @@ class Store:
         """A store instruction does not create a new register."""
         return NoneReg
 
+    def regs(self) -> list[Reg]:
+        return [self.target, self.src]
+
 
 @dataclass
 class Call:
@@ -151,7 +165,17 @@ class Call:
 
     def __str__(self) -> str:
         prefix = f"{self.reg} = call {self.reg.typ}" if self.reg != NoneReg else "call none"
-        return f"{prefix} {self.callee}, {', '.join(f'{x.typ} {x.id}' for x in self.args)}"
+        s = f"{prefix} {self.callee}"
+        if self.args:
+            s += f", {', '.join(f'{x.typ} {x.id}' for x in self.args)}"
+        return s
+
+    def regs(self) -> list[Reg]:
+        regs = list(self.args)
+        regs.append(self.reg)
+        if isinstance(self.callee, Reg):
+            regs.append(self.callee)
+        return regs
 
 
 @dataclass
@@ -161,6 +185,9 @@ class Alloc:
 
     def __str__(self) -> str:
         return f"{self.reg.id} = alloc {self.reg.typ}, {', '.join(f'{x.typ} {x.id}' for x in self.args)}"
+
+    def regs(self) -> list[Reg]:
+        return [self.reg, *self.args]
 
 
 @dataclass
@@ -174,6 +201,9 @@ class IAddO:
     def __str__(self) -> str:
         return f"{self.reg} = iaddo {self.lhs.typ} {self.lhs}, {self.rhs.typ} {self.rhs}"
 
+    def regs(self) -> list[Reg]:
+        return [self.reg, self.lhs, self.rhs]
+
 
 @dataclass
 class ISubO:
@@ -185,6 +215,9 @@ class ISubO:
 
     def __str__(self) -> str:
         return f"{self.reg} = isubo {self.lhs.typ} {self.lhs}, {self.rhs.typ} {self.rhs}"
+
+    def regs(self) -> list[Reg]:
+        return [self.reg, self.lhs, self.rhs]
 
 
 class ICmpOp(Enum):
@@ -201,6 +234,9 @@ class ICmp:
 
     def __str__(self) -> str:
         return f"{self.reg} = icmp {self.op.value} {self.lhs.typ} {self.lhs}, {self.rhs.typ} {self.rhs}"
+
+    def regs(self) -> list[Reg]:
+        return [self.reg, self.lhs, self.rhs]
 
 
 @dataclass
@@ -219,6 +255,9 @@ class Phi:
 
     def __str__(self) -> str:
         return f"{self.reg} = phi {', '.join(str(reg) for reg in self.incoming)}"
+
+    def regs(self) -> list[Reg]:
+        return [x.reg for x in self.incoming] + [self.reg]
 
 
 Inst = IntConst | GetPtr | GetFnPtr | Load | Store | Call | Alloc | IAddO | ISubO | ICmp | Phi
@@ -249,6 +288,12 @@ class Branch:
     def __str__(self) -> str:
         return f"br {self.reg.typ} {self.reg.id}, {self.then_block.id}, {self.else_block.id}"
 
+    def successors(self) -> list[Block]:
+        return [self.then_block, self.else_block]
+
+    def regs(self) -> list[Reg]:
+        return [self.reg]
+
 
 @dataclass
 class Jump:
@@ -257,6 +302,12 @@ class Jump:
     def __str__(self) -> str:
         return f"b {self.target.id}"
 
+    def successors(self) -> list[Block]:
+        return [self.target]
+
+    def regs(self) -> list[Reg]:
+        return []
+
 
 @dataclass
 class Return:
@@ -264,6 +315,12 @@ class Return:
 
     def __str__(self) -> str:
         return f"ret {self.reg.typ} {self.reg.id}"
+
+    def successors(self) -> list[Block]:
+        return []
+
+    def regs(self) -> list[Reg]:
+        return [self.reg]
 
 
 Terminator = Branch | Jump | Return
@@ -696,7 +753,9 @@ class FnGen:
 
 
 def optimize_ir(ir: FnIR) -> FnIR:
-    ir_remove_duplicate_getptr(ir)
+    # todo: The optimization does not work with the register allocator yet. The register allocator
+    #       does not correctly track spilled registers over multiple blocks.
+    # ir_remove_duplicate_getptr(ir)
     return ir
 
 

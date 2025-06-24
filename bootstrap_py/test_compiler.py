@@ -161,15 +161,18 @@ def test_struct_method_assigned_to_variable() -> None:
         fn Value.print(self) => print(self.value)
 
         fn main() {
-            let x = Value("PASS")
+            let x = Value("PASS2")
             let p = x.print
+            print("PASS1") -- Test that (in arm64) x0 is not re-used form the alloc before
+                           -- and that the implicit parameter `p` is passed to the call.
             p()
         }
         """
     )
     assert stdout == strip(
         """
-        PASS
+        PASS1
+        PASS2
         """
     )
 

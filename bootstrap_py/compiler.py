@@ -12,7 +12,6 @@ from . import (
     ir,
     lower,
     lower_hoist_functions,
-    lower_instance_methods,
     lower_monomorphize,
     parser,
     typechecker,
@@ -181,7 +180,6 @@ def compile(input: token.Input, outfile: str) -> Generator[CompilationStep]:  # 
         yield AbortStep(tokenize_errors + parse_errors + type_errors, time() - start)
         return
     lower_hoist_functions.lower_hoist_functions(module)
-    lower_instance_methods.lower_instance_methods(module, type_env)
     specs = lower_monomorphize.monomorphize(module, type_env)
     yield LowerStep(specs, module, time() - start)
     start = time()

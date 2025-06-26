@@ -484,7 +484,6 @@ class TypeMap:
                 seen[full_id(struct)] = struct
                 struct.fields = [Field(x.name, type_map.resolve(x.typ, seen)) for x in struct.fields]
                 struct.methods = [Field(x.name, cast(Fn, type_map.resolve(x.typ, seen))) for x in struct.methods]
-                struct.traits = [cast(Trait, type_map.resolve(x, seen)) for x in struct.traits]
                 return struct
             case Trait():
                 type_map = self

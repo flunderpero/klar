@@ -151,6 +151,30 @@ def test_struct_method_basics() -> None:
     assert stdout == "PASS\n"
 
 
+def test_struct_method_with_type_parameter() -> None:
+    stdout = compile_and_run_success(
+        """
+        struct Value<A> {
+            value A
+        }
+
+        fn Value.pass_through<B>(self, x B, y Value<A>) B => x
+
+        fn main() {
+            let v = Value<Bool>(false)
+            print(int_to_str(v.pass_through<Int>(42, v)))
+            print(v.pass_through<Str>("PASS", v))
+        }
+        """
+    )
+    assert stdout == strip(
+        """
+        42
+        PASS
+        """
+    )
+
+
 def test_struct_method_assigned_to_variable() -> None:
     stdout = compile_and_run_success(
         """
@@ -357,7 +381,67 @@ def test_trait_method_assigned_to_variable() -> None:
         }
         """
     )
-    assert stdout == "PASS\n"
+    assert stdout == strip(
+        """
+        PASS
+        """
+    )
+
+
+def test_trait_method_returns_trait() -> None:
+    stdout = compile_and_run_success(
+        """
+        trait Iter<A> {
+            fn next(self) A
+        }
+
+        trait Collection<B, BI Iter<B>> {
+            fn iter(self) BI
+        }
+
+        struct Value<C> {
+            value C
+        }
+
+        struct ValueIter<D> {
+            value Value<D>
+        }
+
+        fn (Iter<D>) ValueIter.next(self) D {
+            self.value.value
+        }
+
+        fn (Collection<C, ValueIter<C>>) Value.iter(self) ValueIter<C> {
+            ValueIter<C>(self)
+        }
+
+        fn print_first_of_str_collection<I Collection<Str>>(c I) {
+            -- We shadow `c` on purpose here to test that a parameter can still be shadowed.
+            {
+                let c = "PASS1"
+                print(c)
+            }
+            let iter = c.iter()
+            -- Test that we can still assign a method to a variable.
+            let next = iter.next
+            print(next())
+        }
+
+        fn main() {
+            let value = Value<Int>(42)
+            let iter = value.iter()
+            print(int_to_str(iter.next()))
+            print_first_of_str_collection<Value<Str>>(Value<Str>("PASS2"))
+        }
+        """
+    )
+    assert stdout == strip(
+        """
+        42
+        PASS1
+        PASS2
+        """
+    )
 
 
 def test_dependent_type_parameters() -> None:

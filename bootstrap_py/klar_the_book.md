@@ -1247,6 +1247,20 @@ fn main() {
 PASS
 ```
 
+Different type arguments makes types different:
+
+```klar
+struct Value<A> {}
+
+fn main() {
+    let str_value = Value<Str>()
+    let int_value = Value<Int>()
+    
+    mut value = str_value
+    value = int_value -- ERROR: Type `test.Value<Str>` is not assignable to type `test.Value<I64>`
+}
+```
+
 Only one specialized version of a function is created:
 
 ```klar
@@ -1349,6 +1363,28 @@ fn main() {
     let v = Value<Bool>(false)
     print(int_to_str(v.pass_through<Int>(42, v)))
     print(v.pass_through<Str>("PASS", v))
+}
+```
+
+```
+42
+PASS
+```
+
+Type parameters can be shadowed in nested blocks:
+
+```klar
+fn outer<T>(x T) T {
+    fn inner<T>(y T) T => y
+
+    let i = inner<Int>(42)
+    print(int_to_str(i))
+    x
+}
+
+fn main() {
+    let result = outer<Str>("PASS")
+    print(result)
 }
 ```
 

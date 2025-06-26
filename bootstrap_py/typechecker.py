@@ -515,7 +515,7 @@ class TypeChecker:
                 raise AssertionError(f"Unsupported target type: {node.target}")
         if not types.is_assignable_from(target, value):
             return self.error(
-                error.type_not_assignable_from(node.target.span, value.typ.signature(), target.signature())
+                error.type_not_assignable_from(node.target.span, value.signature(), target.signature())
             )
         return self.type_env.builtins.NoneTyp
 
